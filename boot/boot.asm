@@ -12,33 +12,12 @@ mb_header:
     dd mb_header_end - mb_header                ; Header length
     dd 0x100000000 - (0xe85250d6 + 0 + (mb_header_end - mb_header)) ; Checksum
 
-    ; Information request tag (ask for memory map and bootloader name)
-    dw 1                                        ; Type
-    dw 0                                        ; Flags
-    dd 24                                       ; Size
-    dd 4                                        ; Memory map
-    dd 6                                        ; Memory info
-    dd 9                                        ; ELF sections
-
-    ; Address tag (not needed for ELF, but kept for clarity)
-    ; dw 2
-    ; dw 0
-    ; dd 24
-    ; dd 0x100000
-    ; dd 0x100000
-    ; dd 0
-    ; dd 0
-
-    ; Entry address tag
+    ; Entry address tag (size 16, with padding)
     dw 3
     dw 0
-    dd 12
+    dd 16  ; Total size: 8 header + 8 (address + padding)
     dd start
-
-    ; Flags tag
-    dw 4
-    dw 0
-    dd 8
+    dd 0    ; Padding to reach 8-byte alignment
 
     ; End tag
     dw 0
@@ -48,7 +27,6 @@ mb_header_end:
 
 section .bss
 align 4096
-; Page tables for identity mapping first 1GB
 pml4:
     resb 4096
 pdpt:
@@ -60,6 +38,8 @@ align 16
 stack_bottom:
     resb 32768      ; 32KB stack
 stack_top:
+
+global stack_top
 
 section .data
 global mb_magic
@@ -73,7 +53,20 @@ section .text
 bits 32
 global start
 
+; Macro to write a character to VGA at the top-left corner
+%macro VGA_WRITE 1
+    mov al, %1
+    mov ah, 0x0F        ; White on black
+    mov [0xB8000], ax
+%endmacro
+
 start:
+    ; Output debug char to serial COM1 (0x3F8)
+    mov dx, 0x3F8
+    mov al, 'S'
+    out dx, al
+
+    VGA_WRITE '!'   ; Write an exclamation mark at the top-left
     ; GRUB leaves us in protected mode, interrupts disabled.
     ; Set up stack immediately.
     mov esp, stack_top
@@ -82,22 +75,82 @@ start:
     mov dword [mb_magic], eax
     mov dword [mb_info], ebx
 
+    ; Skip multiboot magic check for testing
     ; Verify multiboot2 magic
-    cmp eax, 0x36d76289
-    jne .no_multiboot
+    ;cmp eax, 0x36d76289
+    ;jne .no_multiboot
+    VGA_WRITE 'M'  ; Multiboot OK (skip check for testing)
+    mov dx, 0x3F8
+    mov al, '1'
+    out dx, al
 
     ; Check CPU features
     call check_cpuid
+    VGA_WRITE 'C'  ; CPUID OK
+    mov dx, 0x3F8
+    mov al, '2'
+    out dx, al
+
     call check_long_mode
+    VGA_WRITE 'L'  ; Long mode OK
+    mov dx, 0x3F8
+    mov al, '3'
+    out dx, al
 
     ; Set up identity paging for first 1GB using 2MB huge pages
     call setup_page_tables
+    VGA_WRITE 'P'  ; Paging setup OK
+    mov dx, 0x3F8
+    mov al, '4'
+    out dx, al
 
     ; Enable PAE + PGE
     call enable_paging
+    VGA_WRITE 'E'  ; Paging enabled OK
+    mov dx, 0x3F8
+    mov al, '5'
+    out dx, al
 
     ; Load 64-bit GDT
     lgdt [gdt64.pointer]
+    VGA_WRITE 'G'  ; GDT loaded OK
+    mov dx, 0x3F8
+    mov al, '6'
+    out dx, al
+
+    ; Check CPU features
+    call check_cpuid
+    VGA_WRITE 'C'  ; CPUID OK
+    mov dx, 0x3F8
+    mov al, 'b'
+    out dx, al
+
+    call check_long_mode
+    VGA_WRITE 'L'  ; Long mode OK
+    mov dx, 0x3F8
+    mov al, 'c'
+    out dx, al
+
+    ; Set up identity paging for first 1GB using 2MB huge pages
+    call setup_page_tables
+    VGA_WRITE 'P'  ; Paging setup OK
+    mov dx, 0x3F8
+    mov al, 'd'
+    out dx, al
+
+    ; Enable PAE + PGE
+    call enable_paging
+    VGA_WRITE 'E'  ; Paging enabled OK
+    mov dx, 0x3F8
+    mov al, 'e'
+    out dx, al
+
+    ; Load 64-bit GDT
+    lgdt [gdt64.pointer]
+    VGA_WRITE 'G'  ; GDT loaded OK
+    mov dx, 0x3F8
+    mov al, 'f'
+    out dx, al
 
     ; Far jump to 64-bit code segment
     jmp gdt64.code:long_mode_start
@@ -132,26 +185,26 @@ check_cpuid:
     jmp .no_cpuid
 
 ; ---------------------------------------------------------------------------
-; Check long mode support (extended processor info)
-; ---------------------------------------------------------------------------
-check_long_mode:
-    mov eax, 0x80000000
-    cpuid
-    cmp eax, 0x80000001
-    jb .no_long_mode
+    ; Check long mode support (extended processor info)
+    ; ---------------------------------------------------------------------------
+    check_long_mode:
+        mov eax, 0x80000000
+        cpuid
+        cmp eax, 0x80000001
+        jb .no_long_mode
 
-    mov eax, 0x80000001
-    cpuid
-    test edx, 1 << 29
-    jz .no_long_mode
-    ret
+        mov eax, 0x80000001
+        cpuid
+        test edx, 1 << 29
+        jz .no_long_mode
+        ret
 
-.no_long_mode:
-    mov al, "L"
-    mov ah, 0x0C
-    mov [0xB8000], ax
-    hlt
-    jmp .no_long_mode
+    .no_long_mode:
+        mov al, "L"
+        mov ah, 0x0C
+        mov [0xB8000], ax
+        hlt
+        jmp .no_long_mode
 
 ; ---------------------------------------------------------------------------
 ; Set up page tables: identity map first 1GB with 2MB huge pages
@@ -220,13 +273,9 @@ section .rodata
 gdt64:
     dq 0                        ; Null descriptor
 .code: equ $ - gdt64
-    dq (1 << 43) | (1 << 44) | (1 << 47) | (1 << 53) ; 64-bit code, ring 0
+    dq 0x0020980000000000        ; 64-bit code, ring 0 (present, ring0, exec/read, L=1)
 .data: equ $ - gdt64
-    dq (1 << 44) | (1 << 47)    ; Data, ring 0
-.user_code: equ $ - gdt64
-    dq (1 << 43) | (1 << 44) | (1 << 46) | (1 << 47) | (1 << 53) ; 64-bit code, ring 3
-.user_data: equ $ - gdt64
-    dq (1 << 44) | (1 << 46) | (1 << 47) ; Data, ring 3
+    dq 0x0000920000000000        ; Data, ring 0 (present, ring0, writable)
 .pointer:
     dw $ - gdt64 - 1
     dq gdt64

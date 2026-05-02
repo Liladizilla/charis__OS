@@ -4,7 +4,7 @@ build/kernel.elf
 build/charisos.iso
 iso/boot/kernel.elf
 iso/charisos.iso
-
+.vscode/
 # Temporary files
 *.tmp
 *.log

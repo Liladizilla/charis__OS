@@ -2,6 +2,8 @@
 #include <kernel/irq.h>
 #include <kernel/vga.h>
 #include <kernel/serial.h>
+#include <kernel/scheduler.h>
+#include <kernel/task.h>
 
 #define IDT_ENTRIES 256
 static idt_entry_t idt[IDT_ENTRIES];
@@ -42,19 +44,58 @@ void idt_set_gate(u8 vector, u64 handler, u8 ist, u8 type_attr) {
 }
 
 void idt_dispatch_handler(reg_frame_t* frame) {
+    if (frame->vector == 0x80) {
+        // System call
+        frame->rax = syscall_dispatch(frame->rax, frame->rdi, frame->rsi, frame->rdx, frame->r10, frame->r8, frame->r9);
+        return;
+    }
+
     if (frame->vector < 32) {
-        // Exception
-        vga_puts("Exception occurred!\n");
-        while (1);
+        // Exception - full register dump
+        kprintf("=== EXCEPTION #%d ===\n", frame->vector);
+        kprintf("RIP=0x%llx  CS=0x%llx  RFLAGS=0x%llx\n", frame->rip, frame->cs, frame->rflags);
+        kprintf("RSP=0x%llx  SS=0x%llx\n", frame->rsp, frame->ss);
+        kprintf("RAX=0x%llx  RBX=0x%llx  RCX=0x%llx  RDX=0x%llx\n", frame->rax, frame->rbx, frame->rcx, frame->rdx);
+        kprintf("RSI=0x%llx  RDI=0x%llx  RBP=0x%llx\n", frame->rsi, frame->rdi, frame->rbp);
+        kprintf("R8=0x%llx   R9=0x%llx   R10=0x%llx  R11=0x%llx\n", frame->r8, frame->r9, frame->r10, frame->r11);
+        kprintf("R12=0x%llx  R13=0x%llx  R14=0x%llx  R15=0x%llx\n", frame->r12, frame->r13, frame->r14, frame->r15);
+        kprintf("Error code: 0x%llx\n", frame->error_code);
+        
+        // Page fault specific info
+        if (frame->vector == 14) {
+            u64 cr2;
+            asm volatile("mov %%cr2,%0":"=r"(cr2));
+            kprintf("Page fault at CR2=0x%llx\n", cr2);
+            kprintf("Reason: %s %s %s\n",
+                frame->error_code & 1 ? "protection" : "not-present",
+                frame->error_code & 2 ? "write" : "read",
+                frame->error_code & 4 ? "user" : "kernel");
+        }
+        
+        // Print task info
+        task_t* t = scheduler_current();
+        if (t) {
+            kprintf("In task: %s (PID %d)\n", t->name, t->pid);
+        }
+        
+        // Check for stack canary
+        if (t && t->stack_canary_addr) {
+            u64 canary = *(u64*)t->stack_canary_addr;
+            if (canary != 0xDEADC0DEDEADC0DE) {
+                kprintf("STACK SMASH DETECTED in task %s PID %d - canary was 0x%llx\n", 
+                    t->name, t->pid, canary);
+                t->state = TASK_STATE_ZOMBIE;
+                scheduler_schedule();
+                return;
+            }
+        }
+        
+        while(1) asm volatile("hlt");
     }
 
     if (frame->vector >= 32 && frame->vector < 48) {
         u8 irq = frame->vector - 32;
         irq_dispatch(irq, frame);
-
-        if (frame->vector >= 40) {
-            asm volatile("outb %0, %1" : : "a"((u8)0x20), "Nd"((u16)0xA0));
-        }
-        asm volatile("outb %0, %1" : : "a"((u8)0x20), "Nd"((u16)0x20));
+        // Single EOI path - now handled via pic_send_eoi in irq.c
     }
 }

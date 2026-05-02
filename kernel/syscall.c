@@ -1,6 +1,7 @@
 #include <kernel/syscall.h>
 #include <kernel/scheduler.h>
 #include <kernel/vga.h>
+#include <kernel/idt.h>
 
 static syscall_handler_t syscall_table[SYSCALL_MAX];
 
@@ -22,6 +23,8 @@ void syscall_init(void) {
     }
     syscall_register(SYS_YIELD, syscall_yield_handler);
     syscall_register(SYS_PRINT, syscall_print_handler);
+    // Register the system call gate in the IDT (vector 0x80, DPL=3)
+    idt_set_gate(0x80, isr_table[0x80], 0, 0xEE);
 }
 
 u64 syscall_dispatch(u64 num, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {

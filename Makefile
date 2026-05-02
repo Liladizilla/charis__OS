@@ -15,12 +15,12 @@ BUILD_DIR = build
 
 # Flags
 NASM_FLAGS = -f elf64
-GCC_FLAGS = -ffreestanding -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -I$(INCLUDE_DIR)
-LD_FLAGS = -T $(BUILD_DIR)/link.ld -nostdlib -z max-page-size=0x1000
+GCC_FLAGS = -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -I$(INCLUDE_DIR)
+LD_FLAGS = -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack
 
 # Source files
 BOOT_SOURCES = $(BOOT_DIR)/boot.asm $(BOOT_DIR)/long_mode.asm
-KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c
+KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c
 ASM_SOURCES = $(KERNEL_DIR)/asm/interrupt_stubs.asm $(KERNEL_DIR)/asm/context.asm $(KERNEL_DIR)/asm/gdt.asm $(KERNEL_DIR)/asm/io.asm
 
 # Object files
@@ -36,10 +36,9 @@ all: $(BUILD_DIR)/charisos.iso
 $(BUILD_DIR)/charisos.iso: $(BUILD_DIR)/kernel.elf
 	mkdir -p iso/boot/grub
 	cp $(BUILD_DIR)/kernel.elf iso/boot/
-	cp iso/boot/grub/grub.cfg iso/boot/grub/
 	grub-mkrescue -o $@ iso/
 
-$(BUILD_DIR)/kernel.elf: $(ALL_OBJS) $(BUILD_DIR)/link.ld
+$(BUILD_DIR)/kernel.elf: $(ALL_OBJS) link.ld
 	$(LD) $(LD_FLAGS) -o $@ $(ALL_OBJS)
 
 $(BUILD_DIR)/%.o: $(BOOT_DIR)/%.asm
@@ -55,12 +54,15 @@ $(BUILD_DIR)/%.o: $(KERNEL_DIR)/asm/%.asm
 	$(NASM) $(NASM_FLAGS) -o $@ $<
 
 run: $(BUILD_DIR)/charisos.iso
-	$(QEMU) -cdrom $< -m 256M -serial stdio
+	$(QEMU) -cdrom $< -m 256M -serial file:serial.log
 
 debug: $(BUILD_DIR)/charisos.iso
 	$(QEMU) -cdrom $< -m 256M -serial stdio -s -S
 
+run-debug: $(BUILD_DIR)/charisos.iso
+	$(QEMU) -cdrom $< -m 256M -serial stdio
+
 clean:
 	rm -rf $(BUILD_DIR) iso/boot/kernel.elf iso/charisos.iso
 
-.PHONY: all run debug clean
+.PHONY: all run debug run-debug clean

@@ -55,3 +55,14 @@ io_wait:
     out 0x80, al
     ret
 
+; void io_delay(void);
+global io_delay
+io_delay:
+    push rcx
+    mov rcx, 1000
+.delay_loop:
+    out 0x80, al
+    loop .delay_loop
+    pop rcx
+    ret
+

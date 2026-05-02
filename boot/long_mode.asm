@@ -6,8 +6,21 @@ bits 64
 global long_mode_start
 extern kernel_main
 extern gdt64
+extern mb_magic
+extern mb_info
+extern stack_top
 
 long_mode_start:
+    ; Debug: indicate we are in long mode
+    mov dx, 0x3F8
+    mov al, '['   ; Start marker
+    out dx, al
+
+    ; Also write to VGA top-left
+    mov al, '['
+    mov ah, 0x0F
+    mov [0xB8000], ax
+
     ; Load data segment selectors (GDT offsets: code=0x08, data=0x10)
     mov ax, 0x10
     mov ds, ax
@@ -33,22 +46,37 @@ long_mode_start:
     xor r14, r14
     xor r15, r15
 
+    ; Set up stack
+    mov rsp, stack_top
+
     ; Pass multiboot magic and info to kernel_main
     mov edi, dword [mb_magic]
     mov esi, dword [mb_info]
 
+    ; Debug: indicate we are about to call kernel
+    mov dx, 0x3F8
+    mov al, 'L'
+    out dx, al
+    mov al, 'L'
+    mov ah, 0x0F
+    mov [0xB8000], ax
+
+    ; Debug: about to call
+    mov dx, 0x3F8
+    mov al, '>'
+    out dx, al
+
     ; Jump to C kernel
     call kernel_main
+
+    ; If we get here, kernel_main returned (shouldn't happen)
+    mov dx, 0x3F8
+    mov al, '<'
+    out dx, al
 
     ; If kernel_main returns, halt forever
 .halt:
     cli
     hlt
     jmp .halt
-
-section .text
-bits 32
-; Import mb_magic from boot.asm
-extern mb_magic
-extern mb_info
 

@@ -21,6 +21,7 @@ void il_runtime_exec(const char* entry_method) {
 }
 
 void* il_alloc_obj(u32 vtable_idx) {
+    if (!current_image) return NULL;
     if (vtable_idx >= current_image->vtable_count) return NULL;
     il_vtable_t* vt = &current_image->vtables[vtable_idx];
     usize size = sizeof(il_object_header_t) + vt->static_size;

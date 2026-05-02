@@ -1,6 +1,7 @@
 /* vga.h - VGA text mode driver */
 #pragma once
 #include <kernel/types.h>
+#include <stdarg.h>
 
 /* Standard VGA colors */
 enum VGA_COLOR {
@@ -30,4 +31,7 @@ void vga_clear(void);
 void vga_setcolor(u8 fg, u8 bg);
 void vga_printf(const char* fmt, ...);
 void vga_scroll(void);
+void vga_puts(const char* str);
+void vga_enable_cursor(u8 cursor_start, u8 cursor_end);
+void vga_update_hw_cursor(void);
 

@@ -15,5 +15,12 @@ gdt_flush:
     mov fs, ax
     mov gs, ax
     mov ss, ax
+    
+    ; Reload CS by using far return
+    push qword 0x08    ; New code segment selector
+    lea rax, [rel .reload_cs]
+    push rax
+    retfq
+.reload_cs:
     ret
 

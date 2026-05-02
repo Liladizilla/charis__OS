@@ -18,8 +18,6 @@ typedef int64_t     s64;
 typedef size_t      usize;
 typedef intptr_t    isize;
 
-#define NULL ((void*)0)
-
 /* Packed attribute shortcut */
 #define PACKED __attribute__((packed))
 

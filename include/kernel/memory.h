@@ -43,6 +43,9 @@ void vmm_map_page(void* phys, void* virt, u64 flags);
 void vmm_unmap_page(void* virt);
 void* vmm_get_phys(void* virt);
 
+/* Initialization function */
+void memory_init(u32 info);
+
 /* Page table flags */
 #define PTE_PRESENT     (1 << 0)
 #define PTE_WRITABLE    (1 << 1)

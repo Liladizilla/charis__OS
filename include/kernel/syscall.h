@@ -25,4 +25,5 @@ typedef u64 (*syscall_handler_t)(u64, u64, u64, u64, u64, u64);
 void syscall_init(void);
 u64 syscall_dispatch(u64 num, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6);
 void syscall_register(u64 num, syscall_handler_t handler);
+u64 sys_print(const char* str);
 
