@@ -2,6 +2,7 @@
 ; Multiboot2 compliant bootloader for x86_64 CharisOS
 ; Transitions: real mode -> protected mode -> long mode
 ; GRUB2 already puts us in protected mode with A20 enabled.
+; Optimized for low/medium-end devices
 
 section .multiboot
 align 8
@@ -36,7 +37,7 @@ pd:
 
 align 16
 stack_bottom:
-    resb 32768      ; 32KB stack
+    resb 16384      ; 16KB stack (reduced from 32KB for low-end devices)
 stack_top:
 
 global stack_top
@@ -75,11 +76,7 @@ start:
     mov dword [mb_magic], eax
     mov dword [mb_info], ebx
 
-    ; Skip multiboot magic check for testing
-    ; Verify multiboot2 magic
-    ;cmp eax, 0x36d76289
-    ;jne .no_multiboot
-    VGA_WRITE 'M'  ; Multiboot OK (skip check for testing)
+    VGA_WRITE 'M'  ; Multiboot OK
     mov dx, 0x3F8
     mov al, '1'
     out dx, al
@@ -116,40 +113,6 @@ start:
     VGA_WRITE 'G'  ; GDT loaded OK
     mov dx, 0x3F8
     mov al, '6'
-    out dx, al
-
-    ; Check CPU features
-    call check_cpuid
-    VGA_WRITE 'C'  ; CPUID OK
-    mov dx, 0x3F8
-    mov al, 'b'
-    out dx, al
-
-    call check_long_mode
-    VGA_WRITE 'L'  ; Long mode OK
-    mov dx, 0x3F8
-    mov al, 'c'
-    out dx, al
-
-    ; Set up identity paging for first 1GB using 2MB huge pages
-    call setup_page_tables
-    VGA_WRITE 'P'  ; Paging setup OK
-    mov dx, 0x3F8
-    mov al, 'd'
-    out dx, al
-
-    ; Enable PAE + PGE
-    call enable_paging
-    VGA_WRITE 'E'  ; Paging enabled OK
-    mov dx, 0x3F8
-    mov al, 'e'
-    out dx, al
-
-    ; Load 64-bit GDT
-    lgdt [gdt64.pointer]
-    VGA_WRITE 'G'  ; GDT loaded OK
-    mov dx, 0x3F8
-    mov al, 'f'
     out dx, al
 
     ; Far jump to 64-bit code segment

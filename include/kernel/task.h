@@ -9,7 +9,7 @@
 #define TASK_STATE_ZOMBIE       3
 
 #define TASK_NAME_MAX           32
-#define TASK_STACK_SIZE         32768
+#define TASK_STACK_SIZE         8192
 #define TASK_MAX_TASKS          32
 #define TASK_DEFAULT_QUANTUM     10
 

@@ -11,6 +11,7 @@
 #include <kernel/syscall.h>
 #include <kernel/shell.h>
 #include <kernel/printf.h>
+#include <kernel/net.h>
 
 void kernel_main(u32 magic, u32 info) {
     // Initialize VGA and serial
@@ -19,13 +20,13 @@ void kernel_main(u32 magic, u32 info) {
     serial_init();
 
     // Print boot banner with version and date
-    kprintf("=== CharisOS v1.0 ===\n");
+    vga_puts_info("=== CharisOS v1.0 ===");
     kprintf("Built: " __DATE__ " " __TIME__ "\n");
-    kprintf("Booting...\n");
+    vga_puts_info("Booting...");
 
     // Validate Multiboot2 magic (0x36d76289)
     if (magic != 0x36d76289) {
-        kprintf("ERROR: Invalid Multiboot2 magic: 0x%x\n", magic);
+        vga_puts_error("ERROR: Invalid Multiboot2 magic!");
         while (1) {
             asm volatile("hlt");
         }
@@ -37,6 +38,7 @@ void kernel_main(u32 magic, u32 info) {
     irq_init();
     timer_init(1000);
     keyboard_init();
+    net_init();    // Network support for low-end devices
     task_init();
     scheduler_init();
     syscall_init();
@@ -44,14 +46,14 @@ void kernel_main(u32 magic, u32 info) {
     // Create shell task with CAP_ALL
     task_t* shell_task = task_create("shell", shell_main, NULL, CAP_ALL);
     if (shell_task == NULL) {
-        kprintf("ERROR: Failed to create shell task!\n");
+        vga_puts_error("ERROR: Failed to create shell task!");
         while (1) {
             asm volatile("hlt");
         }
     }
     scheduler_add_task(shell_task);
 
-    kprintf("All systems go. Starting shell.\n");
+    vga_puts_success("All systems go. Starting shell.");
 
     // Enable interrupts and start scheduler
     asm volatile("sti");

@@ -17,6 +17,9 @@ nasm -f elf64 kernel/asm/gdt.asm -o build/gdt.o
 nasm -f elf64 kernel/asm/io.asm -o build/io.o
 
 # Compile kernel files
+gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/string.c -o build/string.o
+gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/printf.c -o build/printf.o
+gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/net.c -o build/net.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/main.c -o build/main.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/vga.c -o build/vga.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/serial.c -o build/serial.o
@@ -34,8 +37,8 @@ gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx
 # Link kernel
 ld -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack -o build/kernel.elf \
     build/boot.o build/long_mode.o build/main.o build/vga.o build/serial.o \
-    build/memory.o build/idt.o build/irq.o build/timer.o build/keyboard.o \
-    build/syscall.o build/task.o build/scheduler.o build/shell.o build/il_runtime.o \
+    build/string.o build/printf.o build/memory.o build/idt.o build/irq.o build/timer.o build/keyboard.o \
+    build/syscall.o build/task.o build/scheduler.o build/shell.o build/il_runtime.o build/net.o \
     build/interrupt_stubs.o build/context.o build/gdt.o build/io.o
 
 # Create ISO directory structure

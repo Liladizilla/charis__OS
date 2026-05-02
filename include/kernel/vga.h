@@ -29,9 +29,13 @@ void vga_write(const char* str);
 void vga_writestring(const char* str);
 void vga_clear(void);
 void vga_setcolor(u8 fg, u8 bg);
+void vga_setcolor_pair(u8 color);
 void vga_printf(const char* fmt, ...);
 void vga_scroll(void);
 void vga_puts(const char* str);
+void vga_puts_info(const char* str);
+void vga_puts_error(const char* str);
+void vga_puts_success(const char* str);
 void vga_enable_cursor(u8 cursor_start, u8 cursor_end);
 void vga_update_hw_cursor(void);
 

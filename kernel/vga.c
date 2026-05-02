@@ -10,8 +10,16 @@
 #define VGA_SIZE (VGA_WIDTH * VGA_HEIGHT)
 
 static u16* vga_buffer = (u16*)0xB8000;
-static u8 vga_color = 0x0F; // White on black
+static u8 vga_color = 0x07; // Light grey on black (easier on low-end displays)
+static u8 vga_bg_color = VGA_BLACK;
+static u8 vga_fg_color = VGA_LIGHT_GREY;
 static u32 vga_cursor = 0;
+
+/* Optimized color palette for better visibility on low-end hardware */
+#define COLOR_INFO    VGA_LIGHT_GREY
+#define COLOR_ERROR   VGA_LIGHT_RED
+#define COLOR_SUCCESS VGA_LIGHT_GREEN
+#define COLOR_WARNING VGA_LIGHT_BROWN
 
 void vga_init(void) {
     vga_clear();
@@ -27,7 +35,15 @@ void vga_clear(void) {
 }
 
 void vga_setcolor(u8 fg, u8 bg) {
-    vga_color = fg | (bg << 4);
+    vga_fg_color = fg & 0x0F;
+    vga_bg_color = bg & 0x07;
+    vga_color = vga_fg_color | (vga_bg_color << 4);
+}
+
+void vga_setcolor_pair(u8 color) {
+    vga_color = color & 0x7F;
+    vga_fg_color = vga_color & 0x0F;
+    vga_bg_color = (vga_color >> 4) & 0x07;
 }
 
 void vga_putchar(char c) {
@@ -99,4 +115,26 @@ void vga_printf(const char* fmt, ...) {
     va_start(args, fmt);
     kvprintf(fmt, args, vga_putchar);
     va_end(args);
+}
+
+/* Colored output functions for better UI on low-end displays */
+void vga_puts_info(const char* str) {
+    u8 old_color = vga_color;
+    vga_setcolor(COLOR_INFO, vga_bg_color);
+    vga_puts(str);
+    vga_setcolor_pair(old_color);
+}
+
+void vga_puts_error(const char* str) {
+    u8 old_color = vga_color;
+    vga_setcolor(COLOR_ERROR, vga_bg_color);
+    vga_puts(str);
+    vga_setcolor_pair(old_color);
+}
+
+void vga_puts_success(const char* str) {
+    u8 old_color = vga_color;
+    vga_setcolor(COLOR_SUCCESS, vga_bg_color);
+    vga_puts(str);
+    vga_setcolor_pair(old_color);
 }
