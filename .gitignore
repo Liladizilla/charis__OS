@@ -1,0 +1,7 @@
+build/
+iso/boot/kernel.elf
+*.log
+.vscode/
+.bochsrc
+bochsrc.txt
+choco.log
