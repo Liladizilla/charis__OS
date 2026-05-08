@@ -46,8 +46,10 @@ long_mode_start:
     xor r14, r14
     xor r15, r15
 
-    ; Set up stack
-    mov rsp, stack_top
+     ; Set up stack
+     mov rsp, stack_top
+     ; Set TSS RSP0 to kernel stack
+     mov qword [tss + 4], rsp
 
     ; Pass multiboot magic and info to kernel_main
     mov edi, dword [mb_magic]

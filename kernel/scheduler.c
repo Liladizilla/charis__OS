@@ -93,7 +93,7 @@ void scheduler_start(void) {
     current_task->state = TASK_STATE_RUNNING;
 
     u64 bootstrap_rsp = 0;
-    context_switch(&bootstrap_rsp, current_task->rsp);
+    context_switch(&bootstrap_rsp, current_task->rsp, current_task->is_user);
 }
 
 void scheduler_schedule(void) {
@@ -114,8 +114,8 @@ void scheduler_schedule(void) {
     current_task->state = TASK_STATE_RUNNING;
     
     spinlock_unlock(&scheduler_lock);
-    
-    context_switch(&previous->rsp, current_task->rsp);
+
+    context_switch(&previous->rsp, current_task->rsp, current_task->is_user);
 }
 
 void scheduler_yield(void) {

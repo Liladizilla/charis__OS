@@ -88,7 +88,7 @@ task_t* task_current(void) {
     return scheduler_current();
 }
 
-task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities) {
+task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user) {
     task_t* task = task_allocate();
     if (!task) {
         vga_puts("Failed to allocate task\n");
@@ -105,13 +105,14 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
     /* Stack grows down, guard page is at the bottom */
     task->stack_base = (u64)stack + PAGE_SIZE;
     task->guard_page_addr = (u64)stack;
+    task->is_user = is_user;
     task->pid = next_pid++;
     task->state = TASK_STATE_READY;
     task->priority = 0;
     task->runtime_ticks = 0;
     task->remaining_quantum = TASK_DEFAULT_QUANTUM;
     task->capabilities = capabilities;
-    
+
     /* Copy task name */
     for (u32 i = 0; i < TASK_NAME_MAX - 1 && name && name[i]; i++) {
         task->name[i] = name[i];
@@ -122,15 +123,35 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
     u64* stack_top = (u64*)((u8*)task->stack_base + TASK_STACK_SIZE);
     stack_top = (u64*)((u64)stack_top & ~0xFUL);
 
-    *--stack_top = (u64)arg;             // Argument for task function
-    *--stack_top = (u64)func;            // Entry point for task_trampoline
-    *--stack_top = (u64)task_exit_handler; // Return address for initial context
-    *--stack_top = 0;                    // rbp
-    *--stack_top = 0;                    // rbx
-    *--stack_top = 0;                    // r12
-    *--stack_top = 0;                    // r13
-    *--stack_top = 0;                    // r14
-    *--stack_top = 0;                    // r15
+    if (is_user) {
+        // User stack same as kernel for now
+        task->user_stack_base = task->stack_base;
+        task->user_rsp = (u64)stack_top;
+
+        // Set up iretq frame for ring 3
+        *--stack_top = 0x23;              // SS (user data)
+        *--stack_top = task->user_rsp;    // RSP
+        *--stack_top = 0x202;             // RFLAGS
+        *--stack_top = 0x1B;              // CS (user code)
+        *--stack_top = (u64)func;         // RIP
+        // Push regs for context_switch
+        *--stack_top = 0;                 // rbp
+        *--stack_top = 0;                 // rbx
+        *--stack_top = 0;                 // r12
+        *--stack_top = 0;                 // r13
+        *--stack_top = 0;                 // r14
+        *--stack_top = 0;                 // r15
+    } else {
+        *--stack_top = (u64)arg;             // Argument for task function
+        *--stack_top = (u64)func;            // Entry point for task_trampoline
+        *--stack_top = (u64)task_exit_handler; // Return address for initial context
+        *--stack_top = 0;                    // rbp
+        *--stack_top = 0;                    // rbx
+        *--stack_top = 0;                    // r12
+        *--stack_top = 0;                    // r13
+        *--stack_top = 0;                    // r14
+        *--stack_top = 0;                    // r15
+    }
 
     task->rsp = (u64)stack_top;
     task->next = NULL;

@@ -1,10 +1,30 @@
 # CharisOS Makefile
 
-# Tools
+# Tools (MSYS2/MinGW-w64 detection)
+UNAME := $(shell uname -s 2>/dev/null || echo Windows)
+
+ifeq ($(UNAME),MINGW64)
+# MSYS2 MinGW-w64 environment
+NASM = nasm
+GCC = x86_64-w64-mingw32-gcc
+LD = x86_64-w64-mingw32-ld
+QEMU = qemu-system-x86_64
+GRUB = grub-mkrescue
+else ifeq ($(UNAME),Linux)
+# Native Linux/WSL
 NASM = nasm
 GCC = gcc
 LD = ld
 QEMU = qemu-system-x86_64
+GRUB = grub-mkrescue
+else
+# Assume MSYS2 or try common paths
+NASM = nasm
+GCC = gcc
+LD = ld
+QEMU = qemu-system-x86_64
+GRUB = grub-mkrescue
+endif
 
 # Directories
 SRC_DIR = .
@@ -20,7 +40,7 @@ LD_FLAGS = -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack
 
 # Source files
 BOOT_SOURCES = $(BOOT_DIR)/boot.asm $(BOOT_DIR)/long_mode.asm
-KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c
+KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c $(KERNEL_DIR)/ata.c $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/user.c
 ASM_SOURCES = $(KERNEL_DIR)/asm/interrupt_stubs.asm $(KERNEL_DIR)/asm/context.asm $(KERNEL_DIR)/asm/gdt.asm $(KERNEL_DIR)/asm/io.asm
 
 # Object files
@@ -36,7 +56,7 @@ all: $(BUILD_DIR)/charisos.iso
 $(BUILD_DIR)/charisos.iso: $(BUILD_DIR)/kernel.elf
 	mkdir -p iso/boot/grub
 	cp $(BUILD_DIR)/kernel.elf iso/boot/
-	grub-mkrescue -o $@ iso/
+	$(GRUB) -o $@ iso/
 
 $(BUILD_DIR)/kernel.elf: $(ALL_OBJS) link.ld
 	$(LD) $(LD_FLAGS) -o $@ $(ALL_OBJS)

@@ -5,7 +5,7 @@ section .text
 bits 64
 
 ; ---------------------------------------------------------------------------
-; void context_switch(u64* old_rsp, u64 new_rsp);
+; void context_switch(u64* old_rsp, u64 new_rsp, bool is_user);
 ; Saves callee-saved regs, switches stacks, restores callee-saved regs.
 ; Used for cooperative task switching (yield).
 ; ---------------------------------------------------------------------------
@@ -27,7 +27,13 @@ context_switch:
     pop r12
     pop rbx
     pop rbp
+
+    ; Check if user task
+    cmp rdx, 1
+    je .iretq
     ret
+.iretq:
+    iretq
 
 ; ---------------------------------------------------------------------------
 ; void task_trampoline(void);

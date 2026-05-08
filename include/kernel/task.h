@@ -29,6 +29,9 @@ typedef struct task {
     u64 stack_canary_addr;         /* Stack canary address */
     u64 event_data;                /* Event data for event system */
     u32 waiting_event;             /* Event ID being waited on */
+    bool is_user;                  /* True if user-mode task */
+    u64 user_stack_base;           /* User stack base */
+    u64 user_rsp;                  /* User stack pointer */
 } task_t;
 
 typedef void (*task_func_t)(void* arg);
@@ -53,14 +56,14 @@ task_t* scheduler_current(void);
 void scheduler_yield(void);
 
 void task_init(void);
-task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities);
+task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user);
 void task_exit(void);
 void task_block(task_t* task);
 void task_unblock(task_t* task);
 void task_sleep_ms(u32 ms);
 
 /* Assembly context switch */
-void context_switch(u64* old_rsp, u64 new_rsp);
+void context_switch(u64* old_rsp, u64 new_rsp, bool is_user);
 void task_trampoline(void);
 
 /* Task exit handler called from assembly */

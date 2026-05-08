@@ -20,6 +20,8 @@ nasm -f elf64 kernel/asm/io.asm -o build/io.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/string.c -o build/string.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/printf.c -o build/printf.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/net.c -o build/net.o
+gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/pmm.c -o build/pmm.o
+gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/vmm.c -o build/vmm.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/main.c -o build/main.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/vga.c -o build/vga.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/serial.c -o build/serial.o
@@ -30,6 +32,9 @@ gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/keyboard.c -o build/keyboard.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/syscall.c -o build/syscall.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/task.c -o build/task.o
+gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/ata.c -o build/ata.o
+gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/fs.c -o build/fs.o
+gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/user.c -o build/user.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/scheduler.c -o build/scheduler.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/shell.c -o build/shell.o
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/il_runtime.c -o build/il_runtime.o
@@ -37,8 +42,8 @@ gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx
 # Link kernel
 ld -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack -o build/kernel.elf \
     build/boot.o build/long_mode.o build/main.o build/vga.o build/serial.o \
-    build/string.o build/printf.o build/memory.o build/idt.o build/irq.o build/timer.o build/keyboard.o \
-    build/syscall.o build/task.o build/scheduler.o build/shell.o build/il_runtime.o build/net.o \
+    build/string.o build/printf.o build/pmm.o build/vmm.o build/memory.o build/idt.o build/irq.o build/timer.o build/keyboard.o \
+    build/syscall.o build/task.o build/scheduler.o build/shell.o build/il_runtime.o build/net.o build/ata.o build/fs.o build/user.o \
     build/interrupt_stubs.o build/context.o build/gdt.o build/io.o
 
 # Create ISO directory structure

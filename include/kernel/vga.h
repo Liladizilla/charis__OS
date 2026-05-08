@@ -1,7 +1,6 @@
 /* vga.h - VGA text mode driver */
 #pragma once
 #include <kernel/types.h>
-#include <stdarg.h>
 
 /* Standard VGA colors */
 enum VGA_COLOR {

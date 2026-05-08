@@ -88,11 +88,17 @@ start:
     mov al, '2'
     out dx, al
 
-    call check_long_mode
-    VGA_WRITE 'L'  ; Long mode OK
-    mov dx, 0x3F8
-    mov al, '3'
-    out dx, al
+     call check_long_mode
+     VGA_WRITE 'L'  ; Long mode OK
+     mov dx, 0x3F8
+     mov al, '3'
+     out dx, al
+
+     call check_apic
+     VGA_WRITE 'A'  ; APIC OK
+     mov dx, 0x3F8
+     mov al, '4'
+     out dx, al
 
     ; Set up identity paging for first 1GB using 2MB huge pages
     call setup_page_tables
@@ -108,12 +114,20 @@ start:
     mov al, '5'
     out dx, al
 
-    ; Load 64-bit GDT
-    lgdt [gdt64.pointer]
-    VGA_WRITE 'G'  ; GDT loaded OK
-    mov dx, 0x3F8
-    mov al, '6'
-    out dx, al
+     ; Load 64-bit GDT
+     lgdt [gdt64.pointer]
+     VGA_WRITE 'G'  ; GDT loaded OK
+     mov dx, 0x3F8
+     mov al, '6'
+     out dx, al
+
+     ; Load TSS
+     mov ax, gdt64.tss
+     ltr ax
+     VGA_WRITE 'T'  ; TSS loaded OK
+     mov dx, 0x3F8
+     mov al, '7'
+     out dx, al
 
     ; Far jump to 64-bit code segment
     jmp gdt64.code:long_mode_start
@@ -170,6 +184,22 @@ check_cpuid:
         jmp .no_long_mode
 
 ; ---------------------------------------------------------------------------
+; Check APIC support
+; ---------------------------------------------------------------------------
+check_apic:
+    mov eax, 1
+    cpuid
+    test edx, 1 << 9      ; APIC bit
+    jz .no_apic
+    ret
+.no_apic:
+    mov al, "A"
+    mov ah, 0x0C
+    mov [0xB8000], ax
+    hlt
+    jmp .no_apic
+
+; ---------------------------------------------------------------------------
 ; Set up page tables: identity map first 1GB with 2MB huge pages
 ; ---------------------------------------------------------------------------
 setup_page_tables:
@@ -207,20 +237,27 @@ setup_page_tables:
 ; Enable PAE, long mode, and paging
 ; ---------------------------------------------------------------------------
 enable_paging:
-    ; Load PML4 address into CR3
-    mov eax, pml4
-    mov cr3, eax
+     ; Load PML4 address into CR3
+     mov eax, pml4
+     mov cr3, eax
 
-    ; Enable PAE (Physical Address Extension)
-    mov eax, cr4
-    or eax, 1 << 5          ; PAE bit
-    mov cr4, eax
+     ; Enable APIC
+     mov ecx, 0x1B           ; APIC_BASE MSR
+     rdmsr
+     or eax, 1 << 11         ; Enable APIC
+     wrmsr
 
-    ; Enable long mode (LME) via EFER MSR
-    mov ecx, 0xC0000080     ; EFER MSR
-    rdmsr
-    or eax, 1 << 8          ; LME bit
-    wrmsr
+     ; Enable PAE (Physical Address Extension)
+     mov eax, cr4
+     or eax, 1 << 5          ; PAE bit
+     mov cr4, eax
+
+     ; Enable long mode (LME) and NX via EFER MSR
+     mov ecx, 0xC0000080     ; EFER MSR
+     rdmsr
+     or eax, 1 << 8          ; LME bit
+     or eax, 1 << 11         ; NX bit
+     wrmsr
 
     ; Enable paging
     mov eax, cr0
@@ -230,7 +267,7 @@ enable_paging:
     ret
 
 ; ---------------------------------------------------------------------------
-; 64-bit GDT (flat model)
+; 64-bit GDT (flat model) with TSS
 ; ---------------------------------------------------------------------------
 section .rodata
 gdt64:
@@ -239,7 +276,37 @@ gdt64:
     dq 0x0020980000000000        ; 64-bit code, ring 0 (present, ring0, exec/read, L=1)
 .data: equ $ - gdt64
     dq 0x0000920000000000        ; Data, ring 0 (present, ring0, writable)
+.user_code: equ $ - gdt64
+    dq 0x0020F80000000000        ; 64-bit code, ring 3 (present, ring3, exec/read, L=1)
+.user_data: equ $ - gdt64
+    dq 0x0000F20000000000        ; Data, ring 3 (present, ring3, writable)
+.tss: equ $ - gdt64
+    dq 0x0000890000000067        ; TSS descriptor (present, type=9, limit=0x67)
+    dq 0
 .pointer:
     dw $ - gdt64 - 1
     dq gdt64
+
+; TSS structure
+section .data
+align 16
+tss:
+    dd 0                         ; Reserved
+    dq 0                         ; RSP0 (kernel stack)
+    dq 0                         ; RSP1
+    dq 0                         ; RSP2
+    dq 0                         ; Reserved
+    dq 0                         ; IST1
+    dq 0                         ; IST2
+    dq 0                         ; IST3
+    dq 0                         ; IST4
+    dq 0                         ; IST5
+    dq 0                         ; IST6
+    dq 0                         ; IST7
+    dq 0                         ; Reserved
+    dw 0                         ; Reserved
+    dw 0                         ; I/O Map Base Address
+    db 0                         ; I/O Map Base Address high byte
+
+global tss
 

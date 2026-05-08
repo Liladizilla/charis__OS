@@ -1,7 +1,6 @@
 /* serial.h - COM1 serial port debugging */
 #pragma once
 #include <kernel/types.h>
-#include <stdarg.h>
 
 #define SERIAL_PORT_COM1 0x3F8
 

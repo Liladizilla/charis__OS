@@ -4,6 +4,8 @@
 #include <kernel/serial.h>
 #include <kernel/scheduler.h>
 #include <kernel/task.h>
+#include <kernel/pmm.h>
+#include <kernel/vmm.h>
 
 #define IDT_ENTRIES 256
 static idt_entry_t idt[IDT_ENTRIES];
@@ -70,6 +72,16 @@ void idt_dispatch_handler(reg_frame_t* frame) {
                 frame->error_code & 1 ? "protection" : "not-present",
                 frame->error_code & 2 ? "write" : "read",
                 frame->error_code & 4 ? "user" : "kernel");
+
+            // Handle page fault: if not present, allocate page
+            if (!(frame->error_code & 1)) {
+                u64 phys = pmm_alloc_page();
+                if (phys && vmm_map_page(cr2 & ~0xFFF, phys, PTE_WRITABLE | (frame->error_code & 4 ? PTE_USER : 0))) {
+                    kprintf("Allocated page for 0x%llx\n", cr2 & ~0xFFF);
+                    return; // Continue
+                }
+            }
+            kprintf("Unhandled page fault\n");
         }
         
         // Print task info

@@ -1,74 +1,76 @@
 #include <kernel/memory.h>
 #include <kernel/vga.h>
-#include <kernel/serial.h>
-#include <kernel/string.h>
-#include <kernel/types.h>
+#include <kernel/multiboot.h>
+#include <kernel/pmm.h>
+#include <kernel/vmm.h>
 
-/* Multiboot info pointer */
-extern u32 mb_magic;
-extern u32 mb_info;
+#define HEAP_START 0xFFFF900000000000 // Higher half heap
+#define HEAP_SIZE  (1024 * 1024 * 4)  // 4MB heap
 
-/* Physical memory manager (bitmap-based) */
-static u8* pmm_bitmap = NULL;
-static u64 pmm_bitmap_size = 0;
-u64 pmm_total_frames = 0;
-u64 pmm_used_frames = 0;
-static u64 pmm_base_addr = 0;
-
-/* Kernel heap */
-static void* heap_start = NULL;
-static usize heap_size = 0;
-static void* heap_current = NULL;
-
-/* Page table pointers (PML4, PDPT, PD, PT) - kept for compatibility */
-static u64* pml4 = (u64*)0x1000;  /* PML4 at 4KB */
-static u64* pdpt = (u64*)0x2000;  /* PDPT at 8KB */
-static u64* pd = (u64*)0x3000;    /* PD at 12KB */
-
-/* Allocation tracking for krealloc and kfree */
-typedef struct alloc_header {
+typedef struct block {
     usize size;
-    usize magic;
-    struct alloc_header* next;
-    struct alloc_header* prev;
-} alloc_header_t;
+    struct block* next;
+    bool free;
+} block_t;
 
-#define ALLOC_MAGIC 0xDEADBEEFDEADBEEF
-#define ALLOC_FREE  0xFEEEFEEEFEEEFEEE
-#define ALLOC_USED  0xDEADBEEFDEADBEEF
+static block_t* heap_head = NULL;
 
-/* Free list for heap blocks */
-static alloc_header_t* free_list = NULL;
+void memory_init(multiboot_info_t* info) {
+    pmm_init(info);
+    vmm_init();
 
-void pmm_init(u64 total_mem, mem_map_entry_t* entries, u32 num_entries) {
-    pmm_total_frames = total_mem / PAGE_SIZE;
-    pmm_bitmap_size = (pmm_total_frames + 7) / 8;
-    pmm_base_addr = 0x100000; // 1MB
+    // Allocate heap pages
+    for (u64 addr = HEAP_START; addr < HEAP_START + HEAP_SIZE; addr += 4096) {
+        u64 phys = pmm_alloc_page();
+        if (!phys) {
+            vga_puts_error("ERROR: Failed to allocate heap page!");
+            while (1) asm volatile("hlt");
+        }
+        vmm_map_page(addr, phys, PTE_WRITABLE);
+    }
 
-    vga_printf("PMM: total_mem=%llu MB, frames=%llu, bitmap_size=%llu bytes\n",
-               total_mem / (1024*1024), pmm_total_frames, pmm_bitmap_size);
+    // Initialize free list
+    heap_head = (block_t*)HEAP_START;
+    heap_head->size = HEAP_SIZE - sizeof(block_t);
+    heap_head->next = NULL;
+    heap_head->free = true;
 
-    /* Allocate bitmap right after kernel */
-    extern u8 _kernel_end[];
-    pmm_bitmap = (u8*)ALIGN_UP((u64)_kernel_end, PAGE_SIZE);
-    vga_printf("PMM: bitmap at 0x%llx\n", (u64)pmm_bitmap);
+    vga_puts("Memory initialized\n");
+}
 
-    /* Mark all frames as used initially */
-    kmemset(pmm_bitmap, 0xFF, pmm_bitmap_size);
-    pmm_used_frames = pmm_total_frames;
+void* kmalloc(usize size) {
+    block_t* curr = heap_head;
+    while (curr) {
+        if (curr->free && curr->size >= size + sizeof(block_t)) {
+            // Split block
+            block_t* new_block = (block_t*)((u8*)curr + sizeof(block_t) + size);
+            new_block->size = curr->size - size - sizeof(block_t);
+            new_block->next = curr->next;
+            new_block->free = true;
 
-    /* Parse multiboot2 memory map and mark available regions as free */
-    u32 mmap_entries = 0;
-    u32 available_frames = 0;
-    for (u32 i = 0; i < num_entries; i++) {
-        mem_map_entry_t* entry = &entries[i];
-        if (entry->type == MEM_AVAILABLE && entry->base >= 0x100000) {
-            u64 start = entry->base;
-            u64 end = entry->base + entry->length;
-            /* Align start up to page boundary */
-            if (start % PAGE_SIZE != 0) {
-                start = ALIGN_UP(start, PAGE_SIZE);
-            }
+            curr->size = size;
+            curr->next = new_block;
+            curr->free = false;
+
+            return (void*)((u8*)curr + sizeof(block_t));
+        }
+        curr = curr->next;
+    }
+    return NULL;
+}
+
+void kfree(void* ptr) {
+    if (!ptr) return;
+
+    block_t* block = (block_t*)((u8*)ptr - sizeof(block_t));
+    block->free = true;
+
+    // Merge with next if free
+    if (block->next && block->next->free) {
+        block->size += sizeof(block_t) + block->next->size;
+        block->next = block->next->next;
+    }
+}
             /* Align end down to page boundary */
             end = ALIGN_DOWN(end, PAGE_SIZE);
             if (end > start) {
