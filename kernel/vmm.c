@@ -49,6 +49,7 @@ bool vmm_map_page(u64 virt, u64 phys, u64 flags) {
         u64* pdpt = alloc_pt();
         if (!pdpt) return false;
         pml4[PML4_INDEX(virt)] = (u64)pdpt | PTE_PRESENT | PTE_WRITABLE;
+        pml4e = pml4[PML4_INDEX(virt)];  // reload
     }
 
     u64* pdpt = (u64*)(pml4e & ~0xFFF);
@@ -58,6 +59,7 @@ bool vmm_map_page(u64 virt, u64 phys, u64 flags) {
         u64* pd = alloc_pt();
         if (!pd) return false;
         pdpt[PDPT_INDEX(virt)] = (u64)pd | PTE_PRESENT | PTE_WRITABLE;
+        pdpte = pdpt[PDPT_INDEX(virt)];  // reload
     }
 
     u64* pd = (u64*)(pdpte & ~0xFFF);
@@ -67,6 +69,7 @@ bool vmm_map_page(u64 virt, u64 phys, u64 flags) {
         u64* pt = alloc_pt();
         if (!pt) return false;
         pd[PD_INDEX(virt)] = (u64)pt | PTE_PRESENT | PTE_WRITABLE;
+        pde = pd[PD_INDEX(virt)];  // reload
     }
 
     u64* pt = (u64*)(pde & ~0xFFF);

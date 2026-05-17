@@ -35,7 +35,7 @@ BUILD_DIR = build
 
 # Flags
 NASM_FLAGS = -f elf64
-GCC_FLAGS = -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -I$(INCLUDE_DIR)
+GCC_FLAGS = -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -fstack-protector-strong -I$(INCLUDE_DIR)
 LD_FLAGS = -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack
 
 # Source files

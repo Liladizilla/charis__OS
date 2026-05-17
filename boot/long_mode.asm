@@ -9,6 +9,7 @@ extern gdt64
 extern mb_magic
 extern mb_info
 extern stack_top
+extern tss
 
 long_mode_start:
     ; Debug: indicate we are in long mode

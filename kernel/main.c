@@ -67,9 +67,9 @@ void kernel_main(u32 magic, u32 info) {
     syscall_init();
     *(u16*)0xB8018 = 0x0F00 | 'C';
 
-    // Create user task with CAP_ALL
+    // Create user task with minimal caps
     extern void user_main(void);
-    task_t* user_task = task_create("user", user_main, NULL, CAP_ALL, true);
+    task_t* user_task = task_create("user", user_main, NULL, CAP_SPAWN | CAP_FS_READ, true);
     if (user_task == NULL) {
         vga_puts_error("ERROR: Failed to create user task!");
         while (1) {
@@ -78,8 +78,8 @@ void kernel_main(u32 magic, u32 info) {
     }
     scheduler_add_task(user_task);
 
-    // Create shell task with CAP_ALL
-    task_t* shell_task = task_create("shell", shell_main, NULL, CAP_ALL, false);
+    // Create shell task with minimal caps
+    task_t* shell_task = task_create("shell", shell_main, NULL, CAP_SPAWN | CAP_FS_READ | CAP_FS_WRITE, false);
     if (shell_task == NULL) {
         vga_puts_error("ERROR: Failed to create shell task!");
         while (1) {
