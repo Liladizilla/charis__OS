@@ -47,6 +47,7 @@ void scheduler_init(void) {
     ready_tail = NULL;
     current_task = NULL;
     spinlock_init(&scheduler_lock);
+    // TODO: create permanent idle task here (lowest prio, hlt loop)
 }
 
 void scheduler_add_task(task_t* task) {
@@ -115,7 +116,11 @@ void scheduler_schedule(void) {
     
     spinlock_unlock(&scheduler_lock);
 
-    context_switch(&previous->rsp, current_task->rsp, current_task->is_user);
+    if (previous) {
+        context_switch(&previous->rsp, current_task->rsp, current_task->is_user);
+    } else {
+        context_switch(NULL, current_task->rsp, current_task->is_user);
+    }
 }
 
 void scheduler_yield(void) {
