@@ -44,6 +44,12 @@ void kernel_main(u32 magic, u32 info) {
 
     // Initialize subsystems in exact order
     memory_init(info);
+
+    // Optional: VMM tests after VMM init (compile-time flag)
+#ifdef RUN_VMM_TESTS
+    vmm_run_tests();
+#endif
+
     *(u16*)0xB8008 = 0x0F00 | 'm';
     idt_init();
     *(u16*)0xB800A = 0x0F00 | 'I';

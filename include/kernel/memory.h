@@ -1,13 +1,15 @@
 /* memory.h - Physical and virtual memory management */
 #pragma once
+
 #include <kernel/types.h>
+#include <kernel/multiboot.h>
 
 /* Page size and alignment */
-#define PAGE_SIZE       4096
+#define PAGE_SIZE       4096ULL
 #define PAGE_SHIFT      12
-#define HUGE_PAGE_SIZE  (2 * 1024 * 1024)
+#define HUGE_PAGE_SIZE  (2ULL * 1024ULL * 1024ULL)
 
-/* Memory map entry types from multiboot2 */
+/* Multiboot2 memory map entry types from multiboot2 */
 #define MEM_AVAILABLE       1
 #define MEM_RESERVED        2
 #define MEM_ACPI_RECLAIM    3
@@ -22,40 +24,35 @@ typedef struct {
     u32 reserved;
 } PACKED mem_map_entry_t;
 
-/* Physical memory manager (bitmap-based) */
-void pmm_init(u64 total_mem, mem_map_entry_t* entries, u32 num_entries);
-void* pmm_alloc_frame(void);
-void pmm_free_frame(void* addr);
-extern u64 pmm_total_frames;
-extern u64 pmm_used_frames;
+/* Physical memory manager (page allocator) */
+void pmm_init(multiboot_info_t* info);
+u64 pmm_alloc_page(void);
+void pmm_free_page(u64 addr);
 
 /* Kernel heap */
 void heap_init(void* start, usize size);
 void* kmalloc(usize size);
-void* krealloc(void* ptr, usize size);
 void kfree(void* ptr);
 
 /* Virtual memory manager (paging) */
 void vmm_init(void);
-void* vmm_alloc_page(void);
-void vmm_free_page(void* virt);
-void vmm_map_page(void* phys, void* virt, u64 flags);
-void vmm_unmap_page(void* virt);
-void* vmm_get_phys(void* virt);
+bool vmm_map_page(u64 virt, u64 phys, u64 flags);
+void vmm_unmap_page(u64 virt);
+u64 vmm_get_phys(u64 virt);
 
-/* Initialization function */
-void memory_init(u32 info);
+/* Initialization function (single entry path) */
+void memory_init(multiboot_info_t* info);
 
 /* Page table flags */
-#define PTE_PRESENT     (1 << 0)
-#define PTE_WRITABLE    (1 << 1)
-#define PTE_USER        (1 << 2)
-#define PTE_WRITETHROUGH (1 << 3)
-#define PTE_NOCACHE     (1 << 4)
-#define PTE_ACCESSED    (1 << 5)
-#define PTE_DIRTY       (1 << 6)
-#define PTE_HUGE        (1 << 7)
-#define PTE_GLOBAL      (1 << 8)
+#define PTE_PRESENT     (1ULL << 0)
+#define PTE_WRITABLE    (1ULL << 1)
+#define PTE_USER        (1ULL << 2)
+#define PTE_WRITETHROUGH (1ULL << 3)
+#define PTE_NOCACHE     (1ULL << 4)
+#define PTE_ACCESSED    (1ULL << 5)
+#define PTE_DIRTY       (1ULL << 6)
+#define PTE_HUGE        (1ULL << 7)
+#define PTE_GLOBAL      (1ULL << 8)
 #define PTE_NX          (1ULL << 63)
 
 /* Higher half kernel offset (optional future use) */

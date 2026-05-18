@@ -13,8 +13,8 @@ static u64 syscall_yield_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
 static u64 syscall_print_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     if (!a1) return 0;
     char buf[256];
-    // TODO: proper copy_from_user + bounds check
-    // For now safe strncpy from assumed valid user ptr
+    // Basic user pointer validation: higher-half kernel area is disallowed for user strings
+    if ((u64)a1 >= 0xFFFF800000000000ULL) return 0;
     const char* s = (const char*)a1;
     usize i = 0;
     for (; i < sizeof(buf)-1 && s[i]; i++) buf[i] = s[i];

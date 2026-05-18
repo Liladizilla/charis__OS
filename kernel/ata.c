@@ -27,11 +27,15 @@
 #define ATA_CMD_IDENTIFY 0xEC
 
 void ata_wait_bsy(void) {
-    while (inb(ATA_STATUS) & ATA_STATUS_BSY);
+    for (int i = 0; i < 1000000; i++) {
+        if (!(inb(ATA_STATUS) & ATA_STATUS_BSY)) return;
+    }
 }
 
 void ata_wait_drq(void) {
-    while (!(inb(ATA_STATUS) & ATA_STATUS_DRQ));
+    for (int i = 0; i < 1000000; i++) {
+        if (inb(ATA_STATUS) & ATA_STATUS_DRQ) return;
+    }
 }
 
 bool ata_read_sector(u32 lba, void* buffer) {
