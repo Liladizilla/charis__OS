@@ -23,6 +23,12 @@
 #include <kernel/apps.h>
 #include <kernel/audio.h>
 #include <kernel/pci.h>
+#include <kernel/services.h>
+#include <kernel/diagnostics.h>
+#include <kernel/display.h>
+#include <kernel/config.h>
+#include <kernel/power.h>
+#include <kernel/security.h>
 
 void kernel_main(u32 magic, u32 info) {
     // Debug: kernel entry
@@ -91,7 +97,14 @@ void kernel_main(u32 magic, u32 info) {
     ipc_init();
     audio_init();
     pci_scan();
+    config_init();
+    config_load("/etc/charisos.conf");
+    display_init();
     desktop_init();
+    services_init();
+    diagnostics_init();
+    power_init();
+    security_init();
     wm_create_window("CharisOS Desktop", 100, 100, 400, 300);
     apps_init();
 

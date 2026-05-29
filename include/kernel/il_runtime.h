@@ -1,76 +1,52 @@
-/* il_runtime.h - Minimal C# runtime headers */
+/* il_runtime.h - CharisOS Intermediate Language runtime */
 #pragma once
 #include <kernel/types.h>
 
-/* Object header for every managed object */
+#define IL_MAX_METHODS    256
+#define IL_MAX_STACK      1024
+#define IL_MAX_INSTRUCTIONS 4096
+
+// OpCodes
+#define IL_NOP       0x00
+#define IL_LOADI     0x01
+#define IL_LOAD     0x02
+#define IL_STORE    0x03
+#define IL_ADD      0x04
+#define IL_SUB      0x05
+#define IL_MUL      0x06
+#define IL_DIV      0x07
+#define IL_MOD      0x08
+#define IL_EQ       0x09
+#define IL_NE       0x0A
+#define IL_JMP      0x0B
+#define IL_JZ       0x0C
+#define IL_JNZ      0x0D
+#define IL_CALL     0x0E
+#define IL_RET      0x0F
+#define IL_PRINT    0x10
+#define IL_HALT     0x11
+
 typedef struct {
-    u32 vtable_idx;         /* Index into vtable array */
-    u32 flags;              /* GC flags, etc. */
-    u32 size;               /* Object size in bytes */
-    u32 ref_count;          /* For reference counting (optional) */
-} il_object_header_t;
+    u8 opcode;
+    u64 operand;
+} il_instruction_t;
 
-#define IL_FLAG_REACHABLE   0x01
-#define IL_FLAG_PINNED      0x02
-#define IL_FLAG_FINALIZED   0x04
-
-/* VTable entry */
 typedef struct {
-    const char* type_name;
-    u32 field_count;
-    u32 method_count;
-    u32 static_size;
-    void** methods;         /* Array of function pointers or IL offsets */
-    u32* field_offsets;
-} il_vtable_t;
+    il_instruction_t instructions[IL_MAX_INSTRUCTIONS];
+    usize ip; // instruction pointer
+    u64 stack[IL_MAX_STACK];
+    usize sp; // stack pointer
+    u64 globals[256];
+    bool running;
+} il_runtime_t;
 
-/* Method metadata */
-typedef struct {
-    const char* name;
-    u32 il_offset;          /* Offset into IL blob */
-    u32 il_size;
-    u32 locals_size;        /* Size of local variable space */
-    u32 max_stack;
-    u32 arg_count;
-    u32 ret_type;           /* 0=void, 1=int32, 2=int64, 3=ptr, 4=obj */
-} il_method_t;
+// Runtime functions
+il_runtime_t* il_create(void);
+void il_destroy(il_runtime_t* rt);
+int il_load_program(il_runtime_t* rt, il_instruction_t* prog, usize len);
+int il_run(il_runtime_t* rt);
+void il_reset(il_runtime_t* rt);
 
-/* Static field storage */
-typedef struct {
-    u32 vtable_idx;
-    u32 field_idx;
-    u64 value;
-} il_static_field_t;
-
-/* Execution frame */
-typedef struct {
-    u64* stack;
-    u64* locals;
-    u64* args;
-    u32 stack_pos;
-    u32 stack_size;
-    il_method_t* method;
-} il_frame_t;
-
-/* IL interpreter state */
-typedef struct {
-    u8* il_blob;
-    u32 il_size;
-    il_vtable_t* vtables;
-    u32 vtable_count;
-    il_method_t* methods;
-    u32 method_count;
-    il_static_field_t* statics;
-    u32 static_count;
-} il_image_t;
-
-/* Runtime API */
-void il_runtime_init(il_image_t* image);
-void il_runtime_exec(const char* entry_method);
-void* il_alloc_obj(u32 vtable_idx);
-void* il_alloc_array(u32 elem_size, u32 count);
-void il_gc_collect(void);
-
-/* Runtime-native trampolines exposed to interpreted code */
-u64 il_native_call(u32 native_id, u64* args);
-
+// Bytecode management
+int il_compile_source(const char* source, il_instruction_t* out);
+int il_load_bytecode(const char* path, il_instruction_t* out);

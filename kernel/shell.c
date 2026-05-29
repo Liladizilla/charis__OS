@@ -6,6 +6,10 @@
 #include <kernel/printf.h>
 #include <kernel/net.h>
 #include <kernel/timer.h>
+#include <kernel/diagnostics.h>
+#include <kernel/services.h>
+#include <kernel/power.h>
+#include <kernel/security.h>
 
 static void shell_print_prompt(void) {
     vga_puts("charisos> ");
@@ -56,7 +60,7 @@ void shell_main(void* arg) {
             continue;
         }
         if (cmd_is(line, "ls")) {
-            vga_puts("help clear ls echo net uptime");
+            vga_puts("help clear ls echo net uptime stats tasks services beep sleep shutdown audit");
             continue;
         }
         if (cmd_is(line, "echo")) {
@@ -81,6 +85,34 @@ void shell_main(void* arg) {
         if (cmd_is(line, "uptime")) {
             u64 ms = timer_get_ms();
             kprintf("Uptime: %llu seconds\n", ms / 1000);
+            continue;
+        }
+        if (cmd_is(line, "stats")) {
+            diag_print_status();
+            continue;
+        }
+        if (cmd_is(line, "tasks")) {
+            diag_dump_tasks();
+            continue;
+        }
+        if (cmd_is(line, "services")) {
+            service_list();
+            continue;
+        }
+        if (cmd_is(line, "beep")) {
+            audio_beep(880, 200);
+            continue;
+        }
+        if (cmd_is(line, "sleep")) {
+            power_set_state(POWER_STATE_SLEEP);
+            continue;
+        }
+        if (cmd_is(line, "shutdown")) {
+            power_set_state(POWER_STATE_SHUTDOWN);
+            while (1) asm volatile("hlt");
+        }
+        if (cmd_is(line, "audit")) {
+            security_audit("manual_audit", scheduler_current());
             continue;
         }
 

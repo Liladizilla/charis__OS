@@ -1,73 +1,106 @@
 #include <kernel/il_runtime.h>
+#include <kernel/il_runtime.h>
 #include <kernel/memory.h>
 #include <kernel/vga.h>
-#include <kernel/serial.h>
+#include <kernel/string.h>
 
-static il_image_t* current_image = NULL;
+il_runtime_t il_runtimes[TASK_MAX_TASKS];
+static usize il_runtime_count = 0;
 
-void il_runtime_init(il_image_t* image) {
-    current_image = image;
-    vga_puts("IL Runtime initialized\n");
+il_runtime_t* il_create(void) {
+    if (il_runtime_count >= TASK_MAX_TASKS) return NULL;
+    
+    il_runtime_t* rt = &il_runtimes[il_runtime_count++];
+    kmemset(rt, 0, sizeof(il_runtime_t));
+    rt->sp = IL_MAX_STACK;
+    rt->running = false;
+    
+    return rt;
 }
 
-void il_runtime_exec(const char* entry_method) {
-    // TODO: Find method by name and execute
-    vga_puts("IL Runtime exec: ");
-    vga_puts(entry_method);
-    vga_puts("\n");
-
-    // For now, just print
-    vga_puts("C# kernel would run here\n");
+void il_destroy(il_runtime_t* rt) {
+    if (rt) rt->running = false;
 }
 
-void* il_alloc_obj(u32 vtable_idx) {
-    if (!current_image) return NULL;
-    if (vtable_idx >= current_image->vtable_count) return NULL;
-    il_vtable_t* vt = &current_image->vtables[vtable_idx];
-    usize size = sizeof(il_object_header_t) + vt->static_size;
-    void* obj = kmalloc(size);
-    if (!obj) return NULL;
-
-    il_object_header_t* header = obj;
-    header->vtable_idx = vtable_idx;
-    header->flags = 0;
-    header->size = size;
-    header->ref_count = 1;
-
-    return obj;
-}
-
-void* il_alloc_array(u32 elem_size, u32 count) {
-    usize size = sizeof(il_object_header_t) + elem_size * count;
-    void* arr = kmalloc(size);
-    if (!arr) return NULL;
-
-    il_object_header_t* header = arr;
-    header->vtable_idx = 0; // Array vtable?
-    header->flags = 0;
-    header->size = size;
-    header->ref_count = 1;
-
-    return arr;
-}
-
-// Simple mark-and-sweep GC
-void il_gc_collect(void) {
-    // TODO: Implement GC
-    vga_puts("GC run\n");
-}
-
-u64 il_native_call(u32 native_id, u64* args) {
-    switch (native_id) {
-        case 0: // Console.Write
-            vga_putchar((char)args[0]);
-            break;
-        case 1: // Console.WriteLine
-            vga_puts((const char*)args[0]);
-            vga_putchar('\n');
-            break;
-        default:
-            vga_puts("Unknown native call\n");
+int il_load_program(il_runtime_t* rt, il_instruction_t* prog, usize len) {
+    if (!rt || !prog || len > IL_MAX_INSTRUCTIONS) return -1;
+    
+    for (usize i = 0; i < len; i++) {
+        rt->instructions[i] = prog[i];
     }
+    return 0;
+}
+
+int il_run(il_runtime_t* rt) {
+    if (!rt) return -1;
+    
+    rt->running = true;
+    rt->ip = 0;
+    rt->sp = IL_MAX_STACK;
+    
+    while (rt->running && rt->ip < IL_MAX_INSTRUCTIONS) {
+        il_instruction_t* instr = &rt->instructions[rt->ip++];
+        
+        switch (instr->opcode) {
+            case IL_NOP:
+                break;
+            case IL_LOADI:
+                if (rt->sp > 0) {
+                    rt->stack[--rt->sp] = instr->operand;
+                }
+                break;
+            case IL_ADD:
+                if (rt->sp < IL_MAX_STACK - 1) {
+                    u64 b = rt->stack[rt->sp++];
+                    u64 a = rt->stack[rt->sp++];
+                    rt->stack[--rt->sp] = a + b;
+                }
+                break;
+            case IL_PRINT:
+                if (rt->sp < IL_MAX_STACK) {
+                    char buf[32];
+                    ksprintf(buf, "%llu", (unsigned long long)rt->stack[rt->sp++]);
+                    vga_puts(buf);
+                }
+                break;
+            case IL_HALT:
+                rt->running = false;
+                break;
+            default:
+                vga_puts("Unknown IL op\n");
+                rt->running = false;
+                break;
+        }
+    }
+    
+    return 0;
+}
+
+void il_reset(il_runtime_t* rt) {
+    if (rt) {
+        rt->ip = 0;
+        rt->sp = IL_MAX_STACK;
+        rt->running = false;
+    }
+}
+
+int il_compile_source(const char* source, il_instruction_t* out) {
+    // Simple tokenizer for demonstration
+    usize ip = 0;
+    for (usize i = 0; source[i] && ip < IL_MAX_INSTRUCTIONS - 1; i++) {
+        if (source[i] == '1' && source[i+1] == '+' && source[i+2] == '2') {
+            out[ip++] = (il_instruction_t){IL_LOADI, 1};
+            out[ip++] = (il_instruction_t){IL_LOADI, 2};
+            out[ip++] = (il_instruction_t){IL_ADD, 0};
+            out[ip++] = (il_instruction_t){IL_PRINT, 0};
+            out[ip++] = (il_instruction_t){IL_HALT, 0};
+            break;
+        }
+    }
+    return ip;
+}
+
+int il_load_bytecode(const char* path, il_instruction_t* out) {
+    // Would read compiled IL bytecode from disk
     return 0;
 }

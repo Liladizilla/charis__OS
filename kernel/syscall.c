@@ -8,6 +8,8 @@
 #include <kernel/vfs.h>
 #include <kernel/ipc.h>
 #include <kernel/socket.h>
+#include <kernel/audio.h>
+#include <kernel/diagnostics.h>
 
 static syscall_handler_t syscall_table[SYSCALL_MAX];
 
@@ -292,6 +294,25 @@ static u64 syscall_socket_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, 
     return 0;
 }
 
+static u64 syscall_beep_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a3; (void)a4; (void)a5; (void)a6;
+    audio_beep((u32)a1, (u32)a2);
+    return 0;
+}
+
+static u64 syscall_diag_stats_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    system_stats_t* stats = (system_stats_t*)a1;
+    if (stats) diag_collect_stats(stats);
+    return 0;
+}
+
+static u64 syscall_diag_tasks_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    diag_dump_tasks();
+    return 0;
+}
+
 void syscall_init(void) {
     for (u32 i = 0; i < SYSCALL_MAX; i++) {
         syscall_table[i] = NULL;
@@ -321,6 +342,9 @@ void syscall_init(void) {
     syscall_register(SYS_SEND, syscall_send_handler);
     syscall_register(SYS_RECV, syscall_recv_handler);
     syscall_register(SYS_SOCKET_CLOSE, syscall_socket_close_handler);
+    syscall_register(SYS_BEEP, syscall_beep_handler);
+    syscall_register(SYS_DIAG_STATS, syscall_diag_stats_handler);
+    syscall_register(SYS_DIAG_TASKS, syscall_diag_tasks_handler);
 
     extern void syscall_entry(void);
     asm volatile("wrmsr" : : "a"(syscall_entry), "d"(0), "c"(0xC0000080 + 0));

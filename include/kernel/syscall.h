@@ -30,6 +30,9 @@
 #define SYS_SEND                85
 #define SYS_RECV                84
 #define SYS_SOCKET_CLOSE        83
+#define SYS_DIAG_STATS          82
+#define SYS_DIAG_TASKS           81
+#define SYS_BEEP                80
 
 typedef u64 (*syscall_handler_t)(u64, u64, u64, u64, u64, u64);
 

@@ -84,3 +84,17 @@ void pmm_free_page(u64 addr) {
     bitmap[byte] &= ~(1 << bit);
     if (byte < last_free) last_free = byte;
 }
+
+u32 pmm_used_pages(void) {
+    u32 count = 0;
+    for (u32 i = 0; i < BITMAP_SIZE; i++) {
+        for (u8 bit = 0; bit < 8; bit++) {
+            if (bitmap[i] & (1 << bit)) count++;
+        }
+    }
+    return count;
+}
+
+u32 pmm_free_pages(void) {
+    return (u32)(BITMAP_SIZE * 8) - pmm_used_pages();
+}

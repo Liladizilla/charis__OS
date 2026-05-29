@@ -62,6 +62,35 @@
 - `kernel/pci.c`: PCI device enumeration (finds devices on bus)
 - `include/kernel/pci.h`: PCI types and functions
 
+## Phase 12: System Services (Complete)
+- `kernel/services.c`: Service manager for background tasks
+- `include/kernel/services.h`: Service types and functions
+
+## Phase 13: Diagnostics & Monitoring (Complete)
+- `kernel/diagnostics.c`: System statistics collection
+- `include/kernel/diagnostics.h`: Stats types and functions
+- Syscalls: SYS_BEEP, SYS_DIAG_STATS, SYS_DIAG_TASKS
+- PMM: Added pmm_used_pages() and pmm_free_pages()
+
+## Phase 14: Configuration & Multi-Monitor (Complete)
+- `kernel/display.c`: Multi-monitor support (up to 4 displays)
+- `include/kernel/display.h`: Display types and functions
+- `kernel/config.c`: System configuration manager
+- `include/kernel/config.h`: Config types and functions
+
+## Phase 15: Power Management & Security (Complete)
+- `kernel/power.c`: Power state management (idle, sleep, shutdown)
+- `include/kernel/power.h`: Power types and functions
+- `kernel/security.c`: Security framework, capability checks, audit logging
+- `include/kernel/security.h`: Security types and functions
+
+## Phase 15.3: CIL/IL Bytecode Runtime (Complete)
+- `kernel/il_runtime.c`: Stack-based bytecode interpreter
+- `include/kernel/il_runtime.h`: IL runtime API
+- Opcodes: LOADI, LOAD, STORE, ADD, SUB, MUL, DIV, JMP, CALL, RET, PRINT, HALT
+- Native calls: Console.Write/Writeln
+- Simple source tokenizer
+
 ## Remaining Work
 - Build tools (nasm, gcc, ld, qemu) not available in current environment
 - Screen resolution hardcoded to 80x25 text mode
