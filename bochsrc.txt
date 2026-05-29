@@ -1,0 +1,7 @@
+megs: 256  
+romimage: file=C:\Bochs\BIOS-bochs-latest  
+vga: extension=vga  
+boot: cdrom  
+atadevice: 1, path='D:\OS_charis\build\charisos.iso', type=cdrom  
+log: D:\OS_charis\bochsout.txt  
+mouse: enabled=0 

@@ -1,0 +1,23 @@
+{
+    "C_Cpp.intelliSenseEngine": "Default",
+    "C_Cpp.default.compilerPath": "/usr/bin/gcc",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/include",
+        "${workspaceFolder}",
+        "/usr/include",
+        "/usr/lib/gcc/x86_64-linux-gnu/11/include"
+    ],
+    "C_Cpp.default.defines": [
+        "_CharisOS_",
+        "KERNEL",
+        "__KERNEL__",
+        "i386"
+    ],
+    "C_Cpp.loggingLevel": "Debug",
+    "C_Cpp.default.compileCommands": "${workspaceFolder}/compile_commands.json",
+    "C_Cpp.intelliSenseCachePath": "${workspaceFolder}/.vscode/.cache",
+    "files.associations": {
+        "*.asm": "asm-intel-x64",
+        "*.ld": "ld"
+    }
+}

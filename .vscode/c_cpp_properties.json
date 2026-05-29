@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "name": "CharisOS Kernel",
+            "includePath": [
+                "${workspaceFolder}/include/**",
+                "${workspaceFolder}",
+                "C:/msys64/mingw64/include/**",
+                "C:/msys64/mingw64/x86_64-w64-mingw32/include/**"
+            ],
+            "defines": [
+                "_CharisOS_",
+                "KERNEL",
+                "__KERNEL__"
+            ],
+            "compilerPath": "C:/msys64/mingw64/bin/gcc.exe",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-gcc-x64",
+            "configurationProvider": "ms-vscode.makefile-tools"
+        }
+    ],
+    "version": 4
+}

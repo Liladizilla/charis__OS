@@ -57,13 +57,13 @@ void kfree(void* ptr) {
     heap_block_t* block = (heap_block_t*)((u8*)ptr - sizeof(heap_block_t));
     block->free = true;
 
-    // Merge with next
+    // Merge with next if free
     if (block->next && block->next->free) {
         block->size += sizeof(heap_block_t) + block->next->size;
         block->next = block->next->next;
     }
 
-    // Merge with previous (linear scan)
+    // Merge with previous (linear scan for doubly-adjacent free blocks)
     heap_block_t* prev = heap_head;
     while (prev && prev->next != block) prev = prev->next;
     if (prev && prev->free) {

@@ -1,0 +1,6 @@
+megs: 256  
+romimage: file=Bios/bochsBIOS.bin  
+vga: extension=vga  
+boot: cdrom  
+cdrom: 1, path=build/charisos.iso  
+log: bochsout.txt 
