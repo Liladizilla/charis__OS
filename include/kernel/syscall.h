@@ -2,7 +2,7 @@
 #pragma once
 #include <kernel/types.h>
 
-#define SYSCALL_MAX             32
+#define SYSCALL_MAX             64
 
 /* Syscall numbers (Linux ABI) */
 #define SYS_READ                0
@@ -16,6 +16,20 @@
 #define SYS_SLEEP               95
 #define SYS_FORK                57
 #define SYS_EXEC                59
+#define SYS_SHM_ALLOC           96
+#define SYS_SHM_GET             97
+#define SYS_SHM_FREE            94
+#define SYS_IPC_CREATE          93
+#define SYS_IPC_SEND            92
+#define SYS_IPC_RECV            91
+#define SYS_SOCKET              90
+#define SYS_CONNECT             89
+#define SYS_BIND                88
+#define SYS_LISTEN              87
+#define SYS_ACCEPT              86
+#define SYS_SEND                85
+#define SYS_RECV                84
+#define SYS_SOCKET_CLOSE        83
 
 typedef u64 (*syscall_handler_t)(u64, u64, u64, u64, u64, u64);
 

@@ -6,6 +6,8 @@
 #include <kernel/vmm.h>
 #include <kernel/keyboard.h>
 #include <kernel/vfs.h>
+#include <kernel/ipc.h>
+#include <kernel/socket.h>
 
 static syscall_handler_t syscall_table[SYSCALL_MAX];
 
@@ -170,6 +172,48 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     return fd_alloc(node, 0);
 }
 
+static u64 syscall_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    fd_close((int)a1);
+    return 0;
+}
+
+static u64 syscall_shm_alloc_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    return shm_alloc();
+}
+
+static u64 syscall_shm_get_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    return (u64)shm_get((int)a1);
+}
+
+static u64 syscall_shm_free_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    shm_free((int)a1);
+    return 0;
+}
+
+static u64 syscall_ipc_create_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    if (!a1) return -1;
+    char name[32];
+    usize i = 0;
+    for (; i < sizeof(name)-1 && ((char*)a1)[i]; i++) name[i] = ((char*)a1)[i];
+    name[i] = 0;
+    return ipc_create(name);
+}
+
+static u64 syscall_ipc_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a4; (void)a5; (void)a6;
+    return ipc_send((int)a1, (void*)a2, a3);
+}
+
+static u64 syscall_ipc_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a4; (void)a5; (void)a6;
+    return ipc_recv((int)a1, (void*)a2, a3);
+}
+
 static u64 syscall_exec_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     if (!a1) return -1;
@@ -207,6 +251,47 @@ static u64 syscall_exec_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     return 0; // Success - won't actually return in real exec
 }
 
+static u64 syscall_socket_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a3; (void)a4; (void)a5; (void)a6;
+    return socket_create((int)a1, (int)a2);
+}
+
+static u64 syscall_connect_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a3; (void)a4; (void)a5; (void)a6;
+    return socket_connect((int)a1, (u32)a2, (u16)a3);
+}
+
+static u64 syscall_bind_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a3; (void)a4; (void)a5; (void)a6;
+    return socket_bind((int)a1, (u16)a2);
+}
+
+static u64 syscall_listen_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    return socket_listen((int)a1);
+}
+
+static u64 syscall_accept_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    return socket_accept((int)a1);
+}
+
+static u64 syscall_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a4; (void)a5; (void)a6;
+    return socket_send((int)a1, (void*)a2, a3);
+}
+
+static u64 syscall_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a4; (void)a5; (void)a6;
+    return socket_recv((int)a1, (void*)a2, a3);
+}
+
+static u64 syscall_socket_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    socket_close((int)a1);
+    return 0;
+}
+
 void syscall_init(void) {
     for (u32 i = 0; i < SYSCALL_MAX; i++) {
         syscall_table[i] = NULL;
@@ -222,6 +307,20 @@ void syscall_init(void) {
     syscall_register(SYS_OPEN, syscall_open_handler);
     syscall_register(SYS_CLOSE, syscall_close_handler);
     syscall_register(SYS_EXEC, syscall_exec_handler);
+    syscall_register(SYS_SHM_ALLOC, syscall_shm_alloc_handler);
+    syscall_register(SYS_SHM_GET, syscall_shm_get_handler);
+    syscall_register(SYS_SHM_FREE, syscall_shm_free_handler);
+    syscall_register(SYS_IPC_CREATE, syscall_ipc_create_handler);
+    syscall_register(SYS_IPC_SEND, syscall_ipc_send_handler);
+    syscall_register(SYS_IPC_RECV, syscall_ipc_recv_handler);
+    syscall_register(SYS_SOCKET, syscall_socket_handler);
+    syscall_register(SYS_CONNECT, syscall_connect_handler);
+    syscall_register(SYS_BIND, syscall_bind_handler);
+    syscall_register(SYS_LISTEN, syscall_listen_handler);
+    syscall_register(SYS_ACCEPT, syscall_accept_handler);
+    syscall_register(SYS_SEND, syscall_send_handler);
+    syscall_register(SYS_RECV, syscall_recv_handler);
+    syscall_register(SYS_SOCKET_CLOSE, syscall_socket_close_handler);
 
     extern void syscall_entry(void);
     asm volatile("wrmsr" : : "a"(syscall_entry), "d"(0), "c"(0xC0000080 + 0));

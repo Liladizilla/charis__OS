@@ -39,6 +39,7 @@ void timer_handler(reg_frame_t* frame) {
             scheduler_schedule();
         }
     }
+    pic_send_eoi(IRQ_TIMER);
 }
 
 u64 timer_get_ticks(void) {

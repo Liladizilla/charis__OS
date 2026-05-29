@@ -15,6 +15,14 @@
 #include <kernel/ata.h>
 #include <kernel/fs.h>
 #include <kernel/vfs.h>
+#include <kernel/graphics.h>
+#include <kernel/wm.h>
+#include <kernel/input.h>
+#include <kernel/ipc.h>
+#include <kernel/desktop.h>
+#include <kernel/apps.h>
+#include <kernel/audio.h>
+#include <kernel/pci.h>
 
 void kernel_main(u32 magic, u32 info) {
     // Debug: kernel entry
@@ -75,6 +83,17 @@ void kernel_main(u32 magic, u32 info) {
     *(u16*)0xB8016 = 0x0F00 | 'S';
     syscall_init();
     *(u16*)0xB8018 = 0x0F00 | 'C';
+    graphics_init();
+    *(u16*)0xB801A = 0x0F00 | 'G';
+    wm_init();
+    *(u16*)0xB801B = 0x0F00 | 'W';
+    input_init();
+    ipc_init();
+    audio_init();
+    pci_scan();
+    desktop_init();
+    wm_create_window("CharisOS Desktop", 100, 100, 400, 300);
+    apps_init();
 
     // Create user task with separate address space
     extern void user_main(void);

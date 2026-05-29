@@ -33,7 +33,7 @@ static u64 get_cr3(void) {
 // Full TLB flush via CR3 reload
 static void flush_tlb(void) {
     u64 cr3 = get_cr3();
-    asm volatile("mov %%cr3, %0" : : "r"(cr3));
+    asm volatile("mov %0, %%cr3" : : "r"(cr3));
 }
 
 // Get or create a lower-level page table
@@ -195,7 +195,7 @@ void vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src) {
 
 // Switch the CPU to use a given page table.
 void vmm_switch(pml4_t* pml4) {
-    asm volatile("mov %%cr3, %0" : : "r"(pml4));
+    asm volatile("mov %0, %%cr3" : : "r"(pml4));
 }
 
 // Map a page into a specific address space (not current)

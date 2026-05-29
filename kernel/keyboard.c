@@ -42,10 +42,12 @@ void keyboard_handler(reg_frame_t* frame) {
     // Handle shift keys
     if (scancode == 0x2A || scancode == 0x36) {
         shift_held = true;
+        pic_send_eoi(IRQ_KEYBOARD);
         return;
     }
     if (scancode == 0xAA || scancode == 0xB6) {
         shift_held = false;
+        pic_send_eoi(IRQ_KEYBOARD);
         return;
     }
 
@@ -60,6 +62,7 @@ void keyboard_handler(reg_frame_t* frame) {
             wait_queue_wake();
         }
     }
+    pic_send_eoi(IRQ_KEYBOARD);
 }
 
 bool keyboard_get_key(char* out) {

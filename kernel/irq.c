@@ -1,55 +1,72 @@
 #include <kernel/irq.h>
 #include <kernel/vga.h>
+#include <kernel/mouse.h>
+#include <kernel/input.h>
 
 static void (*irq_handlers[16])(reg_frame_t*) = {0};
 
+// PIC Initialization
 void pic_init(void) {
-    // ICW1: Start initialization
-    asm volatile("outb %0, %1" : : "a"((u8)0x11), "Nd"((u16)PIC1_COMMAND));
-    asm volatile("outb %0, %1" : : "a"((u8)0x11), "Nd"((u16)PIC2_COMMAND));
-
-    // ICW2: Remap IRQs to 32-47
-    asm volatile("outb %0, %1" : : "a"((u8)IRQ_OFFSET), "Nd"((u16)PIC1_DATA));
-    asm volatile("outb %0, %1" : : "a"((u8)(IRQ_OFFSET + 8)), "Nd"((u16)PIC2_DATA));
-
-    // ICW3: Tell master about slave at IRQ2, tell slave its cascade identity
-    asm volatile("outb %0, %1" : : "a"((u8)0x04), "Nd"((u16)PIC1_DATA));
-    asm volatile("outb %0, %1" : : "a"((u8)0x02), "Nd"((u16)PIC2_DATA));
-
-    // ICW4: 8086 mode
-    asm volatile("outb %0, %1" : : "a"((u8)0x01), "Nd"((u16)PIC1_DATA));
-    asm volatile("outb %0, %1" : : "a"((u8)0x01), "Nd"((u16)PIC2_DATA));
-
+    // ICW1: Edge-triggered, cascade mode, ICW4 needed
+    outb(PIC1_COMMAND, 0x11);
+    io_delay();
+    outb(PIC2_COMMAND, 0x11);
+    io_delay();
+    
+    // ICW2: Interrupt vector offsets
+    outb(PIC1_DATA, IRQ_OFFSET);
+    io_delay();
+    outb(PIC2_DATA, IRQ_OFFSET + 8);
+    io_delay();
+    
+    // ICW3: Cascade identity
+    outb(PIC1_DATA, 0x04); // PIC1 has IRQ2 connected to PIC2
+    io_delay();
+    outb(PIC2_DATA, 0x02); // PIC2 cascade identity
+    io_delay();
+    
+    // ICW4: 80x86 mode
+    outb(PIC1_DATA, 0x01);
+    io_delay();
+    outb(PIC2_DATA, 0x01);
+    io_delay();
+    
     // Mask all IRQs initially
-    asm volatile("outb %0, %1" : : "a"((u8)0xFF), "Nd"((u16)PIC1_DATA));
-    asm volatile("outb %0, %1" : : "a"((u8)0xFF), "Nd"((u16)PIC2_DATA));
+    outb(PIC1_DATA, 0xFF);
+    outb(PIC2_DATA, 0xFF);
 }
 
 void pic_send_eoi(u8 irq) {
     if (irq >= 8) {
-        asm volatile("outb %0, %1" : : "a"((u8)PIC_EOI), "Nd"((u16)PIC2_COMMAND));
+        outb(PIC2_COMMAND, PIC_EOI);
     }
-    asm volatile("outb %0, %1" : : "a"((u8)PIC_EOI), "Nd"((u16)PIC1_COMMAND));
+    outb(PIC1_COMMAND, PIC_EOI);
 }
 
 void pic_mask_irq(u8 irq) {
     u16 port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
-    u8 value;
-    asm volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
-    value |= (1 << (irq % 8));
-    asm volatile("outb %0, %1" : : "a"(value), "Nd"(port));
+    u8 value = inb(port);
+    value |= (irq < 8) ? (1 << irq) : (1 << (irq - 8));
+    outb(port, value);
 }
 
 void pic_unmask_irq(u8 irq) {
     u16 port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
-    u8 value;
-    asm volatile("inb %1, %0" : "=a"(value) : "Nd"(port));
-    value &= ~(1 << (irq % 8));
-    asm volatile("outb %0, %1" : : "a"(value), "Nd"(port));
+    u8 value = inb(port);
+    value &= (irq < 8) ? ~(1 << irq) : ~(1 << (irq - 8));
+    outb(port, value);
+}
+
+// Mouse IRQ handler (IRQ 12)
+static void mouse_irq_handler(reg_frame_t* frame) {
+    (void)frame;
+    mouse_handler();
+    pic_send_eoi(12);
 }
 
 void irq_init(void) {
     pic_init();
+    irq_register_handler(12, mouse_irq_handler); // Mouse IRQ
     vga_puts("PIC initialized\n");
 }
 
