@@ -5,13 +5,6 @@
 #include <kernel/vga.h>
 #include <kernel/types.h>
 
-// Use PAGE_SIZE / offsets from memory.h
-
-
-
-// NOTE: These tests require that page-table pages allocated by pmm_alloc_page()
-// are accessible via whatever phys_to_virt strategy the current vmm.c uses.
-
 static void report(const char* name, bool ok) {
     if (ok) {
         vga_puts("[VMM] ");

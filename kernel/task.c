@@ -28,6 +28,24 @@ void task_init(void) {
         task_pool[i].stack_canary_addr = 0;
         task_pool[i].event_data = 0;
         task_pool[i].waiting_event = 0;
+        task_pool[i].mm.pml4 = NULL;
+        task_pool[i].mm.heap_start = 0;
+        task_pool[i].mm.heap_end = 0;
+        task_pool[i].mm.stack_top = 0;
+        task_pool[i].mm.vmas = NULL;
+        
+        // Initialize fd table
+        for (int j = 0; j < MAX_FDS; j++) {
+            task_pool[i].fd_table[j].node = NULL;
+            task_pool[i].fd_table[j].offset = 0;
+            task_pool[i].fd_table[j].flags = 0;
+        }
+        // stdin, stdout, stderr point to keyboard and vga devices
+        extern vfs_node_t dev_kbd;
+        extern vfs_node_t dev_vga;
+        task_pool[i].fd_table[FD_STDIN].node = &dev_kbd;
+        task_pool[i].fd_table[FD_STDOUT].node = &dev_vga;
+        task_pool[i].fd_table[FD_STDERR].node = &dev_vga;
     }
     task_list = NULL;
 }
@@ -39,6 +57,10 @@ static task_t* task_allocate(void) {
         }
     }
     return NULL;
+}
+
+u32 task_next_pid(void) {
+    return next_pid++;
 }
 
 void task_exit_handler(void) {
@@ -95,14 +117,12 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
         return NULL;
     }
 
-    /* Allocate stack with guard page */
     void* stack = kmalloc(TASK_STACK_SIZE + PAGE_SIZE);
     if (!stack) {
         vga_puts("Failed to allocate task stack\n");
         return NULL;
     }
 
-    /* Stack grows down, guard page is at the bottom */
     task->stack_base = (u64)stack + PAGE_SIZE;
     task->guard_page_addr = (u64)stack;
     task->is_user = is_user;
@@ -112,55 +132,126 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
     task->runtime_ticks = 0;
     task->remaining_quantum = TASK_DEFAULT_QUANTUM;
     task->capabilities = capabilities;
+    task->mm.pml4 = NULL;
+    task->mm.heap_start = 0;
+    task->mm.heap_end = 0;
+    task->mm.stack_top = 0;
+    task->mm.vmas = NULL;
+    task->event_data = 0;
+    task->waiting_event = 0;
 
-    /* Copy task name */
     for (u32 i = 0; i < TASK_NAME_MAX - 1 && name && name[i]; i++) {
         task->name[i] = name[i];
     }
     task->name[TASK_NAME_MAX - 1] = '\0';
 
-    /* Set up stack for context switch */
     u64* stack_top = (u64*)((u8*)task->stack_base + TASK_STACK_SIZE);
     stack_top = (u64*)((u64)stack_top & ~0xFUL);
 
     if (is_user) {
-        // User stack same as kernel for now
         task->user_stack_base = task->stack_base;
         task->user_rsp = (u64)stack_top;
-
-        // Set up iretq frame for ring 3
-        *--stack_top = 0x23;              // SS (user data)
-        *--stack_top = task->user_rsp;    // RSP
-        *--stack_top = 0x202;             // RFLAGS
-        *--stack_top = 0x1B;              // CS (user code)
-        *--stack_top = (u64)func;         // RIP
-        // Push regs for context_switch
-        *--stack_top = 0;                 // rbp
-        *--stack_top = 0;                 // rbx
-        *--stack_top = 0;                 // r12
-        *--stack_top = 0;                 // r13
-        *--stack_top = 0;                 // r14
-        *--stack_top = 0;                 // r15
+        *--stack_top = 0x23;
+        *--stack_top = task->user_rsp;
+        *--stack_top = 0x202;
+        *--stack_top = 0x1B;
+        *--stack_top = (u64)func;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
     } else {
-        *--stack_top = (u64)arg;             // Argument for task function
-        *--stack_top = (u64)func;            // Entry point for task_trampoline
-        *--stack_top = (u64)task_exit_handler; // Return address for initial context
-        *--stack_top = 0;                    // rbp
-        *--stack_top = 0;                    // rbx
-        *--stack_top = 0;                    // r12
-        *--stack_top = 0;                    // r13
-        *--stack_top = 0;                    // r14
-        *--stack_top = 0;                    // r15
+        *--stack_top = (u64)arg;
+        *--stack_top = (u64)func;
+        *--stack_top = (u64)task_exit_handler;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
     }
 
     task->rsp = (u64)stack_top;
     task->next = NULL;
     task->prev = NULL;
-
-    /* Set up stack canary */
     task->stack_canary_addr = task->stack_base + sizeof(u64);
-    u64 canary = 0xDEADC0DEDEADC0DE;
-    *(u64*)task->stack_canary_addr = canary;
+    *(u64*)task->stack_canary_addr = 0xDEADC0DEDEADC0DEULL;
+
+    return task;
+}
+
+task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user, pml4_t* pml4) {
+    task_t* task = task_allocate();
+    if (!task) {
+        vga_puts("Failed to allocate task\n");
+        return NULL;
+    }
+
+    void* stack = kmalloc(TASK_STACK_SIZE + PAGE_SIZE);
+    if (!stack) {
+        vga_puts("Failed to allocate task stack\n");
+        return NULL;
+    }
+
+    task->stack_base = (u64)stack + PAGE_SIZE;
+    task->guard_page_addr = (u64)stack;
+    task->is_user = is_user;
+    task->pid = next_pid++;
+    task->state = TASK_STATE_READY;
+    task->priority = 0;
+    task->runtime_ticks = 0;
+    task->remaining_quantum = TASK_DEFAULT_QUANTUM;
+    task->capabilities = capabilities;
+    task->mm.pml4 = pml4;
+    task->mm.heap_start = 0;
+    task->mm.heap_end = 0;
+    task->mm.stack_top = 0;
+    task->mm.vmas = NULL;
+    task->event_data = 0;
+    task->waiting_event = 0;
+
+    for (u32 i = 0; i < TASK_NAME_MAX - 1 && name && name[i]; i++) {
+        task->name[i] = name[i];
+    }
+    task->name[TASK_NAME_MAX - 1] = '\0';
+
+    u64* stack_top = (u64*)((u8*)task->stack_base + TASK_STACK_SIZE);
+    stack_top = (u64*)((u64)stack_top & ~0xFUL);
+
+    if (is_user) {
+        task->user_stack_base = task->stack_base;
+        task->user_rsp = (u64)stack_top;
+        *--stack_top = 0x23;
+        *--stack_top = task->user_rsp;
+        *--stack_top = 0x202;
+        *--stack_top = 0x1B;
+        *--stack_top = (u64)func;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+    } else {
+        *--stack_top = (u64)arg;
+        *--stack_top = (u64)func;
+        *--stack_top = (u64)task_exit_handler;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+        *--stack_top = 0;
+    }
+
+    task->rsp = (u64)stack_top;
+    task->next = NULL;
+    task->prev = NULL;
+    task->stack_canary_addr = task->stack_base + sizeof(u64);
+    *(u64*)task->stack_canary_addr = 0xDEADC0DEDEADC0DEULL;
 
     return task;
 }

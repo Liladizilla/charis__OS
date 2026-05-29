@@ -2,6 +2,7 @@
 #pragma once
 #include <kernel/types.h>
 #include <kernel/idt.h>
+#include <kernel/vfs.h>
 
 #define TASK_STATE_READY        0
 #define TASK_STATE_RUNNING      1
@@ -11,11 +12,29 @@
 #define TASK_NAME_MAX           32
 #define TASK_STACK_SIZE         8192
 #define TASK_MAX_TASKS          32
-#define TASK_DEFAULT_QUANTUM     10
+#define TASK_DEFAULT_QUANTUM    10
 
+/* VMA - Virtual Memory Area */
+typedef struct vma {
+    u64 start;
+    u64 end;
+    u32 flags;
+    struct vma* next;
+} vma_t;
+
+/* Process memory management */
+typedef struct {
+    pml4_t* pml4;
+    u64 heap_start;
+    u64 heap_end;
+    u64 stack_top;
+    vma_t* vmas;
+} process_mm_t;
+
+/* Task control block */
 typedef struct task {
-    u64 rsp;                        /* Kernel stack pointer */
-    u64 stack_base;                 /* Base of allocated stack */
+    u64 rsp;
+    u64 stack_base;
     u32 state;
     u32 pid;
     u32 priority;
@@ -23,15 +42,17 @@ typedef struct task {
     struct task* next;
     struct task* prev;
     u64 runtime_ticks;
-    u32 remaining_quantum;         /* Preemption quantum counter */
-    u32 capabilities;             /* Capability mask */
-    u64 guard_page_addr;          /* Stack guard page address */
-    u64 stack_canary_addr;         /* Stack canary address */
-    u64 event_data;                /* Event data for event system */
-    u32 waiting_event;             /* Event ID being waited on */
-    bool is_user;                  /* True if user-mode task */
-    u64 user_stack_base;           /* User stack base */
-    u64 user_rsp;                  /* User stack pointer */
+    u32 remaining_quantum;
+    u32 capabilities;
+    u64 guard_page_addr;
+    u64 stack_canary_addr;
+    u64 event_data;
+    u32 waiting_event;
+    bool is_user;
+    u64 user_stack_base;
+    u64 user_rsp;
+    process_mm_t mm;
+    fd_entry_t fd_table[MAX_FDS]; // Per-process file descriptor table
 } task_t;
 
 typedef void (*task_func_t)(void* arg);
@@ -57,6 +78,7 @@ void scheduler_yield(void);
 
 void task_init(void);
 task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user);
+task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user, pml4_t* pml4);
 void task_exit(void);
 void task_block(task_t* task);
 void task_unblock(task_t* task);
@@ -66,10 +88,10 @@ void task_sleep_ms(u32 ms);
 void context_switch(u64* old_rsp, u64 new_rsp, bool is_user);
 void task_trampoline(void);
 
-/* Task exit handler called from assembly */
+/* Task exit handler */
 void task_exit_handler(void);
 
-/* Task wait queue for blocking I/O */
+/* Task wait queue */
 typedef struct wait_queue {
     struct task* task;
     struct wait_queue* next;

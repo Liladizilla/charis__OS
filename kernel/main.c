@@ -14,6 +14,7 @@
 #include <kernel/net.h>
 #include <kernel/ata.h>
 #include <kernel/fs.h>
+#include <kernel/vfs.h>
 
 void kernel_main(u32 magic, u32 info) {
     // Debug: kernel entry
@@ -64,6 +65,8 @@ void kernel_main(u32 magic, u32 info) {
     *(u16*)0xB8012 = 0x0F00 | 'D';  // Disk
     fs_init();
     *(u16*)0xB8014 = 0x0F00 | 'F';  // Filesystem
+    vfs_init();
+    *(u16*)0xB8015 = 0x0F00 | 'V';  // VFS
     // net_init();    // Network support for low-end devices
     // *(u16*)0xB8016 = 0x0F00 | 'N';
     task_init();
@@ -73,16 +76,19 @@ void kernel_main(u32 magic, u32 info) {
     syscall_init();
     *(u16*)0xB8018 = 0x0F00 | 'C';
 
-    // Create user task with minimal caps
+    // Create user task with separate address space
     extern void user_main(void);
-    task_t* user_task = task_create("user", user_main, NULL, CAP_SPAWN | CAP_FS_READ, true);
-    if (user_task == NULL) {
-        vga_puts_error("ERROR: Failed to create user task!");
-        while (1) {
-            asm volatile("hlt");
-        }
+    pml4_t* user_pml4 = vmm_create_address_space();
+    if (user_pml4) {
+        vmm_copy_kernel_mappings(user_pml4, NULL);
     }
-    scheduler_add_task(user_task);
+    task_t* user_task = task_create("user", user_main, NULL, CAP_SPAWN | CAP_FS_READ, true);
+    if (user_task) {
+        user_task->mm.pml4 = user_pml4;
+        scheduler_add_task(user_task);
+    } else {
+        vga_puts_error("ERROR: Failed to create user task!");
+    }
 
     // Create shell task with minimal caps
     task_t* shell_task = task_create("shell", shell_main, NULL, CAP_SPAWN | CAP_FS_READ | CAP_FS_WRITE, false);
