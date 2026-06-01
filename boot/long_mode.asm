@@ -17,11 +17,6 @@ long_mode_start:
     mov al, '['   ; Start marker
     out dx, al
 
-    ; Also write to VGA top-left
-    mov al, '['
-    mov ah, 0x0F
-    mov [0xB8000], ax
-
     ; Load data segment selectors (GDT offsets: code=0x08, data=0x10)
     mov ax, 0x10
     mov ds, ax
@@ -50,19 +45,16 @@ long_mode_start:
      ; Set up stack
      mov rsp, stack_top
      ; Set TSS RSP0 to kernel stack
-     mov qword [tss + 4], rsp
+     mov qword [rel tss + 4], rsp
 
     ; Pass multiboot magic and info to kernel_main
-    mov edi, dword [mb_magic]
-    mov esi, dword [mb_info]
+    mov edi, dword [rel mb_magic]
+    mov esi, dword [rel mb_info]
 
     ; Debug: indicate we are about to call kernel
     mov dx, 0x3F8
     mov al, 'L'
     out dx, al
-    mov al, 'L'
-    mov ah, 0x0F
-    mov [0xB8000], ax
 
     ; Debug: about to call
     mov dx, 0x3F8

@@ -20,3 +20,6 @@ char* kstrstr(const char* haystack, const char* needle);
 /* Integer to string conversion */
 char* kitoa(s64 val, char* buf, int base);
 char* kutoa(u64 val, char* buf, int base);
+
+/* String to integer conversion */
+u64 katoi(const char* s, int base);

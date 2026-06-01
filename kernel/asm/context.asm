@@ -61,7 +61,7 @@ syscall_entry:
     swapgs
     mov [gs:0x8], rsp
     mov rsp, [gs:0x0]
-    
+
     ; Save all registers
     push r15
     push r14
@@ -78,11 +78,11 @@ syscall_entry:
     push rcx
     push rbx
     push rax
-    
+
     ; Call dispatcher (syscall number already in RAX, will move to RDI)
     mov rdi, rax
     call syscall_dispatch
-    
+
     ; Restore registers
     pop rax
     pop rbx
@@ -99,8 +99,9 @@ syscall_entry:
     pop r13
     pop r14
     pop r15
-    
-    ; Restore user rsp
+
+    ; Restore user rsp and return
     mov rsp, [gs:0x8]
     swapgs
-    sysretq
+    ; NASM needs explicit 64-bit operand size for sysret
+    o64 sysret

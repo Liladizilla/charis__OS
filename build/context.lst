@@ -1,0 +1,107 @@
+     1                                  ; context.asm
+     2                                  ; Low-level context switch and task trampolines for CharisOS.
+     3                                  
+     4                                  section .text
+     5                                  bits 64
+     6                                  
+     7                                  extern syscall_dispatch
+     8                                  extern task_exit_handler
+     9                                  
+    10                                  ; ---------------------------------------------------------------------------
+    11                                  ; void context_switch(u64* old_rsp, u64 new_rsp, bool is_user);
+    12                                  ; Saves callee-saved regs, switches stacks, restores callee-saved regs.
+    13                                  ; Used for cooperative task switching (yield).
+    14                                  ; ---------------------------------------------------------------------------
+    15                                  global context_switch
+    16                                  context_switch:
+    17 00000000 55                          push rbp
+    18 00000001 53                          push rbx
+    19 00000002 4154                        push r12
+    20 00000004 4155                        push r13
+    21 00000006 4156                        push r14
+    22 00000008 4157                        push r15
+    23                                  
+    24 0000000A 488927                      mov [rdi], rsp
+    25 0000000D 4889F4                      mov rsp, rsi
+    26                                  
+    27 00000010 415F                        pop r15
+    28 00000012 415E                        pop r14
+    29 00000014 415D                        pop r13
+    30 00000016 415C                        pop r12
+    31 00000018 5B                          pop rbx
+    32 00000019 5D                          pop rbp
+    33                                  
+    34                                      ; Check if user task
+    35 0000001A 4883FA01                    cmp rdx, 1
+    36 0000001E 7401                        je .iretq
+    37 00000020 C3                          ret
+    38                                  .iretq:
+    39 00000021 48CF                        iretq
+    40                                  
+    41                                  ; ---------------------------------------------------------------------------
+    42                                  ; void task_trampoline(void);
+    43                                  ; Called when a new task begins execution via context_switch.
+    44                                  ; Expects the task entry point to be pushed on the stack before switch.
+    45                                  ; ---------------------------------------------------------------------------
+    46                                  global task_trampoline
+    47                                  task_trampoline:
+    48 00000023 58                          pop rax
+    49 00000024 5F                          pop rdi
+    50 00000025 FFD0                        call rax
+    51 00000027 E8(00000000)                call task_exit_handler
+    52 0000002C F4                          hlt
+    53                                  
+    54                                  ; ---------------------------------------------------------------------------
+    55                                  ; Syscall entry point (called via SYSCALL instruction)
+    56                                  ; SYSCALL saves RCX, R11. We push syscall number in RAX -> RDI for dispatcher.
+    57                                  ; ---------------------------------------------------------------------------
+    58                                  global syscall_entry
+    59                                  syscall_entry:
+    60                                      ; Save user rsp in GS:0x8, load kernel stack from GS:0x0
+    61 0000002D 0F01F8                      swapgs
+    62 00000030 654889242508000000          mov [gs:0x8], rsp
+    63 00000039 65488B242500000000          mov rsp, [gs:0x0]
+    64                                  
+    65                                      ; Save all registers
+    66 00000042 4157                        push r15
+    67 00000044 4156                        push r14
+    68 00000046 4155                        push r13
+    69 00000048 4154                        push r12
+    70 0000004A 4153                        push r11
+    71 0000004C 4152                        push r10
+    72 0000004E 4151                        push r9
+    73 00000050 4150                        push r8
+    74 00000052 55                          push rbp
+    75 00000053 57                          push rdi
+    76 00000054 56                          push rsi
+    77 00000055 52                          push rdx
+    78 00000056 51                          push rcx
+    79 00000057 53                          push rbx
+    80 00000058 50                          push rax
+    81                                  
+    82                                      ; Call dispatcher (syscall number already in RAX, will move to RDI)
+    83 00000059 4889C7                      mov rdi, rax
+    84 0000005C E8(00000000)                call syscall_dispatch
+    85                                  
+    86                                      ; Restore registers
+    87 00000061 58                          pop rax
+    88 00000062 5B                          pop rbx
+    89 00000063 59                          pop rcx
+    90 00000064 5A                          pop rdx
+    91 00000065 5E                          pop rsi
+    92 00000066 5F                          pop rdi
+    93 00000067 5D                          pop rbp
+    94 00000068 4158                        pop r8
+    95 0000006A 4159                        pop r9
+    96 0000006C 415A                        pop r10
+    97 0000006E 415B                        pop r11
+    98 00000070 415C                        pop r12
+    99 00000072 415D                        pop r13
+   100 00000074 415E                        pop r14
+   101 00000076 415F                        pop r15
+   102                                  
+   103                                      ; Restore user rsp and return
+   104 00000078 65488B242508000000          mov rsp, [gs:0x8]
+   105 00000081 0F01F8                      swapgs
+   106                                      sysretq
+   106          ******************       warning: label `sysretq' alone on a line without a colon might be in error [-w+label-orphan]

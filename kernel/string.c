@@ -245,6 +245,29 @@ char* kutoa(u64 val, char* buf, int base) {
         buf[pos++] = tmp[i];
     }
     buf[pos] = '\0';
-    
+
     return buf;
+}
+
+u64 katoi(const char* s, int base) {
+    if (!s || base < 2 || base > 36) return 0;
+
+    u64 result = 0;
+    while (*s) {
+        char c = *s;
+        u64 val;
+        if (c >= '0' && c <= '9') {
+            val = c - '0';
+        } else if (c >= 'a' && c <= 'z') {
+            val = c - 'a' + 10;
+        } else if (c >= 'A' && c <= 'Z') {
+            val = c - 'A' + 10;
+        } else {
+            break;
+        }
+        if (val >= (u64)base) break;
+        result = result * base + val;
+        s++;
+    }
+    return result;
 }
