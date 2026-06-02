@@ -3,6 +3,7 @@
 #include <kernel/memory.h>
 #include <kernel/vga.h>
 #include <kernel/input.h>
+#include <kernel/mouse.h>
 
 window_t* wm_windows = NULL;
 static int wm_z_counter = 0;
@@ -180,6 +181,11 @@ void wm_process_mouse(int x, int y, int button, bool pressed) {
 }
 
 void wm_main_loop(void) {
+    static bool mouse_left_down = false;
+    static bool dragging = false;
+    static int drag_offset_x = 0, drag_offset_y = 0;
+    static window_t* drag_window = NULL;
+    
     while (1) {
         input_process_events();
         
@@ -187,10 +193,47 @@ void wm_main_loop(void) {
         while (input_pop_event(&evt)) {
             switch (evt.type) {
                 case INPUT_MOUSE_MOVE:
-                    if (evt.mouse.button > 0) {
-                        wm_process_mouse(evt.mouse.x, evt.mouse.y, evt.mouse.button, true);
+                    if (mouse_left_down && drag_window) {
+                        drag_window->x = evt.mouse.x - drag_offset_x;
+                        drag_window->y = evt.mouse.y - drag_offset_y;
+                        wm_render();
                     }
                     break;
+                    
+                case INPUT_MOUSE_DOWN:
+                    if (evt.mouse.button == 1) {
+                        mouse_left_down = true;
+                        window_t* win = wm_get_window_at(evt.mouse.x, evt.mouse.y);
+                        if (win) {
+                            wm_focus_window(win);
+                            if (evt.mouse.y >= win->y && evt.mouse.y < win->y + WINDOW_TITLEBAR_HEIGHT) {
+                                dragging = true;
+                                drag_window = win;
+                                drag_offset_x = evt.mouse.x - win->x;
+                                drag_offset_y = evt.mouse.y - win->y;
+                            }
+                            wm_render();
+                        }
+                    }
+                    break;
+                    
+                case INPUT_MOUSE_UP:
+                    if (evt.mouse.button == 1) {
+                        mouse_left_down = false;
+                        dragging = false;
+                        drag_window = NULL;
+                    }
+                    break;
+                    
+                case INPUT_KEY_DOWN:
+                    {
+                        window_t* focused = wm_get_focused();
+                        if (focused && focused->on_event) {
+                            focused->on_event(focused, 100 /*EV_KEY_PRESS*/, &evt.key.keycode);
+                        }
+                    }
+                    break;
+                    
                 default:
                     break;
             }
@@ -200,23 +243,22 @@ void wm_main_loop(void) {
     }
 }
 
-// CharisOS theme colors
-#define COLOR_SURFACE 0x161B22
-#define COLOR_BORDER  0x21262D
-#define COLOR_ACCENT  0x58A6FF
-
 void wm_draw_decorations(window_t* win) {
     if (!win->visible) return;
     
-    // Titlebar (blue accent)
+    /* Titlebar background */
     graphics_set_color(COLOR_SURFACE);
     graphics_rect(win->x, win->y, win->width, WINDOW_TITLEBAR_HEIGHT, true);
     
-    // Border
+    /* Border */
     graphics_set_color(COLOR_BORDER);
     graphics_rect(win->x, win->y, win->width, win->height + WINDOW_TITLEBAR_HEIGHT, false);
     
-    // Title text
+    /* Title text */
     graphics_set_color(COLOR_ACCENT);
     psf_draw_string(win->x + 8, win->y + 6, win->title, COLOR_ACCENT, COLOR_SURFACE);
+}
+
+void wm_set_screen_bounds(uint32_t width, uint32_t height) {
+    mouse_set_bounds(width, height);
 }

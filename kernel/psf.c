@@ -46,8 +46,34 @@ void psf_draw_char(u32 x, u32 y, char c, u32 fg, u32 bg) {
 
 void psf_draw_string(u32 x, u32 y, const char* str, u32 fg, u32 bg) {
     if (!g_font_loaded) return;
+    psf_draw_string_buffer(x, y, str, fg, bg, g_framebuffer.pixels, g_framebuffer.width);
+}
+
+void psf_draw_string_buffer(u32 x, u32 y, const char* str, u32 fg, u32 bg, u32* buffer, u32 buf_width) {
+    if (!g_font_loaded || !buffer) return;
     
     for (usize i = 0; str[i]; i++) {
-        psf_draw_char(x + i * g_psf_font->width, y, str[i], fg, bg);
+        psf_draw_char_buffer(x + i * g_psf_font->width, y, str[i], fg, bg, buffer, buf_width);
+    }
+}
+
+void psf_draw_char_buffer(u32 x, u32 y, char c, u32 fg, u32 bg, u32* buffer, u32 buf_width) {
+    if (!g_font_loaded || !buffer) return;
+    if (c < 32 || c > 127) return; /* Skip non-printable */
+    
+    u8* glyph_data = (u8*)g_psf_font + g_psf_font->headersize;
+    u32 bytes_per_row = (g_psf_font->width + 7) / 8;
+    u32 glyph_offset = (c - 32) * g_psf_font->bytesperglyph; /* Start at space (32) */
+    
+    for (u32 row = 0; row < g_psf_font->height; row++) {
+        for (u32 col = 0; col < g_psf_font->width; col++) {
+            u32 byte_idx = row * bytes_per_row + (col / 8);
+            u32 bit_idx = 7 - (col % 8);
+            
+            bool pixel_on = glyph_data[glyph_offset + byte_idx] & (1 << bit_idx);
+            if (x + col < buf_width && y + row < g_framebuffer.height) {
+                buffer[(y + row) * buf_width + (x + col)] = pixel_on ? fg : bg;
+            }
+        }
     }
 }

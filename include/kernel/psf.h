@@ -25,8 +25,11 @@ int psf_load(u8* data);
 // Draw character at position
 void psf_draw_char(u32 x, u32 y, char c, u32 fg, u32 bg);
 
-// Draw string
 void psf_draw_string(u32 x, u32 y, const char* str, u32 fg, u32 bg);
+void psf_draw_string_buffer(u32 x, u32 y, const char* str, u32 fg, u32 bg, u32* buffer, u32 buf_width);
+
+/* Draw character to arbitrary buffer (for offscreen rendering) */
+void psf_draw_char_buffer(u32 x, u32 y, char c, u32 fg, u32 bg, u32* buffer, u32 buf_width);
 
 // Get font dimensions
 u32 psf_char_width(void);

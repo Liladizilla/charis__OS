@@ -1,25 +1,20 @@
 #include <kernel/scheduler.h>
 #include <kernel/task.h>
+#include <kernel/signal.h>
 #include <kernel/vga.h>
 
 static task_t* ready_head = NULL;
 static task_t* ready_tail = NULL;
 task_t* current_task = NULL;
 
-/* Scheduler spinlock for thread safety */
-static spinlock_t scheduler_lock = { .lock = 0 };
-
 extern void context_switch(u64* old_rsp, u64 new_rsp);
 
-/* Spinlock implementation */
 void spinlock_init(spinlock_t* lock) {
     lock->lock = 0;
 }
 
 void spinlock_lock(spinlock_t* lock) {
-    /* Simple test-and-set lock */
     while (__sync_lock_test_and_set(&lock->lock, 1)) {
-        /* Spin - in real OS would use pause/yield instruction */
         asm volatile("pause");
     }
 }
@@ -29,9 +24,7 @@ void spinlock_unlock(spinlock_t* lock) {
 }
 
 static void enqueue_task(task_t* task) {
-    if (!task) {
-        return;
-    }
+    if (!task) return;
     task->next = NULL;
     task->prev = ready_tail;
     if (ready_tail) {
@@ -46,29 +39,19 @@ void scheduler_init(void) {
     ready_head = NULL;
     ready_tail = NULL;
     current_task = NULL;
-    spinlock_init(&scheduler_lock);
-    // TODO: create permanent idle task here (lowest prio, hlt loop)
 }
 
 void scheduler_add_task(task_t* task) {
-    if (!task) {
-        return;
-    }
-    spinlock_lock(&scheduler_lock);
+    if (!task) return;
     task->state = TASK_STATE_READY;
     enqueue_task(task);
-    spinlock_unlock(&scheduler_lock);
 }
 
 static task_t* scheduler_find_next(void) {
-    if (!ready_head) {
-        return NULL;
-    }
+    if (!ready_head) return NULL;
 
     task_t* iter = current_task ? current_task->next : ready_head;
-    if (!iter) {
-        iter = ready_head;
-    }
+    if (!iter) iter = ready_head;
 
     task_t* first = iter;
     while (iter) {
@@ -76,11 +59,21 @@ static task_t* scheduler_find_next(void) {
             return iter;
         }
         iter = iter->next ? iter->next : ready_head;
-        if (iter == first) {
-            break;
-        }
+        if (iter == first) break;
     }
     return NULL;
+}
+
+void scheduler_block_task(task_t* task) {
+    if (!task) return;
+    task->state = TASK_STATE_BLOCKED;
+    signal_dispatch(task); /* Check for signals while blocked */
+}
+
+void scheduler_unblock_task(task_t* task) {
+    if (!task || task->state != TASK_STATE_BLOCKED) return;
+    task->state = TASK_STATE_READY;
+    enqueue_task(task);
 }
 
 void scheduler_start(void) {
@@ -98,14 +91,9 @@ void scheduler_start(void) {
 }
 
 void scheduler_schedule(void) {
-    spinlock_lock(&scheduler_lock);
-    
     task_t* next = scheduler_find_next();
-    if (!next || next == current_task) {
-        spinlock_unlock(&scheduler_lock);
-        return;
-    }
-    
+    if (!next || next == current_task) return;
+
     task_t* previous = current_task;
     if (previous && previous->state == TASK_STATE_RUNNING) {
         previous->state = TASK_STATE_READY;
@@ -113,8 +101,6 @@ void scheduler_schedule(void) {
 
     current_task = next;
     current_task->state = TASK_STATE_RUNNING;
-    
-    spinlock_unlock(&scheduler_lock);
 
     if (previous) {
         context_switch(&previous->rsp, current_task->rsp, current_task->is_user);
@@ -124,42 +110,10 @@ void scheduler_schedule(void) {
 }
 
 void scheduler_yield(void) {
-    if (!current_task) {
-        return;
-    }
+    if (!current_task) return;
     scheduler_schedule();
 }
 
 task_t* scheduler_current(void) {
     return current_task;
-}
-
-void scheduler_tick(reg_frame_t* frame) {
-    (void)frame;
-    scheduler_schedule();
-}
-
-void scheduler_remove_task(task_t* task) {
-    if (!task) return;
-    
-    spinlock_lock(&scheduler_lock);
-    
-    // Unlink from doubly-linked list
-    if (task->prev) {
-        task->prev->next = task->next;
-    } else {
-        ready_head = task->next;
-    }
-    
-    if (task->next) {
-        task->next->prev = task->prev;
-    } else {
-        ready_tail = task->prev;
-    }
-    
-    task->state = TASK_STATE_ZOMBIE;
-    task->next = NULL;
-    task->prev = NULL;
-    
-    spinlock_unlock(&scheduler_lock);
 }

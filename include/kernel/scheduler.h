@@ -16,6 +16,8 @@ void spinlock_unlock(spinlock_t* lock);
 /* Scheduler functions */
 void scheduler_init(void);
 void scheduler_add_task(task_t* task);
+void scheduler_block_task(task_t* task);
+void scheduler_unblock_task(task_t* task);
 void scheduler_start(void);
 void scheduler_schedule(void);
 void scheduler_yield(void);
