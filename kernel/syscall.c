@@ -9,7 +9,8 @@
 #include <kernel/ipc.h>
 #include <kernel/socket.h>
 #include <kernel/audio.h>
-#include <kernel/diagnostics.h>
+#include <kernel/hda.h>
+#include <kernel/fb.h>
 
 static syscall_handler_t syscall_table[SYSCALL_MAX];
 
@@ -313,6 +314,34 @@ static u64 syscall_diag_tasks_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u6
     return 0;
 }
 
+/* Game SDK handlers */
+static u64 syscall_game_init_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    return 0; /* Placeholder */
+}
+
+static u64 syscall_game_clear_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    fb_clear((u32)a1);
+    return 0;
+}
+
+static u64 syscall_game_flip_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    return 0; /* No-op for single buffer */
+}
+
+static u64 syscall_game_audio_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    audio_stream_t* s = audio_open((int)a1, 2, 16);
+    return s ? (u64)s->buffer : (u64)-1;
+}
+
+static u64 syscall_game_audio_play_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a3; (void)a4; (void)a5; (void)a6;
+    return audio_write((audio_stream_t*)a1, (void*)a2, (usize)a3) >= 0 ? 0 : -1;
+}
+
 void syscall_init(void) {
     for (u32 i = 0; i < SYSCALL_MAX; i++) {
         syscall_table[i] = NULL;
@@ -345,6 +374,11 @@ void syscall_init(void) {
     syscall_register(SYS_BEEP, syscall_beep_handler);
     syscall_register(SYS_DIAG_STATS, syscall_diag_stats_handler);
     syscall_register(SYS_DIAG_TASKS, syscall_diag_tasks_handler);
+    syscall_register(SYS_GAME_INIT, syscall_game_init_handler);
+    syscall_register(SYS_GAME_CLEAR, syscall_game_clear_handler);
+    syscall_register(SYS_GAME_FLIP, syscall_game_flip_handler);
+    syscall_register(SYS_GAME_AUDIO_OPEN, syscall_game_audio_open_handler);
+    syscall_register(SYS_GAME_AUDIO_PLAY, syscall_game_audio_play_handler);
 
     extern void syscall_entry(void);
     asm volatile("wrmsr" : : "a"(syscall_entry), "d"(0), "c"(0xC0000080 + 0));

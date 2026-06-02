@@ -2,7 +2,7 @@
 #pragma once
 #include <kernel/types.h>
 
-#define SYSCALL_MAX             64
+#define SYSCALL_MAX             128
 
 /* Syscall numbers (Linux ABI) */
 #define SYS_READ                0
@@ -33,6 +33,13 @@
 #define SYS_DIAG_STATS          82
 #define SYS_DIAG_TASKS           81
 #define SYS_BEEP                80
+
+/* Game SDK syscalls */
+#define SYS_GAME_INIT            70
+#define SYS_GAME_CLEAR           71
+#define SYS_GAME_FLIP            72
+#define SYS_GAME_AUDIO_OPEN      73
+#define SYS_GAME_AUDIO_PLAY      74
 
 typedef u64 (*syscall_handler_t)(u64, u64, u64, u64, u64, u64);
 

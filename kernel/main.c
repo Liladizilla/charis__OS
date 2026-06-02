@@ -22,6 +22,8 @@
 #include <kernel/desktop.h>
 #include <kernel/apps.h>
 #include <kernel/audio.h>
+#include <kernel/hda.h>
+#include <kernel/gamepad.h>
 #include <kernel/pci.h>
 #include <kernel/services.h>
 #include <kernel/diagnostics.h>
