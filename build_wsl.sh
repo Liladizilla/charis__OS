@@ -64,6 +64,9 @@ gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/security.c -o build/security.o
 
 gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/widgets.c -o build/widgets.o
+gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/signal.c -o build/signal.o
+gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/pipe.c -o build/pipe.o
+gcc -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/driver.c -o build/driver.o
 
 # Link kernel
 ld -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack -o build/kernel.elf \
@@ -73,7 +76,7 @@ ld -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack -o build/kernel.e
     build/task.o build/scheduler.o build/shell.o build/user.o \
     build/net.o build/ata.o build/fs.o build/vfs.o build/elf.o \
     build/fb.o build/psf.o build/graphics.o build/input.o build/mouse.o \
-    build/widgets.o build/ipc.o build/socket.o \
+    build/widgets.o build/signal.o build/pipe.o build/driver.o build/ipc.o build/socket.o \
     build/demo.o build/desktop.o build/apps.o build/audio.o \
     build/usb.o build/pci.o build/services.o build/diagnostics.o \
     build/display.o build/config.o build/power.o build/security.o \

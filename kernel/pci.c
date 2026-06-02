@@ -4,7 +4,7 @@
 #include <kernel/memory.h>
 
 static pci_device_t pci_devices[256];
-static int pci_count = 0;
+int pci_count = 0;
 
 int pci_scan(void) {
     pci_count = 0;

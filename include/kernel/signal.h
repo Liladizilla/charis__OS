@@ -1,6 +1,7 @@
 /* signal.h - Signal handling for CharisOS */
 #pragma once
 #include <kernel/types.h>
+#include <kernel/task.h>
 
 #define SIG_MAX 32
 
@@ -25,6 +26,7 @@ int signal_unregister(int sig);
 
 int signal_send(task_t* task, int sig);
 int signal_check_pending(void);
+int signal_check_pending_for_task(task_t* task);
 void signal_dispatch(task_t* task);
 
 bool signal_has_pending(int sig);

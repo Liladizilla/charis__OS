@@ -7,7 +7,7 @@ static task_t* ready_head = NULL;
 static task_t* ready_tail = NULL;
 task_t* current_task = NULL;
 
-extern void context_switch(u64* old_rsp, u64 new_rsp);
+extern void context_switch(u64* old_rsp, u64 new_rsp, bool is_user);
 
 void spinlock_init(spinlock_t* lock) {
     lock->lock = 0;

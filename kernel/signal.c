@@ -1,5 +1,6 @@
 #include <kernel/signal.h>
 #include <kernel/task.h>
+#include <kernel/scheduler.h>
 #include <kernel/memory.h>
 #include <kernel/vga.h>
 
@@ -72,8 +73,7 @@ void signal_clear_pending(int sig) {
     pending_signals[task->pid] &= ~(1 << sig);
 }
 
-int signal_check_pending(void) {
-    task_t* task = scheduler_current();
+int signal_check_pending_for_task(task_t* task) {
     if (!task) return -1;
     
     uint32_t pending = pending_signals[task->pid];
@@ -86,7 +86,7 @@ int signal_check_pending(void) {
 }
 
 void signal_dispatch(task_t* task) {
-    int sig = signal_check_pending();
+    int sig = signal_check_pending_for_task(task);
     if (sig < 0) return;
     
     signal_handler_t handler = signal_handlers[task->pid][sig];
@@ -94,7 +94,7 @@ void signal_dispatch(task_t* task) {
     if (handler) {
         /* Call custom handler */
         handler(sig);
-        signal_clear_pending(sig);
+        pending_signals[task->pid] &= ~(1 << sig);
     } else {
         switch (signal_defaults[sig]) {
             case SIG_DEFAULT:
@@ -102,10 +102,10 @@ void signal_dispatch(task_t* task) {
                 task_exit();
                 break;
             case SIG_IGNORED:
-                signal_clear_pending(sig);
+                pending_signals[task->pid] &= ~(1 << sig);
                 break;
             case SIG_HANDLER:
-                signal_clear_pending(sig);
+                pending_signals[task->pid] &= ~(1 << sig);
                 break;
         }
     }

@@ -21,3 +21,6 @@ pci_device_t* pci_find_device(u16 vendor, u16 device);
 u32 pci_read_config_dword(u8 bus, u8 dev, u8 func, u8 offset);
 u16 pci_read_config_word(u8 bus, u8 dev, u8 func, u8 offset);
 void pci_write_config_dword(u8 bus, u8 dev, u8 func, u8 offset, u32 value);
+
+/* pci_count is exported for driver framework */
+extern int pci_count;

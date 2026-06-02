@@ -29,6 +29,9 @@
 #include <kernel/config.h>
 #include <kernel/power.h>
 #include <kernel/security.h>
+#include <kernel/signal.h>
+#include <kernel/pipe.h>
+#include <kernel/driver.h>
 
 void kernel_main(u32 magic, u32 info) {
     // Debug: kernel entry
@@ -96,7 +99,11 @@ void kernel_main(u32 magic, u32 info) {
     input_init();
     ipc_init();
     audio_init();
+    signal_init();
+    pipe_init();
+    driver_init();
     pci_scan();
+    driver_scan_and_bind();
     config_init();
     config_load("/etc/charisos.conf");
     display_init();

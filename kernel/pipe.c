@@ -1,6 +1,7 @@
 #include <kernel/pipe.h>
 #include <kernel/memory.h>
 #include <kernel/task.h>
+#include <kernel/scheduler.h>
 #include <kernel/vga.h>
 
 static pipe_t pipes[PIPE_MAX_PIPES];
@@ -48,7 +49,8 @@ int pipe_read(int fd, void* buf, usize count) {
     if (pipe->count == 0) {
         task_t* task = scheduler_current();
         if (task) {
-            task->state = TASK_STATE_BLOCKED;
+            pipe->reader = task;
+            scheduler_block_task(task);
             return -2; /* Would block - caller should yield */
         }
     }
@@ -65,8 +67,8 @@ int pipe_read(int fd, void* buf, usize count) {
     pipe->count -= to_read;
     
     /* Wake up writer if it was blocked */
-    if (pipe->writer && pipe->writer->state == TASK_STATE_BLOCKED) {
-        pipe->writer->state = TASK_STATE_READY;
+    if (pipe->writer) {
+        scheduler_unblock_task(pipe->writer);
         pipe->writer = NULL;
     }
     
@@ -85,7 +87,7 @@ int pipe_write(int fd, const void* buf, usize count) {
         task_t* task = scheduler_current();
         if (task) {
             pipe->writer = task;
-            task->state = TASK_STATE_BLOCKED;
+            scheduler_block_task(task);
             return -2; /* Would block - caller should yield */
         }
     }
@@ -103,8 +105,8 @@ int pipe_write(int fd, const void* buf, usize count) {
     pipe->count += to_write;
     
     /* Wake up reader if it was blocked */
-    if (pipe->reader && pipe->reader->state == TASK_STATE_BLOCKED) {
-        pipe->reader->state = TASK_STATE_READY;
+    if (pipe->reader) {
+        scheduler_unblock_task(pipe->reader);
         pipe->reader = NULL;
     }
     
@@ -129,14 +131,14 @@ void pipe_close(int fd) {
         pipe->read_fd = -1;
         /* Wake any blocked writer with error */
         if (pipe->writer) {
-            pipe->writer->state = TASK_STATE_READY;
+            scheduler_unblock_task(pipe->writer);
             pipe->writer = NULL;
         }
     } else {
         pipe->write_fd = -1;
         /* Wake any blocked reader - they get EOF */
         if (pipe->reader) {
-            pipe->reader->state = TASK_STATE_READY;
+            scheduler_unblock_task(pipe->reader);
             pipe->reader = NULL;
         }
     }

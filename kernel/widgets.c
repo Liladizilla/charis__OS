@@ -2,6 +2,7 @@
 #include <kernel/graphics.h>
 #include <kernel/psf.h>
 #include <kernel/memory.h>
+#include <kernel/fb.h>
 
 static widget_t* widget_list = NULL;
 
@@ -113,7 +114,6 @@ void widget_draw_button(widget_t* widget, u32* buffer, int buf_w) {
     }
     
     /* Draw border */
-    graphics_set_color(0x30363D);
     for (int x = widget->x; x < widget->x + widget->w && x < buf_w; x++) {
         if (x >= 0 && widget->y >= 0) {
             buffer[widget->y * buf_w + x] = 0x30363D;
@@ -151,7 +151,6 @@ void widget_draw_textbox(widget_t* widget, u32* buffer, int buf_w) {
     }
     
     /* Draw border */
-    graphics_set_color(0x30363D);
     for (int x = widget->x; x < widget->x + widget->w && x < buf_w; x++) {
         if (x >= 0 && widget->y >= 0) {
             buffer[widget->y * buf_w + x] = 0x30363D;
@@ -179,8 +178,9 @@ void widget_draw_textbox(widget_t* widget, u32* buffer, int buf_w) {
     if (widget->focused) {
         int cursor_x = widget->x + 4 + kstrlen(widget->text) * 8;
         if (cursor_x < widget->x + widget->w - 4) {
-            graphics_set_color(widget->fg_color);
-            graphics_line(cursor_x, widget->y + 4, cursor_x, widget->y + widget->h - 8);
+            for (int cy = widget->y + 4; cy <= widget->y + widget->h - 8 && cy < buf_w; cy++) {
+                if (cy >= 0) buffer[cy * buf_w + cursor_x] = widget->fg_color;
+            }
         }
     }
 }
@@ -197,8 +197,18 @@ void widget_draw_panel(widget_t* widget, u32* buffer, int buf_w) {
     
     /* Draw border if enabled */
     if (widget->bordered) {
-        graphics_set_color(0x30363D);
-        graphics_rect(widget->x, widget->y, widget->w, widget->h, false);
+        for (int x = widget->x; x < widget->x + widget->w && x < buf_w; x++) {
+            if (x >= 0 && widget->y >= 0) buffer[widget->y * buf_w + x] = 0x30363D;
+            if (x >= 0 && widget->y + widget->h - 1 >= 0 && widget->y + widget->h - 1 < buf_w) {
+                buffer[(widget->y + widget->h - 1) * buf_w + x] = 0x30363D;
+            }
+        }
+        for (int y = widget->y; y < widget->y + widget->h && y < buf_w; y++) {
+            if (widget->x >= 0 && widget->x < buf_w) buffer[y * buf_w + widget->x] = 0x30363D;
+            if (widget->x + widget->w - 1 >= 0 && widget->x + widget->w - 1 < buf_w) {
+                buffer[y * buf_w + (widget->x + widget->w - 1)] = 0x30363D;
+            }
+        }
     }
 }
 
