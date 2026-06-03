@@ -59,5 +59,26 @@
 
 ## Known Limitations
 - Network driver requires proper PCI enumeration (currently simulated)
-- No audio support yet
-- Limited graphics support (text mode only)
+- Audio support via HDA (Intel HD Audio) with PC Speaker fallback
+- Limited graphics support (text mode only, software rasterizer available)
+
+---
+
+## Phase 16-17 Additions (Graphics/Gaming)
+
+### Audio System
+- HDA driver with MMIO register access
+- PCM playback support for games
+- PC Speaker fallback for legacy systems
+- 4KB ring buffer for low memory footprint
+
+### Gaming Features
+- Game SDK syscall interface (SYS_GAME_*)
+- PS/2 mouse integration for games
+- Gamepad subsystem for USB HID controllers
+- Software 3D rasterizer (640x480 max)
+
+### Driver Framework
+- PCI device enumeration with class/subclass detection
+- Driver probe/remove callbacks
+- Automatic driver binding at boot

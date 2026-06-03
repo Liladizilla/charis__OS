@@ -40,6 +40,17 @@ int pci_scan(void) {
                     outl(0xCF8, addr | 0x3C);
                     d->irq = (inl(0xCFC) >> 8) & 0xFF;
                     
+                    // Read class/subclass
+                    outl(0xCF8, addr | 0x08);
+                    u32 header = inl(0xCFC);
+                    u8 header_type = (header >> 16) & 0xFF;
+                    
+                    outl(0xCF8, addr | 0x0A);
+                    d->pci_class = inl(0xCFC) & 0xFF;
+                    
+                    outl(0xCF8, addr | 0x0B);
+                    d->pci_subclass = (inl(0xCFC) >> 8) & 0xFF;
+                    
                     pci_count++;
                 }
             }

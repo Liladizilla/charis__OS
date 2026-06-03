@@ -55,12 +55,16 @@
 - `include/kernel/apps.h`: Application API
 
 ## Phase 11: Hardware Abstraction (Complete)
-- `kernel/audio.c`: PC Speaker driver for basic beeps
+- `kernel/audio.c`: PC Speaker driver with HDA fallback
 - `include/kernel/audio.h`: Audio API
+- `kernel/hda.c`: Intel High Definition Audio driver
+- `include/kernel/hda.h`: HDA types and functions
 - `kernel/usb.c`: USB device enumeration placeholder
 - `include/kernel/usb.h`: USB types
-- `kernel/pci.c`: PCI device enumeration (finds devices on bus)
+- `kernel/pci.c`: PCI device enumeration with class/subclass detection
 - `include/kernel/pci.h`: PCI types and functions
+- `kernel/driver.c`: Driver framework with PCI binding
+- `include/kernel/driver.h`: Driver registration/probe APIs
 
 ## Phase 12: System Services (Complete)
 - `kernel/services.c`: Service manager for background tasks
@@ -90,6 +94,18 @@
 - Opcodes: LOADI, LOAD, STORE, ADD, SUB, MUL, DIV, JMP, CALL, RET, PRINT, HALT
 - Native calls: Console.Write/Writeln
 - Simple source tokenizer
+
+## Phase 16: Graphics Acceleration (Complete)
+- `kernel/raster.c`: Software 3D rasterizer with fixed-point 16.16 arithmetic
+- `include/kernel/raster.h`: Rasterizer API
+- Depth buffer: 640x480, ~1.5MB
+- Barycentric triangle rendering
+
+## Phase 17: Gaming Support (Complete)
+- `kernel/gamepad.c`: USB HID gamepad subsystem
+- `include/kernel/gamepad.h`: Gamepad API
+- `sdk/charis_game.h`: Game SDK for user applications
+- Game syscalls: SYS_GAME_INIT, SYS_GAME_CLEAR, SYS_GAME_FLIP, SYS_GAME_AUDIO_OPEN, SYS_GAME_AUDIO_PLAY
 
 ## Remaining Work
 - Build tools (nasm, gcc, ld, qemu) not available in current environment

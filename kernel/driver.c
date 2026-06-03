@@ -2,10 +2,25 @@
 #include <kernel/memory.h>
 #include <kernel/vga.h>
 #include <kernel/pci.h>
+#include <kernel/hda.h>
 
 driver_t* driver_list = NULL;
 int driver_count = 0;
 int driver_capacity = 0;
+
+static int hda_driver_probe(pci_device_t* dev) {
+    return hda_init();
+}
+
+static driver_t hda_driver = {
+    .name = "intel_hda",
+    .probe = hda_driver_probe,
+    .remove = NULL,
+    .vendor_id = 0,
+    .device_id = 0,
+    .pci_class = 0, /* Match any */
+    .pci_subclass = 0
+};
 
 void driver_init(void) {
     driver_list = (driver_t*)kmalloc(64 * sizeof(driver_t));
@@ -13,6 +28,7 @@ void driver_init(void) {
         driver_capacity = 64;
         driver_count = 0;
     }
+    driver_register(&hda_driver);
     vga_puts("Driver framework initialized\n");
 }
 
@@ -46,7 +62,7 @@ void driver_scan_and_bind(void) {
             driver_t* drv = &driver_list[j];
             bool vendor_match = (drv->vendor_id == 0 || drv->vendor_id == dev->vendor_id);
             bool device_match = (drv->device_id == 0 || drv->device_id == dev->device_id);
-            bool class_match = (drv->pci_class == 0 || drv->pci_class == (dev->device_id >> 8));
+            bool class_match = (drv->pci_class == 0 || drv->pci_class == dev->pci_class);
             
             if (vendor_match && device_match && class_match) {
                 kprintf("Probing driver %s for PCI %x:%x\n", drv->name, 

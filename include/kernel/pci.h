@@ -12,6 +12,8 @@ typedef struct {
     u8 bus, device, function;
     u16 bar[6];
     u8 irq;
+    u8 pci_class;
+    u8 pci_subclass;
     bool present;
 } pci_device_t;
 

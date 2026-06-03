@@ -42,13 +42,48 @@
 
 ---
 
-## Phase 6: Window System (Next)
-- [ ] Window manager (compositor)
-- [ ] Widget library
-- [ ] Input event system
-- [ ] PS/2 mouse driver
+## Phase 6: Window System (Complete)
+- [x] Window manager (compositor)
+- [x] Widget library
+- [x] Input event system
+- [x] PS/2 mouse driver
 
-## Phase 7: IPC & Signals
-- [ ] Signals (SIGINT, SIGSEGV, SIGCHLD)
-- [ ] Pipes
+## Phase 7: IPC & Signals (Complete)
+- [x] Signals (SIGINT, SIGSEGV, SIGCHLD)
+- [x] Pipes
 - [ ] Unix domain sockets
+
+## Phase 8: Network Stack (Complete)
+- [x] Socket API (AF_INET, SOCK_STREAM/SOCK_DGRAM)
+- [x] TCP/IP stack foundation
+- [x] Socket syscalls
+
+## Phase 9: Desktop Environment (Complete)
+- [x] Desktop with icons and taskbar
+
+## Phase 10: User Applications (Complete)
+- [x] Built-in apps (Terminal, File Manager, Text Editor, Calculator, Settings)
+- [x] Game SDK with graphics/audio syscalls
+
+## Phase 11: Hardware Abstraction (Complete)
+- [x] HDA audio driver with PCI binding
+- [x] USB device enumeration placeholder
+- [x] Driver framework with probe/remove callbacks
+- [x] PCI class/subclass detection in pci_scan()
+
+---
+
+## Phase 12: Graphics Acceleration (Complete)
+- [x] Software rasterizer (16.16 fixed-point)
+- [x] Triangle rasterization with depth buffer
+- [x] Barycentric coordinate interpolation
+
+## Phase 13: Gaming Support (Complete)
+- [x] Gamepad subsystem (USB HID support)
+- [x] Game SDK header (sdk/charis_game.h)
+- [x] SYS_GAME_* syscalls for graphics/audio
+
+## Phase 14: Optimizations (In Progress)
+- [ ] Build system verification (nasm, gcc, ld)
+- [ ] Framebuffer initialization via Multiboot2 GFX
+- [ ] PCI enumeration verification
