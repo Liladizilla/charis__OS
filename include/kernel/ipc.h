@@ -17,12 +17,15 @@ typedef struct {
     u8 data[IPC_MAX_MSG_SIZE];
 } ipc_message_t;
 
+typedef struct task task_t;
+
 typedef struct {
     ipc_message_t messages[IPC_MAX_MESSAGES];
     u32 head;
     u32 tail;
     u32 count;
     bool in_use;
+    task_t* wait_head;  // Tasks blocked waiting for messages
 } ipc_channel_t;
 
 // Initialize IPC subsystem

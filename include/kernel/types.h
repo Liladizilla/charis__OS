@@ -32,6 +32,11 @@ typedef __builtin_va_list va_list;
 /* Packed attribute shortcut */
 #define PACKED __attribute__((packed))
 
+/* NULL pointer */
+#ifndef NULL
+#define NULL ((void*)0)
+#endif
+
 /* Alignment macro */
 #define ALIGN_UP(x, a)   (((x) + ((a) - 1)) & ~((a) - 1))
 #define ALIGN_DOWN(x, a) ((x) & ~((a) - 1))

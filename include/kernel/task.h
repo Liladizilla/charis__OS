@@ -3,6 +3,7 @@
 #include <kernel/types.h>
 #include <kernel/idt.h>
 #include <kernel/vfs.h>
+#include <kernel/vmm.h>
 
 #define TASK_STATE_READY        0
 #define TASK_STATE_RUNNING      1
@@ -53,6 +54,8 @@ typedef struct task {
     u64 user_rsp;
     process_mm_t mm;
     fd_entry_t fd_table[MAX_FDS]; // Per-process file descriptor table
+    void* address_space;  // Per-process page table (PML4)
+    struct task* ipc_wait_next;  // IPC blocking wait queue
 } task_t;
 
 typedef void (*task_func_t)(void* arg);

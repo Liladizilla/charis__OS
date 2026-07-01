@@ -103,6 +103,11 @@ void scheduler_schedule(void) {
     current_task = next;
     current_task->state = TASK_STATE_RUNNING;
 
+    // Switch address space if needed (BUG-11 fix)
+    if (previous && previous->address_space != current_task->address_space) {
+        vmm_switch((pml4_t*)current_task->address_space);
+    }
+
     if (previous) {
         context_switch(&previous->rsp, current_task->rsp, current_task->is_user);
     } else {

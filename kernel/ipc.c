@@ -54,6 +54,13 @@ int ipc_send(int channel, void* data, u64 size) {
     ch->head = (ch->head + 1) % IPC_MAX_MESSAGES;
     ch->count++;
     
+    // Wake up any task waiting on this channel (BUG-12 fix)
+    if (ch->wait_head) {
+        task_t* waiter = ch->wait_head;
+        ch->wait_head = waiter->ipc_wait_next;
+        scheduler_unblock_task(waiter);
+    }
+    
     return 0;
 }
 
@@ -63,7 +70,20 @@ int ipc_recv(int channel, void* buf, u64 max_size) {
     if (!buf) return -1;
     
     ipc_channel_t* ch = &ipc_channels[channel];
-    if (ch->count == 0) return -1; // Empty
+    
+    // If no message, block the current task (BUG-12 fix)
+    if (ch->count == 0) {
+        task_t* current = scheduler_current();
+        if (current) {
+            // Add to wait queue
+            current->ipc_wait_next = ch->wait_head;
+            ch->wait_head = current;
+            // Block and yield
+            scheduler_block_task(current);
+            scheduler_yield();
+            // When woken, retry
+        }
+    }
     
     ipc_message_t* msg = &ch->messages[ch->tail];
     u64 copy_size = (msg->size < max_size) ? msg->size : max_size;

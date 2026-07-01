@@ -3,6 +3,7 @@
 #include <kernel/vga.h>
 #include <kernel/scheduler.h>
 #include <kernel/timer.h>
+#include <kernel/vmm.h>
 
 static task_t task_pool[TASK_MAX_TASKS];
 static task_t* task_list = NULL;
@@ -155,6 +156,18 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
 
     task_init_common(task, name, capabilities, is_user, stack);
 
+    // Create per-process address space (BUG-11 fix)
+    if (is_user) {
+        task->address_space = vmm_create_address_space();
+        if (!task->address_space) {
+            vga_puts("Failed to create address space\n");
+            kfree(stack);
+            return NULL;
+        }
+    } else {
+        task->address_space = NULL; // Kernel tasks share boot page table
+    }
+
     u64* stack_top = (u64*)((u8*)task->stack_base + TASK_STACK_SIZE);
     stack_top = (u64*)((u64)stack_top & ~0xFUL);
 
@@ -203,6 +216,7 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
 
     task_init_common(task, name, capabilities, is_user, stack);
     task->mm.pml4 = pml4;
+    task->address_space = pml4; // Use provided PML4
 
     u64* stack_top = (u64*)((u8*)task->stack_base + TASK_STACK_SIZE);
     stack_top = (u64*)((u64)stack_top & ~0xFUL);
