@@ -10,6 +10,7 @@ void* kmemset(void* dst, u8 val, usize n) {
     return dst;
 }
 
+// kmemmove handles overlapping regions, kmemcpy assumes non-overlapping
 void* kmemcpy(void* dst, const void* src, usize n) {
     if (dst == NULL || src == NULL) return NULL;
     if (n == 0 || dst == src) return dst;
@@ -17,14 +18,9 @@ void* kmemcpy(void* dst, const void* src, usize n) {
     u8* d = (u8*)dst;
     const u8* s = (const u8*)src;
 
-    if (d < s) {
-        for (usize i = 0; i < n; i++) {
-            d[i] = s[i];
-        }
-    } else {
-        for (usize i = n; i > 0; i--) {
-            d[i - 1] = s[i - 1];
-        }
+    // Optimized forward copy for non-overlapping regions
+    for (usize i = 0; i < n; i++) {
+        d[i] = s[i];
     }
     return dst;
 }
@@ -36,6 +32,7 @@ void* kmemmove(void* dst, const void* src, usize n) {
     u8* d = (u8*)dst;
     const u8* s = (const u8*)src;
 
+    // Handle overlapping regions correctly
     if (d < s) {
         for (usize i = 0; i < n; i++) {
             d[i] = s[i];

@@ -37,9 +37,11 @@ SECTIONS
         *(.data)
     } :data
 
-    .bss : {
-        *(.bss)
+    .bss ALIGN(4096) : {
+        _bss_start = .;
+        *(.bss .bss.*)
         *(COMMON)
+        _bss_end = .;
     } :data
 
     /* End of kernel - used for memory detection */

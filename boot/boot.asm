@@ -69,8 +69,18 @@ start:
 
     VGA_WRITE '!'   ; Write an exclamation mark at the top-left
     ; GRUB leaves us in protected mode, interrupts disabled.
-    ; Set up stack immediately.
+    ; Set up stack immediately (already 16-byte aligned in BSS)
     mov esp, stack_top
+    and esp, -16          ; Ensure 16-byte alignment per System V AMD64 ABI
+
+    ; Zero BSS section (required for C runtime)
+    extern _bss_start
+    extern _bss_end
+    mov edi, _bss_start
+    mov ecx, _bss_end
+    sub ecx, edi
+    xor eax, eax
+    rep stosb
 
     ; Save multiboot magic and info pointer
     mov dword [mb_magic], eax

@@ -13,15 +13,15 @@ GRUB = grub-mkrescue
 else ifeq ($(UNAME),Linux)
 # Native Linux/WSL
 NASM = nasm
-GCC = gcc
-LD = ld
+GCC = x86_64-elf-gcc
+LD = x86_64-elf-ld
 QEMU = qemu-system-x86_64
 GRUB = grub-mkrescue
 else
 # Assume MSYS2 or try common paths
 NASM = nasm
-GCC = gcc
-LD = ld
+GCC = x86_64-elf-gcc
+LD = x86_64-elf-ld
 QEMU = qemu-system-x86_64
 GRUB = grub-mkrescue
 endif
@@ -35,18 +35,18 @@ BUILD_DIR = build
 
 # Flags
 NASM_FLAGS = -f elf64
-GCC_FLAGS = -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -fstack-protector-strong -I$(INCLUDE_DIR)
+GCC_FLAGS = -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -fno-omit-frame-pointer -Wall -Wextra -fstack-protector-strong -I$(INCLUDE_DIR)
 LD_FLAGS = -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack
 
 # Source files
 BOOT_SOURCES = $(BOOT_DIR)/boot.asm $(BOOT_DIR)/long_mode.asm
-KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/bootmem.c $(KERNEL_DIR)/heap.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/vmm_test.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c $(KERNEL_DIR)/ata.c $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/vfs.c $(KERNEL_DIR)/elf.c $(KERNEL_DIR)/user.c $(KERNEL_DIR)/input.c $(KERNEL_DIR)/mouse.c $(KERNEL_DIR)/fb.c $(KERNEL_DIR)/psf.c $(KERNEL_DIR)/graphics.c $(KERNEL_DIR)/wm.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/socket.c $(KERNEL_DIR)/demo.c $(KERNEL_DIR)/desktop.c $(KERNEL_DIR)/apps.c $(KERNEL_DIR)/audio.c $(KERNEL_DIR)/usb.c $(KERNEL_DIR)/pci.c $(KERNEL_DIR)/services.c $(KERNEL_DIR)/diagnostics.c $(KERNEL_DIR)/display.c $(KERNEL_DIR)/config.c $(KERNEL_DIR)/power.c $(KERNEL_DIR)/security.c $(KERNEL_DIR)/widgets.c $(KERNEL_DIR)/signal.c $(KERNEL_DIR)/pipe.c $(KERNEL_DIR)/driver.c $(KERNEL_DIR)/raster.c $(KERNEL_DIR)/hda.c $(KERNEL_DIR)/gamepad.c
+KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/bootmem.c $(KERNEL_DIR)/heap.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c $(KERNEL_DIR)/ata.c $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/vfs.c $(KERNEL_DIR)/elf.c $(KERNEL_DIR)/user.c $(KERNEL_DIR)/input.c $(KERNEL_DIR)/mouse.c $(KERNEL_DIR)/fb.c $(KERNEL_DIR)/psf.c $(KERNEL_DIR)/graphics.c $(KERNEL_DIR)/wm.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/socket.c $(KERNEL_DIR)/demo.c $(KERNEL_DIR)/desktop.c $(KERNEL_DIR)/apps.c $(KERNEL_DIR)/audio.c $(KERNEL_DIR)/usb.c $(KERNEL_DIR)/pci.c $(KERNEL_DIR)/services.c $(KERNEL_DIR)/diagnostics.c $(KERNEL_DIR)/display.c $(KERNEL_DIR)/config.c $(KERNEL_DIR)/power.c $(KERNEL_DIR)/security.c $(KERNEL_DIR)/widgets.c $(KERNEL_DIR)/signal.c $(KERNEL_DIR)/pipe.c $(KERNEL_DIR)/driver.c $(KERNEL_DIR)/raster.c $(KERNEL_DIR)/hda.c $(KERNEL_DIR)/gamepad.c
 ASM_SOURCES = $(KERNEL_DIR)/asm/interrupt_stubs.asm $(KERNEL_DIR)/asm/context.asm $(KERNEL_DIR)/asm/gdt.asm $(KERNEL_DIR)/asm/io.asm
 
-# Object files
-BOOT_OBJS = $(patsubst $(BOOT_DIR)/%.asm, $(BUILD_DIR)/%.o, $(BOOT_SOURCES))
-KERNEL_OBJS = $(patsubst $(KERNEL_DIR)/%.c, $(BUILD_DIR)/%.o, $(KERNEL_SOURCES))
-ASM_OBJS = $(patsubst $(KERNEL_DIR)/asm/%.asm, $(BUILD_DIR)/%.o, $(ASM_SOURCES))
+# Object files (PREFIXED to prevent name collisions)
+BOOT_OBJS = $(patsubst $(BOOT_DIR)/%.asm, $(BUILD_DIR)/boot__%.o, $(BOOT_SOURCES))
+KERNEL_OBJS = $(patsubst $(KERNEL_DIR)/%.c, $(BUILD_DIR)/kern__%.o, $(KERNEL_SOURCES))
+ASM_OBJS = $(patsubst $(KERNEL_DIR)/asm/%.asm, $(BUILD_DIR)/asm__%.o, $(ASM_SOURCES))
 
 ALL_OBJS = $(BOOT_OBJS) $(KERNEL_OBJS) $(ASM_OBJS)
 
@@ -74,10 +74,18 @@ $(BUILD_DIR)/%.o: $(KERNEL_DIR)/asm/%.asm
 	$(NASM) $(NASM_FLAGS) -o $@ $<
 
 run: $(BUILD_DIR)/charisos.iso
-	$(QEMU) -cdrom $< -m 256M -serial file:serial.log
+	$(QEMU) -cdrom $< -m 256M -serial stdio -no-reboot -no-shutdown -d int,cpu_reset -D qemu.log
+
+gdb: $(BUILD_DIR)/charisos.iso
+	@echo "==> GDB server on :1234"
+	@echo "    In another terminal run:"
+	@echo "    x86_64-elf-gdb build/kernel.elf"
+	@echo "    (gdb) target remote :1234"
+	@echo "    (gdb) break kernel_main && continue"
+	$(QEMU) -cdrom $< -m 256M -serial stdio -s -S -no-reboot
 
 debug: $(BUILD_DIR)/charisos.iso
-	$(QEMU) -cdrom $< -m 256M -serial stdio -s -S
+	$(QEMU) -cdrom $< -m 256M -serial stdio -no-reboot -no-shutdown -d int,cpu_reset,pcall,mmu -D qemu.log
 
 run-debug: $(BUILD_DIR)/charisos.iso
 	$(QEMU) -cdrom $< -m 256M -serial stdio

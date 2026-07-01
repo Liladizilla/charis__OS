@@ -15,6 +15,10 @@ typedef signed long long    s64;
 typedef unsigned long       usize;
 typedef signed long         isize;
 
+/* Pointer-safe integer types */
+typedef unsigned long       uintptr_t;
+typedef signed long         intptr_t;
+
 typedef u8 bool;
 #define true 1
 #define false 0

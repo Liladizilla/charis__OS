@@ -50,17 +50,18 @@ void scheduler_add_task(task_t* task) {
 static task_t* scheduler_find_next(void) {
     if (!ready_head) return NULL;
 
+    // Start from current task's next, or head if no current
     task_t* iter = current_task ? current_task->next : ready_head;
     if (!iter) iter = ready_head;
 
     task_t* first = iter;
-    while (iter) {
+    do {
         if (iter->state == TASK_STATE_READY) {
             return iter;
         }
         iter = iter->next ? iter->next : ready_head;
-        if (iter == first) break;
-    }
+    } while (iter && iter != first);
+
     return NULL;
 }
 

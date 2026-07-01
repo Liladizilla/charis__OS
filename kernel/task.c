@@ -110,19 +110,8 @@ task_t* task_current(void) {
     return scheduler_current();
 }
 
-task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user) {
-    task_t* task = task_allocate();
-    if (!task) {
-        vga_puts("Failed to allocate task\n");
-        return NULL;
-    }
-
-    void* stack = kmalloc(TASK_STACK_SIZE + PAGE_SIZE);
-    if (!stack) {
-        vga_puts("Failed to allocate task stack\n");
-        return NULL;
-    }
-
+// Common task initialization helper
+static void task_init_common(task_t* task, const char* name, u32 capabilities, bool is_user, void* stack) {
     task->stack_base = (u64)stack + PAGE_SIZE;
     task->guard_page_addr = (u64)stack;
     task->is_user = is_user;
@@ -145,6 +134,27 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
     }
     task->name[TASK_NAME_MAX - 1] = '\0';
 
+    task->next = NULL;
+    task->prev = NULL;
+    task->stack_canary_addr = task->stack_base + sizeof(u64);
+    *(u64*)task->stack_canary_addr = 0xDEADC0DEDEADC0DEULL;
+}
+
+task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user) {
+    task_t* task = task_allocate();
+    if (!task) {
+        vga_puts("Failed to allocate task\n");
+        return NULL;
+    }
+
+    void* stack = kmalloc(TASK_STACK_SIZE + PAGE_SIZE);
+    if (!stack) {
+        vga_puts("Failed to allocate task stack\n");
+        return NULL;
+    }
+
+    task_init_common(task, name, capabilities, is_user, stack);
+
     u64* stack_top = (u64*)((u8*)task->stack_base + TASK_STACK_SIZE);
     stack_top = (u64*)((u64)stack_top & ~0xFUL);
 
@@ -175,11 +185,6 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
     }
 
     task->rsp = (u64)stack_top;
-    task->next = NULL;
-    task->prev = NULL;
-    task->stack_canary_addr = task->stack_base + sizeof(u64);
-    *(u64*)task->stack_canary_addr = 0xDEADC0DEDEADC0DEULL;
-
     return task;
 }
 
@@ -196,27 +201,8 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
         return NULL;
     }
 
-    task->stack_base = (u64)stack + PAGE_SIZE;
-    task->guard_page_addr = (u64)stack;
-    task->is_user = is_user;
-    task->pid = next_pid++;
-    task->state = TASK_STATE_READY;
-    task->priority = 0;
-    task->runtime_ticks = 0;
-    task->remaining_quantum = TASK_DEFAULT_QUANTUM;
-    task->capabilities = capabilities;
+    task_init_common(task, name, capabilities, is_user, stack);
     task->mm.pml4 = pml4;
-    task->mm.heap_start = 0;
-    task->mm.heap_end = 0;
-    task->mm.stack_top = 0;
-    task->mm.vmas = NULL;
-    task->event_data = 0;
-    task->waiting_event = 0;
-
-    for (u32 i = 0; i < TASK_NAME_MAX - 1 && name && name[i]; i++) {
-        task->name[i] = name[i];
-    }
-    task->name[TASK_NAME_MAX - 1] = '\0';
 
     u64* stack_top = (u64*)((u8*)task->stack_base + TASK_STACK_SIZE);
     stack_top = (u64*)((u64)stack_top & ~0xFUL);
@@ -248,11 +234,6 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
     }
 
     task->rsp = (u64)stack_top;
-    task->next = NULL;
-    task->prev = NULL;
-    task->stack_canary_addr = task->stack_base + sizeof(u64);
-    *(u64*)task->stack_canary_addr = 0xDEADC0DEDEADC0DEULL;
-
     return task;
 }
 

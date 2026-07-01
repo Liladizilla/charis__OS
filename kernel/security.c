@@ -3,9 +3,13 @@
 #include <kernel/vga.h>
 #include <kernel/timer.h>
 #include <kernel/printf.h>
+#include <kernel/serial.h>
 
 static security_context_t security_contexts[TASK_MAX_TASKS];
 static u32 security_next_token = 0x1000;
+
+/* Stack canary guard value - should be randomized at boot */
+uintptr_t __stack_chk_guard = 0xDEADC0DECAFEBEEF;
 
 void security_init(void) {
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
@@ -50,4 +54,17 @@ int security_generate_token(u8* out_token) {
         }
     }
     return token;
+}
+
+/* Called by GCC when a stack canary mismatch is detected */
+__attribute__((noreturn))
+void __stack_chk_fail(void) {
+    /* We are in a compromised stack state - use serial only */
+    serial_puts("\n[KERNEL PANIC] Stack smashing detected!\n");
+    serial_puts("A buffer overflow corrupted a stack canary.\n");
+    serial_puts("System halted.\n");
+    
+    /* Disable interrupts and halt forever */
+    __asm__ volatile ("cli; hlt");
+    __builtin_unreachable();
 }

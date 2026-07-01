@@ -8,6 +8,7 @@
 typedef struct heap_block {
     usize size;
     struct heap_block* next;
+    struct heap_block* prev;
     bool free;
 } heap_block_t;
 
@@ -22,6 +23,7 @@ void heap_init(void* start, usize size) {
     heap_head = (heap_block_t*)start;
     heap_head->size = size - sizeof(heap_block_t);
     heap_head->next = NULL;
+    heap_head->prev = NULL;
     heap_head->free = true;
 }
 
@@ -37,7 +39,12 @@ void* kmalloc(usize size) {
             heap_block_t* new_block = (heap_block_t*)((u8*)curr + sizeof(heap_block_t) + aligned);
             new_block->size = curr->size - aligned - sizeof(heap_block_t);
             new_block->next = curr->next;
+            new_block->prev = curr;
             new_block->free = true;
+
+            if (curr->next) {
+                curr->next->prev = new_block;
+            }
 
             curr->size = aligned;
             curr->next = new_block;
@@ -61,14 +68,18 @@ void kfree(void* ptr) {
     if (block->next && block->next->free) {
         block->size += sizeof(heap_block_t) + block->next->size;
         block->next = block->next->next;
+        if (block->next) {
+            block->next->prev = block;
+        }
     }
 
-    // Merge with previous (linear scan for doubly-adjacent free blocks)
-    heap_block_t* prev = heap_head;
-    while (prev && prev->next != block) prev = prev->next;
+    // Merge with previous using prev pointer - O(1) instead of O(n)
+    heap_block_t* prev = block->prev;
     if (prev && prev->free) {
         prev->size += sizeof(heap_block_t) + block->size;
         prev->next = block->next;
+        if (block->next) {
+            block->next->prev = prev;
+        }
     }
 }
-
