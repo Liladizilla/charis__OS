@@ -26,35 +26,35 @@ void serial_init(void) {
     u16 port = SERIAL_PORT_COM1;
 
     // Disable interrupts
-    asm volatile("outb %0, %1" : : "a"((u8)0x00), "Nd"(SERIAL_DATA_PORT(port) + 1));
+    outb(SERIAL_DATA_PORT(port) + 1, 0x00);
 
     // Enable DLAB
-    asm volatile("outb %0, %1" : : "a"((u8)SERIAL_LINE_ENABLE_DLAB), "Nd"(SERIAL_LINE_COMMAND_PORT(port)));
+    outb(SERIAL_LINE_COMMAND_PORT(port), SERIAL_LINE_ENABLE_DLAB);
 
-        // Set divisor to 12 (9600 baud)
-        asm volatile("outb %0, %1" : : "a"((u8)12), "Nd"(SERIAL_DATA_PORT(port)));
-        asm volatile("outb %0, %1" : : "a"((u8)0x00), "Nd"(SERIAL_DATA_PORT(port) + 1));
+    // Set divisor to 12 (9600 baud)
+    outb(SERIAL_DATA_PORT(port), 12);
+    outb(SERIAL_DATA_PORT(port) + 1, 0x00);
 
     // 8 bits, no parity, one stop bit
-    asm volatile("outb %0, %1" : : "a"((u8)0x03), "Nd"(SERIAL_LINE_COMMAND_PORT(port)));
+    outb(SERIAL_LINE_COMMAND_PORT(port), 0x03);
 
     // Enable FIFO, clear them, with 14-byte threshold
-    asm volatile("outb %0, %1" : : "a"((u8)0xC7), "Nd"(SERIAL_FIFO_COMMAND_PORT(port)));
+    outb(SERIAL_FIFO_COMMAND_PORT(port), 0xC7);
 
     // IRQs enabled, RTS/DSR set
-    asm volatile("outb %0, %1" : : "a"((u8)0x0B), "Nd"(SERIAL_MODEM_COMMAND_PORT(port)));
+    outb(SERIAL_MODEM_COMMAND_PORT(port), 0x0B);
 }
 
 static int serial_transmit_empty(u16 port) {
     u8 status;
-    asm volatile("inb %1, %0" : "=a"(status) : "Nd"(SERIAL_LINE_STATUS_PORT(port)));
+    status = inb(SERIAL_LINE_STATUS_PORT(port));
     return status & 0x20;
 }
 
 void serial_putchar(char c) {
     u16 port = SERIAL_PORT_COM1;
     while (!serial_transmit_empty(port));
-    asm volatile("outb %0, %1" : : "a"(c), "Nd"(SERIAL_DATA_PORT(port)));
+    outb(SERIAL_DATA_PORT(port), (u8)c);
 }
 
 void serial_write(const char* str) {

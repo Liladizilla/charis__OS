@@ -18,12 +18,13 @@ void idt_init(void) {
     idt_ptr.base = (u64)&idt;
 
     // Clear IDT
-    for (int i = 0; i < IDT_ENTRIES; i++) {
+    int i;
+    for (i = 0; i < IDT_ENTRIES; i++) {
         idt_set_gate(i, 0, 0, 0);
     }
 
     // Load ISR stubs from assembly
-    for (int i = 0; i < 256; i++) {
+    for (i = 0; i < 256; i++) {
         if (isr_table[i]) {
             idt_set_gate(i, isr_table[i], 0, 0x8E); // Interrupt gate
         }
@@ -76,7 +77,7 @@ void idt_dispatch_handler(reg_frame_t* frame) {
             // Handle page fault: if not present, allocate page
             if (!(frame->error_code & 1)) {
                 u64 phys = pmm_alloc_page();
-                if (phys && vmm_map_page(cr2 & ~0xFFF, phys, PTE_WRITABLE | (frame->error_code & 4 ? PTE_USER : 0))) {
+                if (phys && vmm_map_page(cr2 & ~0xFFF, phys, 0x02 | (frame->error_code & 4 ? 0x04 : 0))) {
                     kprintf("Allocated page for 0x%llx\n", cr2 & ~0xFFF);
                     return; // Continue
                 }

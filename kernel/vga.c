@@ -68,7 +68,7 @@ void vga_putchar(char c) {
     vga_update_hw_cursor();
 }
 
-static void vga_update_hw_cursor(void) {
+void vga_update_hw_cursor(void) {
     u16 pos = vga_cursor;
     outb(0x3D4, 0x0F);
     outb(0x3D5, (u8)(pos & 0xFF));
@@ -101,10 +101,11 @@ void vga_puts(const char* str) {
 }
 
 void vga_scroll(void) {
-    for (u32 i = 0; i < VGA_SIZE - VGA_WIDTH; i++) {
+    u32 i;
+    for (i = 0; i < VGA_SIZE - VGA_WIDTH; i++) {
         vga_buffer[i] = vga_buffer[i + VGA_WIDTH];
     }
-    for (u32 i = VGA_SIZE - VGA_WIDTH; i < VGA_SIZE; i++) {
+    for (; i < VGA_SIZE; i++) {
         vga_buffer[i] = (u16)' ' | ((u16)vga_color << 8);
     }
     vga_update_hw_cursor();

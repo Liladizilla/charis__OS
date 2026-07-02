@@ -35,7 +35,7 @@
 #include <kernel/pipe.h>
 #include <kernel/driver.h>
 
-void kernel_main(u32 magic, u32 info) {
+void kernel_main(u32 magic, u32 info_ptr) {
     // Debug: kernel entry
     *(u16*)0xB8000 = 0x0F00 | 'K';
 
@@ -44,8 +44,6 @@ void kernel_main(u32 magic, u32 info) {
     vga_enable_cursor(14, 15);
     *(u16*)0xB8002 = 0x0F00 | 'V';
     serial_init();
-    // Debug serial
-    asm volatile("mov dx, 0x3F8; mov al, 'K'; out dx, al");
     *(u16*)0xB8004 = 0x0F00 | 'S';
 
     // Print boot banner with version and date
@@ -63,7 +61,7 @@ void kernel_main(u32 magic, u32 info) {
     *(u16*)0xB8006 = 0x0F00 | 'M';
 
     // Initialize subsystems in exact order
-    memory_init(info);
+    memory_init((void*)(uintptr_t)info_ptr);
 
     // Optional: VMM tests after VMM init (compile-time flag)
 #ifdef RUN_VMM_TESTS
@@ -123,7 +121,7 @@ void kernel_main(u32 magic, u32 info) {
     if (user_pml4) {
         vmm_copy_kernel_mappings(user_pml4, NULL);
     }
-    task_t* user_task = task_create("user", user_main, NULL, CAP_SPAWN | CAP_FS_READ, true);
+    task_t* user_task = task_create("user", (task_func_t)user_main, NULL, CAP_SPAWN | CAP_FS_READ, true);
     if (user_task) {
         user_task->mm.pml4 = user_pml4;
         scheduler_add_task(user_task);
@@ -132,7 +130,7 @@ void kernel_main(u32 magic, u32 info) {
     }
 
     // Create shell task with minimal caps
-    task_t* shell_task = task_create("shell", shell_main, NULL, CAP_SPAWN | CAP_FS_READ | CAP_FS_WRITE, false);
+    task_t* shell_task = task_create("shell", (task_func_t)shell_main, NULL, CAP_SPAWN | CAP_FS_READ | CAP_FS_WRITE, false);
     if (shell_task == NULL) {
         vga_puts_error("ERROR: Failed to create shell task!");
         while (1) {

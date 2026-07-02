@@ -9,72 +9,81 @@ echo "Building CharisOS..."
 # Create build directory
 mkdir -p build
 
+NASM=nasm
+GCC=gcc
+LD=ld
+XORRISO=xorriso
+
 # Assemble boot files
-"C:\msys64\mingw64\bin\nasm.exe" -f elf64 boot/boot.asm -o build/boot.o
-"C:\msys64\mingw64\bin\nasm.exe" -f elf64 boot/long_mode.asm -o build/long_mode.o
-"C:\msys64\mingw64\bin\nasm.exe" -f elf64 kernel/asm/interrupt_stubs.asm -o build/interrupt_stubs.o
-"C:\msys64\mingw64\bin\nasm.exe" -f elf64 kernel/asm/context.asm -o build/context.o
-"C:\msys64\mingw64\bin\nasm.exe" -f elf64 kernel/asm/gdt.asm -o build/gdt.o
-"C:\msys64\mingw64\bin\nasm.exe" -f elf64 kernel/asm/io.asm -o build/io.o
+$NASM -f elf64 boot/boot.asm -o build/boot.o
+$NASM -f elf64 boot/long_mode.asm -o build/long_mode.o
+$NASM -f elf64 kernel/asm/interrupt_stubs.asm -o build/interrupt_stubs.o
+$NASM -f elf64 kernel/asm/context.asm -o build/context.o
+$NASM -f elf64 kernel/asm/gdt.asm -o build/gdt.o
+$NASM -f elf64 kernel/asm/io.asm -o build/io.o
+
+CFLAGS="-ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude"
 
 # Compile all kernel files
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/string.c -o build/string.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/printf.c -o build/printf.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/memory.c -o build/memory.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/bootmem.c -o build/bootmem.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/heap.c -o build/heap.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/pmm.c -o build/pmm.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/vmm.c -o build/vmm.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/vmm_test.c -o build/vmm_test.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/idt.c -o build/idt.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/irq.c -o build/irq.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/timer.c -o build/timer.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/keyboard.c -o build/keyboard.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/syscall.c -o build/syscall.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/task.c -o build/task.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/scheduler.c -o build/scheduler.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/shell.c -o build/shell.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/vga.c -o build/vga.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/serial.c -o build/serial.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/net.c -o build/net.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/ata.c -o build/ata.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/fs.c -o build/fs.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/vfs.c -o build/vfs.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/elf.c -o build/elf.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/user.c -o build/user.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/input.c -o build/input.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/mouse.c -o build/mouse.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/fb.c -o build/fb.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/psf.c -o build/psf.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/graphics.c -o build/graphics.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/wm.c -o build/wm.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/ipc.c -o build/ipc.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/socket.c -o build/socket.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/demo.c -o build/demo.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/desktop.c -o build/desktop.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/apps.c -o build/apps.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/audio.c -o build/audio.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/usb.c -o build/usb.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/pci.c -o build/pci.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/services.c -o build/services.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/diagnostics.c -o build/diagnostics.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/display.c -o build/display.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/config.c -o build/config.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/power.c -o build/power.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/security.c -o build/security.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/il_runtime.c -o build/il_runtime.o
-"C:\msys64\mingw64\bin\gcc.exe" -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -Wall -Wextra -Iinclude -c kernel/main.c -o build/main.o
+$GCC $CFLAGS -c kernel/string.c -o build/string.o
+$GCC $CFLAGS -c kernel/printf.c -o build/printf.o
+$GCC $CFLAGS -c kernel/memory.c -o build/memory.o
+$GCC $CFLAGS -c kernel/bootmem.c -o build/bootmem.o
+$GCC $CFLAGS -c kernel/heap.c -o build/heap.o
+$GCC $CFLAGS -c kernel/pmm.c -o build/pmm.o
+$GCC $CFLAGS -c kernel/vmm.c -o build/vmm.o
+$GCC $CFLAGS -c kernel/idt.c -o build/idt.o
+$GCC $CFLAGS -c kernel/irq.c -o build/irq.o
+$GCC $CFLAGS -c kernel/timer.c -o build/timer.o
+$GCC $CFLAGS -c kernel/keyboard.c -o build/keyboard.o
+$GCC $CFLAGS -c kernel/syscall.c -o build/syscall.o
+$GCC $CFLAGS -c kernel/task.c -o build/task.o
+$GCC $CFLAGS -c kernel/scheduler.c -o build/scheduler.o
+$GCC $CFLAGS -c kernel/shell.c -o build/shell.o
+$GCC $CFLAGS -c kernel/vga.c -o build/vga.o
+$GCC $CFLAGS -c kernel/serial.c -o build/serial.o
+$GCC $CFLAGS -c kernel/net.c -o build/net.o
+$GCC $CFLAGS -c kernel/ata.c -o build/ata.o
+$GCC $CFLAGS -c kernel/fs.c -o build/fs.o
+$GCC $CFLAGS -c kernel/vfs.c -o build/vfs.o
+$GCC $CFLAGS -c kernel/elf.c -o build/elf.o
+$GCC $CFLAGS -c kernel/user.c -o build/user.o
+$GCC $CFLAGS -c kernel/input.c -o build/input.o
+$GCC $CFLAGS -c kernel/mouse.c -o build/mouse.o
+$GCC $CFLAGS -c kernel/fb.c -o build/fb.o
+$GCC $CFLAGS -c kernel/psf.c -o build/psf.o
+$GCC $CFLAGS -c kernel/graphics.c -o build/graphics.o
+$GCC $CFLAGS -c kernel/wm.c -o build/wm.o
+$GCC $CFLAGS -c kernel/ipc.c -o build/ipc.o
+$GCC $CFLAGS -c kernel/compositor.c -o build/compositor.o
+$GCC $CFLAGS -c kernel/socket.c -o build/socket.o
+$GCC $CFLAGS -c kernel/demo.c -o build/demo.o
+$GCC $CFLAGS -c kernel/desktop.c -o build/desktop.o
+$GCC $CFLAGS -c kernel/apps.c -o build/apps.o
+$GCC $CFLAGS -c kernel/audio.c -o build/audio.o
+$GCC $CFLAGS -c kernel/usb.c -o build/usb.o
+$GCC $CFLAGS -c kernel/pci.c -o build/pci.o
+$GCC $CFLAGS -c kernel/services.c -o build/services.o
+$GCC $CFLAGS -c kernel/diagnostics.c -o build/diagnostics.o
+$GCC $CFLAGS -c kernel/display.c -o build/display.o
+$GCC $CFLAGS -c kernel/config.c -o build/config.o
+$GCC $CFLAGS -c kernel/power.c -o build/power.o
+$GCC $CFLAGS -c kernel/security.c -o build/security.o
+$GCC $CFLAGS -c kernel/il_runtime.c -o build/il_runtime.o
+$GCC $CFLAGS -c kernel/main.c -o build/main.o
 
 # Link kernel
-"C:\msys64\mingw64\bin\ld.exe" -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack -o build/kernel.elf \
+$LD -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack -o build/kernel.elf \
     build/boot.o build/long_mode.o build/main.o build/vga.o build/serial.o \
-    build/string.o build/printf.o build/pmm.o build/vmm.o build/vmm_test.o build/memory.o build/heap.o build/bootmem.o \
+    build/string.o build/printf.o build/pmm.o build/vmm.o build/memory.o build/heap.o build/bootmem.o \
     build/idt.o build/irq.o build/timer.o build/keyboard.o build/syscall.o build/task.o build/scheduler.o \
     build/shell.o build/il_runtime.o build/net.o build/ata.o build/fs.o build/vfs.o build/elf.o build/fb.o build/psf.o \
-    build/graphics.o build/wm.o build/input.o build/mouse.o build/ipc.o build/socket.o build/user.o \
+    build/graphics.o build/wm.o build/input.o build/mouse.o build/ipc.o build/compositor.o build/socket.o build/user.o \
     build/demo.o build/desktop.o build/apps.o build/audio.o build/usb.o build/pci.o build/services.o \
     build/diagnostics.o build/display.o build/config.o build/power.o build/security.o \
     build/interrupt_stubs.o build/context.o build/gdt.o build/io.o
+
+echo "Kernel linked successfully: build/kernel.elf"
 
 # Create ISO directory structure
 mkdir -p iso/boot/grub
@@ -93,7 +102,7 @@ menuentry "CharisOS" {
 }
 EOF
 
-# Create bootable ISO (use xorriso since GRUB not available)
-"C:\msys64\usr\bin\xorriso.exe" -as mkisofs -o build/charisos.iso -b boot/grub/grub.cfg -no-emul-boot -boot-load-size 4 -iso-level 3 -quiet iso
+# Create bootable ISO
+$XORRISO -as mkisofs -o build/charisos.iso -b boot/grub/grub.cfg -no-emul-boot -boot-load-size 4 -iso-level 3 -quiet iso
 
 echo "Build complete. Output: build/charisos.iso"

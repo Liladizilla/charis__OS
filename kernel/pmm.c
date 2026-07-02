@@ -22,7 +22,7 @@ void pmm_init(multiboot_info_t* info) {
     // Mark used areas
     // Kernel (1MB - end)
     u64 kernel_start = 0x100000;
-    u64 kernel_end = _kernel_end;
+    u64 kernel_end = (u64)&kernel_end;
     for (u64 addr = kernel_start; addr < kernel_end; addr += 4096) {
         u32 page = (addr - bitmap_base) / 4096;
         bitmap[page / 8] |= (1 << (page % 8));
@@ -48,9 +48,11 @@ void pmm_init(multiboot_info_t* info) {
 }
 
 u64 pmm_alloc_page(void) {
-    for (u32 i = last_free; i < BITMAP_SIZE; i++) {
+    u32 i;
+    for (i = last_free; i < BITMAP_SIZE; i++) {
         if (bitmap[i] != 0xFF) {
-            for (u8 bit = 0; bit < 8; bit++) {
+            u8 bit;
+            for (bit = 0; bit < 8; bit++) {
                 if (!(bitmap[i] & (1 << bit))) {
                     bitmap[i] |= (1 << bit);
                     last_free = i;
@@ -60,9 +62,10 @@ u64 pmm_alloc_page(void) {
         }
     }
     // wrap around
-    for (u32 i = 0; i < last_free; i++) {
+    for (i = 0; i < last_free; i++) {
         if (bitmap[i] != 0xFF) {
-            for (u8 bit = 0; bit < 8; bit++) {
+            u8 bit;
+            for (bit = 0; bit < 8; bit++) {
                 if (!(bitmap[i] & (1 << bit))) {
                     bitmap[i] |= (1 << bit);
                     last_free = i;

@@ -1,0 +1,635 @@
+Assembling boot files...
+Compiling kernel...
+kernel\main.c:66:17: error: incompatible integer to pointer conversion passing 'u32' (aka 'unsigned int') to parameter of type 'multiboot_info_t *' [-Wint-conversion]
+   66 |     memory_init(info);
+      |                 ^~~~
+include/kernel/memory.h:44:36: note: passing argument to parameter 'info' here
+   44 | void memory_init(multiboot_info_t* info);
+      |                                    ^
+kernel\main.c:114:5: error: call to undeclared function 'diagnostics_init'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  114 |     diagnostics_init();
+      |     ^
+kernel\main.c:126:45: error: incompatible function pointer types passing 'void (void)' to parameter of type 'task_func_t' (aka 'void (*)(void *)') [-Wincompatible-function-pointer-types]
+  126 |     task_t* user_task = task_create("user", user_main, NULL, CAP_SPAWN | CAP_FS_READ, true);
+      |                                             ^~~~~~~~~
+include/kernel/task.h:83:51: note: passing argument to parameter 'func' here
+   83 | task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user);
+      |                                                   ^
+3 errors generated.
+kernel\vga.c:71:13: error: static declaration of 'vga_update_hw_cursor' follows non-static declaration
+   71 | static void vga_update_hw_cursor(void) {
+      |             ^
+include/kernel/vga.h:39:6: note: previous declaration is here
+   39 | void vga_update_hw_cursor(void);
+      |      ^
+1 error generated.
+kernel\serial.c:50:18: error: invalid operand for instruction
+   50 |     asm volatile("inb %1, %0" : "=a"(status) : "Nd"(SERIAL_LINE_STATUS_PORT(port)));
+      |                  ^
+<inline asm>:1:6: note: instantiated into assembly here
+    1 |         inb %edx, %al
+      |             ^~~~~
+kernel\serial.c:50:18: error: invalid operand for instruction
+   50 |     asm volatile("inb %1, %0" : "=a"(status) : "Nd"(SERIAL_LINE_STATUS_PORT(port)));
+      |                  ^
+<inline asm>:1:6: note: instantiated into assembly here
+    1 |         inb %edx, %al
+      |             ^~~~~
+kernel\serial.c:29:18: error: invalid operand for instruction
+   29 |     asm volatile("outb %0, %1" : : "a"((u8)0x00), "Nd"(SERIAL_DATA_PORT(port) + 1));
+      |                  ^
+<inline asm>:1:12: note: instantiated into assembly here
+    1 |         outb %al, %edx
+      |                   ^~~~
+kernel\serial.c:32:18: error: invalid operand for instruction
+   32 |     asm volatile("outb %0, %1" : : "a"((u8)SERIAL_LINE_ENABLE_DLAB), "Nd"(SERIAL_LINE_COMMAND_PORT(port)));
+      |                  ^
+<inline asm>:1:12: note: instantiated into assembly here
+    1 |         outb %al, %edx
+      |                   ^~~~
+kernel\serial.c:36:22: error: invalid operand for instruction
+   36 |         asm volatile("outb %0, %1" : : "a"((u8)0x00), "Nd"(SERIAL_DATA_PORT(port) + 1));
+      |                      ^
+<inline asm>:1:12: note: instantiated into assembly here
+    1 |         outb %al, %edx
+      |                   ^~~~
+kernel\serial.c:39:18: error: invalid operand for instruction
+   39 |     asm volatile("outb %0, %1" : : "a"((u8)0x03), "Nd"(SERIAL_LINE_COMMAND_PORT(port)));
+      |                  ^
+<inline asm>:1:12: note: instantiated into assembly here
+    1 |         outb %al, %edx
+      |                   ^~~~
+kernel\serial.c:42:18: error: invalid operand for instruction
+   42 |     asm volatile("outb %0, %1" : : "a"((u8)0xC7), "Nd"(SERIAL_FIFO_COMMAND_PORT(port)));
+      |                  ^
+<inline asm>:1:12: note: instantiated into assembly here
+    1 |         outb %al, %edx
+      |                   ^~~~
+kernel\serial.c:45:18: error: invalid operand for instruction
+   45 |     asm volatile("outb %0, %1" : : "a"((u8)0x0B), "Nd"(SERIAL_MODEM_COMMAND_PORT(port)));
+      |                  ^
+<inline asm>:1:12: note: instantiated into assembly here
+    1 |         outb %al, %edx
+      |                   ^~~~
+kernel\serial.c:50:18: error: invalid operand for instruction
+   50 |     asm volatile("inb %1, %0" : "=a"(status) : "Nd"(SERIAL_LINE_STATUS_PORT(port)));
+      |                  ^
+<inline asm>:1:6: note: instantiated into assembly here
+    1 |         inb %edx, %al
+      |             ^~~~~
+kernel\serial.c:50:18: error: invalid operand for instruction
+   50 |     asm volatile("inb %1, %0" : "=a"(status) : "Nd"(SERIAL_LINE_STATUS_PORT(port)));
+      |                  ^
+<inline asm>:1:6: note: instantiated into assembly here
+    1 |         inb %edx, %al
+      |             ^~~~~
+kernel\serial.c:50:18: error: invalid operand for instruction
+   50 |     asm volatile("inb %1, %0" : "=a"(status) : "Nd"(SERIAL_LINE_STATUS_PORT(port)));
+      |                  ^
+<inline asm>:1:6: note: instantiated into assembly here
+    1 |         inb %edx, %al
+      |             ^~~~~
+kernel\serial.c:50:18: error: invalid operand for instruction
+   50 |     asm volatile("inb %1, %0" : "=a"(status) : "Nd"(SERIAL_LINE_STATUS_PORT(port)));
+      |                  ^
+<inline asm>:1:6: note: instantiated into assembly here
+    1 |         inb %edx, %al
+      |             ^~~~~
+12 errors generated.
+kernel\pmm.c:16:18: warning: cast to 'multiboot_memory_map_t *' from smaller integer type 'u32' (aka 'unsigned int') [-Wint-to-pointer-cast]
+   16 |     memory_map = (multiboot_memory_map_t*)info->mmap_addr;
+      |                  ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+kernel\pmm.c:20:5: error: call to undeclared function 'memset'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   20 |     memset(bitmap, 0, BITMAP_SIZE);
+      |     ^
+kernel\pmm.c:20:5: note: did you mean 'kmemset'?
+include/kernel/string.h:6:7: note: 'kmemset' declared here
+    6 | void* kmemset(void* dst, u8 val, usize n);
+      |       ^
+kernel\pmm.c:25:22: error: use of undeclared identifier '_kernel_end'; did you mean 'kernel_end'?
+   25 |     u64 kernel_end = _kernel_end;
+      |                      ^~~~~~~~~~~
+      |                      kernel_end
+kernel\pmm.c:25:9: note: 'kernel_end' declared here
+   25 |     u64 kernel_end = _kernel_end;
+      |         ^
+1 warning and 2 errors generated.
+kernel\idt.c:51:22: error: call to undeclared function 'syscall_dispatch'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   51 |         frame->rax = syscall_dispatch(frame->rax, frame->rdi, frame->rsi, frame->rdx, frame->r10, frame->r8, frame->r9);
+      |                      ^
+kernel\idt.c:57:9: error: call to undeclared function 'kprintf'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   57 |         kprintf("=== EXCEPTION #%d ===\n", frame->vector);
+      |         ^
+kernel\idt.c:79:62: error: use of undeclared identifier 'PTE_WRITABLE'
+   79 |                 if (phys && vmm_map_page(cr2 & ~0xFFF, phys, PTE_WRITABLE | (frame->error_code & 4 ? PTE_USER : 0))) {
+      |                                                              ^~~~~~~~~~~~
+kernel\idt.c:79:102: error: use of undeclared identifier 'PTE_USER'
+   79 |                 if (phys && vmm_map_page(cr2 & ~0xFFF, phys, PTE_WRITABLE | (frame->error_code & 4 ? PTE_USER : 0))) {
+      |                                                                                                      ^~~~~~~~
+4 errors generated.
+kernel\irq.c:11:5: error: call to undeclared function 'outb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   11 |     outb(PIC1_COMMAND, 0x11);
+      |     ^
+kernel\irq.c:12:5: error: call to undeclared function 'io_delay'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   12 |     io_delay();
+      |     ^
+kernel\irq.c:41:9: error: call to undeclared function 'outb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   41 |         outb(PIC2_COMMAND, PIC_EOI);
+      |         ^
+kernel\irq.c:43:5: error: call to undeclared function 'outb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   43 |     outb(PIC1_COMMAND, PIC_EOI);
+      |     ^
+kernel\irq.c:48:16: error: call to undeclared function 'inb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   48 |     u8 value = inb(port);
+      |                ^
+kernel\irq.c:50:5: error: call to undeclared function 'outb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   50 |     outb(port, value);
+      |     ^
+kernel\irq.c:55:16: error: call to undeclared function 'inb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   55 |     u8 value = inb(port);
+      |                ^
+kernel\irq.c:57:5: error: call to undeclared function 'outb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   57 |     outb(port, value);
+      |     ^
+8 errors generated.
+kernel\syscall.c:17:61: warning: unused parameter 'a4' [-Wunused-parameter]
+   17 | static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+      |                                                             ^
+kernel\syscall.c:17:69: warning: unused parameter 'a5' [-Wunused-parameter]
+   17 | static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+      |                                                                     ^
+kernel\syscall.c:17:77: warning: unused parameter 'a6' [-Wunused-parameter]
+   17 | static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+      |                                                                             ^
+kernel\syscall.c:54:13: error: call to undeclared function 'vga_putc'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   54 |             vga_putc(s[i]);
+      |             ^
+kernel\syscall.c:54:13: note: did you mean 'vga_puts'?
+include/kernel/vga.h:34:6: note: 'vga_puts' declared here
+   34 | void vga_puts(const char* str);
+      |      ^
+kernel\syscall.c:42:62: warning: unused parameter 'a4' [-Wunused-parameter]
+   42 | static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+      |                                                              ^
+kernel\syscall.c:42:70: warning: unused parameter 'a5' [-Wunused-parameter]
+   42 | static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+      |                                                                      ^
+kernel\syscall.c:42:78: warning: unused parameter 'a6' [-Wunused-parameter]
+   42 | static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+      |                                                                              ^
+kernel\syscall.c:108:25: error: call to undeclared function 'kmalloc'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  108 |     void* child_stack = kmalloc(TASK_STACK_SIZE + PAGE_SIZE);
+      |                         ^
+kernel\syscall.c:108:51: error: use of undeclared identifier 'PAGE_SIZE'
+  108 |     void* child_stack = kmalloc(TASK_STACK_SIZE + PAGE_SIZE);
+      |                                                   ^~~~~~~~~
+kernel\syscall.c:111:21: error: call to undeclared function 'task_allocate'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  111 |     task_t* child = task_allocate();
+      |                     ^
+kernel\syscall.c:111:13: error: incompatible integer to pointer conversion initializing 'task_t *' (aka 'struct task *') with an expression of type 'int' [-Wint-conversion]
+  111 |     task_t* child = task_allocate();
+      |             ^       ~~~~~~~~~~~~~~~
+kernel\syscall.c:113:9: error: call to undeclared function 'kfree'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  113 |         kfree(child_stack);
+      |         ^
+kernel\syscall.c:117:5: error: call to undeclared function 'kmemset'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  117 |     kmemset(child, 0, sizeof(task_t));
+      |     ^
+kernel\syscall.c:118:18: error: call to undeclared function 'task_next_pid'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  118 |     child->pid = task_next_pid();
+      |                  ^
+kernel\syscall.c:124:44: error: use of undeclared identifier 'PAGE_SIZE'
+  124 |     child->stack_base = (u64)child_stack + PAGE_SIZE;
+      |                                            ^~~~~~~~~
+kernel\syscall.c:129:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  129 |     kstrncpy(child->name, parent->name, TASK_NAME_MAX - 1);
+      |     ^
+kernel\syscall.c:234:9: error: call to undeclared function 'elf_load'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  234 |     if (elf_load(path, &task->mm, &entry_point) < 0) {
+      |         ^
+kernel\syscall.c:240:5: error: call to undeclared function 'elf_setup_stack'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  240 |     elf_setup_stack(&task->mm, &stack_top, NULL, 0, NULL, 0);
+      |     ^
+kernel\syscall.c:306:5: error: use of undeclared identifier 'system_stats_t'
+  306 |     system_stats_t* stats = (system_stats_t*)a1;
+      |     ^~~~~~~~~~~~~~
+kernel\syscall.c:306:21: error: use of undeclared identifier 'stats'
+  306 |     system_stats_t* stats = (system_stats_t*)a1;
+      |                     ^~~~~
+kernel\syscall.c:306:30: error: use of undeclared identifier 'system_stats_t'
+  306 |     system_stats_t* stats = (system_stats_t*)a1;
+      |                              ^~~~~~~~~~~~~~
+kernel\syscall.c:306:45: error: expected expression
+  306 |     system_stats_t* stats = (system_stats_t*)a1;
+      |                                             ^
+kernel\syscall.c:307:9: error: use of undeclared identifier 'stats'
+  307 |     if (stats) diag_collect_stats(stats);
+      |         ^~~~~
+kernel\syscall.c:307:16: error: call to undeclared function 'diag_collect_stats'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  307 |     if (stats) diag_collect_stats(stats);
+      |                ^
+kernel\syscall.c:307:35: error: use of undeclared identifier 'stats'
+  307 |     if (stats) diag_collect_stats(stats);
+      |                                   ^~~~~
+kernel\syscall.c:304:43: warning: unused parameter 'a1' [-Wunused-parameter]
+  304 | static u64 syscall_diag_stats_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+      |                                           ^
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+7 warnings and 20 errors generated.
+In file included from kernel\shell.c:10:
+include/kernel/services.h:18:5: error: unknown type name 'task_t'
+   18 |     task_t* task;
+      |     ^
+In file included from kernel\shell.c:12:
+include/kernel/security.h:24:32: error: unknown type name 'task_t'
+   24 | bool security_check_capability(task_t* task, u32 cap);
+      |                                ^
+include/kernel/security.h:25:36: error: unknown type name 'task_t'
+   25 | void security_enforce_capabilities(task_t* task);
+      |                                    ^
+include/kernel/security.h:26:41: error: unknown type name 'task_t'
+   26 | void security_audit(const char* action, task_t* task);
+      |                                         ^
+include/kernel/security.h:27:45: error: unknown type name 'task_t'
+   27 | bool security_verify_path(const char* path, task_t* task);
+      |                                             ^
+kernel\shell.c:69:13: error: call to undeclared function 'sys_print'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   69 |             sys_print(text);
+      |             ^
+kernel\shell.c:103:13: error: call to undeclared function 'audio_beep'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  103 |             audio_beep(880, 200);
+      |             ^
+kernel\shell.c:115:44: error: call to undeclared function 'scheduler_current'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  115 |             security_audit("manual_audit", scheduler_current());
+      |                                            ^
+8 errors generated.
+kernel\il_runtime.c:5:26: error: use of undeclared identifier 'TASK_MAX_TASKS'
+    5 | il_runtime_t il_runtimes[TASK_MAX_TASKS];
+      |                          ^~~~~~~~~~~~~~
+kernel\il_runtime.c:9:29: error: use of undeclared identifier 'TASK_MAX_TASKS'
+    9 |     if (il_runtime_count >= TASK_MAX_TASKS) return NULL;
+      |                             ^~~~~~~~~~~~~~
+kernel\il_runtime.c:74:21: error: call to undeclared function 'kultoa'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   74 |                     kultoa(rt->stack[rt->sp++], buf, 10);
+      |                     ^
+kernel\il_runtime.c:74:21: note: did you mean 'kutoa'?
+include/kernel/string.h:22:7: note: 'kutoa' declared here
+   22 | char* kutoa(u64 val, char* buf, int base);
+      |       ^
+kernel\il_runtime.c:209:5: error: use of undeclared identifier 'vfs_node_t'
+  209 |     vfs_node_t* node = vfs_resolve(path);
+      |     ^~~~~~~~~~
+kernel\il_runtime.c:209:17: error: use of undeclared identifier 'node'
+  209 |     vfs_node_t* node = vfs_resolve(path);
+      |                 ^~~~
+kernel\il_runtime.c:209:24: error: call to undeclared function 'vfs_resolve'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  209 |     vfs_node_t* node = vfs_resolve(path);
+      |                        ^
+kernel\il_runtime.c:210:10: error: use of undeclared identifier 'node'
+  210 |     if (!node) return -1;
+      |          ^~~~
+kernel\il_runtime.c:213:9: error: use of undeclared identifier 'node'
+  213 |     if (node->read) {
+      |         ^~~~
+kernel\il_runtime.c:214:22: error: use of undeclared identifier 'node'
+  214 |         bytes_read = node->read(node, 0, IL_MAX_INSTRUCTIONS * sizeof(il_instruction_t), (u8*)out);
+      |                      ^~~~
+kernel\il_runtime.c:214:33: error: use of undeclared identifier 'node'
+  214 |         bytes_read = node->read(node, 0, IL_MAX_INSTRUCTIONS * sizeof(il_instruction_t), (u8*)out);
+      |                                 ^~~~
+10 errors generated.
+kernel\net.c:76:33: warning: unused parameter 'data' [-Wunused-parameter]
+   76 | int net_send_packet(const void* data, usize len) {
+      |                                 ^
+kernel\net.c:86:27: warning: unused parameter 'buffer' [-Wunused-parameter]
+   86 | int net_recv_packet(void* buffer, usize max_len) {
+      |                           ^
+kernel\net.c:86:41: warning: unused parameter 'max_len' [-Wunused-parameter]
+   86 | int net_recv_packet(void* buffer, usize max_len) {
+      |                                         ^
+kernel\net.c:35:21: warning: unused variable 'rx_read_ptr' [-Wunused-variable]
+   35 | static volatile u32 rx_read_ptr = 0;
+      |                     ^~~~~~~~~~~
+4 warnings generated.
+kernel\fs.c:106:40: warning: result of comparison of constant 229 with expression of type 'char' is always false [-Wtautological-constant-out-of-range-compare]
+  106 |                 if (entries[i].name[0] == 0xE5) continue; // Deleted
+      |                     ~~~~~~~~~~~~~~~~~~ ^  ~~~~
+1 warning generated.
+kernel\vfs.c:72:13: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   72 |             kstrncpy(child->name, name, 255);
+      |             ^
+kernel\vfs.c:90:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   90 |     kstrncpy(fat32_root.name, "fs", 255);
+      |     ^
+kernel\vfs.c:104:9: error: call to undeclared function 'kstrcmp'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  104 |     if (kstrcmp(path, "/dev/null") == 0) {
+      |         ^
+kernel\vfs.c:128:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  128 |     kstrncpy(mounts[mount_count].path, path, 63);
+      |     ^
+4 errors generated.
+In file included from kernel\elf.c:1:
+include/kernel/elf.h:54:32: error: unknown type name 'process_mm_t'
+   54 | int elf_load(const char* path, process_mm_t* mm, u64* entry_point);
+      |                                ^
+include/kernel/elf.h:57:21: error: unknown type name 'process_mm_t'
+   57 | int elf_setup_stack(process_mm_t* mm, u64* stack_top, 
+      |                     ^
+include/kernel/elf.h:62:22: error: unknown type name 'process_mm_t'
+   62 | int elf_mmap_segment(process_mm_t* mm, u64 vaddr, u64 filesz, u64 memsz, u64 flags);
+      |                      ^
+include/kernel/elf.h:65:12: error: unknown type name 'process_mm_t'
+   65 | int mm_brk(process_mm_t* mm, u64 new_end);
+      |            ^
+include/kernel/elf.h:68:13: error: unknown type name 'process_mm_t'
+   68 | u64 mm_sbrk(process_mm_t* mm);
+      |             ^
+kernel\elf.c:39:32: error: unknown type name 'process_mm_t'
+   39 | int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
+      |                                ^
+kernel\elf.c:105:21: error: unknown type name 'process_mm_t'
+  105 | int elf_setup_stack(process_mm_t* mm, u64* stack_top, 
+      |                     ^
+kernel\elf.c:124:22: error: unknown type name 'process_mm_t'
+  124 | int elf_mmap_segment(process_mm_t* mm, u64 vaddr, u64 filesz, u64 memsz, u64 flags) {
+      |                      ^
+kernel\elf.c:128:12: error: unknown type name 'process_mm_t'
+  128 | int mm_brk(process_mm_t* mm, u64 new_end) {
+      |            ^
+kernel\elf.c:136:13: error: unknown type name 'process_mm_t'
+  136 | u64 mm_sbrk(process_mm_t* mm) {
+      |             ^
+10 errors generated.
+kernel\user.c:5:5: error: call to undeclared function 'sys_print'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+    5 |     sys_print("Hello from user mode!\n");
+      |     ^
+kernel\user.c:6:5: error: call to undeclared function 'sys_yield'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+    6 |     sys_yield();
+      |     ^
+2 errors generated.
+kernel\graphics.c:82:9: warning: unused variable 'dx' [-Wunused-variable]
+   82 |     s32 dx = 0;
+      |         ^~
+kernel\graphics.c:83:9: warning: unused variable 'dy' [-Wunused-variable]
+   83 |     s32 dy = 0;
+      |         ^~
+2 warnings generated.
+kernel\wm.c:15:39: error: too few arguments provided to function-like macro invocation
+   15 |     fb_clear(FB_COLOR(0x0D, 0x11, 0x17));
+      |                                       ^
+include/kernel/fb.h:28:9: note: macro 'FB_COLOR' defined here
+   28 | #define FB_COLOR(r, g, b, a) (((a) << 24) | ((r) << 16) | ((g) << 8) | (b))
+      |         ^
+kernel\wm.c:15:14: error: use of undeclared identifier 'FB_COLOR'
+   15 |     fb_clear(FB_COLOR(0x0D, 0x11, 0x17));
+      |              ^~~~~~~~
+kernel\wm.c:24:5: error: call to undeclared function 'kmemset'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   24 |     kmemset(win, 0, sizeof(window_t));
+      |     ^
+kernel\wm.c:33:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   33 |     kstrncpy(win->title, title, 127);
+      |     ^
+kernel\wm.c:74:39: error: too few arguments provided to function-like macro invocation
+   74 |     fb_clear(FB_COLOR(0x0D, 0x11, 0x17)); // Dark navy
+      |                                       ^
+include/kernel/fb.h:28:9: note: macro 'FB_COLOR' defined here
+   28 | #define FB_COLOR(r, g, b, a) (((a) << 24) | ((r) << 16) | ((g) << 8) | (b))
+      |         ^
+kernel\wm.c:74:14: error: use of undeclared identifier 'FB_COLOR'
+   74 |     fb_clear(FB_COLOR(0x0D, 0x11, 0x17)); // Dark navy
+      |              ^~~~~~~~
+kernel\wm.c:185:17: warning: variable 'dragging' set but not used [-Wunused-but-set-variable]
+  185 |     static bool dragging = false;
+      |                 ^
+kernel\wm.c:259:5: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  259 |     psf_draw_string(win->x + 8, win->y + 6, win->title, COLOR_ACCENT, COLOR_SURFACE);
+      |     ^
+1 warning and 7 errors generated.
+In file included from kernel\compositor.c:2:
+include/kernel/compositor.h:96:2: error: #endif without #if
+   96 | #endif
+      |  ^
+kernel\compositor.c:6:10: fatal error: 'string.h' file not found
+    6 | #include <string.h>
+      |          ^~~~~~~~~~
+2 errors generated.
+kernel\socket.c:70:35: warning: unused parameter 'buf' [-Wunused-parameter]
+   70 | int socket_send(int sockfd, void* buf, usize len) {
+      |                                   ^
+1 warning generated.
+kernel\demo.c:7:5: error: call to undeclared function 'sys_print'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+    7 |     sys_print("Demo window painting\n");
+      |     ^
+kernel\demo.c:11:5: error: call to undeclared function 'sys_print'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   11 |     sys_print("CharisOS GUI Demo starting...\n");
+      |     ^
+kernel\demo.c:20:9: error: call to undeclared function 'sys_yield'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   20 |         sys_yield();
+      |         ^
+3 errors generated.
+kernel\desktop.c:21:39: error: too few arguments provided to function-like macro invocation
+   21 |     fb_clear(FB_COLOR(0x0D, 0x11, 0x17));
+      |                                       ^
+include/kernel/fb.h:28:9: note: macro 'FB_COLOR' defined here
+   28 | #define FB_COLOR(r, g, b, a) (((a) << 24) | ((r) << 16) | ((g) << 8) | (b))
+      |         ^
+kernel\desktop.c:21:14: error: use of undeclared identifier 'FB_COLOR'
+   21 |     fb_clear(FB_COLOR(0x0D, 0x11, 0x17));
+      |              ^~~~~~~~
+kernel\desktop.c:39:13: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   39 |             psf_draw_string(desktop_icons[i].x, desktop_icons[i].y + ICON_SIZE + 4,
+      |             ^
+kernel\desktop.c:58:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   58 |     kstrncpy(desktop_icons[g_icon_count].title, title, 63);
+      |     ^
+kernel\desktop.c:70:13: error: use of undeclared identifier 'task_t'
+   70 |             task_t* focused = wm_get_focused();
+      |             ^~~~~~
+kernel\desktop.c:70:21: error: use of undeclared identifier 'focused'
+   70 |             task_t* focused = wm_get_focused();
+      |                     ^~~~~~~
+kernel\desktop.c:71:18: error: use of undeclared identifier 'focused'
+   71 |             if (!focused) {
+      |                  ^~~~~~~
+kernel\desktop.c:96:9: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   96 |         psf_draw_string(btn_x + 8, 480 - TASKBAR_HEIGHT + 10,
+      |         ^
+kernel\desktop.c:106:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  106 |     kstrncpy(taskbar_windows[taskbar_count].title, title, 127);
+      |     ^
+kernel\desktop.c:113:13: error: call to undeclared function 'kstrcmp'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  113 |         if (kstrcmp(taskbar_windows[i].title, title) == 0) {
+      |             ^
+10 errors generated.
+kernel\apps.c:33:5: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   33 |     psf_draw_string(66, 66, "CharisOS Terminal", 0x58A6FF, 0x0D1117);
+      |     ^
+kernel\apps.c:46:5: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   46 |     psf_draw_string(116, 116, "File Manager", 0x58A6FF, 0x0D1117);
+      |     ^
+kernel\apps.c:59:5: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   59 |     psf_draw_string(96, 96, "Text Editor", 0x58A6FF, 0x0D1117);
+      |     ^
+kernel\apps.c:72:5: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   72 |     psf_draw_string(216, 236, "Calculator", 0x58A6FF, 0x0D1117);
+      |     ^
+kernel\apps.c:85:5: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   85 |     psf_draw_string(166, 186, "Settings", 0x58A6FF, 0x0D1117);
+      |     ^
+5 errors generated.
+kernel\audio.c:17:6: error: conflicting types for 'audio_init'
+   17 | void audio_init(void) {
+      |      ^
+include/kernel/audio.h:23:5: note: previous declaration is here
+   23 | int audio_init(void);
+      |     ^
+1 error generated.
+kernel\usb.c:12:16: warning: implicit conversion from 'int' to 'u8' (aka 'unsigned char') changes value from 3320 to 248 [-Wconstant-conversion]
+   12 |     outb(0x00, 0xCF8); outb(0x00, 0xCFC); // PCI config space access
+      |     ~~~~       ^~~~~
+kernel\usb.c:12:35: warning: implicit conversion from 'int' to 'u8' (aka 'unsigned char') changes value from 3324 to 252 [-Wconstant-conversion]
+   12 |     outb(0x00, 0xCF8); outb(0x00, 0xCFC); // PCI config space access
+      |                        ~~~~       ^~~~~
+2 warnings generated.
+kernel\pci.c:46:24: warning: unused variable 'header_type' [-Wunused-variable]
+   46 |                     u8 header_type = (header >> 16) & 0xFF;
+      |                        ^~~~~~~~~~~
+kernel\pci.c:60:5: error: call to undeclared function 'kprintf'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   60 |     kprintf("PCI: Found %d devices\n", pci_count);
+      |     ^
+kernel\pci.c:12:26: warning: result of comparison of constant 256 with expression of type 'u8' (aka 'unsigned char') is always true [-Wtautological-constant-out-of-range-compare]
+   12 |     for (u8 bus = 0; bus < 256; bus++) {
+      |                      ~~~ ^ ~~~
+2 warnings and 1 error generated.
+In file included from kernel\services.c:1:
+include/kernel/services.h:18:5: error: unknown type name 'task_t'
+   18 |     task_t* task;
+      |     ^
+kernel\services.c:24:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   24 |     kstrncpy(svc->name, name, SERVICE_NAME_MAX - 1);
+      |     ^
+kernel\services.c:72:13: error: call to undeclared function 'kstrcmp'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   72 |         if (kstrcmp(services[i].name, name) == 0) {
+      |             ^
+3 errors generated.
+In file included from kernel\security.c:1:
+include/kernel/security.h:24:32: error: unknown type name 'task_t'
+   24 | bool security_check_capability(task_t* task, u32 cap);
+      |                                ^
+include/kernel/security.h:25:36: error: unknown type name 'task_t'
+   25 | void security_enforce_capabilities(task_t* task);
+      |                                    ^
+include/kernel/security.h:26:41: error: unknown type name 'task_t'
+   26 | void security_audit(const char* action, task_t* task);
+      |                                         ^
+include/kernel/security.h:27:45: error: unknown type name 'task_t'
+   27 | bool security_verify_path(const char* path, task_t* task);
+      |                                             ^
+kernel\security.c:42:9: error: call to undeclared function 'kstrcmp'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   42 |     if (kstrcmp(path, "/etc/passwd") == 0 ||
+      |         ^
+5 errors generated.
+kernel\widgets.c:13:5: error: call to undeclared function 'kmemset'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   13 |     kmemset(widget, 0, sizeof(widget_t));
+      |     ^
+kernel\widgets.c:20:9: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   20 |         kstrncpy(widget->text, text, 127);
+      |         ^
+kernel\widgets.c:179:40: error: call to undeclared function 'kstrlen'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  179 |         int cursor_x = widget->x + 4 + kstrlen(widget->text) * 8;
+      |                                        ^
+kernel\widgets.c:250:24: error: call to undeclared function 'kstrlen'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  250 |         int len = (int)kstrlen(widget->text);
+      |                        ^
+kernel\widgets.c:258:20: error: call to undeclared function 'kstrlen'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  258 |     int len = (int)kstrlen(widget->text);
+      |                    ^
+kernel\widgets.c:269:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  269 |     kstrncpy(widget->text, text, 127);
+      |     ^
+6 errors generated.
+In file included from kernel\pipe.c:1:
+include/kernel/pipe.h:13:5: error: unknown type name 'task_t'
+   13 |     task_t* reader;
+      |     ^
+include/kernel/pipe.h:14:5: error: unknown type name 'task_t'
+   14 |     task_t* writer;
+      |     ^
+2 errors generated.
+kernel\driver.c:11:43: warning: unused parameter 'dev' [-Wunused-parameter]
+   11 | static int hda_driver_probe(pci_device_t* dev) {
+      |                                           ^
+kernel\driver.c:51:5: error: call to undeclared function 'kprintf'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   51 |     kprintf("Registered driver: %s\n", drv->name);
+      |     ^
+kernel\driver.c:68:17: error: call to undeclared function 'kprintf'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   68 |                 kprintf("Probing driver %s for PCI %x:%x\n", drv->name, 
+      |                 ^
+1 warning and 2 errors generated.
+kernel\hda.c:58:23: warning: shift count >= width of type [-Wshift-count-overflow]
+   58 |     *response = (rior << 32) | rirb;
+      |                       ^  ~~
+kernel\hda.c:66:34: warning: shift count >= width of type [-Wshift-count-overflow]
+   66 |     hda_write(HDA_REG_CORBU, cmd >> 32);
+      |                                  ^  ~~
+kernel\hda.c:80:5: error: use of undeclared identifier 'pci_device_t'
+   80 |     pci_device_t* dev = pci_find_device(0x8086, 0x2668); /* Intel ICH */
+      |     ^~~~~~~~~~~~
+kernel\hda.c:80:19: error: use of undeclared identifier 'dev'
+   80 |     pci_device_t* dev = pci_find_device(0x8086, 0x2668); /* Intel ICH */
+      |                   ^~~
+kernel\hda.c:80:25: error: call to undeclared function 'pci_find_device'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   80 |     pci_device_t* dev = pci_find_device(0x8086, 0x2668); /* Intel ICH */
+      |                         ^
+kernel\hda.c:81:10: error: use of undeclared identifier 'dev'
+   81 |     if (!dev) {
+      |          ^~~
+kernel\hda.c:82:9: error: use of undeclared identifier 'dev'
+   82 |         dev = pci_find_device(0x8086, 0x27D8); /* Intel HD Audio */
+      |         ^~~
+kernel\hda.c:84:10: error: use of undeclared identifier 'dev'
+   84 |     if (!dev) {
+      |          ^~~
+kernel\hda.c:85:9: error: use of undeclared identifier 'dev'
+   85 |         dev = pci_find_device(0x1002, 0x4383); /* AMD */
+      |         ^~~
+kernel\hda.c:88:10: error: use of undeclared identifier 'dev'
+   88 |     if (!dev) {
+      |          ^~~
+kernel\hda.c:93:29: error: use of undeclared identifier 'dev'
+   93 |     g_hda_state.mmio_base = dev->bar[0];
+      |                             ^~~
+kernel\hda.c:112:36: warning: implicit conversion from 'int' to 'u8' (aka 'unsigned char') changes value from 983040 to 0 [-Wconstant-conversion]
+  112 |         u32 resp = hda_send_cmd(c, 0xF0000, 0); /* Get parameter */
+      |                    ~~~~~~~~~~~~    ^~~~~~~
+kernel\hda.c:142:68: warning: shift count >= width of type [-Wshift-count-overflow]
+  142 |     hda_write(stream_base + HDA_STREAM_SDDL, (physical_buffer_addr >> 32) & 0xFFFFFFFF);
+      |                                                                    ^  ~~
+4 warnings and 9 errors generated.
+Linking kernel...
+/usr/bin/ld: cannot find build\main.o: No such file or directory
+/usr/bin/ld: cannot find build\vga.o: No such file or directory
+/usr/bin/ld: cannot find build\serial.o: No such file or directory
+/usr/bin/ld: cannot find build\pmm.o: No such file or directory
+/usr/bin/ld: cannot find build\idt.o: No such file or directory
+/usr/bin/ld: cannot find build\irq.o: No such file or directory
+/usr/bin/ld: cannot find build\syscall.o: No such file or directory
+/usr/bin/ld: cannot find build\shell.o: No such file or directory
+/usr/bin/ld: cannot find build\il_runtime.o: No such file or directory
+/usr/bin/ld: cannot find build\vfs.o: No such file or directory
+/usr/bin/ld: cannot find build\elf.o: No such file or directory
+/usr/bin/ld: cannot find build\user.o: No such file or directory
+/usr/bin/ld: cannot find build\wm.o: No such file or directory
+/usr/bin/ld: cannot find build\compositor.o: No such file or directory
+/usr/bin/ld: cannot find build\demo.o: No such file or directory
+/usr/bin/ld: cannot find build\desktop.o: No such file or directory
+/usr/bin/ld: cannot find build\apps.o: No such file or directory
+/usr/bin/ld: cannot find build\audio.o: No such file or directory
+/usr/bin/ld: cannot find build\pci.o: No such file or directory
+/usr/bin/ld: cannot find build\services.o: No such file or directory
+/usr/bin/ld: cannot find build\security.o: No such file or directory
+/usr/bin/ld: cannot find build\widgets.o: No such file or directory
+/usr/bin/ld: cannot find build\pipe.o: No such file or directory
+/usr/bin/ld: cannot find build\driver.o: No such file or directory
+/usr/bin/ld: cannot find build\hda.o: No such file or directory
+Link failed

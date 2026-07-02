@@ -1,0 +1,140 @@
+kernel\main.c:66:17: error: incompatible integer to pointer conversion passing 'u32' (aka 'unsigned int') to parameter of type 'multiboot_info_t *' [-Wint-conversion]
+kernel\main.c:114:5: error: call to undeclared function 'diagnostics_init'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\main.c:126:45: error: incompatible function pointer types passing 'void (void)' to parameter of type 'task_func_t' (aka 'void (*)(void *)') [-Wincompatible-function-pointer-types]
+kernel\vga.c:71:13: error: static declaration of 'vga_update_hw_cursor' follows non-static declaration
+kernel\serial.c:50:18: error: invalid operand for instruction
+kernel\serial.c:50:18: error: invalid operand for instruction
+kernel\serial.c:29:18: error: invalid operand for instruction
+kernel\serial.c:32:18: error: invalid operand for instruction
+kernel\serial.c:36:22: error: invalid operand for instruction
+kernel\serial.c:39:18: error: invalid operand for instruction
+kernel\serial.c:42:18: error: invalid operand for instruction
+kernel\serial.c:45:18: error: invalid operand for instruction
+kernel\serial.c:50:18: error: invalid operand for instruction
+kernel\serial.c:50:18: error: invalid operand for instruction
+kernel\serial.c:50:18: error: invalid operand for instruction
+kernel\serial.c:50:18: error: invalid operand for instruction
+kernel\pmm.c:20:5: error: call to undeclared function 'memset'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\pmm.c:25:22: error: use of undeclared identifier '_kernel_end'; did you mean 'kernel_end'?
+kernel\idt.c:51:22: error: call to undeclared function 'syscall_dispatch'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\idt.c:57:9: error: call to undeclared function 'kprintf'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\idt.c:79:62: error: use of undeclared identifier 'PTE_WRITABLE'
+kernel\idt.c:79:102: error: use of undeclared identifier 'PTE_USER'
+kernel\irq.c:11:5: error: call to undeclared function 'outb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\irq.c:12:5: error: call to undeclared function 'io_delay'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\irq.c:41:9: error: call to undeclared function 'outb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\irq.c:43:5: error: call to undeclared function 'outb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\irq.c:48:16: error: call to undeclared function 'inb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\irq.c:50:5: error: call to undeclared function 'outb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\irq.c:55:16: error: call to undeclared function 'inb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\irq.c:57:5: error: call to undeclared function 'outb'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\syscall.c:54:13: error: call to undeclared function 'vga_putc'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\syscall.c:108:25: error: call to undeclared function 'kmalloc'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\syscall.c:108:51: error: use of undeclared identifier 'PAGE_SIZE'
+kernel\syscall.c:111:21: error: call to undeclared function 'task_allocate'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\syscall.c:111:13: error: incompatible integer to pointer conversion initializing 'task_t *' (aka 'struct task *') with an expression of type 'int' [-Wint-conversion]
+kernel\syscall.c:113:9: error: call to undeclared function 'kfree'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\syscall.c:117:5: error: call to undeclared function 'kmemset'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\syscall.c:118:18: error: call to undeclared function 'task_next_pid'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\syscall.c:124:44: error: use of undeclared identifier 'PAGE_SIZE'
+kernel\syscall.c:129:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\syscall.c:234:9: error: call to undeclared function 'elf_load'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\syscall.c:240:5: error: call to undeclared function 'elf_setup_stack'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\syscall.c:306:5: error: use of undeclared identifier 'system_stats_t'
+kernel\syscall.c:306:21: error: use of undeclared identifier 'stats'
+kernel\syscall.c:306:30: error: use of undeclared identifier 'system_stats_t'
+kernel\syscall.c:306:45: error: expected expression
+kernel\syscall.c:307:9: error: use of undeclared identifier 'stats'
+kernel\syscall.c:307:16: error: call to undeclared function 'diag_collect_stats'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\syscall.c:307:35: error: use of undeclared identifier 'stats'
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+include/kernel/services.h:18:5: error: unknown type name 'task_t'
+include/kernel/security.h:24:32: error: unknown type name 'task_t'
+include/kernel/security.h:25:36: error: unknown type name 'task_t'
+include/kernel/security.h:26:41: error: unknown type name 'task_t'
+include/kernel/security.h:27:45: error: unknown type name 'task_t'
+kernel\shell.c:69:13: error: call to undeclared function 'sys_print'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\shell.c:103:13: error: call to undeclared function 'audio_beep'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\shell.c:115:44: error: call to undeclared function 'scheduler_current'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\il_runtime.c:5:26: error: use of undeclared identifier 'TASK_MAX_TASKS'
+kernel\il_runtime.c:9:29: error: use of undeclared identifier 'TASK_MAX_TASKS'
+kernel\il_runtime.c:74:21: error: call to undeclared function 'kultoa'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\il_runtime.c:209:5: error: use of undeclared identifier 'vfs_node_t'
+kernel\il_runtime.c:209:17: error: use of undeclared identifier 'node'
+kernel\il_runtime.c:209:24: error: call to undeclared function 'vfs_resolve'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\il_runtime.c:210:10: error: use of undeclared identifier 'node'
+kernel\il_runtime.c:213:9: error: use of undeclared identifier 'node'
+kernel\il_runtime.c:214:22: error: use of undeclared identifier 'node'
+kernel\il_runtime.c:214:33: error: use of undeclared identifier 'node'
+kernel\vfs.c:72:13: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\vfs.c:90:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\vfs.c:104:9: error: call to undeclared function 'kstrcmp'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\vfs.c:128:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+include/kernel/elf.h:54:32: error: unknown type name 'process_mm_t'
+include/kernel/elf.h:57:21: error: unknown type name 'process_mm_t'
+include/kernel/elf.h:62:22: error: unknown type name 'process_mm_t'
+include/kernel/elf.h:65:12: error: unknown type name 'process_mm_t'
+include/kernel/elf.h:68:13: error: unknown type name 'process_mm_t'
+kernel\elf.c:39:32: error: unknown type name 'process_mm_t'
+kernel\elf.c:105:21: error: unknown type name 'process_mm_t'
+kernel\elf.c:124:22: error: unknown type name 'process_mm_t'
+kernel\elf.c:128:12: error: unknown type name 'process_mm_t'
+kernel\elf.c:136:13: error: unknown type name 'process_mm_t'
+kernel\user.c:5:5: error: call to undeclared function 'sys_print'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\user.c:6:5: error: call to undeclared function 'sys_yield'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\wm.c:15:39: error: too few arguments provided to function-like macro invocation
+kernel\wm.c:15:14: error: use of undeclared identifier 'FB_COLOR'
+kernel\wm.c:24:5: error: call to undeclared function 'kmemset'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\wm.c:33:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\wm.c:74:39: error: too few arguments provided to function-like macro invocation
+kernel\wm.c:74:14: error: use of undeclared identifier 'FB_COLOR'
+kernel\wm.c:259:5: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+include/kernel/compositor.h:96:2: error: #endif without #if
+kernel\compositor.c:6:10: fatal error: 'string.h' file not found
+kernel\demo.c:7:5: error: call to undeclared function 'sys_print'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\demo.c:11:5: error: call to undeclared function 'sys_print'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\demo.c:20:9: error: call to undeclared function 'sys_yield'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\desktop.c:21:39: error: too few arguments provided to function-like macro invocation
+kernel\desktop.c:21:14: error: use of undeclared identifier 'FB_COLOR'
+kernel\desktop.c:39:13: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\desktop.c:58:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\desktop.c:70:13: error: use of undeclared identifier 'task_t'
+kernel\desktop.c:70:21: error: use of undeclared identifier 'focused'
+kernel\desktop.c:71:18: error: use of undeclared identifier 'focused'
+kernel\desktop.c:96:9: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\desktop.c:106:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\desktop.c:113:13: error: call to undeclared function 'kstrcmp'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\apps.c:33:5: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\apps.c:46:5: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\apps.c:59:5: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\apps.c:72:5: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\apps.c:85:5: error: call to undeclared function 'psf_draw_string'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\audio.c:17:6: error: conflicting types for 'audio_init'
+kernel\pci.c:60:5: error: call to undeclared function 'kprintf'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+include/kernel/services.h:18:5: error: unknown type name 'task_t'
+kernel\services.c:24:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\services.c:72:13: error: call to undeclared function 'kstrcmp'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+include/kernel/security.h:24:32: error: unknown type name 'task_t'
+include/kernel/security.h:25:36: error: unknown type name 'task_t'
+include/kernel/security.h:26:41: error: unknown type name 'task_t'
+include/kernel/security.h:27:45: error: unknown type name 'task_t'
+kernel\security.c:42:9: error: call to undeclared function 'kstrcmp'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\widgets.c:13:5: error: call to undeclared function 'kmemset'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\widgets.c:20:9: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\widgets.c:179:40: error: call to undeclared function 'kstrlen'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\widgets.c:250:24: error: call to undeclared function 'kstrlen'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\widgets.c:258:20: error: call to undeclared function 'kstrlen'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\widgets.c:269:5: error: call to undeclared function 'kstrncpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+include/kernel/pipe.h:13:5: error: unknown type name 'task_t'
+include/kernel/pipe.h:14:5: error: unknown type name 'task_t'
+kernel\driver.c:51:5: error: call to undeclared function 'kprintf'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\driver.c:68:17: error: call to undeclared function 'kprintf'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\hda.c:80:5: error: use of undeclared identifier 'pci_device_t'
+kernel\hda.c:80:19: error: use of undeclared identifier 'dev'
+kernel\hda.c:80:25: error: call to undeclared function 'pci_find_device'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+kernel\hda.c:81:10: error: use of undeclared identifier 'dev'
+kernel\hda.c:82:9: error: use of undeclared identifier 'dev'
+kernel\hda.c:84:10: error: use of undeclared identifier 'dev'
+kernel\hda.c:85:9: error: use of undeclared identifier 'dev'
+kernel\hda.c:88:10: error: use of undeclared identifier 'dev'
+kernel\hda.c:93:29: error: use of undeclared identifier 'dev'
