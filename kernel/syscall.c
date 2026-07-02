@@ -11,6 +11,11 @@
 #include <kernel/audio.h>
 #include <kernel/hda.h>
 #include <kernel/fb.h>
+#include <kernel/memory.h>
+#include <kernel/diagnostics.h>
+
+extern u64 isr_table[256];
+#include <kernel/memory.h>
 
 static syscall_handler_t syscall_table[SYSCALL_MAX];
 
