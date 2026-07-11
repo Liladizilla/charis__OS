@@ -17,19 +17,16 @@
 
 ---
 
-## 📽️ Demo
+ # Demo
 
-<!-- Replace the link below with your actual video URL and thumbnail -->
-[![CharisOS Boot Demo](file:///C:/Users/chara/Videos/charis_os_presentation.mp4)
+[![CharisOS Boot]  https://file.kiwi/67a1f9ef#LIVXxNmocS8L9P13rQx1CQ
+https://file.kiwi/7d8484fd#TjQmPCrzKGcYy7rqvSBifQ
 
-> **Adding your video:** Upload your recording to YouTube or a file host, then replace the badge href above with your URL. For a thumbnail preview, use:
-> ```md
-> [![Demo](assets/demo-thumb.png)](https://youtu.be/YOUR_VIDEO_ID)
-> ```
+
 
 ---
 
-## 📖 About
+ # About
 
 CharisOS is a lightweight, educational operating system for the **x86_64 architecture**. It combines low-level Assembly boot logic with a minimal C runtime, implementing a managed-style kernel that emphasizes simplicity, security, and bare-metal performance — with zero dependency on a host OS or standard library.
 
@@ -37,7 +34,7 @@ This project covers the full journey from BIOS handoff to preemptive multitaskin
 
 ---
 
-## ✨ Features
+ # Features
 
 | Category | Details |
 |---|---|
@@ -56,7 +53,7 @@ This project covers the full journey from BIOS handoff to preemptive multitaskin
 
 ---
 
-## 🏗️ Architecture
+# Architecture
 
 ### Boot sequence
 
@@ -80,7 +77,7 @@ kernel/main.c                 (C kernel entry)
     └─ Shell launch
 ```
 
-### Kernel components
+ Kernel components
 
 | File | Responsibility |
 |---|---|
@@ -101,7 +98,7 @@ kernel/main.c                 (C kernel entry)
 
 ---
 
-## 📁 Repository structure
+ Repository structure
 
 ```
 charis__OS/
@@ -141,9 +138,9 @@ charis__OS/
 
 ---
 
-## 🛠️ Building & Running
+ # Building & Running
 
-### Prerequisites
+## Prerequisites
 
 ```bash
 # Debian / Ubuntu / WSL
