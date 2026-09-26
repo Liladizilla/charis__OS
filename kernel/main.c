@@ -1,5 +1,6 @@
 #include <kernel/types.h>
 #include <kernel/vga.h>
+#include <kernel/logo.h>
 #include <kernel/serial.h>
 #include <kernel/memory.h>
 #include <kernel/idt.h>
@@ -45,6 +46,8 @@ void kernel_main(u32 magic, u32 info_ptr) {
     *(u16*)0xB8002 = 0x0F00 | 'V';
     serial_init();
     *(u16*)0xB8004 = 0x0F00 | 'S';
+
+    logo_print();
 
     // Print boot banner with version and date
     vga_puts_info("=== CharisOS v1.0 ===");

@@ -73,6 +73,10 @@ start:
     mov esp, stack_top
     and esp, -16          ; Ensure 16-byte alignment per System V AMD64 ABI
 
+    ; Preserve GRUB Multiboot2 arguments before initialization changes EAX/EBX.
+    mov dword [mb_magic], eax
+    mov dword [mb_info], ebx
+
     ; Zero BSS section (required for C runtime)
     extern _bss_start
     extern _bss_end
@@ -82,9 +86,7 @@ start:
     xor eax, eax
     rep stosb
 
-    ; Save multiboot magic and info pointer
-    mov dword [mb_magic], eax
-    mov dword [mb_info], ebx
+    ; Multiboot values were preserved immediately after stack setup.
 
     VGA_WRITE 'M'  ; Multiboot OK
     mov dx, 0x3F8

@@ -1,0 +1,14 @@
+# Generated build output
+build/
+*.o
+*.iso
+
+# Node/TypeScript tooling is not part of the OS
+node_modules/
+
+# Editor caches
+.vscode/.cache/
+*.ipch
+
+# Runtime/debug logs
+*.log
