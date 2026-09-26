@@ -51,7 +51,7 @@ void task_init(void) {
     task_list = NULL;
 }
 
-static task_t* task_allocate(void) {
+task_t* task_allocate(void) {
     for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
         if (task_pool[i].state == TASK_STATE_ZOMBIE) {
             return &task_pool[i];

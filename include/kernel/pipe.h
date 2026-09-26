@@ -1,6 +1,7 @@
 /* pipe.h - Anonymous pipes for IPC */
 #pragma once
 #include <kernel/types.h>
+#include <kernel/task.h>
 
 #define PIPE_MAX_PIPES    32
 #define PIPE_BUFFER_SIZE  4096

@@ -1,5 +1,6 @@
 // demo.c - GUI demo application for CharisOS
 #include <kernel/syscall.h>
+#include <kernel/syscall_wrappers.h>
 
 static void demo_window_paint(void* win) {
     (void)win;

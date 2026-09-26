@@ -2,6 +2,7 @@
 #include <kernel/memory.h>
 #include <kernel/io.h>
 #include <kernel/vga.h>
+#include <kernel/pci.h>
 
 static hda_state_t g_hda_state = {0};
 static u32* g_hda_buffer = NULL;

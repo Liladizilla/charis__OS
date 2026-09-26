@@ -1,6 +1,7 @@
 #include <kernel/serial.h>
 #include <kernel/printf.h>
 #include <kernel/types.h>
+#include <kernel/io.h>
 #include <stdarg.h>
 
 #define SERIAL_DATA_PORT(base)          (base)

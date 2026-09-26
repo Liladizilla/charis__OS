@@ -112,7 +112,7 @@ void kernel_main(u32 magic, u32 info_ptr) {
     display_init();
     desktop_init();
     services_init();
-    diagnostics_init();
+    diag_init();
     power_init();
     security_init();
     wm_create_window("CharisOS Desktop", 100, 100, 400, 300);

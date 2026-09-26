@@ -1,6 +1,7 @@
 /* security.h - Security framework for CharisOS */
 #pragma once
 #include <kernel/types.h>
+#include <kernel/task.h>
 
 // Capability-based security
 #define SECURITY_MAX_CAPS         32

@@ -15,6 +15,9 @@
 #define TASK_MAX_TASKS          32
 #define TASK_DEFAULT_QUANTUM    10
 
+task_t* task_allocate(void);
+u32 task_next_pid(void);
+
 /* VMA - Virtual Memory Area */
 typedef struct vma {
     u64 start;

@@ -17,7 +17,7 @@ void pmm_init(multiboot_info_t* info) {
     memory_map_count = info->mmap_length / sizeof(multiboot_memory_map_t);
 
     // Clear bitmap
-    memset(bitmap, 0, BITMAP_SIZE);
+    kmemset(bitmap, 0, BITMAP_SIZE);
 
     // Mark used areas
     // Kernel (1MB - end)

@@ -56,7 +56,7 @@ static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
     if (fd == FD_STDOUT || fd == FD_STDERR) {
         const char* s = (const char*)buf;
         for (usize i = 0; i < count && s[i]; i++) {
-            vga_putc(s[i]);
+            vga_putchar(s[i]);
         }
         return count;
     }

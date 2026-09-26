@@ -5,6 +5,8 @@
 #include <kernel/vga.h>
 #include <string.h>
 
+static float charisos_absf(float value) { return value < 0.0f ? -value : value; }
+
 /* Compositor state */
 surface_t* g_surface_list = NULL;
 damage_list_t g_damage = {0};
@@ -398,7 +400,7 @@ bool spring_update(spring_t* s, float dt) {
     s->value += s->velocity * dt;
     
     /* Check if settled */
-    if (fabsf(s->velocity) < 0.01f && fabsf(s->value - s->target) < 0.01f) {
+    if (charisos_absf(s->velocity) < 0.01f && charisos_absf(s->value - s->target) < 0.01f) {
         s->value = s->target;
         s->velocity = 0.0f;
         s->active = false;

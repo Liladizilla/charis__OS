@@ -1,6 +1,7 @@
 /* services.h - System services for CharisOS */
 #pragma once
 #include <kernel/types.h>
+#include <kernel/task.h>
 
 #define SERVICE_MAX        16
 #define SERVICE_NAME_MAX   32

@@ -2,6 +2,7 @@
 #include <kernel/vga.h>
 #include <kernel/mouse.h>
 #include <kernel/input.h>
+#include <kernel/io.h>
 
 static void (*irq_handlers[16])(reg_frame_t*) = {0};
 

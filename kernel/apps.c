@@ -2,6 +2,7 @@
 #include <kernel/wm.h>
 #include <kernel/graphics.h>
 #include <kernel/vga.h>
+#include <kernel/psf.h>
 
 static const char* app_names[] = {
     "Terminal",
