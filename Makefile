@@ -1,96 +1,68 @@
-# CharisOS Makefile
+# CharisOS freestanding C + NASM build
 
-# Tools (MSYS2/MinGW-w64 detection)
-UNAME := $(shell uname -s 2>/dev/null || echo Windows)
+BUILD_DIR := build
+BOOT_DIR := boot
+KERNEL_DIR := kernel
+INCLUDE_DIR := include
 
-ifeq ($(UNAME),MINGW64)
-# MSYS2 MinGW-w64 environment
-NASM = nasm
-GCC = x86_64-w64-mingw32-gcc
-LD = x86_64-w64-mingw32-ld
-QEMU = qemu-system-x86_64
-GRUB = grub-mkrescue
-else ifeq ($(UNAME),Linux)
-# Native Linux/WSL
-NASM = nasm
-GCC = x86_64-elf-gcc
-LD = x86_64-elf-ld
-QEMU = qemu-system-x86_64
-GRUB = grub-mkrescue
-else
-# Assume MSYS2 or try common paths
-NASM = nasm
-GCC = x86_64-elf-gcc
-LD = x86_64-elf-ld
-QEMU = qemu-system-x86_64
-GRUB = grub-mkrescue
-endif
+# Prefer the cross compiler when installed; override CC/LD if needed.
+CC := $(or $(shell command -v x86_64-elf-gcc 2>/dev/null),gcc)
+LD := $(or $(shell command -v x86_64-elf-ld 2>/dev/null),ld)
+NASM ?= nasm
+GRUB_MKRESCUE ?= grub-mkrescue
+QEMU ?= qemu-system-x86_64
 
-# Directories
-SRC_DIR = .
-BOOT_DIR = boot
-KERNEL_DIR = kernel
-INCLUDE_DIR = include
-BUILD_DIR = build
+CFLAGS := -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel \
+          -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 \
+          -fno-omit-frame-pointer -Wall -Wextra -I$(INCLUDE_DIR)
+ASFLAGS := -f elf64
+LDFLAGS := -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack
 
-# Flags
-NASM_FLAGS = -f elf64
-GCC_FLAGS = -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -fno-omit-frame-pointer -Wall -Wextra -fstack-protector-strong -I$(INCLUDE_DIR)
-LD_FLAGS = -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack
+BOOT_SOURCES := $(BOOT_DIR)/boot.asm $(BOOT_DIR)/long_mode.asm
+ASM_SOURCES := $(wildcard $(KERNEL_DIR)/asm/*.asm)
+KERNEL_SOURCES := $(wildcard $(KERNEL_DIR)/*.c)
 
-# Source files
-BOOT_SOURCES = $(BOOT_DIR)/boot.asm $(BOOT_DIR)/long_mode.asm
-KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/logo.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/bootmem.c $(KERNEL_DIR)/heap.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c $(KERNEL_DIR)/ata.c $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/vfs.c $(KERNEL_DIR)/elf.c $(KERNEL_DIR)/user.c $(KERNEL_DIR)/input.c $(KERNEL_DIR)/mouse.c $(KERNEL_DIR)/fb.c $(KERNEL_DIR)/psf.c $(KERNEL_DIR)/graphics.c $(KERNEL_DIR)/compositor.c $(KERNEL_DIR)/wm.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/socket.c $(KERNEL_DIR)/demo.c $(KERNEL_DIR)/desktop.c $(KERNEL_DIR)/apps.c $(KERNEL_DIR)/audio.c $(KERNEL_DIR)/usb.c $(KERNEL_DIR)/pci.c $(KERNEL_DIR)/services.c $(KERNEL_DIR)/diagnostics.c $(KERNEL_DIR)/display.c $(KERNEL_DIR)/config.c $(KERNEL_DIR)/power.c $(KERNEL_DIR)/security.c $(KERNEL_DIR)/widgets.c $(KERNEL_DIR)/signal.c $(KERNEL_DIR)/pipe.c $(KERNEL_DIR)/driver.c $(KERNEL_DIR)/raster.c $(KERNEL_DIR)/hda.c $(KERNEL_DIR)/gamepad.c
-ASM_SOURCES = $(KERNEL_DIR)/asm/interrupt_stubs.asm $(KERNEL_DIR)/asm/context.asm $(KERNEL_DIR)/asm/gdt.asm $(KERNEL_DIR)/asm/io.asm
+BOOT_OBJECTS := $(patsubst $(BOOT_DIR)/%.asm,$(BUILD_DIR)/%.o,$(BOOT_SOURCES))
+ASM_OBJECTS := $(patsubst $(KERNEL_DIR)/asm/%.asm,$(BUILD_DIR)/asm_%.o,$(ASM_SOURCES))
+KERNEL_OBJECTS := $(patsubst $(KERNEL_DIR)/%.c,$(BUILD_DIR)/%.o,$(KERNEL_SOURCES))
+OBJECTS := $(BOOT_OBJECTS) $(KERNEL_OBJECTS) $(ASM_OBJECTS)
 
-# Object files (PREFIXED to prevent name collisions)
-BOOT_OBJS = $(patsubst $(BOOT_DIR)/%.asm, $(BUILD_DIR)/boot__%.o, $(BOOT_SOURCES))
-KERNEL_OBJS = $(patsubst $(KERNEL_DIR)/%.c, $(BUILD_DIR)/kern__%.o, $(KERNEL_SOURCES))
-ASM_OBJS = $(patsubst $(KERNEL_DIR)/asm/%.asm, $(BUILD_DIR)/asm__%.o, $(ASM_SOURCES))
+.PHONY: all clean run debug check-tools
 
-ALL_OBJS = $(BOOT_OBJS) $(KERNEL_OBJS) $(ASM_OBJS)
-
-# Targets
 all: $(BUILD_DIR)/charisos.iso
 
-$(BUILD_DIR)/charisos.iso: $(BUILD_DIR)/kernel.elf
-	mkdir -p iso/boot/grub
-	cp $(BUILD_DIR)/kernel.elf iso/boot/
-	$(GRUB) -o $@ iso/
+$(BUILD_DIR)/charisos.iso: $(BUILD_DIR)/kernel.elf iso/boot/grub/grub.cfg
+	mkdir -p iso/boot
+	cp $(BUILD_DIR)/kernel.elf iso/boot/kernel.elf
+	$(GRUB_MKRESCUE) -o $@ iso
 
-$(BUILD_DIR)/kernel.elf: $(ALL_OBJS) link.ld
-	$(LD) $(LD_FLAGS) -o $@ $(ALL_OBJS)
+$(BUILD_DIR)/kernel.elf: $(OBJECTS) link.ld
+	$(LD) $(LDFLAGS) -o $@ $(OBJECTS)
 
 $(BUILD_DIR)/%.o: $(BOOT_DIR)/%.asm
 	mkdir -p $(BUILD_DIR)
-	$(NASM) $(NASM_FLAGS) -o $@ $<
+	$(NASM) $(ASFLAGS) -o $@ $<
 
 $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.c
 	mkdir -p $(BUILD_DIR)
-	$(GCC) $(GCC_FLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(BUILD_DIR)/%.o: $(KERNEL_DIR)/asm/%.asm
+$(BUILD_DIR)/asm_%.o: $(KERNEL_DIR)/asm/%.asm
 	mkdir -p $(BUILD_DIR)
-	$(NASM) $(NASM_FLAGS) -o $@ $<
+	$(NASM) $(ASFLAGS) -o $@ $<
+
+check-tools:
+	@command -v $(CC) >/dev/null || (echo "missing compiler: $(CC)"; exit 1)
+	@command -v $(NASM) >/dev/null || (echo "missing NASM: $(NASM)"; exit 1)
+	@command -v $(GRUB_MKRESCUE) >/dev/null || (echo "missing grub-mkrescue"; exit 1)
+	@command -v $(QEMU) >/dev/null || (echo "missing QEMU"; exit 1)
+	@echo "CharisOS build tools are available."
 
 run: $(BUILD_DIR)/charisos.iso
-	$(QEMU) -cdrom $< -m 256M -serial stdio -no-reboot -no-shutdown -d int,cpu_reset -D qemu.log
-
-gdb: $(BUILD_DIR)/charisos.iso
-	@echo "==> GDB server on :1234"
-	@echo "    In another terminal run:"
-	@echo "    x86_64-elf-gdb build/kernel.elf"
-	@echo "    (gdb) target remote :1234"
-	@echo "    (gdb) break kernel_main && continue"
-	$(QEMU) -cdrom $< -m 256M -serial stdio -s -S -no-reboot
+	$(QEMU) -cdrom $< -m 256M -serial stdio -no-reboot -no-shutdown
 
 debug: $(BUILD_DIR)/charisos.iso
 	$(QEMU) -cdrom $< -m 256M -serial stdio -no-reboot -no-shutdown -d int,cpu_reset,pcall,mmu -D qemu.log
 
-run-debug: $(BUILD_DIR)/charisos.iso
-	$(QEMU) -cdrom $< -m 256M -serial stdio
-
 clean:
 	rm -rf $(BUILD_DIR) iso/boot/kernel.elf iso/charisos.iso
-
-.PHONY: all run debug run-debug clean
