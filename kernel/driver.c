@@ -3,6 +3,7 @@
 #include <kernel/vga.h>
 #include <kernel/pci.h>
 #include <kernel/hda.h>
+#include <kernel/printf.h>
 
 driver_t* driver_list = NULL;
 int driver_count = 0;

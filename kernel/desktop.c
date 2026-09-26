@@ -70,7 +70,7 @@ void desktop_click_icon(int x, int y) {
             x >= desktop_icons[i].x && x < desktop_icons[i].x + ICON_SIZE &&
             y >= desktop_icons[i].y && y < desktop_icons[i].y + ICON_SIZE) {
             // Icon clicked - create window or launch app
-            task_t* focused = wm_get_focused();
+            window_t* focused = wm_get_focused();
             if (!focused) {
                 wm_create_window(desktop_icons[i].title, 100, 100, 300, 200);
                 wm_render();

@@ -3,6 +3,7 @@
 #include <kernel/keyboard.h>
 #include <kernel/syscall.h>
 #include <kernel/syscall_wrappers.h>
+#include <kernel/audio.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
 #include <kernel/net.h>

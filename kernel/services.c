@@ -3,6 +3,7 @@
 #include <kernel/scheduler.h>
 #include <kernel/vga.h>
 #include <kernel/printf.h>
+#include <kernel/string.h>
 
 static service_t services[SERVICE_MAX];
 static int service_count = 0;

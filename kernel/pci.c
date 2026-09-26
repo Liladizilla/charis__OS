@@ -2,6 +2,7 @@
 #include <kernel/io.h>
 #include <kernel/vga.h>
 #include <kernel/memory.h>
+#include <kernel/printf.h>
 
 static pci_device_t pci_devices[256];
 int pci_count = 0;

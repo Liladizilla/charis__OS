@@ -43,6 +43,8 @@ $(BUILD_DIR)/%.o: $(BOOT_DIR)/%.asm
 	mkdir -p $(BUILD_DIR)
 	$(NASM) $(ASFLAGS) -o $@ $<
 
+$(BUILD_DIR)/compositor.o: CFLAGS += -msse2
+
 $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.c
 	mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<

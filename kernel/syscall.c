@@ -13,6 +13,8 @@
 #include <kernel/fb.h>
 #include <kernel/memory.h>
 #include <kernel/diagnostics.h>
+#include <kernel/string.h>
+#include <kernel/elf.h>
 
 extern u64 isr_table[256];
 #include <kernel/memory.h>

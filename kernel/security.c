@@ -4,6 +4,7 @@
 #include <kernel/timer.h>
 #include <kernel/printf.h>
 #include <kernel/serial.h>
+#include <kernel/string.h>
 
 static security_context_t security_contexts[TASK_MAX_TASKS];
 static u32 security_next_token = 0x1000;
