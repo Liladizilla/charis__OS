@@ -9,7 +9,7 @@ static int usb_device_count = 0;
 void usb_init(void) {
     usb_device_count = 0;
     // Reset USB controller
-    outb(0x00, 0xCF8); outb(0x00, 0xCFC); // PCI config space access
+    /* USB enumeration is intentionally deferred until PCI binding is active. */
     
     vga_puts("USB: OHCI/EHCI controller detected (simulated)\n");
 }

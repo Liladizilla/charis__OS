@@ -13,7 +13,7 @@ static u64 bitmap_base = 0x100000;
 static u32 last_free = 0; // next-fit cursor for speed
 
 void pmm_init(multiboot_info_t* info) {
-    memory_map = (multiboot_memory_map_t*)info->mmap_addr;
+    memory_map = (multiboot_memory_map_t*)(uintptr_t)info->mmap_addr;
     memory_map_count = info->mmap_length / sizeof(multiboot_memory_map_t);
 
     // Clear bitmap

@@ -1,0 +1,17 @@
+name: CharisOS build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bare-metal toolchain
+        run: sudo apt-get update && sudo apt-get install -y gcc nasm binutils grub-pc-bin xorriso qemu-system-x86
+      - name: Check toolchain
+        run: make check-tools
+      - name: Build ISO
+        run: make clean all

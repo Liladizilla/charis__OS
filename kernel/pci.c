@@ -10,7 +10,8 @@ int pci_count = 0;
 int pci_scan(void) {
     pci_count = 0;
     
-    for (u8 bus = 0; bus < 256; bus++) {
+    for (u16 bus_index = 0; bus_index < PCI_MAX_BUS; bus_index++) {
+        u8 bus = (u8)bus_index;
         for (u8 dev = 0; dev < 32; dev++) {
             for (u8 func = 0; func < 8; func++) {
                 u32 addr = (bus << 16) | (dev << 11) | (func << 8) | 0x80000000;
