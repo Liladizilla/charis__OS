@@ -27,10 +27,11 @@ jobs:
             grub-pc-bin \
             grub-common \
             xorriso \
-            mtools
+            mtools \
+            ovmf
 
-      - name: Build kernel
-        run: make
+      - name: Build kernel and boot images
+        run: make images
 
       - name: Compile VMM self-tests
         run: make test
@@ -42,71 +43,41 @@ jobs:
 
       - name: Confirm ISO payload
         run: |
-          test -f build/charisos.iso
-          ls -la build/charisos.iso
+          test -f build/charisos-vm.iso
+          test -f build/charisos-usb.img
+          ls -la build/charisos-vm.iso build/charisos-usb.img
 
-      - name: Boot in QEMU and capture serial output
+      - name: Boot matrix (CD/disk x BIOS/UEFI)
+        # The assertions live in tools/verify-boot.sh so CI and local runs use
+        # identical logic. See that file for why the boot banner is not a
+        # sufficient signal: it is printed before the Multiboot2 magic is
+        # validated, and GRUB suppresses its own output without a TTY.
         run: |
-          # -nographic routes the serial console to stdout, which is the only
-          # kernel output CI can see: the VGA text console is not captured.
-          timeout 45 qemu-system-x86_64 \
-            -cdrom build/charisos.iso \
-            -m 256M \
-            -nographic \
-            -no-reboot \
-            2>&1 | tr -d '\r' | tee boot.log || true
-          # Strip ANSI escapes so the log is greppable and readable as an artifact.
-          sed -i 's/\x1b\[[0-9;?]*[A-Za-z]//g; s/\x1b[()][A-Z0-9]//g' boot.log
-
-      - name: Verify boot reached the scheduler
-        run: |
-          echo "=== captured serial output ==="
-          cat boot.log
-          echo "==============================="
-
-          # NOTE: assertions below deliberately match only strings the KERNEL
-          # writes to the serial port. GRUB's and SeaBIOS' own screen drawing is
-          # suppressed when the runner has no TTY, so grepping for bootloader
-          # text (e.g. "Booting `CharisOS'") is environment-dependent and has
-          # already produced a false failure here.
-
-          # The C entry point ran.
-          grep -q "Built:" boot.log \
-            || { echo "::error::kernel_main never reached its banner"; exit 1; }
-          echo "ok: kernel_main reached its banner"
-
-          # THE decisive check. Emitted from kernel_main only after the
-          # Multiboot2 magic validated, every init*() returned, and the shell
-          # task was created. A hang anywhere in the init sequence (the
-          # pci_scan infinite loop, the fs_open FAT walk, a bad magic) means
-          # this line never appears.
-          grep -q "\[BOOT\] init complete, entering scheduler" boot.log \
-            || { echo "::error::kernel did not complete initialisation — see boot.log above"; exit 1; }
-          echo "ok: init sequence completed, scheduler entered"
-
-          # A rejected magic or a panic must never appear.
-          if grep -q "Invalid Multiboot2 magic" boot.log; then
-            echo "::error::Multiboot2 magic was rejected"
-            exit 1
+          set -e
+          export OVMF=/usr/share/OVMF/OVMF_CODE.fd
+          ./tools/verify-boot.sh build/charisos-vm.iso
+          ./tools/verify-boot.sh build/charisos-usb.img --disk
+          if [ -f "$OVMF" ]; then
+            ./tools/verify-boot.sh build/charisos-vm.iso --uefi
+            ./tools/verify-boot.sh build/charisos-usb.img --disk --uefi
+          else
+            echo "::warning::OVMF not found, UEFI boot checks skipped"
           fi
-          if grep -q "KERNEL PANIC" boot.log; then
-            echo "::error::kernel reported a panic"
-            exit 1
-          fi
-          echo "ok: no boot failure or panic"
 
-      - name: Upload boot log
+      - name: Upload boot logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: boot-log
-          path: boot.log
+          name: boot-logs
+          path: build/verify-*.log
           retention-days: 14
 
-      - name: Publish ISO artifact
+      - name: Publish ISO artifacts
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: charisos-iso
-          path: build/charisos.iso
+          name: charisos-images
+          path: |
+            build/charisos-vm.iso
+            build/charisos-usb.img
           retention-days: 30

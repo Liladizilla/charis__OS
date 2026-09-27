@@ -201,7 +201,7 @@ structure before the task limit is raised.
 
 ```
 charis__OS/
-├── .github/workflows/ci.yml   # Build + QEMU boot test on every push
+├── .github/workflows/ci.yml   # Build + 4-way boot matrix on every push
 ├── boot/
 │   ├── boot.asm               # Multiboot2 entry, mode transitions
 │   └── long_mode.asm          # 64-bit jump target
@@ -220,6 +220,7 @@ charis__OS/
 ├── include/kernel/            # Kernel headers
 ├── iso/boot/grub/grub.cfg     # GRUB2 menu entry
 ├── sdk/                       # Game SDK headers
+├── tools/verify-boot.sh       # Boot gate shared by CI and local runs
 ├── link.ld                    # GNU ld linker script
 ├── Makefile                   # Build system
 ├── build_wsl.sh / .bat        # WSL build helpers
@@ -269,11 +270,95 @@ qemu-system-x86_64 -cdrom build/charisos.iso -m 256M -nographic
 | Target | Effect |
 |---|---|
 | `make` | Build `build/charisos.iso` |
+| `make images` | Build both named images (`charisos-vm.iso`, `charisos-usb.img`) |
 | `make run` | Boot in QEMU (256MB, serial to stdout) |
+| `make run-vm` | Boot the VM image as a CD-ROM |
+| `make run-usb` | Boot the USB image as a raw disk (what a flashed stick looks like) |
+| `make run-vm-uefi` / `make run-usb-uefi` | Same, booted with OVMF (UEFI) |
+| `make verify-boot` | Boot gate — asserts the kernel reached the scheduler in every mode |
 | `make debug` | QEMU with interrupt, `pcall` and MMU tracing → `qemu.log` |
 | `make gdb` | QEMU paused on a GDB server at `:1234` |
 | `make test` | Compile the VMM self-tests with `-DRUN_VMM_TESTS` |
 | `make clean` | Remove `build/` and the staged kernel ELF |
+
+---
+
+## 💾 Boot images: VM vs bare metal
+
+`make images` produces two named artifacts:
+
+| File | Use |
+|---|---|
+| `build/charisos-vm.iso` | Attach as a **CD/DVD** in GNOME Boxes, virt-manager or QEMU |
+| `build/charisos-usb.img` | `dd` to a **USB stick** and boot real hardware |
+
+Both are produced by `grub-mkrescue`, which emits a *hybrid* image: an ISO9660
+filesystem plus a protective MBR, a GPT header, and GRUB loaders for both
+`i386-pc` (legacy BIOS) and `x86_64-efi` (UEFI). The two files are identical
+bytes; they are named for their intended use. The image is verified to boot in
+all four combinations — CD and raw disk, BIOS and UEFI — by `make verify-boot`.
+
+### Testing in a VM (GNOME Boxes / QEMU on Fedora)
+
+Attach `charisos-vm.iso` as a CD-ROM. To exercise the filesystem, also attach a
+blank disk formatted FAT32 — the kernel's ATA driver is legacy PIO and needs a
+real device, it does not read the CD.
+
+```bash
+# Equivalent command line
+qemu-system-x86_64 -cdrom build/charisos-vm.iso -drive file=fat32.img,format=raw,if=ide -m 256M
+```
+
+In GNOME Boxes: create a VM, add the ISO under *Optical Drive*, and optionally a
+disk under *Additional drives*.
+
+### Testing on bare metal
+
+```bash
+# Identify the whole-device node first — this destroys it
+lsblk -d -o NAME,SIZE,MODEL,TRAN
+
+sudo dd if=build/charisos-usb.img of=/dev/sdX bs=4M status=progress conv=fsync
+sync
+```
+
+Then reboot and pick the USB device from the firmware boot menu. Choose USB
+first in the boot order if the machine also has an installed OS.
+
+**Bare-metal caveats — read before testing.** The kernel is narrower than a
+normal bootloader in ways that matter on real hardware:
+
+- **Storage is legacy ATA PIO only** (ports `0x1F0`–`0x1F7`, primary channel).
+  There is no AHCI or NVMe driver, so on a machine that only exposes AHCI there
+  will be no filesystem and the kernel falls back to defaults. This is not a
+  regression; it is simply unimplemented.
+- **Networking is RTL8139 only** (PCI `10EC:8139`). Other NICs are ignored.
+- **No USB support at all.** `usb.c` is a stub, so keyboards, mice and the USB
+  stick itself are not driven by the kernel. A PS/2 keyboard and mouse are
+  required for interactive use.
+- **The firmware must hand off via GRUB2's `multiboot2` module.** Secure Boot
+  will refuse the unsigned kernel unless GRUB's shim chain is trusted.
+- The graphics stack drives a fixed 640×480 framebuffer; the Multiboot2 GFX
+  tag is not yet parsed, so resolution is not negotiated with the firmware.
+
+### Checking a boot without any of that
+
+```bash
+make verify-boot
+```
+
+This boots each image in QEMU and fails unless the kernel prints:
+
+```
+[BOOT] init complete, entering scheduler
+```
+
+That line is emitted on the serial console only after the Multiboot2 magic has
+validated, every subsystem initialiser has returned, and the shell task has
+been created. It is the only reliable health signal — the boot banner is
+printed *before* the magic is validated, so a kernel that halts at the magic
+check still prints it. The assertions live in
+[`tools/verify-boot.sh`](./tools/verify-boot.sh), which CI runs too.
 
 ### Windows
 

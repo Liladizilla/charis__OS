@@ -51,6 +51,7 @@ ASM_OBJS = $(patsubst $(KERNEL_DIR)/asm/%.asm,$(BUILD_DIR)/%.o,$(ASM_SOURCES))
 ALL_OBJS = $(BOOT_OBJS) $(KERNEL_OBJS) $(ASM_OBJS)
 
 # Targets
+# `all` stays the canonical build so CI and existing scripts keep working.
 all: $(BUILD_DIR)/charisos.iso
 
 $(BUILD_DIR)/charisos.iso: $(BUILD_DIR)/kernel.elf
@@ -60,6 +61,25 @@ $(BUILD_DIR)/charisos.iso: $(BUILD_DIR)/kernel.elf
 
 $(BUILD_DIR)/kernel.elf: $(ALL_OBJS) link.ld
 	$(LD) $(LD_FLAGS) -o $@ $(ALL_OBJS)
+
+# ── Named boot artifacts ────────────────────────────────────────────
+# grub-mkrescue already emits a hybrid image: an ISO9660 filesystem with
+# El Torito for CD/DVD, a protective MBR and a GPT header, and GRUB images
+# for both i386-pc (legacy BIOS) and x86_64-efi (UEFI). That single image
+# boots in all four combinations, so these are the same bytes under names
+# that say how they are meant to be used. Verified in QEMU as CD-ROM and as
+# raw disk, under both BIOS and OVMF/UEFI.
+
+VM_ISO  = $(BUILD_DIR)/charisos-vm.iso
+USB_IMG = $(BUILD_DIR)/charisos-usb.img
+
+images: $(VM_ISO) $(USB_IMG)
+
+$(VM_ISO): $(BUILD_DIR)/charisos.iso
+	cp $< $@
+
+$(USB_IMG): $(BUILD_DIR)/charisos.iso
+	cp $< $@
 
 $(BUILD_DIR)/%.o: $(BOOT_DIR)/%.asm
 	mkdir -p $(BUILD_DIR)
@@ -97,7 +117,48 @@ run-debug: $(BUILD_DIR)/charisos.iso
 test: $(BUILD_DIR)/vmm_test.o
 	@echo "VMM test object built successfully with RUN_VMM_TESTS defined"
 
+# ── Environment-specific runners ────────────────────────────────────
+
+# VM: attach the ISO as a CD-ROM. This is the configuration to use with
+# GNOME Boxes / virt-manager / `qemu-system-x86_64` on a workstation.
+run-vm: $(VM_ISO)
+	$(QEMU) -cdrom $< -m 256M -serial stdio -no-reboot
+
+# Bare metal: emulate a USB stick already flashed with the image, by handing
+# the raw image to QEMU as a hard disk. Exercises exactly the layout that
+# `dd if=charisos-usb.img of=/dev/sdX` produces.
+# snapshot=on because UEFI firmware writes back to the medium it booted from;
+# without it, simply testing the image would corrupt it.
+run-usb: $(USB_IMG)
+	$(QEMU) -drive file=$<,format=raw,if=ide,snapshot=on -m 256M -serial stdio -no-reboot
+
+# UEFI variants — useful for checking that firmware-level boot works before
+# touching real hardware. Needs OVMF; the target is a no-op if it is absent.
+OVMF ?= /usr/share/edk2/ovmf/OVMF_CODE.fd
+
+run-vm-uefi: $(VM_ISO)
+	@test -f $(OVMF) || { echo "OVMF not found at $(OVMF); install edk2-ovmf"; exit 1; }
+	$(QEMU) -cdrom $< -m 256M -serial stdio -no-reboot -bios $(OVMF)
+
+run-usb-uefi: $(USB_IMG)
+	@test -f $(OVMF) || { echo "OVMF not found at $(OVMF); install edk2-ovmf"; exit 1; }
+	$(QEMU) -drive file=$<,format=raw,if=ide,snapshot=on -m 256M -serial stdio -no-reboot -bios $(OVMF)
+
+# Boot gate used by CI and by hand before tagging a release. Asserts on the
+# sentinel the kernel prints on the serial console only after the Multiboot2
+# magic validated, every init*() returned and the shell task was created.
+# The assertions live in tools/verify-boot.sh so CI and humans run identical
+# logic; see that file for why grepping the banner is not sufficient.
+verify-boot: $(VM_ISO) $(USB_IMG)
+	./tools/verify-boot.sh $(VM_ISO)
+	./tools/verify-boot.sh $(USB_IMG) --disk
+	@if [ -f "$(OVMF)" ]; then \
+		./tools/verify-boot.sh $(USB_IMG) --disk --uefi; \
+	else \
+		echo "SKIP: OVMF not present, skipping the UEFI boot check"; \
+	fi
+
 clean:
 	rm -rf $(BUILD_DIR) iso/boot/kernel.elf iso/charisos.iso
 
-.PHONY: all run debug run-debug clean
+.PHONY: all images run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
