@@ -110,13 +110,66 @@ fi
 
 # -nographic puts the serial console on stdout. The VGA text console is not
 # captured, so anything the kernel prints only via vga_puts is invisible here.
-timeout "$TIMEOUT" qemu-system-x86_64 \
-    "${DRIVE[@]}" \
-    -m 256M -nographic -no-reboot \
-    2>&1 | tr -d '\r' > "$LOG" || true
+#
+# -nic none matters for more than tidiness. With a NIC attached, SeaBIOS hands
+# control to iPXE, which runs a full DHCP + network boot before falling through
+# to the next device. That costs tens of seconds, is a source of run-to-run
+# flakiness, and buys nothing: the kernel has no network support yet. Removing
+# the device makes the boot short and deterministic.
+boot_once() {
+    timeout "$TIMEOUT" qemu-system-x86_64 \
+        "${DRIVE[@]}" \
+        -m 256M -nographic -no-reboot \
+        -nic none \
+        2>&1 | tr -d '\r' > "$LOG" || true
+
+    # Strip terminal control sequences before asserting on the text.
+    #
+    # This is not cosmetic. GRUB and SeaBIOS redraw parts of the line with
+    # cursor positioning, so a phrase can arrive with escapes wedged into the
+    # middle of it -- "Boo" <ESC>[04;03H "ting kernel..." -- which breaks a
+    # grep for a contiguous string even though the kernel booted correctly. A
+    # CI run failed exactly this way while booting a perfectly good image.
+    sed -i -e 's/\x1b\[[0-9;?]*[ -\/]*[@-~]//g' \
+           -e 's/\x1b[()][A-Z0-9]//g' \
+           -e 's/\x1b[@-Z\\-_]//g' \
+           -e 's/\r//g' "$LOG"
+}
+
+# A QEMU-level failure (firmware not found, resource clash, bad pflash pair)
+# is transient often enough to be worth one retry. A kernel that hangs in
+# initialisation survives the retry, so this does not mask real regressions.
+ATTEMPTS=$(( ${VERIFY_RETRIES:-1} + 1 ))
+attempt=1
+while : ; do
+    boot_once
+    # Distinguish "the emulator failed" from "the kernel did not boot".
+    if grep -q '^qemu:' "$LOG" || grep -qi 'could not load\|failed to initialize\|cannot find' "$LOG"; then
+        QEMU_ERROR=1
+    else
+        QEMU_ERROR=0
+    fi
+    if grep -q '\[BOOT\] init complete, entering scheduler' "$LOG" \
+       && ! grep -q 'KERNEL PANIC' "$LOG" \
+       && ! grep -q 'Invalid Multiboot2 magic' "$LOG"; then
+        break
+    fi
+    # A definitive "nothing bootable" verdict will not change on a retry, and
+    # the firmware just sits there until the timeout expires. Fail now.
+    if grep -qi 'no bootable device\|nothing to boot' "$LOG"; then
+        break
+    fi
+    [ "$attempt" -lt "$ATTEMPTS" ] || break
+    attempt=$((attempt + 1))
+    echo "note: boot attempt $((attempt - 1)) of $ATTEMPTS did not reach the scheduler, retrying..."
+done
 
 fail() {
     echo "FAIL: $1"
+    if [ "${QEMU_ERROR:-0}" = "1" ]; then
+        echo "      (QEMU itself reported an error -- this looks emulator-side,"
+        echo "       not a kernel fault; see the qemu: line below)"
+    fi
     echo "--- captured output ($LOG) ---"
     cat "$LOG"
     echo "--------------------------------"
