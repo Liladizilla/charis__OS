@@ -13,13 +13,16 @@
 #include <kernel/fb.h>
 #include <kernel/memory.h>
 #include <kernel/diagnostics.h>
+#include <kernel/string.h>
+#include <kernel/elf.h>
+#include <kernel/security.h>
 
 extern u64 isr_table[256];
-#include <kernel/memory.h>
 
 static syscall_handler_t syscall_table[SYSCALL_MAX];
 
 static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a4; (void)a5; (void)a6;
     int fd = (int)a1;
     void* buf = (void*)a2;
     usize count = (usize)a3;
@@ -45,6 +48,7 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
 }
 
 static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    (void)a4; (void)a5; (void)a6;
     int fd = (int)a1;
     const void* buf = (const void*)a2;
     usize count = (usize)a3;
@@ -56,7 +60,7 @@ static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
     if (fd == FD_STDOUT || fd == FD_STDERR) {
         const char* s = (const char*)buf;
         for (usize i = 0; i < count && s[i]; i++) {
-            vga_putc(s[i]);
+            vga_putchar(s[i]);
         }
         return count;
     }
@@ -150,7 +154,7 @@ static u64 syscall_fork_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     
     child->rsp = (u64)stack_top;
     child->stack_canary_addr = child->stack_base + sizeof(u64);
-    *(u64*)child->stack_canary_addr = 0xDEADC0DEDEADC0DEULL;
+    *(u64*)child->stack_canary_addr = __stack_chk_guard;
     
     scheduler_add_task(child);
     
@@ -167,6 +171,14 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     if (!a1) return -1;
     
+    task_t* task = scheduler_current();
+    if (!task) return -1;
+    
+    // Capability check: need FS_READ to open files
+    if (!security_check_capability(task, CAP_FS_READ)) {
+        return -1; // EPERM
+    }
+
     char path[256];
     if ((u64)a1 >= 0xFFFF800000000000ULL) return -1;
     const char* path_str = (const char*)a1;
@@ -176,6 +188,11 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     
     vfs_node_t* node = vfs_resolve(path);
     if (!node) return -1;
+    
+    // Path traversal check
+    if (!security_verify_path(path, task)) {
+        return -1; // EPERM
+    }
     
     return fd_alloc(node, 0);
 }
@@ -226,14 +243,24 @@ static u64 syscall_exec_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     if (!a1) return -1;
     
+    task_t* task = scheduler_current();
+    if (!task) return -1;
+    
+    // Capability check: need SPAWN to execute new programs
+    if (!security_check_capability(task, CAP_SPAWN)) {
+        return -1; // EPERM
+    }
+
     char path[256];
     const char* path_str = (const char*)a1;
     usize i = 0;
     for (; i < sizeof(path)-1 && path_str[i]; i++) path[i] = path_str[i];
     path[i] = 0;
     
-    task_t* task = scheduler_current();
-    if (!task) return -1;
+    // Path traversal check
+    if (!security_verify_path(path, task)) {
+        return -1; // EPERM
+    }
     
     u64 entry_point;
     if (elf_load(path, &task->mm, &entry_point) < 0) {

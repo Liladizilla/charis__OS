@@ -3,6 +3,7 @@
 #include <kernel/psf.h>
 #include <kernel/memory.h>
 #include <kernel/fb.h>
+#include <kernel/string.h>
 
 static widget_t* widget_list = NULL;
 

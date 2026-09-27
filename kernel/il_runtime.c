@@ -1,6 +1,8 @@
 #include <kernel/il_runtime.h>
 #include <kernel/vga.h>
 #include <kernel/string.h>
+#include <kernel/task.h>
+#include <kernel/vfs.h>
 
 il_runtime_t il_runtimes[TASK_MAX_TASKS];
 static usize il_runtime_count = 0;
@@ -71,7 +73,7 @@ int il_run(il_runtime_t* rt) {
             case IL_PRINT:
                 if (rt->sp < IL_MAX_STACK) {
                     char buf[32];
-                    kultoa(rt->stack[rt->sp++], buf, 10);
+                    kutoa(rt->stack[rt->sp++], buf, 10);
                     vga_puts(buf);
                 }
                 break;

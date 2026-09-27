@@ -62,6 +62,13 @@ global start
 %endmacro
 
 start:
+    ; CRITICAL: preserve Multiboot2 ABI registers FIRST.
+    ; EAX = 0x36d76289 magic, EBX = pointer to multiboot info.
+    ; Nothing below this point may be allowed to touch EAX or EBX
+    ; before the values have been stored.
+    mov dword [mb_magic], eax
+    mov dword [mb_info], ebx
+
     ; Output debug char to serial COM1 (0x3F8)
     mov dx, 0x3F8
     mov al, 'S'
@@ -81,10 +88,6 @@ start:
     sub ecx, edi
     xor eax, eax
     rep stosb
-
-    ; Save multiboot magic and info pointer
-    mov dword [mb_magic], eax
-    mov dword [mb_info], ebx
 
     VGA_WRITE 'M'  ; Multiboot OK
     mov dx, 0x3F8

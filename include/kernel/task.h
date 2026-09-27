@@ -53,24 +53,12 @@ typedef struct task {
     u64 user_stack_base;
     u64 user_rsp;
     process_mm_t mm;
-    fd_entry_t fd_table[MAX_FDS]; // Per-process file descriptor table
-    void* address_space;  // Per-process page table (PML4)
-    struct task* ipc_wait_next;  // IPC blocking wait queue
+    fd_entry_t fd_table[MAX_FDS];
+    void* address_space;
+    struct task* ipc_wait_next;
 } task_t;
 
 typedef void (*task_func_t)(void* arg);
-
-/* Capability flags */
-#define CAP_FS_READ    (1<<0)
-#define CAP_FS_WRITE   (1<<1)
-#define CAP_FS_CREATE  (1<<2)
-#define CAP_FS_DELETE  (1<<3)
-#define CAP_SPAWN      (1<<4)
-#define CAP_KILL       (1<<5)
-#define CAP_RAW_MEM    (1<<6)
-#define CAP_SHUTDOWN   (1<<7)
-#define CAP_SERIAL     (1<<8)
-#define CAP_ALL        0xFFFFFFFF
 
 void scheduler_init(void);
 void scheduler_tick(reg_frame_t* frame);
@@ -82,6 +70,8 @@ void scheduler_yield(void);
 void task_init(void);
 task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user);
 task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user, pml4_t* pml4);
+task_t* task_allocate(void);
+u32 task_next_pid(void);
 void task_exit(void);
 void task_block(task_t* task);
 void task_unblock(task_t* task);

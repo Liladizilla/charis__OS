@@ -9,7 +9,9 @@ int pci_count = 0;
 int pci_scan(void) {
     pci_count = 0;
     
-    for (u8 bus = 0; bus < 256; bus++) {
+    // bus must be wider than u8: with u8, "bus < 256" is always true
+    // and this loop never terminates.
+    for (u16 bus = 0; bus < 256; bus++) {
         for (u8 dev = 0; dev < 32; dev++) {
             for (u8 func = 0; func < 8; func++) {
                 u32 addr = (bus << 16) | (dev << 11) | (func << 8) | 0x80000000;
@@ -57,7 +59,7 @@ int pci_scan(void) {
         }
     }
     
-    kprintf("PCI: Found %d devices\n", pci_count);
+    vga_printf("PCI: Found %d devices\n", pci_count);
     return pci_count;
 }
 

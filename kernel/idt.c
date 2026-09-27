@@ -6,6 +6,9 @@
 #include <kernel/task.h>
 #include <kernel/pmm.h>
 #include <kernel/vmm.h>
+#include <kernel/syscall.h>
+#include <kernel/printf.h>
+#include <kernel/memory.h>
 
 #define IDT_ENTRIES 256
 static idt_entry_t idt[IDT_ENTRIES];

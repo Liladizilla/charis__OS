@@ -3,6 +3,7 @@
 #include <kernel/memory.h>
 #include <kernel/vga.h>
 #include <kernel/task.h>
+#include <kernel/string.h>
 
 // VFS mount points
 #define MAX_MOUNTS 16

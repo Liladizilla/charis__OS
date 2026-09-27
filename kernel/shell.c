@@ -2,8 +2,11 @@
 #include <kernel/vga.h>
 #include <kernel/keyboard.h>
 #include <kernel/syscall.h>
+#include <kernel/syscall_wrappers.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
+#include <kernel/scheduler.h>
+#include <kernel/audio.h>
 #include <kernel/net.h>
 #include <kernel/timer.h>
 #include <kernel/diagnostics.h>

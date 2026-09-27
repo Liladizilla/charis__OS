@@ -59,6 +59,11 @@ static u32 data_start;
 static u32 root_dir_sectors;
 static u32 total_clusters;
 
+/* Set only when a valid FAT32 volume was found. Without this, fs_open() would
+ * walk a garbage FAT chain on machines that have no bootable disk attached,
+ * which hangs the kernel during config_load() at boot. */
+static bool fs_mounted = false;
+
 static u32 cluster_to_sector(u32 cluster) {
     return data_start + (cluster - 2) * boot_sector.sectors_per_cluster;
 }
@@ -73,30 +78,55 @@ static u32 next_cluster(u32 cluster) {
 }
 
 void fs_init(void) {
+    fs_mounted = false;
+
     if (!ata_read_sector(0, (void*)&boot_sector)) {
         vga_puts("FS: Failed to read boot sector\n");
         return;
     }
 
     if (kstrncmp(boot_sector.fs_type, "FAT32", 5) != 0) {
-        vga_puts("FS: Not FAT32\n");
+        vga_puts("FS: Not FAT32 (no FAT32 volume found)\n");
+        return;
+    }
+
+    /* Reject a boot sector whose geometry would produce nonsense cluster maths. */
+    if (boot_sector.sectors_per_cluster == 0 ||
+        boot_sector.num_fats == 0 ||
+        boot_sector.fat_size_32 == 0) {
+        vga_puts("FS: Invalid FAT32 geometry\n");
         return;
     }
 
     fat_start = boot_sector.reserved_sectors;
     root_dir_sectors = ((boot_sector.root_entries * 32) + (FAT32_SECTOR_SIZE - 1)) / FAT32_SECTOR_SIZE;
     data_start = boot_sector.reserved_sectors + (boot_sector.num_fats * boot_sector.fat_size_32) + root_dir_sectors;
+
+    if (boot_sector.total_sectors_32 <= data_start) {
+        vga_puts("FS: Invalid FAT32 geometry (data_start past end of volume)\n");
+        return;
+    }
+
     total_clusters = (boot_sector.total_sectors_32 - data_start) / boot_sector.sectors_per_cluster;
 
+    if (boot_sector.root_cluster < 2 || boot_sector.root_cluster >= total_clusters + 2) {
+        vga_puts("FS: Invalid root cluster\n");
+        return;
+    }
+
+    fs_mounted = true;
     vga_puts("FAT32 initialized\n");
 }
 
 int fs_open(const char* path, file_t* file) {
+    if (!fs_mounted) return -1;
+    if (!path || !file) return -1;
+
     // Simple: assume root directory, find file by name
     u32 cluster = boot_sector.root_cluster;
     u8 buffer[512];
 
-    while (cluster < 0x0FFFFFF8) {
+    while (cluster >= 2 && cluster < 0x0FFFFFF8) {
         u32 sector = cluster_to_sector(cluster);
         for (u32 s = 0; s < boot_sector.sectors_per_cluster; s++) {
             if (!ata_read_sector(sector + s, buffer)) return -1;
@@ -122,6 +152,8 @@ int fs_open(const char* path, file_t* file) {
 }
 
 int fs_read(file_t* file, void* buffer, usize size) {
+    if (!fs_mounted) return -1;
+    if (!file || !buffer) return -1;
     if (file->pos >= file->size) return 0;
     if (file->pos + size > file->size) size = file->size - file->pos;
 

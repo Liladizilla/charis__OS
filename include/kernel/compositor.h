@@ -92,5 +92,3 @@ typedef struct {
 
 void spring_init(spring_t* s, float initial, float target, float stiffness, float damping);
 bool spring_update(spring_t* s, float dt);
-
-#endif

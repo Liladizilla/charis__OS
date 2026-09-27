@@ -1,5 +1,6 @@
 // user.c - Simple user-mode program
 #include <kernel/syscall.h>
+#include <kernel/syscall_wrappers.h>
 
 void user_main(void) {
     sys_print("Hello from user mode!\n");

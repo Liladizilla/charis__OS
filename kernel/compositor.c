@@ -3,7 +3,7 @@
 #include <kernel/fb.h>
 #include <kernel/memory.h>
 #include <kernel/vga.h>
-#include <string.h>
+#include <kernel/string.h>
 
 /* Compositor state */
 surface_t* g_surface_list = NULL;
@@ -14,9 +14,6 @@ int g_screen_height = 480;
 /* Back buffer for double-buffering */
 static u32* g_back_buffer = NULL;
 static u32* g_wallpaper = NULL;
-
-/* Animation timing */
-static float g_time_accum = 0.0f;
 
 /* Forward declarations */
 static void composite_surface(surface_t* surf, int x, int y);
@@ -48,8 +45,8 @@ void compositor_init(void) {
     }
     
     /* Clear back buffer */
-    memset(g_back_buffer, 0, g_screen_width * g_screen_height * 4);
-    memset(g_wallpaper, 0, g_screen_width * g_screen_height * 4);
+    kmemset(g_back_buffer, 0, g_screen_width * g_screen_height * 4);
+    kmemset(g_wallpaper, 0, g_screen_width * g_screen_height * 4);
     
     vga_puts("Compositor: Initialized\n");
 }
@@ -98,7 +95,7 @@ surface_t* compositor_create_surface(int width, int height, int x, int y) {
     surf->next = NULL;
     
     /* Clear pixel buffer */
-    memset(surf->pixels, 0, width * height * 4);
+    kmemset(surf->pixels, 0, width * height * 4);
     
     /* Add to surface list */
     surf->next = g_surface_list;
@@ -160,7 +157,7 @@ void compositor_damage_clear(void) {
 /* Render frame */
 void compositor_render_frame(void) {
     /* Clear back buffer */
-    memset(g_back_buffer, 0, g_screen_width * g_screen_height * 4);
+    kmemset(g_back_buffer, 0, g_screen_width * g_screen_height * 4);
     
     /* Sort surfaces by z-order (insertion sort for small n) */
     surface_t* sorted = NULL;
@@ -187,7 +184,7 @@ void compositor_render_frame(void) {
     }
     
     /* Copy back buffer to framebuffer */
-    memcpy(g_framebuffer.pixels, g_back_buffer, g_screen_width * g_screen_height * 4);
+    kmemcpy(g_framebuffer.pixels, g_back_buffer, g_screen_width * g_screen_height * 4);
 }
 
 /* Composite a single surface */
@@ -282,7 +279,7 @@ void compositor_blit(surface_t* src, int dx, int dy, int w, int h, int sx, int s
     for (int row = 0; row < h; row++) {
         u32* dst_row = &g_back_buffer[(dy + row) * g_screen_width + dx];
         u32* src_row = &src->pixels[(sy + row) * src->width + sx];
-        memcpy(dst_row, src_row, w * 4);
+        kmemcpy(dst_row, src_row, w * 4);
     }
 }
 
@@ -398,7 +395,7 @@ bool spring_update(spring_t* s, float dt) {
     s->value += s->velocity * dt;
     
     /* Check if settled */
-    if (fabsf(s->velocity) < 0.01f && fabsf(s->value - s->target) < 0.01f) {
+    if (s->velocity < 0.01f && s->value - s->target < 0.01f) {
         s->value = s->target;
         s->velocity = 0.0f;
         s->active = false;

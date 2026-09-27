@@ -4,6 +4,8 @@
 #include <kernel/vga.h>
 #include <kernel/input.h>
 #include <kernel/mouse.h>
+#include <kernel/string.h>
+#include <kernel/psf.h>
 
 window_t* wm_windows = NULL;
 static int wm_z_counter = 0;
@@ -12,7 +14,7 @@ void wm_init(void) {
     wm_windows = NULL;
     wm_z_counter = 0;
     g_graphics.bg_color = 0x0D1117; // Dark background (CharisOS theme)
-    fb_clear(FB_COLOR(0x0D, 0x11, 0x17));
+    fb_clear(FB_COLOR(0x0D, 0x11, 0x17, 0xFF));
 }
 
 window_t* wm_create_window(const char* title, int x, int y, int w, int h) {
@@ -52,6 +54,17 @@ void wm_destroy_window(window_t* win) {
     if (!win) return;
     
     if (win->buffer) kfree(win->buffer);
+    
+    if (wm_windows == win) {
+        wm_windows = win->next;
+    } else {
+        window_t* curr = wm_windows;
+        while (curr && curr->next != win) {
+            curr = curr->next;
+        }
+        if (curr) curr->next = win->next;
+    }
+    
     kfree(win);
 }
 
@@ -71,7 +84,7 @@ void wm_focus_window(window_t* win) {
 
 void wm_render(void) {
     // Clear screen (desktop background)
-    fb_clear(FB_COLOR(0x0D, 0x11, 0x17)); // Dark navy
+    fb_clear(FB_COLOR(0x0D, 0x11, 0x17, 0xFF)); // Dark navy
     
     // Draw windows from back to front (by z_order)
     // Simple insertion sort

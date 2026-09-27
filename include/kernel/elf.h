@@ -2,6 +2,7 @@
 #pragma once
 #include <kernel/types.h>
 #include <kernel/vmm.h>
+#include <kernel/task.h>
 
 #define EI_NIDENT   16
 #define ELF_MAGIC   0x464C457FUL // "\x7FELF"

@@ -3,6 +3,8 @@
 #include <kernel/graphics.h>
 #include <kernel/memory.h>
 #include <kernel/vga.h>
+#include <kernel/string.h>
+#include <kernel/psf.h>
 
 static desktop_icon_t desktop_icons[32];
 static taskbar_window_t taskbar_windows[16];
@@ -18,7 +20,7 @@ static int taskbar_count = 0;
 void desktop_init(void) {
     g_icon_count = 0;
     taskbar_count = 0;
-    fb_clear(FB_COLOR(0x0D, 0x11, 0x17));
+    fb_clear(FB_COLOR(0x0D, 0x11, 0x17, 0xFF));
     vga_puts("Desktop initialized\n");
 }
 
@@ -67,7 +69,7 @@ void desktop_click_icon(int x, int y) {
             x >= desktop_icons[i].x && x < desktop_icons[i].x + ICON_SIZE &&
             y >= desktop_icons[i].y && y < desktop_icons[i].y + ICON_SIZE) {
             // Icon clicked - create window or launch app
-            task_t* focused = wm_get_focused();
+            window_t* focused = wm_get_focused();
             if (!focused) {
                 wm_create_window(desktop_icons[i].title, 100, 100, 300, 200);
                 wm_render();

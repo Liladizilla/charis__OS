@@ -2,276 +2,380 @@
 
 # ⚙️ CharisOS
 
-**A handcrafted x86_64 operating system kernel — built from scratch in C & NASM Assembly**
+**A from-scratch x86_64 operating system kernel — written in C & NASM, with no libc and no host OS**
 
-![Architecture](https://img.shields.io/badge/Architecture-x86__64-purple?style=flat-square)
-![Language](https://img.shields.io/badge/Language-C%20%2F%20NASM-blue?style=flat-square)
-![Boot](https://img.shields.io/badge/Boot-Multiboot2%20%2F%20GRUB2-orange?style=flat-square)
-![Tested On](https://img.shields.io/badge/Tested%20On-QEMU%20%2B%20Bare%20Metal-green?style=flat-square)
-![License](https://img.shields.io/badge/License-MIT-gray?style=flat-square)
+![Arch](https://img.shields.io/badge/arch-x86__64-blue?style=flat-square)
+![Lang](https://img.shields.io/badge/lang-C%20%2B%20NASM-purple?style=flat-square)
+![Boot](https://img.shields.io/badge/boot-Multiboot2%20%2F%20GRUB2-orange?style=flat-square)
+![CI](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 ![Stars](https://img.shields.io/github/stars/Liladizilla/charis__OS?style=flat-square&color=yellow)
 
 *Built and maintained by **Charis Chara** · Nairobi, Kenya*
 
 </div>
 
----
-
- # Demo
-
-[![CharisOS Boot]  https://file.kiwi/67a1f9ef#LIVXxNmocS8L9P13rQx1CQ
-https://file.kiwi/7d8484fd#TjQmPCrzKGcYy7rqvSBifQ
-
-
-
----
-
- # About
-
-CharisOS is a lightweight, educational operating system for the **x86_64 architecture**. It combines low-level Assembly boot logic with a minimal C runtime, implementing a managed-style kernel that emphasizes simplicity, security, and bare-metal performance — with zero dependency on a host OS or standard library.
-
-This project covers the full journey from BIOS handoff to preemptive multitasking, interrupt handling, virtual memory, device drivers, a VFS with FAT32, ELF binary loading, a framebuffer graphics stack, and a CIL bytecode interpreter — all written by hand.
+```
+╔═════════════════════════════════════════════════════╗
+║    ████ █   █  ███  ████  █████  ████  ███   ████   ║
+║   █     █   █ █   █ █   █   █   █     █   █ █       ║
+║   █     █   █ █   █ █   █   █   █     █   █ █       ║
+║   █     █████ █████ ████    █    ███  █   █  ███    ║
+║   █     █   █ █   █ █ █     █       █ █   █     █   ║
+║   █     █   █ █   █ █  █    █       █ █   █     █   ║
+║    ████ █   █ █   █ █   █ █████ ████   ███  ████    ║
+║                                                      ║
+║  x86_64 kernel  //  built from scratch in C & NASM   ║
+║               v1.0  -  Nairobi, Kenya                ║
+╚═════════════════════════════════════════════════════╝
+```
 
 ---
 
- # Features
+## 📽️ Demo
+
+- [Boot demo — part 1](https://file.kiwi/67a1f9ef#LIVXxNmocS8L9P13rQx1CQ)
+- [Boot demo — part 2](https://file.kiwi/7d8484fd#TjQmPCrzKGcYy7rqvSBifQ)
+
+---
+
+## 📖 About
+
+CharisOS is an educational, from-scratch x86_64 kernel. Everything below the
+GRUB handoff is written by hand: the bootloader assembly, the physical and
+virtual memory managers, the interrupt tables, the preemptive scheduler, the
+SYSCALL/SYSRET ABI, the VFS with a FAT32 backend, an ELF program loader, and a
+framebuffer graphics/window-manager stack.
+
+There is no standard library, no runtime, and no host-OS dependency. The kernel
+compiles with `gcc -ffreestanding` and links with a hand-written `link.ld`.
+
+**Scale:** ~9,100 lines of C across 107 files, ~720 lines of NASM across 6 files.
+
+### Project status
+
+This is an active educational kernel. It boots reliably in QEMU and runs to the
+shell. Several subsystems are complete and verified; others are present but
+partial. [`TODO.md`](./TODO.md) is the authoritative status document and is
+kept honest — a phase is only marked complete once it has been booted and
+exercised, not merely compiled.
+
+| Area | Status |
+|---|---|
+| Boot (Multiboot2 → long mode) | ✅ Working |
+| Physical + virtual memory, heap | ✅ Working |
+| IDT/IRQ, PIT timer, PS/2 keyboard, serial | ✅ Working |
+| Preemptive round-robin scheduler | ✅ Working |
+| SYSCALL/SYSRET ABI + syscall table | ✅ Working |
+| VFS + FAT32 (read path) | ✅ Working |
+| ELF loader (`sys_exec`) | ✅ Working |
+| Framebuffer, window manager, desktop | ⚠️ Partial |
+| Capability-based security | ⚠️ Partial — enforced on `open`/`exec` only |
+| Config persistence (`/etc/charisos.conf`) | ⚠️ Read path works; no file creation yet |
+| RTL8139 networking | ⚠️ TX wired; no TCP/IP or RX |
+| USB, audio, gamepad | ⚠️ Stubs |
+
+---
+
+## ✨ Features
 
 | Category | Details |
 |---|---|
-| **Boot** | Multiboot2/GRUB2 · Real → Protected → Long mode · 2MB huge pages · 16KB kernel stack |
-| **Memory** | Bitmap PMM · Best-fit heap allocator (split/merge) · VMM per-process page tables |
-| **Scheduling** | Preemptive round-robin · Spinlock-protected queues · 32 tasks × 8KB stacks |
-| **Security** | Stack canaries · Guard pages · Capability-based access (CAP_FS_READ, CAP_SPAWN …) |
-| **Syscalls** | SYSCALL/SYSRET dispatch · MSR setup · Ring 0/3 separation |
-| **VFS** | Full VFS layer · FAT32 driver · Device nodes |
-| **ELF Loader** | `sys_exec()` — loads and runs ELF binaries |
-| **Graphics** | Framebuffer stack · PSF2 bitmap fonts · Window manager (`wm.c` / `desktop.c`) |
-| **Drivers** | VGA 80×25 text · PS/2 keyboard · PIT 1000Hz · RTL8139 Ethernet |
-| **Shell** | Built-in interpreter — `help`, `ls`, `echo`, `net`, `uptime`, color-coded output |
-| **IL Runtime** | CIL/IL bytecode interpreter (`il_runtime.c`) — managed code foundation |
-| **IPC / Sockets** | `ipc.c`, `socket.c`, `apps.c` — inter-process communication primitives |
+| **Boot** | Multiboot2 via GRUB2 · protected → long mode · CPUID feature checks · identity paging with 2MB huge pages · 16KB boot stack |
+| **Memory** | Bitmap PMM (next-fit, double-free guarded) · split/merge heap (`kmalloc`/`kfree`) · per-process PML4 address spaces |
+| **Scheduling** | Preemptive round-robin on a 1kHz PIT tick · 32 tasks · 8KB stacks · guard pages + stack canaries |
+| **Interrupts** | 256-entry IDT · PIC remapped to IRQ 32–47 · page-fault and exception handlers with diagnostics |
+| **Syscalls** | `SYSCALL`/`SYSRET` via MSR (LSTAR/STAR/SFMASK) · 34 registered syscalls |
+| **Security** | Capability bitmask per task, inherited across `fork` · stack canaries · path-traversal rejection · enforced on `open`/`exec` |
+| **VFS** | Node abstraction with read/write/open/close/readdir/finddir function pointers · device nodes · per-task fd tables |
+| **Storage** | ATA PIO driver · FAT32 read path |
+| **Loader** | `sys_exec` — parses ELF64 headers, maps `PT_LOAD` segments, builds an initial stack |
+| **Graphics** | Framebuffer driver · PSF2 bitmap font renderer · 2D primitives (line/rect/circle) · window manager with drag, focus and z-order · desktop with taskbar |
+| **Drivers** | VGA text · PS/2 keyboard and mouse · PIT · PCI enumeration with a probe/remove driver framework · HDA audio · RTL8139 Ethernet |
+| **Shell** | Built-in interpreter: `help`, `ls`, `echo`, `net`, `uptime`, `clear` |
 
 ---
 
-# Architecture
+## 🏗️ Architecture
 
 ### Boot sequence
 
 ```
-boot/boot.asm                 (Multiboot2 entry — 32-bit protected mode)
-    │
-    ├─ CPU feature detection (CPUID, long mode check)
-    ├─ GDT setup + identity paging (2MB huge pages)
-    │
-    ▼
-boot/long_mode.asm            (64-bit jump target)
-    │
-    ▼
-kernel/main.c                 (C kernel entry)
-    ├─ PMM → VMM → IDT/IRQ init
-    ├─ PIT timer + PS/2 keyboard
-    ├─ VGA / framebuffer init
-    ├─ VFS + FAT32 mount
-    ├─ ELF loader (sys_exec)
-    ├─ Scheduler + task creation
-    └─ Shell launch
+BIOS/UEFI
+   │
+   ▼
+GRUB2  ── multiboot2 /boot/kernel.elf ──▶  EAX=0x36d76289, EBX=mboot info
+   │
+   ▼
+boot/boot.asm          32-bit protected mode
+   ├─ saves EAX/EBX first (before any debug output clobbers them)
+   ├─ CPUID: cpuid supported / long mode / APIC
+   ├─ builds PML4 → PDPT → PD, identity-maps 1GB with 2MB pages
+   ├─ enables PAE + LME + NX + PG, loads GDT + TSS
+   ▼
+boot/long_mode.asm     64-bit
+   ├─ loads segment selectors, clears registers
+   ├─ rsp ← stack_top
+   └─ call kernel_main(mb_magic, mb_info)
+   ▼
+kernel/main.c :: kernel_main()
+   ├─ vga_init, serial_init, Multiboot2 magic validation
+   ├─ memory_init → idt_init → irq_init → timer_init(1000) → keyboard_init
+   ├─ ata_init → fs_init → vfs_init
+   ├─ task_init → scheduler_init → syscall_init
+   ├─ graphics_init → wm_init → input_init → ipc_init → audio_init
+   ├─ signal_init → pipe_init → driver_init → pci_scan → driver_scan_and_bind
+   ├─ config_init → config_load("/etc/charisos.conf")
+   ├─ display_init → desktop_init → services_init → diag_init
+   ├─ power_init → security_init
+   ├─ net_init  (gated on config "net_enabled")
+   ├─ create "user" and "shell" tasks
+   └─ sti; scheduler_start()  →  shell_main()
 ```
 
- Kernel components
+### Boot markers
 
-| File | Responsibility |
-|---|---|
-| `kernel/memory.c` | PMM bitmap allocator, best-fit heap, VMM |
-| `kernel/task.c` | PCB, 8KB stacks, guard pages, stack canaries |
-| `kernel/scheduler.c` | Round-robin preemptive scheduler, yield |
-| `kernel/idt.c` + `irq.c` | 256-entry IDT, PIC remapping to IRQ 32–47 |
-| `kernel/timer.c` | PIT driver — 1000 Hz system tick |
-| `kernel/keyboard.c` | PS/2 scan code → ASCII translation |
-| `kernel/vga.c` | 80×25 VGA text mode + hardware cursor |
-| `kernel/shell.c` | Built-in command interpreter |
-| `kernel/net.c` | RTL8139 Ethernet driver |
-| `kernel/wm.c` + `desktop.c` | Framebuffer window manager + desktop |
-| `kernel/il_runtime.c` | CIL/IL bytecode interpreter |
-| `kernel/ipc.c` + `socket.c` | IPC primitives + socket layer |
-| `kernel/audio.c` + `usb.c` | Audio and USB subsystems (in progress) |
-| `kernel/pci.c` + `power.c` | PCI enumeration + power management |
+While the kernel initialises, `kernel_main()` writes a single character per
+subsystem directly into the VGA text buffer at `0xB8000`, so a hang is
+identifiable even before the serial/VGA console paths are trustworthy. A
+self-incrementing helper (`BOOT_MARK`) guarantees each marker lands on its own
+2-byte-aligned cell, so markers can never collide or corrupt a neighbour.
+
+```
+K V S M m I Q T K D F v t S C G W i p a s P d P b c L D d S D p S n N n
+```
+
+### Memory layout
+
+```
+0x00000000 ┌──────────────────────────────┐
+           │ Real mode / BIOS / GRUB      │
+0x00100000 ├──────────────────────────────┤  kernel loaded here (ENTRY(start))
+           │ .multiboot   Multiboot2 hdr │  PT_LOAD  R-X   (segment "text")
+           │ .text        code           │  _text_start … _text_end
+           │ .rodata      constants      │  PT_LOAD  R--   (segment "rodata")
+           │ .data        initialised    │  PT_LOAD  RW-   (segment "data")
+           │ .bss         zero-filled    │  4096-aligned
+           └──────────────────────────────┘  _end — PMM starts allocating here
+```
+
+Three PT_LOAD segments with distinct R-X / R-- / RW- permissions.
+
+### Subsystem dependencies
+
+```
+types.h ─┬─ vga.c      serial.c     string.c
+         └─ memory.c ─┬─ pmm.c  vmm.c  heap.c  bootmem.c
+                       ├─ idt.c + irq.c ── timer.c, keyboard.c
+                       ├─ task.c ── scheduler.c ── syscall.c
+                       │                              ├─ vfs.c + fs.c + ata.c
+                       │                              ├─ elf.c          (sys_exec)
+                       │                              └─ ipc.c + pipe.c + socket.c ── net.c
+                       └─ fb.c + psf.c ── graphics.c ── compositor.c ── wm.c ── desktop.c
+                       pci.c ── driver.c ── hda.c, usb.c
+                       config.c     security.c     diagnostics.c
+```
+
+### Syscall ABI
+
+`SYSCALL` with the target configured in `IA32_LSTAR`, a `0xC0000080`-based
+`IA32_STAR` for the ring-3 selectors, and `IA32_FMASK` to mask RFLAGS.
+`syscall_dispatch()` looks the handler up in a 256-entry table.
+
+Numbering follows Linux where the two overlap (`READ`=0, `WRITE`=1, `OPEN`=2,
+`CLOSE`=3, `GETPID`=39, `FORK`=57, `EXEC`=59, `EXIT`=60) and uses a
+CharisOS-specific band above 70 for sockets, IPC, diagnostics and the game SDK.
+This is a custom ABI — it is **not** Linux-ABI compatible.
+
+### Scheduling
+
+The ready queue is a singly-linked list. `scheduler_find_next()` walks it and
+selects the first `TASK_STATE_READY` task, so blocked tasks stay in place and are
+skipped rather than dequeued. Simple and correct for the current 32-task
+ceiling, but every tick is O(n) over all tasks, so it would need a real priority
+structure before the task limit is raised.
 
 ---
 
- Repository structure
+## 📁 Repository layout
 
 ```
 charis__OS/
-├── boot/                    # Bootloader assembly
-│   ├── boot.asm             # 32-bit entry, mode transitions
-│   └── long_mode.asm        # 64-bit jump target
-├── kernel/                  # C kernel source
-│   ├── main.c               # Kernel entry point
-│   ├── memory.c             # PMM + VMM + heap allocator
-│   ├── task.c               # Task creation and PCB
-│   ├── scheduler.c          # Preemptive round-robin scheduler
-│   ├── idt.c / irq.c        # IDT (256 entries) + PIC remapping
-│   ├── timer.c              # PIT driver, 1000 Hz
-│   ├── keyboard.c           # PS/2 keyboard driver
-│   ├── vga.c                # 80×25 VGA text mode + cursor
-│   ├── shell.c              # Built-in command interpreter
-│   ├── net.c                # RTL8139 Ethernet driver
-│   ├── wm.c / desktop.c     # Framebuffer WM + desktop
-│   ├── il_runtime.c         # CIL/IL bytecode interpreter
-│   ├── ipc.c / socket.c     # IPC primitives + socket layer
-│   ├── audio.c / usb.c      # Audio + USB subsystems
-│   ├── pci.c / power.c      # PCI enumeration + power mgmt
-│   └── asm/                 # Assembly helpers
-├── include/kernel/          # Kernel headers
-├── iso/boot/grub/           # GRUB2 config for ISO image
-├── link.ld                  # Custom GNU ld linker script
-├── Makefile                 # Main build (freestanding GCC)
-├── Makefile.bak             # Backup Makefile
-├── build_wsl.sh             # WSL build helper (Linux)
-├── build_wsl.bat            # WSL build wrapper (Windows)
-├── build.bat                # Windows batch build
-├── run.bat                  # QEMU launch (Windows)
-├── OPTIMIZATIONS.md         # Performance notes
-├── TODO.md                  # Backlog and task list
-└── SECURITY.md              # Security policy
+├── .github/workflows/ci.yml   # Build + QEMU boot test on every push
+├── boot/
+│   ├── boot.asm               # Multiboot2 entry, mode transitions
+│   └── long_mode.asm          # 64-bit jump target
+├── kernel/                    # C kernel source
+│   ├── asm/                   # interrupt stubs, GDT, I/O, context switch
+│   ├── main.c                 # kernel_main(), boot ordering, boot markers
+│   ├── memory.c pmm.c vmm.c heap.c bootmem.c
+│   ├── idt.c irq.c timer.c keyboard.c
+│   ├── task.c scheduler.c syscall.c user.c
+│   ├── vfs.c fs.c ata.c elf.c
+│   ├── vga.c serial.c printf.c string.c
+│   ├── net.c socket.c ipc.c pipe.c signal.c
+│   ├── fb.c psf.c graphics.c compositor.c wm.c desktop.c widgets.c
+│   ├── pci.c driver.c hda.c audio.c usb.c gamepad.c raster.c
+│   └── config.c security.c services.c diagnostics.c display.c power.c
+├── include/kernel/            # Kernel headers
+├── iso/boot/grub/grub.cfg     # GRUB2 menu entry
+├── sdk/                       # Game SDK headers
+├── link.ld                    # GNU ld linker script
+├── Makefile                   # Build system
+├── build_wsl.sh / .bat        # WSL build helpers
+├── .github/                   # CI
+├── LICENSE                    # MIT
+└── TODO.md                    # Authoritative project status
 ```
 
 ---
 
- # Building & Running
+## 🛠️ Building
 
-## Prerequisites
+### Prerequisites
+
+Debian / Ubuntu / Fedora / WSL:
 
 ```bash
-# Debian / Ubuntu / WSL
+# Debian / Ubuntu
 sudo apt update
-sudo apt install build-essential nasm grub-pc-bin xorriso qemu-system-x86
+sudo apt install build-essential nasm grub-pc-bin grub-common xorriso qemu-system-x86
 
-# Freestanding cross-compiler (if not already available)
-sudo apt install gcc binutils
+# Fedora
+sudo dnf install gcc nasm grub2-tools xorriso qemu-system-x86
 ```
 
-### Build & run (Linux / WSL)
+The build uses the **host** GCC with `-ffreestanding`; a cross-compiler is not
+required. `nasm`, `grub-mkrescue`, and `xorriso` are all mandatory.
+
+### Build and run
 
 ```bash
-# Clone
 git clone https://github.com/Liladizilla/charis__OS.git
 cd charis__OS
 
-# Build the bootable ISO
-make
-
-# Run in QEMU (256MB RAM, serial output to stdout)
-qemu-system-x86_64 -cdrom build/charisOS.iso -m 256M -serial stdio
+make                 # → build/charisos.iso  (~29 MB, includes GRUB)
+make run             # boot the ISO in QEMU with serial output
 ```
 
-### Windows (WSL wrapper)
+Headless (useful for CI and debugging):
+
+```bash
+qemu-system-x86_64 -cdrom build/charisos.iso -m 256M -nographic
+```
+
+### Make targets
+
+| Target | Effect |
+|---|---|
+| `make` | Build `build/charisos.iso` |
+| `make run` | Boot in QEMU (256MB, serial to stdout) |
+| `make debug` | QEMU with interrupt, `pcall` and MMU tracing → `qemu.log` |
+| `make gdb` | QEMU paused on a GDB server at `:1234` |
+| `make test` | Compile the VMM self-tests with `-DRUN_VMM_TESTS` |
+| `make clean` | Remove `build/` and the staged kernel ELF |
+
+### Windows
 
 ```bat
-:: Build via WSL from cmd.exe
 build_wsl.bat
-
-:: Launch QEMU
 run.bat
 ```
 
-> **Note:** WSL availability depends on your machine configuration. If WSL is not available, use a native Linux environment or a Docker container with the cross-compiler toolchain.
+---
 
-### QEMU flags reference
+## 🔭 Boot-time debugging
 
-| Flag | Purpose |
-|---|---|
-| `-m 256M` | Allocate 256MB RAM (minimum 64MB) |
-| `-serial stdio` | Route serial debug output to terminal |
-| `-display gtk` | GUI window (default) |
-| `-nographic` | Headless mode — serial only |
-| `-d int` | Log CPU interrupts (debug builds) |
+If the kernel hangs, the markers in the VGA text buffer tell you where. For
+example, seeing `S12344567[L>` means serial, memory, IDT, IRQ, timer, keyboard,
+ATA, FS, VFS, tasks, scheduler, syscalls, graphics, WM, and config all returned.
+
+To get serial output in a file for inspection:
+
+```bash
+qemu-system-x86_64 -cdrom build/charisos.iso -m 256M -nographic -serial file:serial.log
+```
+
+Combine with `make gdb` and:
+
+```
+(gdb) target remote :1234
+(gdb) break kernel_main
+(gdb) continue
+```
 
 ---
 
-## 📊 Technical specifications
+## 🔒 Security
 
-| Component | Implementation |
+Capability bits are defined in `include/kernel/security.h` and assigned per task
+at creation; children inherit the parent's set across `fork`.
+
+| Capability | Guards |
 |---|---|
-| Architecture | x86_64 (64-bit, AMD64 / Intel 64) |
-| Boot standard | Multiboot2 via GRUB2 |
-| Kernel language | C — freestanding GCC, no stdlib |
-| Boot language | NASM Assembly |
-| Memory model | Flat + paging (2MB huge pages, identity mapped) |
-| Max tasks | 32 concurrent tasks × 8KB stack each |
-| Timer frequency | 1000 Hz (configurable PIT) |
-| Syscall dispatch | SYSCALL/SYSRET + MSR setup |
-| Linker | GNU ld with custom `link.ld` script |
-| Test environment | QEMU 7+ and HP laptop (bare metal) |
-| Minimum RAM | 64MB (tested with 256MB) |
+| `CAP_FS_READ` | `sys_open` |
+| `CAP_SPAWN` | `sys_exec`, `sys_fork` |
+| `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | reserved |
+
+`security_verify_path()` rejects `..` traversal. Stack canaries are seeded from
+an RDTSC/timer entropy mix in `security_init()`.
+
+**Known gaps:** enforcement currently covers `open` and `exec` only — the VFS
+read/write paths, socket syscalls, and shared memory are unchecked. The
+capability set is not persisted or namespaced per-user.
+
+See [`SECURITY.md`](./SECURITY.md) for reporting guidance.
 
 ---
 
 ## 🗺️ Roadmap
 
-- [x] **Phase 1** — Boot: Real → Protected → Long mode, GDT, paging
-- [x] **Phase 2** — Core kernel: PMM, heap allocator, IDT, IRQ, PIT
-- [x] **Phase 3** — Drivers: VGA, PS/2 keyboard, serial debug
-- [x] **Phase 4** — Multitasking: PCB, preemptive scheduler, stack canaries
-- [x] **Phase 5** — Storage + ELF: VFS, FAT32, `sys_exec()`, framebuffer + PSF2
-- [ ] **Phase 6** — Userspace: Ring 3 / TSS, full SYSCALL ABI, CIL VM hardening
-- [ ] USB HID + basic PCM audio output
-- [ ] TCP/IP stack on RTL8139 Ethernet
-- [ ] Window manager compositing + app launcher
-- [ ] `socket.c` stability (prevent premature kernel panics)
+Near-term work, in rough priority order:
+
+- [ ] TCP/IP stack on the RTL8139 driver (ARP, ICMP, UDP, TCP) + RX path
+- [ ] `wait()` / `waitpid()` syscalls and zombie reaping
+- [ ] Wire the Settings app to `config_set_*` + `config_save()`
+- [ ] Add `mkdir`/`create` to the VFS so `/etc/charisos.conf` can be created
+- [ ] Enforce capabilities on VFS read/write, sockets and shared memory
+- [ ] Add `-Werror` to the build to prevent regression
+- [ ] Run `vmm_run_tests()` at boot behind a build flag
+- [ ] Userspace: real Ring 3 processes, not just an ELF loader
+
+[`TODO.md`](./TODO.md) tracks all of this in detail.
 
 ---
 
-## 🔢 Language breakdown
-
-```
-C              ████████████████████████░  74.0%
-Assembly       ████░                       11.6%
-Batchfile      ██░                          7.3%
-Shell          █░                           3.8%
-Makefile       ░                            2.3%
-Linker Script  ░                            0.7%
-PowerShell     ░                            0.3%
-```
-
----
-
-## 📚 References & Learning Resources
+## 📚 References
 
 | Resource | Topic |
 |---|---|
-| [The Little OS Book](https://littleosbook.github.io) | OS dev foundations |
 | [OSDev Wiki](https://wiki.osdev.org) | x86 hardware reference |
+| [The Little OS Book](https://littleosbook.github.io) | OS foundations |
 | [James Molloy's Kernel Tutorial](https://jamesmolloy.co.uk) | C kernel walkthrough |
-| [Tuhdo OS Tutorial](https://tuhdo.github.io/os01) | x86_64 systems |
-| [os.phil-opp.com](https://os.phil-opp.com) | Writing an OS in Rust |
-| [Arjun Sreedharan — Kernel 101](https://arjunsreedharan.org) | Linux kernel internals |
-| [Linux From Scratch](https://linuxfromscratch.org) | Building a complete OS |
-| [Beej's Guide to Network Programming](https://beej.us/guide/bgnet) | Networking / sockets |
+| [Multiboot2 spec](https://www.gnu.org/software/grub/manual/multiboot2/multiboot2.html) | Boot protocol |
+| [Beej's Guide to Network Programming](https://beej.us/guide/bgnet) | Sockets |
 | [Writing a Simple TCP/IP Stack](https://saminiir.com/lets-code-tcp-ip-stack) | Network stack |
-| [LC-3 VM Tutorial](https://justinmeiners.github.io/lc3-vm) | Bytecode VM / IL runtime |
-| [Dan Luu — malloc tutorial](https://danluu.com/malloc-tutorial) | Memory allocator design |
-| [Crafting Interpreters](https://craftinginterpreters.com) | Language + bytecode VM |
+| [Dan Luu — malloc tutorial](https://danluu.com/malloc-tutorial) | Allocator design |
+| [Crafting Interpreters](https://craftinginterpreters.com) | Bytecode VMs |
 
 ---
 
 ## 🤝 Contributing
 
-Contributions, bug reports, and ideas are welcome.
-
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feat/your-feature`
-3. Commit your changes: `git commit -m "feat: describe your change"`
+2. Create a branch: `git checkout -b feat/your-feature`
+3. Commit: `git commit -m "feat: describe your change"`
 4. Push and open a Pull Request
 
-Please read [`SECURITY.md`](./SECURITY.md) before reporting security-sensitive issues.
+Please run `make` and boot the ISO in QEMU before opening a PR. CI does this
+automatically on every push and will reject a change that does not build or
+boot. Read [`SECURITY.md`](./SECURITY.md) before reporting security issues.
 
 ---
 
 ## 👤 Author
 
-**Charis Chara**  
-
+**Charis Chara**
 
 - GitHub: [@Liladizilla](https://github.com/Liladizilla)
 - Portfolio: [portfolio-self-five-47.vercel.app](https://portfolio-self-five-47.vercel.app)
@@ -281,10 +385,10 @@ Please read [`SECURITY.md`](./SECURITY.md) before reporting security-sensitive i
 
 ## 📄 License
 
-This project is licensed under the [MIT License](./LICENSE).
+MIT — see [`LICENSE`](./LICENSE).
 
 ---
 
 <div align="center">
-  <sub>Built with ⚙️ from scratch — no OS, no stdlib, no shortcuts.</sub>
+  <sub>Written from scratch — no OS, no stdlib, no shortcuts.</sub>
 </div>

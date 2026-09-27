@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build & Boot Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            build-essential \
+            nasm \
+            qemu-system-x86 \
+            grub-pc-bin \
+            grub-common \
+            xorriso \
+            mtools
+
+      - name: Build kernel
+        run: make
+
+      - name: Compile VMM self-tests
+        run: make test
+
+      - name: Inspect kernel ELF
+        run: |
+          file build/kernel.elf
+          objdump -f build/kernel.elf | sed -n '1,6p'
+
+      - name: Confirm ISO payload
+        run: |
+          test -f build/charisos.iso
+          ls -la build/charisos.iso
+
+      - name: Boot in QEMU and capture serial output
+        run: |
+          # -nographic routes the serial console to stdout, which is the only
+          # kernel output CI can see: the VGA text console is not captured.
+          timeout 45 qemu-system-x86_64 \
+            -cdrom build/charisos.iso \
+            -m 256M \
+            -nographic \
+            -no-reboot \
+            2>&1 | tr -d '\r' | tee boot.log || true
+
+      - name: Verify boot reached the scheduler
+        run: |
+          echo "=== captured serial output ==="
+          cat boot.log
+          echo "==============================="
+
+          # GRUB must have loaded and entered the kernel.
+          grep -q "Booting \`CharisOS'" boot.log \
+            || { echo "::error::GRUB did not load the kernel"; exit 1; }
+          echo "ok: GRUB loaded the kernel"
+
+          # The kernel prints its build banner from the C entry point.
+          grep -q "Built:" boot.log \
+            || { echo "::error::kernel_main never reached the banner"; exit 1; }
+          echo "ok: kernel_main reached the banner"
+
+          # THE decisive check. This line is emitted from kernel_main only after
+          # the Multiboot2 magic validated AND every subsystem init returned AND
+          # the shell task was created. A hang anywhere in the init sequence
+          # (the pci_scan infinite loop, the fs_open FAT walk, a bad magic)
+          # means this line never appears.
+          grep -q "\[BOOT\] init complete, entering scheduler" boot.log \
+            || { echo "::error::kernel did not complete initialisation — see boot.log above"; exit 1; }
+          echo "ok: init sequence completed, scheduler entered"
+
+          # A panic must never have fired.
+          if grep -q "KERNEL PANIC" boot.log; then
+            echo "::error::kernel reported a panic"
+            exit 1
+          fi
+          echo "ok: no kernel panic"
+
+      - name: Upload boot log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boot-log
+          path: boot.log
+          retention-days: 14
+
+      - name: Publish ISO artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: charisos-iso
+          path: build/charisos.iso
+          retention-days: 30

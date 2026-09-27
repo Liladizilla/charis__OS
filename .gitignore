@@ -1,0 +1,52 @@
+# ─── Build artifacts ────────────────────────────────────────────
+build/
+iso/boot/kernel.elf
+*.o
+*.elf
+*.iso
+*.img
+*.bin
+
+# ─── Debug / trace output ───────────────────────────────────────
+# QEMU, serial and build logs are local-only scratch output.
+*.log
+*.err
+*.out
+qemu.err
+qemu_output.txt
+test_output.txt
+output.txt
+build_log.txt*
+
+# ─── Node.js (legacy docx generator, no longer part of the build) ─
+node_modules/
+package.json
+package-lock.json
+npm-debug.log*
+
+# ─── Editor / IDE state ─────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.cache/
+*.ipch
+
+# ─── Agent Manager local state ───────────────────────────────────
+.kilo/
+
+# ─── Docs build output (generated, not source) ───────────────────
+*.docx
+tools/docgen/node_modules/
+
+# ─── OS-specific ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ─── Temp ───────────────────────────────────────────────────────
+tmp/
+*.tmp
+*.temp
+*.bak

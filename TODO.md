@@ -14,7 +14,7 @@
 - [x] sys_exit(), sys_getpid(), sys_yield(), sys_sleep()
 - [x] sys_read()/sys_write() with fd-based I/O
 - [x] sys_print() - debug output
-- [x] sys_fork() stub (creates child with separate PML4)
+- [x] sys_fork() - creates child with separate PML4
 - [x] task_create_with_pml4() - create task with custom address space
 - [x] Per-process fd table (stdin/stdout/stderr pre-opened)
 
@@ -22,7 +22,7 @@
 - [x] VFS layer (vfs.h, vfs.c) - vfs_node_t, mount points
 - [x] Device nodes: /dev/null, /dev/zero, /dev/kbd, /dev/vga
 - [x] Per-task fd table with fd_alloc(), fd_get(), fd_close()
-- [x] FAT32 integration with VFS
+- [x] FAT32 integration with VFS (read-only)
 - [x] sys_open() / sys_close() syscalls
 
 ## Phase 4: ELF Loader (COMPLETE)
@@ -40,50 +40,151 @@
 - [x] graphics_circle() - midpoint circle
 - [x] graphics_put_string() - PSF-based text rendering
 
----
-
-## Phase 6: Window System (Complete)
-- [x] Window manager (compositor)
-- [x] Widget library
-- [x] Input event system
+## Phase 6: Window System (MOSTLY COMPLETE)
+- [x] Window manager (compositor.c, wm.c)
+- [x] Widget library (widgets.c)
+- [x] Input event system (input.c, keyboard.c, mouse.c)
 - [x] PS/2 mouse driver
+- [ ] Window compositing effects (frosted/acrylic materials in compositor.h are stubs)
+- [ ] Window manager needs stress testing (32 task limit)
 
-## Phase 7: IPC & Signals (Complete)
-- [x] Signals (SIGINT, SIGSEGV, SIGCHLD)
-- [x] Pipes
-- [ ] Unix domain sockets
+## Phase 7: IPC & Signals (PARTIAL)
+- [x] Signals (SIGINT, SIGSEGV, SIGCHLD) - signal.c exists
+- [x] Pipes - pipe.c implemented
+- [x] Shared memory (shm.c)
+- [ ] Unix domain sockets (socket.c is INET-only)
+- [ ] wait()/waitpid() syscall missing (no zombie reaping)
 
-## Phase 8: Network Stack (Complete)
-- [x] Socket API (AF_INET, SOCK_STREAM/SOCK_DGRAM)
-- [x] TCP/IP stack foundation
-- [x] Socket syscalls
+## Phase 8: Network Stack (PARTIAL - ENABLED BUT INCOMPLETE)
+- [x] Socket API (AF_INET, SOCK_STREAM/SOCK_DGRAM) - socket.c
+- [x] Socket syscalls (SYS_SOCKET, SYS_CONNECT, SYS_BIND, SYS_LISTEN, SYS_ACCEPT, SYS_SEND, SYS_RECV, SYS_SOCKET_CLOSE)
+- [x] RTL8139 driver (net.c) - finds device via PCI, basic TX implemented
+- [ ] TCP/IP stack foundation (net_handle_tcpip is stub)
+- [ ] ARP/ICMP implementation
+- [ ] DHCP/static IP config via config.c
+- [ ] RX packet handling (net_recv_packet returns 0)
+- [ ] IRQ-driven network processing
 
-## Phase 9: Desktop Environment (Complete)
-- [x] Desktop with icons and taskbar
+## Phase 9: Desktop Environment (PARTIAL)
+- [x] Desktop with icons and taskbar (desktop.c)
+- [x] Window decorations (titlebar, borders, drag/move)
+- [ ] Settings app does not actually persist settings (wires to config.c but no UI)
+- [ ] File Manager app - UI only, no VFS operations wired
+- [ ] Text Editor app - UI only
+- [ ] Calculator app - UI only
 
-## Phase 10: User Applications (Complete)
-- [x] Built-in apps (Terminal, File Manager, Text Editor, Calculator, Settings)
-- [x] Game SDK with graphics/audio syscalls
+## Phase 10: User Applications (UI STUBS ONLY)
+- [ ] Built-in apps (Terminal, File Manager, Text Editor, Calculator, Settings) - all create windows but have no functional implementation
+- [ ] Game SDK with graphics/audio syscalls - headers exist, syscalls registered, but no actual games
 
-## Phase 11: Hardware Abstraction (Complete)
-- [x] HDA audio driver with PCI binding
-- [x] USB device enumeration placeholder
-- [x] Driver framework with probe/remove callbacks
+## Phase 11: Hardware Abstraction (PARTIAL)
+- [x] HDA audio driver with PCI binding (hda.c) - probe logic fixed
+- [x] USB device enumeration placeholder (usb.c - stub)
+- [x] Driver framework with probe/remove callbacks (driver.c) - wildcard match bug fixed
 - [x] PCI class/subclass detection in pci_scan()
+- [ ] ATA driver (ata.c) - basic read only, no write, no identify
+- [ ] Second ATA driver (disk.c) - REMOVED (dead code)
+- [ ] GPU/framebuffer driver for real hardware (fb.c uses fixed 640x480)
 
----
-
-## Phase 12: Graphics Acceleration (Complete)
-- [x] Software rasterizer (16.16 fixed-point)
+## Phase 12: Graphics Acceleration (PARTIAL)
+- [x] Software rasterizer (16.16 fixed-point) - raster.c
 - [x] Triangle rasterization with depth buffer
 - [x] Barycentric coordinate interpolation
+- [ ] Integration with window system (not wired)
 
-## Phase 13: Gaming Support (Complete)
-- [x] Gamepad subsystem (USB HID support)
+## Phase 13: Gaming Support (HEADERS ONLY)
+- [x] Gamepad subsystem (gamepad.c - stub)
 - [x] Game SDK header (sdk/charis_game.h)
-- [x] SYS_GAME_* syscalls for graphics/audio
+- [x] SYS_GAME_* syscalls for graphics/audio - registered but minimal impl
+- [ ] Actual game demo
 
-## Phase 14: Optimizations (In Progress)
-- [ ] Build system verification (nasm, gcc, ld)
-- [ ] Framebuffer initialization via Multiboot2 GFX
-- [ ] PCI enumeration verification
+## Phase 14: Security & Capabilities (PARTIAL - NOW ENFORCED)
+- [x] Capability bitmask per task (CAP_FS_READ, CAP_FS_WRITE, CAP_SPAWN, etc.)
+- [x] Capability inheritance on fork
+- [x] Capability enforcement in sys_open() and sys_exec() (NEW)
+- [x] Path traversal blocking in security_verify_path() (NEW)
+- [ ] Capability enforcement in VFS write/read paths
+- [ ] Capability enforcement in socket/net syscalls
+- [ ] Real entropy for security_generate_token() (currently predictable XOR)
+- [ ] Persistent audit log
+
+## Phase 15: Configuration & Persistence (PARTIAL - NOW WORKING)
+- [x] In-memory config store (config.c) - typed get/set
+- [x] config_load() - parses /etc/charisos.conf via VFS (NEW)
+- [x] config_save() - writes to /etc/charisos.conf via VFS (NEW)
+- [x] Default settings: theme, volume, boot_sound, brightness, net_enabled
+- [ ] Settings UI that calls config_save()
+- [ ] Config file creation if missing
+
+## Phase 16: Build & Quality (IN PROGRESS)
+- [x] Kernel compiles cleanly (all 7 errors fixed)
+- [x] CI workflow (.github/workflows/ci.yml) - build + QEMU boot test
+- [x] Repo hygiene: .gitattributes, .gitignore, CRLF→LF fixed
+- [x] Boot debug markers fixed (no collisions, full coverage)
+- [ ] vmm_test.c wired into make test (compiles, but RUN_VMM_TESTS only for vmm_test.o)
+- [ ] Dead code removed (disk.c deleted)
+- [ ] Add -Werror to Makefile
+- [ ] Automated regression test suite
+
+## Phase 17: Process Management (INCOMPLETE)
+- [ ] wait()/waitpid() syscall for zombie reaping
+- [ ] Process groups/sessions
+- [ ] Signal delivery to process groups
+- [ ] Resource limits (RLIMIT_*)
+
+---
+
+## Summary of Audit Fixes Applied (Sep 2026)
+
+| Priority | Issue | Status |
+|----------|-------|--------|
+| 1 | 7 compilation errors | ✅ FIXED |
+| 2 | CI workflow | ✅ ADDED (now greps a post-init sentinel) |
+| 3 | Repo hygiene (node_modules, CRLF, logs) | ✅ FIXED |
+| 4 | Boot debug markers (collisions, gaps) | ✅ FIXED |
+| 5 | Dead code (disk.c, vmm_test.c) | ✅ FIXED (disk.c removed, vmm_test.c wired) |
+| 6 | Config persistence | ✅ IMPLEMENTED |
+| 7 | Capability enforcement + PCI wildcard | ✅ IMPLEMENTED |
+| 8 | Networking (net_init, socket_send) | ✅ ENABLED (RTL8139 TX wired, RX/TCP stubs) |
+| 9 | TODO.md sync | ✅ THIS FILE |
+
+---
+
+## Boot-blocking bugs found during the Sep 2026 audit
+
+These were not in the original audit. They were found by instrumenting
+`kernel_main()` with serial traces and stepping through a real QEMU boot. The
+first three each caused the kernel to hang, which meant **every subsystem
+initialised after the hang point had never actually executed** — so several
+"verified" items above were only verified to compile, not to run.
+
+| Bug | Location | Effect | Fix |
+|---|---|---|---|
+| `u8 bus` compared `< 256` | `kernel/pci.c:12` | `pci_scan()` looped forever. GCC emitted `-Wtype-limits` and the warning was ignored. Everything after `pci_scan()` in `kernel_main()` — config, desktop, services, diagnostics, power, security, net_init, task creation, `scheduler_start()` — never ran. | Widen the loop variable to `u16`. |
+| FAT32 walk with no volume | `kernel/fs.c` | `fs_init()` bails with "Not FAT32" when no disk is attached, but set no validity flag. `fs_open()` then walked a garbage FAT chain from an uninitialised boot sector and hung inside `config_load()`. This is the common case: booting from CD-ROM with no hard disk. | Added an `fs_mounted` flag plus geometry validation (non-zero `sectors_per_cluster`/`num_fats`/`fat_size_32`, sane `data_start` and `root_cluster`); `fs_open`/`fs_read` now return `-1` immediately when unmounted. |
+| Multiboot2 magic clobbered | `boot/boot.asm` | The debug output at the top of `start:` wrote to `AL` and `AH` before `EAX` was saved, so `mb_magic` stored corrupted data. The kernel then rejected its own boot. | Save `EAX`/`EBX` as the first two instructions of `start:`, before any debug output. |
+| `char c` compared `> 127` | `kernel/psf.c:30,62` | `char` is signed on x86, so `c > 127` is always false. Latin-1/high-byte characters are never skipped and index out of the intended glyph range. | Cast to `unsigned char`, or compare `(u8)c > 127`. *(not yet fixed)* |
+
+### Why this happened
+
+The build already reported all of these. The warnings were visible in the
+compiler output and were dismissed. The first corrective action taken was to
+make CI verify something that could not distinguish "booted successfully" from
+"halted immediately after the banner" — the old check greppped for `Built:`,
+which is printed *before* the Multiboot2 magic is validated.
+
+CI now asserts on `[BOOT] init complete, entering scheduler`, a line emitted
+only after the magic validates, every `init*()` returns, and the shell task is
+created. Any hang in the init sequence fails the build.
+
+---
+
+## Recommended Next Steps
+
+1. **Implement TCP/IP stack** - ARP, ICMP, TCP state machine in net.c
+2. **Add wait()/waitpid()** - complete process lifecycle
+3. **Wire Settings app** - call config_set_* + config_save()
+4. **Add -Werror to Makefile** - prevent future compile regressions
+5. **Wire vmm_run_tests() at boot** - with RUN_VMM_TESTS=1 build target
+6. **Implement sys_read/sys_write capability checks** - VFS path
+7. **Add DHCP client** - for net_enabled=true to get real IP

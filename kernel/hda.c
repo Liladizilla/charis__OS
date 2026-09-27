@@ -2,6 +2,7 @@
 #include <kernel/memory.h>
 #include <kernel/io.h>
 #include <kernel/vga.h>
+#include <kernel/pci.h>
 
 static hda_state_t g_hda_state = {0};
 static u32* g_hda_buffer = NULL;
@@ -55,15 +56,15 @@ static int hda_get_response(u32* response) {
     u32 rior = hda_read(HDA_REG_RIRBU);
     u32 rirb = hda_read(HDA_REG_RIRBL);
     if (rior & (1 << 4)) return -1; /* Unsol */
-    *response = (rior << 32) | rirb;
+    *response = ((u64)rior << 32) | rirb;
     return 0;
 }
 
 /* Send command to codec and get response */
 static u32 hda_send_cmd(u8 codec, u8 verb, u16 payload) {
-    u32 cmd = (codec << 28) | (verb << 20) | payload;
-    hda_write(HDA_REG_CORBL, cmd & 0xFFFFFFFF);
-    hda_write(HDA_REG_CORBU, cmd >> 32);
+    u64 cmd = ((u64)codec << 28) | ((u64)verb << 20) | payload;
+    hda_write(HDA_REG_CORBL, (u32)(cmd & 0xFFFFFFFF));
+    hda_write(HDA_REG_CORBU, (u32)(cmd >> 32));
     
     /* Wait for completion */
     for (int i = 0; i < 1000; i++) {
@@ -109,7 +110,7 @@ int hda_init(void) {
     int num_codecs = (gcap >> 8) & 0x0F;
     
     for (int c = 0; c < num_codecs && c < HDA_MAX_CODECS; c++) {
-        u32 resp = hda_send_cmd(c, 0xF0000, 0); /* Get parameter */
+        u32 resp = hda_send_cmd(c, 0xF0, 0); /* Get parameter (verb 0xF0) */
         if (resp) {
             g_hda_state.codec_mask |= (1 << c);
         }
@@ -139,7 +140,7 @@ int hda_setup_stream(u32 physical_buffer_addr, u32 buffer_size, int sample_rate,
     
     /* Set up descriptor list */
     hda_write(stream_base + HDA_STREAM_SDDL, physical_buffer_addr & 0xFFFFF0);
-    hda_write(stream_base + HDA_STREAM_SDDL, (physical_buffer_addr >> 32) & 0xFFFFFFFF);
+    hda_write(stream_base + HDA_STREAM_SDDL, ((u64)physical_buffer_addr >> 32) & 0xFFFFFFFF);
     
     /* Configure stream */
     u32 ctl = (sample_rate << 16) | (channels << 4) | ((bits == 16) ? 2 : 0);

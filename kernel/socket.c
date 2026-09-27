@@ -72,8 +72,8 @@ int socket_send(int sockfd, void* buf, usize len) {
     if (sockets[sockfd].fd == -1) return -1;
     if (!sockets[sockfd].connected) return -1;
     
-    // Build Ethernet frame and send
-    return (int)len; // Simulated success
+    // Build Ethernet frame and send via network interface
+    return net_send_packet(buf, len);
 }
 
 int socket_recv(int sockfd, void* buf, usize max_len) {

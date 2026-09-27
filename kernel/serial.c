@@ -1,4 +1,5 @@
 #include <kernel/serial.h>
+#include <kernel/io.h>
 #include <kernel/printf.h>
 #include <kernel/types.h>
 #include <stdarg.h>

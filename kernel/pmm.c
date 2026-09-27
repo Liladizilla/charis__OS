@@ -1,6 +1,7 @@
 #include <kernel/pmm.h>
 #include <kernel/vga.h>
 #include <kernel/string.h>
+#include <kernel/multiboot.h>
 
 // Memory map from Multiboot
 static multiboot_memory_map_t* memory_map;
@@ -12,17 +13,19 @@ static u8 bitmap[BITMAP_SIZE];
 static u64 bitmap_base = 0x100000;
 static u32 last_free = 0; // next-fit cursor for speed
 
+extern char _kernel_end[];
+
 void pmm_init(multiboot_info_t* info) {
     memory_map = (multiboot_memory_map_t*)info->mmap_addr;
     memory_map_count = info->mmap_length / sizeof(multiboot_memory_map_t);
 
     // Clear bitmap
-    memset(bitmap, 0, BITMAP_SIZE);
+    kmemset(bitmap, 0, BITMAP_SIZE);
 
     // Mark used areas
     // Kernel (1MB - end)
     u64 kernel_start = 0x100000;
-    u64 kernel_end = (u64)&kernel_end;
+    u64 kernel_end = (u64)_kernel_end;
     for (u64 addr = kernel_start; addr < kernel_end; addr += 4096) {
         u32 page = (addr - bitmap_base) / 4096;
         bitmap[page / 8] |= (1 << (page % 8));

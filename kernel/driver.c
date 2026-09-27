@@ -8,18 +8,27 @@ driver_t* driver_list = NULL;
 int driver_count = 0;
 int driver_capacity = 0;
 
+/* HDA driver supports multiple vendor/device combinations */
 static int hda_driver_probe(pci_device_t* dev) {
-    return hda_init();
+    if (!dev) return -1;
+    /* Verify this is a supported HDA controller */
+    if (dev->vendor_id == 0x8086 && (dev->device_id == 0x2668 || dev->device_id == 0x27D8)) {
+        return hda_init();
+    }
+    if (dev->vendor_id == 0x1002 && dev->device_id == 0x4383) {
+        return hda_init();
+    }
+    return -1; /* Not our device */
 }
 
 static driver_t hda_driver = {
     .name = "intel_hda",
     .probe = hda_driver_probe,
     .remove = NULL,
-    .vendor_id = 0,
-    .device_id = 0,
-    .pci_class = 0, /* Match any */
-    .pci_subclass = 0
+    .vendor_id = 0x8086,   /* Intel */
+    .device_id = 0x2668,   /* Intel ICH HDA */
+    .pci_class = PCI_CLASS_SERIAL, /* Audio controller class */
+    .pci_subclass = 0x03   /* HDA subclass */
 };
 
 void driver_init(void) {
@@ -48,7 +57,7 @@ void driver_register(driver_t* drv) {
     }
     
     driver_list[driver_count++] = *drv;
-    kprintf("Registered driver: %s\n", drv->name);
+    vga_printf("Registered driver: %s\n", drv->name);
 }
 
 void driver_scan_and_bind(void) {
@@ -60,19 +69,20 @@ void driver_scan_and_bind(void) {
         /* Find matching driver */
         for (int j = 0; j < driver_count; j++) {
             driver_t* drv = &driver_list[j];
-            bool vendor_match = (drv->vendor_id == 0 || drv->vendor_id == dev->vendor_id);
+            bool vendor_match = (drv->vendor_id == dev->vendor_id);
             bool device_match = (drv->device_id == 0 || drv->device_id == dev->device_id);
             bool class_match = (drv->pci_class == 0 || drv->pci_class == dev->pci_class);
+            bool subclass_match = (drv->pci_subclass == 0 || drv->pci_subclass == dev->pci_subclass);
             
-            if (vendor_match && device_match && class_match) {
-                kprintf("Probing driver %s for PCI %x:%x\n", drv->name, 
+            if (vendor_match && device_match && class_match && subclass_match) {
+                vga_printf("Probing driver %s for PCI %x:%x\n", drv->name, 
                         dev->vendor_id, dev->device_id);
                 if (drv->probe) {
                     int result = drv->probe(dev);
                     if (result == 0) {
-                        kprintf("Driver %s bound successfully\n", drv->name);
+                        vga_printf("Driver %s bound successfully\n", drv->name);
                     } else {
-                        kprintf("Driver %s probe failed: %d\n", drv->name, result);
+                        vga_printf("Driver %s probe failed: %d\n", drv->name, result);
                     }
                 }
                 break; /* One driver per device */

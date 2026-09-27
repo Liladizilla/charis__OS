@@ -1,4 +1,5 @@
 #include <kernel/irq.h>
+#include <kernel/io.h>
 #include <kernel/vga.h>
 #include <kernel/mouse.h>
 #include <kernel/input.h>
