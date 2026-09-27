@@ -55,6 +55,8 @@ jobs:
             -nographic \
             -no-reboot \
             2>&1 | tr -d '\r' | tee boot.log || true
+          # Strip ANSI escapes so the log is greppable and readable as an artifact.
+          sed -i 's/\x1b\[[0-9;?]*[A-Za-z]//g; s/\x1b[()][A-Z0-9]//g' boot.log
 
       - name: Verify boot reached the scheduler
         run: |
@@ -62,31 +64,36 @@ jobs:
           cat boot.log
           echo "==============================="
 
-          # GRUB must have loaded and entered the kernel.
-          grep -q "Booting \`CharisOS'" boot.log \
-            || { echo "::error::GRUB did not load the kernel"; exit 1; }
-          echo "ok: GRUB loaded the kernel"
+          # NOTE: assertions below deliberately match only strings the KERNEL
+          # writes to the serial port. GRUB's and SeaBIOS' own screen drawing is
+          # suppressed when the runner has no TTY, so grepping for bootloader
+          # text (e.g. "Booting `CharisOS'") is environment-dependent and has
+          # already produced a false failure here.
 
-          # The kernel prints its build banner from the C entry point.
+          # The C entry point ran.
           grep -q "Built:" boot.log \
-            || { echo "::error::kernel_main never reached the banner"; exit 1; }
-          echo "ok: kernel_main reached the banner"
+            || { echo "::error::kernel_main never reached its banner"; exit 1; }
+          echo "ok: kernel_main reached its banner"
 
-          # THE decisive check. This line is emitted from kernel_main only after
-          # the Multiboot2 magic validated AND every subsystem init returned AND
-          # the shell task was created. A hang anywhere in the init sequence
-          # (the pci_scan infinite loop, the fs_open FAT walk, a bad magic)
-          # means this line never appears.
+          # THE decisive check. Emitted from kernel_main only after the
+          # Multiboot2 magic validated, every init*() returned, and the shell
+          # task was created. A hang anywhere in the init sequence (the
+          # pci_scan infinite loop, the fs_open FAT walk, a bad magic) means
+          # this line never appears.
           grep -q "\[BOOT\] init complete, entering scheduler" boot.log \
             || { echo "::error::kernel did not complete initialisation — see boot.log above"; exit 1; }
           echo "ok: init sequence completed, scheduler entered"
 
-          # A panic must never have fired.
+          # A rejected magic or a panic must never appear.
+          if grep -q "Invalid Multiboot2 magic" boot.log; then
+            echo "::error::Multiboot2 magic was rejected"
+            exit 1
+          fi
           if grep -q "KERNEL PANIC" boot.log; then
             echo "::error::kernel reported a panic"
             exit 1
           fi
-          echo "ok: no kernel panic"
+          echo "ok: no boot failure or panic"
 
       - name: Upload boot log
         if: always()
