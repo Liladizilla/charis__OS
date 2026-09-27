@@ -54,14 +54,27 @@ jobs:
         # validated, and GRUB suppresses its own output without a TTY.
         run: |
           set -e
-          export OVMF=/usr/share/OVMF/OVMF_CODE.fd
-          ./tools/verify-boot.sh build/charisos-vm.iso
-          ./tools/verify-boot.sh build/charisos-usb.img --disk
-          if [ -f "$OVMF" ]; then
+          # OVMF lives in a different place on Fedora, Debian and Ubuntu, and
+          # some builds only ship the 4M variant. Resolve it rather than
+          # hardcoding one path, otherwise the UEFI half silently skips.
+          OVMF=""
+          for c in \
+              /usr/share/OVMF/OVMF_CODE_4M.fd \
+              /usr/share/OVMF/OVMF_CODE.fd \
+              /usr/share/edk2/ovmf/OVMF_CODE.fd \
+              /usr/share/edk2-ovmf/OVMF_CODE.fd \
+              /usr/share/qemu/OVMF.fd ; do
+            if [ -f "$c" ]; then OVMF="$c"; break; fi
+          done
+          if [ -z "$OVMF" ]; then
+            echo "::warning::no OVMF firmware found; UEFI boot checks skipped"
+          else
+            echo "Using OVMF: $OVMF"
+            export OVMF
+            ./tools/verify-boot.sh build/charisos-vm.iso
+            ./tools/verify-boot.sh build/charisos-usb.img --disk
             ./tools/verify-boot.sh build/charisos-vm.iso --uefi
             ./tools/verify-boot.sh build/charisos-usb.img --disk --uefi
-          else
-            echo "::warning::OVMF not found, UEFI boot checks skipped"
           fi
 
       - name: Upload boot logs

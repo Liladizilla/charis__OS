@@ -133,15 +133,21 @@ run-usb: $(USB_IMG)
 	$(QEMU) -drive file=$<,format=raw,if=ide,snapshot=on -m 256M -serial stdio -no-reboot
 
 # UEFI variants — useful for checking that firmware-level boot works before
-# touching real hardware. Needs OVMF; the target is a no-op if it is absent.
-OVMF ?= /usr/share/edk2/ovmf/OVMF_CODE.fd
+# touching real hardware. OVMF lives in a different place on Fedora, Debian and
+# Ubuntu, so resolve it rather than hardcoding one path.
+OVMF ?= $(firstword $(wildcard \
+	/usr/share/OVMF/OVMF_CODE_4M.fd \
+	/usr/share/OVMF/OVMF_CODE.fd \
+	/usr/share/edk2/ovmf/OVMF_CODE.fd \
+	/usr/share/edk2-ovmf/OVMF_CODE.fd \
+	/usr/share/qemu/OVMF.fd))
 
 run-vm-uefi: $(VM_ISO)
-	@test -f $(OVMF) || { echo "OVMF not found at $(OVMF); install edk2-ovmf"; exit 1; }
+	@test -n "$(OVMF)" && test -f "$(OVMF)" || { echo "No OVMF firmware found; install ovmf / edk2-ovmf"; exit 1; }
 	$(QEMU) -cdrom $< -m 256M -serial stdio -no-reboot -bios $(OVMF)
 
 run-usb-uefi: $(USB_IMG)
-	@test -f $(OVMF) || { echo "OVMF not found at $(OVMF); install edk2-ovmf"; exit 1; }
+	@test -n "$(OVMF)" && test -f "$(OVMF)" || { echo "No OVMF firmware found; install ovmf / edk2-ovmf"; exit 1; }
 	$(QEMU) -drive file=$<,format=raw,if=ide,snapshot=on -m 256M -serial stdio -no-reboot -bios $(OVMF)
 
 # Boot gate used by CI and by hand before tagging a release. Asserts on the
@@ -152,10 +158,11 @@ run-usb-uefi: $(USB_IMG)
 verify-boot: $(VM_ISO) $(USB_IMG)
 	./tools/verify-boot.sh $(VM_ISO)
 	./tools/verify-boot.sh $(USB_IMG) --disk
-	@if [ -f "$(OVMF)" ]; then \
-		./tools/verify-boot.sh $(USB_IMG) --disk --uefi; \
+	@if [ -n "$(OVMF)" ] && [ -f "$(OVMF)" ]; then \
+		OVMF=$(OVMF) ./tools/verify-boot.sh $(VM_ISO) --uefi; \
+		OVMF=$(OVMF) ./tools/verify-boot.sh $(USB_IMG) --disk --uefi; \
 	else \
-		echo "SKIP: OVMF not present, skipping the UEFI boot check"; \
+		echo "SKIP: no OVMF firmware found, skipping the UEFI boot checks"; \
 	fi
 
 clean:
