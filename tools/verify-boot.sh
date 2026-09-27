@@ -72,7 +72,33 @@ fi
 
 if [ -n "$FIRMWARE" ]; then
     [ -f "$FIRMWARE" ] || { echo "verify-boot.sh: OVMF firmware not found at $FIRMWARE" >&2; exit 2; }
-    DRIVE+=(-bios "$FIRMWARE")
+    # OVMF ships in two incompatible shapes:
+    #   * the classic ~2MB CODE/VARS pair, passed with -bios
+    #   * the "4M" split builds (.fd or .qcow2), which must be mapped as pflash
+    #     alongside a writable VARS region, and which QEMU rejects outright
+    #     with "could not load PC BIOS" if handed to -bios
+    # Pick the invocation that matches the file rather than assuming.
+    case "$FIRMWARE" in
+        *4M*)
+            VARS="${FIRMWARE%_CODE*}_VARS${FIRMWARE#*_CODE}"
+            [ -f "$VARS" ] || {
+                echo "verify-boot.sh: 4M firmware needs a VARS image, none found for $FIRMWARE" >&2
+                exit 2
+            }
+            # VARS is written by firmware; work on a copy so a real install
+            # on the host is never modified.
+            cp -f "$VARS" "$BUILD_DIR/ovmf-vars.img"
+            case "$FIRMWARE" in
+                *.qcow2) FMT=qcow2 ;;
+                *)       FMT=raw   ;;
+            esac
+            DRIVE+=(-drive "if=pflash,format=$FMT,readonly=on,file=$FIRMWARE"
+                    -drive "if=pflash,format=$FMT,file=$BUILD_DIR/ovmf-vars.img")
+            ;;
+        *)
+            DRIVE+=(-bios "$FIRMWARE")
+            ;;
+    esac
 fi
 
 # Remember the image digest BEFORE booting, so we can prove the boot did not

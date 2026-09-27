@@ -136,11 +136,11 @@ run-usb: $(USB_IMG)
 # touching real hardware. OVMF lives in a different place on Fedora, Debian and
 # Ubuntu, so resolve it rather than hardcoding one path.
 OVMF ?= $(firstword $(wildcard \
-	/usr/share/OVMF/OVMF_CODE_4M.fd \
 	/usr/share/OVMF/OVMF_CODE.fd \
 	/usr/share/edk2/ovmf/OVMF_CODE.fd \
 	/usr/share/edk2-ovmf/OVMF_CODE.fd \
-	/usr/share/qemu/OVMF.fd))
+	/usr/share/qemu/OVMF.fd \
+	/usr/share/OVMF/OVMF_CODE_4M.fd))
 
 run-vm-uefi: $(VM_ISO)
 	@test -n "$(OVMF)" && test -f "$(OVMF)" || { echo "No OVMF firmware found; install ovmf / edk2-ovmf"; exit 1; }

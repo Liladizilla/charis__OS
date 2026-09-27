@@ -54,16 +54,19 @@ jobs:
         # validated, and GRUB suppresses its own output without a TTY.
         run: |
           set -e
-          # OVMF lives in a different place on Fedora, Debian and Ubuntu, and
-          # some builds only ship the 4M variant. Resolve it rather than
-          # hardcoding one path, otherwise the UEFI half silently skips.
+          # OVMF ships in two shapes and lives in different places across
+          # Fedora, Debian and Ubuntu. Prefer the classic 2MB CODE image, which
+          # works with -bios; the 4M split builds are handled by
+          # tools/verify-boot.sh via pflash. Hardcoding one path made half the
+          # boot matrix silently skip, and picking the 4M build first made
+          # QEMU fail with "could not load PC BIOS".
           OVMF=""
           for c in \
-              /usr/share/OVMF/OVMF_CODE_4M.fd \
               /usr/share/OVMF/OVMF_CODE.fd \
               /usr/share/edk2/ovmf/OVMF_CODE.fd \
               /usr/share/edk2-ovmf/OVMF_CODE.fd \
-              /usr/share/qemu/OVMF.fd ; do
+              /usr/share/qemu/OVMF.fd \
+              /usr/share/OVMF/OVMF_CODE_4M.fd ; do
             if [ -f "$c" ]; then OVMF="$c"; break; fi
           done
           if [ -z "$OVMF" ]; then
