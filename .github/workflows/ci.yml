@@ -28,7 +28,9 @@ jobs:
             grub-common \
             xorriso \
             mtools \
-            ovmf
+            ovmf \
+            qemu-system-x86 \
+            libvirt-daemon-system
 
       - name: Build kernel and boot images
         run: make images

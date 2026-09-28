@@ -22,6 +22,17 @@
 #   --disk     attach the image as a raw hard disk (a flashed USB stick)
 #              instead of a CD-ROM
 #   --uefi     boot with OVMF instead of legacy BIOS
+#   --kvm      use KVM hardware acceleration when the host allows it
+#
+# KVM is not optional coverage. TCG (pure emulation) tolerates things real
+# hardware does not: it accepts writes to reserved MSRs and ignores reserved
+# bits in EFER, among others. Every bug of that shape passes the whole suite
+# under TCG and then faults the instant anyone runs the image in GNOME Boxes,
+# VirtualBox or any accelerated VM -- which is how the misnumbered SYSCALL MSRs
+# shipped in every release up to and including v1.1.0.
+#
+# Note: --kvm is applied to the BIOS path only. UEFI+KVM is a separate,
+# not-yet-diagnosed failure and is not part of the gate.
 #
 # Exits 0 if the kernel reached the scheduler, 1 otherwise. The captured log is
 # left at $BUILD_DIR/verify-<mode>.log (or verify.log) for inspection.
@@ -31,6 +42,7 @@ set -uo pipefail
 IMAGE=""
 ATTACH="cd"
 FIRMWARE=""
+USE_KVM=0
 TIMEOUT=60
 LOG=""
 
@@ -40,6 +52,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --disk)   ATTACH="disk"; shift ;;
         --uefi)   FIRMWARE="${OVMF:-/usr/share/edk2/ovmf/OVMF_CODE.fd}"; shift ;;
+        --kvm)    USE_KVM=1; shift ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         -h|--help) usage ;;
         -*) echo "unknown option: $1" >&2; exit 2 ;;
@@ -57,6 +70,7 @@ MODE="cd"
 [ "$ATTACH" = "disk" ] && MODE="disk"
 LOG="$BUILD_DIR/verify-$MODE.log"
 [ -n "$FIRMWARE" ] && LOG="$BUILD_DIR/verify-$MODE-uefi.log"
+[ "$USE_KVM" = "1" ] && LOG="$LOG-kvm"
 
 # Build the QEMU argument list.
 if [ "$ATTACH" = "disk" ]; then
@@ -68,6 +82,16 @@ if [ "$ATTACH" = "disk" ]; then
     DRIVE=(-drive "file=$IMAGE,format=raw,if=ide,snapshot=on")
 else
     DRIVE=(-cdrom "$IMAGE")
+fi
+
+# Only add -enable-kvm if the host really offers it; otherwise QEMU fails to
+# start and the run is wasted.
+if [ "$USE_KVM" = "1" ]; then
+    if [ -w /dev/kvm ] && [ -e /dev/kvm ]; then
+        DRIVE+=(-enable-kvm)
+    else
+        echo "note: --kvm requested but /dev/kvm is unavailable; running under TCG" >&2
+    fi
 fi
 
 if [ -n "$FIRMWARE" ]; then

@@ -205,6 +205,11 @@ run-usb-uefi: $(USB_IMG)
 verify-boot: $(VM_ISO) $(USB_IMG)
 	./tools/verify-boot.sh $(VM_ISO)
 	./tools/verify-boot.sh $(USB_IMG) --disk
+	# Hardware acceleration, which is what GNOME Boxes, VirtualBox and most
+	# real users actually run. TCG accepts a class of bug that faults here --
+	# the MSR numbering mistake that broke every earlier release under KVM got
+	# through the whole suite without this.
+	./tools/verify-boot.sh $(VM_ISO) --kvm
 	@if [ -n "$(OVMF)" ] && [ -f "$(OVMF)" ]; then \
 		OVMF=$(OVMF) ./tools/verify-boot.sh $(VM_ISO) --uefi; \
 		OVMF=$(OVMF) ./tools/verify-boot.sh $(USB_IMG) --disk --uefi; \

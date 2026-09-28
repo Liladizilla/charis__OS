@@ -374,6 +374,26 @@ static u64 syscall_game_audio_play_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a
     return audio_write((audio_stream_t*)a1, (void*)a2, (usize)a3) >= 0 ? 0 : -1;
 }
 
+/* ── Model-specific register helpers ──────────────────────────────────── */
+#define MSR_EFER    0xC0000080
+#define MSR_STAR    0xC0000081
+#define MSR_LSTAR   0xC0000082
+#define MSR_SFMASK  0xC0000084
+#define EFER_SCE    (1ULL << 0)      /* System Call Extensions */
+
+/* STAR[47:32] is the SYSCALL code selector, STAR[63:48] the SYSRET base. */
+#define STAR_VALUE  ((0x18ULL << 48) | (0x08ULL << 32))
+
+static u64 rdmsr(u32 msr) {
+    u32 lo, hi;
+    asm volatile("rdmsr" : "=a"(lo), "=d"(hi) : "c"(msr));
+    return ((u64)hi << 32) | lo;
+}
+
+static void wrmsr(u32 msr, u64 value) {
+    asm volatile("wrmsr" : : "c"(msr), "a"((u32)value), "d"((u32)(value >> 32)));
+}
+
 void syscall_init(void) {
     for (u32 i = 0; i < SYSCALL_MAX; i++) {
         syscall_table[i] = NULL;
@@ -413,10 +433,28 @@ void syscall_init(void) {
     syscall_register(SYS_GAME_AUDIO_PLAY, syscall_game_audio_play_handler);
 
     extern void syscall_entry(void);
-    asm volatile("wrmsr" : : "a"(syscall_entry), "d"(0), "c"(0xC0000080 + 0));
-    asm volatile("wrmsr" : : "a"(0), "d"(0), "c"(0xC0000080 + 3));
-    asm volatile("wrmsr" : : "a"((0x18ULL << 32) | (0x08ULL << 48)), "d"(0), "c"(0xC0000080 + 4));
-    
+
+    /*
+     * Program the SYSCALL/SYSRET MSRs.
+     *
+     * These were all misnumbered. The old code wrote:
+     *   0xC0000080 (EFER)     with the entry point as the value
+     *   0xC0000083 (reserved)  with zero
+     *   0xC0000084 (SFMASK)   with the STAR selector pair
+     * Writing reserved EFER bits, or any value to a reserved MSR, raises #GP.
+     *
+     * That is why this only ever worked under emulation. TCG does not validate
+     * EFER's reserved bits and silently accepts writes to unimplemented MSRs,
+     * so the misnumbering went unnoticed; a real CPU -- and therefore KVM,
+     * which is what GNOME Boxes and every other accelerated VM uses -- faults
+     * on the first wrmsr and the kernel resets.
+     */
+    wrmsr(MSR_EFER,   rdmsr(MSR_EFER) | EFER_SCE);
+    wrmsr(MSR_STAR,   STAR_VALUE);
+    wrmsr(MSR_LSTAR,  (u64)syscall_entry);
+    /* Clear IF and DF on entry so the handler runs with interrupts off. */
+    wrmsr(MSR_SFMASK, 0x7);
+
     idt_set_gate(0x80, isr_table[0x80], 0, 0xEE);
 }
 
