@@ -59,7 +59,7 @@ ALL_OBJS = $(BOOT_OBJS) $(KERNEL_OBJS) $(ASM_OBJS)
 
 # Targets
 # `all` stays the canonical build so CI and existing scripts keep working.
-all: $(BUILD_DIR)/charisos.iso
+all: $(BUILD_DIR)/charisos-text.iso
 
 $(BUILD_DIR)/charisos.iso: $(BUILD_DIR)/kernel.elf
 	mkdir -p iso/boot/grub
@@ -80,6 +80,9 @@ $(BUILD_DIR)/kernel.elf: $(ALL_OBJS) link.ld
 VM_ISO  = $(BUILD_DIR)/charisos-vm.iso
 USB_IMG = $(BUILD_DIR)/charisos-usb.img
 
+# On the text-mode branch the default target above already produces the
+# console-only image. `images` still builds the full graphics pair for
+# anyone who wants to try a UEFI boot from this branch.
 images: $(VM_ISO) $(USB_IMG)
 
 # ── Text-only variant ─────────────────────────────────────────────────
