@@ -91,6 +91,11 @@ def main():
         pass
     time.sleep(SETTLE)
 
+    # Stop the CPU before reading. The desktop repaints continuously on the
+    # timer tick, so dumping a running guest catches a half-finished frame --
+    # which looks exactly like a rendering bug and is not one.
+    monitor("stop", sock, wait=0.5)
+
     words_per_row = PITCH // 4          # 1024 pixels
     total_words = words_per_row * H     # 786432
 

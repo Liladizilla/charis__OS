@@ -21,6 +21,9 @@
 #include <kernel/string.h>
 #include <kernel/printf.h>
 #include <kernel/shell.h>
+#include <kernel/wallpaper.h>
+#include <kernel/config.h>
+#include <kernel/wizard.h>
 #include <kernel/string.h>
 
 /* ── Theme ────────────────────────────────────────────────────────── */
@@ -67,47 +70,6 @@ typedef struct {
 } ui_state_t;
 
 static ui_state_t ui = { false, -1, false, 0, 0, true };
-
-/* ── Wallpaper ────────────────────────────────────────────────────── */
-
-/*
- * A smooth two-point gradient, dithered so the banding that 8-bit colour
- * would otherwise show on a wide ramp is broken up. Deterministic, so the
- * desktop looks the same on every boot and screenshots are comparable.
- */
-static void draw_wallpaper(void) {
-    u32 w = g_framebuffer.width;
-    u32 h = g_framebuffer.height;
-    if (!w || !h) return;
-
-    const u8 top_r = 0x0B, top_g = 0x0F, top_b = 0x17;
-    const u8 bot_r = 0x1B, bot_g = 0x2A, bot_b = 0x46;
-
-    for (u32 y = 0; y < h; y++) {
-        u32 t = (h > 1) ? (y * 256) / (h - 1) : 0;
-        u8 r = (u8)(top_r + ((bot_r - top_r) * t) / 256);
-        u8 g = (u8)(top_g + ((bot_g - top_g) * t) / 256);
-        u8 b = (u8)(top_b + ((bot_b - top_b) * t) / 256);
-
-        for (u32 x = 0; x < w; x++) {
-            /* 4x4 ordered dither: nudges the colour by +/-1 to hide banding. */
-            static const u8 BAYER[16] = {
-                 0,  8,  2, 10,
-                12,  4, 14,  6,
-                 3, 11,  1,  9,
-                15,  7, 13,  5,
-            };
-            int d = (int)BAYER[(y & 3) * 4 + (x & 3)] - 8;
-            int rr = r + (d > 4) - (d < -4);
-            int gg = g + (d > 4) - (d < -4);
-            int bb = b + (d > 4) - (d < -4);
-            if (rr < 0) rr = 0; if (rr > 255) rr = 255;
-            if (gg < 0) gg = 0; if (gg > 255) gg = 255;
-            if (bb < 0) bb = 0; if (bb > 255) bb = 255;
-            fb_put_pixel(x, y, FB_ARGB(0xFF, (u32)rr, (u32)gg, (u32)bb));
-        }
-    }
-}
 
 /* ── Chrome ───────────────────────────────────────────────────────── */
 
@@ -170,7 +132,7 @@ static void draw_menu(void) {
 
 /* Software cursor. The PS/2 mouse has no hardware cursor once the display is
  * in graphics mode, so the pointer is drawn into the framebuffer. */
-static void draw_cursor(void) {
+void ui_draw_cursor(void) {
     int x = input_get_mouse_x();
     int y = input_get_mouse_y();
     if (x < 0 || y < 0) return;
@@ -211,10 +173,10 @@ static void draw_cursor(void) {
 }
 
 static void redraw_all(void) {
-    draw_wallpaper();
+    wallpaper_draw((u32)config_get_int("wallpaper", 0));
     draw_taskbar();
     draw_menu();
-    draw_cursor();
+    ui_draw_cursor();
 }
 
 /* ── Hit testing ──────────────────────────────────────────────────── */
@@ -319,6 +281,13 @@ static void handle_event(const input_event_t* e) {
 void shell_ui_main(void* arg) {
     (void)arg;
 
+    /* First run: collect the choices an install would normally ask for, then
+     * hand over to the desktop. Skipped entirely once setup is done, and
+     * skipped on a text-only build where there is nothing to draw it on. */
+    if (wizard_is_first_boot()) {
+        wizard_run();
+    }
+
     u32 last_w = 0, last_h = 0;
 
     for (;;) {
@@ -354,7 +323,7 @@ void shell_ui_main(void* arg) {
         }
         /* The cursor moves on every mouse packet, so it is drawn every pass
          * rather than waiting for a redraw decision. */
-        draw_cursor();
+        ui_draw_cursor();
 
         asm volatile("hlt");
     }
