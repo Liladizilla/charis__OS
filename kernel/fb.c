@@ -72,6 +72,14 @@ u32 fb_unpack(u32 native) {
 int fb_init(void) {
     framebuffer_t* fb = &g_framebuffer;
 
+    /* CHARIS_TEXT_ONLY builds a console-only image. Useful on hardware with no
+     * linear framebuffer, or where reserving several megabytes for a desktop
+     * the user cannot see is not worth it. */
+#ifdef CHARIS_TEXT_ONLY
+    kprintf("FB: text-only build, graphics disabled\n");
+    return -1;
+#endif
+
     if (!boot_info.has_framebuffer) {
         kprintf("FB: firmware provided no framebuffer\n");
         return -1;

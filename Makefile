@@ -82,6 +82,26 @@ USB_IMG = $(BUILD_DIR)/charisos-usb.img
 
 images: $(VM_ISO) $(USB_IMG)
 
+# ── Text-only variant ─────────────────────────────────────────────────
+# Same source, graphics compiled out. Boots to the VGA text console and the
+# shell on any machine, including ones whose firmware offers no linear
+# framebuffer. The difference is a build flag, not a separate tree, so the two
+# cannot drift apart.
+TEXT_ELIG  = $(filter-out $(BUILD_DIR)/fb.o $(BUILD_DIR)/font_data.o \
+                          $(BUILD_DIR)/gfx_text.o $(BUILD_DIR)/shell_ui.o, $(ALL_OBJS))
+TEXT_ISO   = $(BUILD_DIR)/charisos-text.iso
+TEXT_FLAGS = -DCHARIS_TEXT_ONLY
+
+images-text: $(TEXT_ISO)
+
+$(TEXT_ISO): $(KERNEL_DIR)/main.c
+	@echo "==> Building text-only image"
+	$(MAKE) clean
+	$(MAKE) EXTRA_CFLAGS="$(TEXT_FLAGS)" images
+	@cp $(VM_ISO) $@
+	@cp $(USB_IMG) $(BUILD_DIR)/charisos-text-usb.img
+	@echo "==> text-only images: $@ and $(BUILD_DIR)/charisos-text-usb.img"
+
 $(VM_ISO): $(BUILD_DIR)/charisos.iso
 	cp $< $@
 
@@ -94,7 +114,7 @@ $(BUILD_DIR)/%.o: $(BOOT_DIR)/%.asm
 
 $(BUILD_DIR)/%.o: $(KERNEL_DIR)/%.c
 	mkdir -p $(BUILD_DIR)
-	$(GCC) $(GCC_FLAGS) -c -o $@ $<
+	$(GCC) $(GCC_FLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
 
 $(BUILD_DIR)/vmm_test.o: $(KERNEL_DIR)/vmm_test.c
 	mkdir -p $(BUILD_DIR)
@@ -198,4 +218,4 @@ clean:
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-.PHONY: all images run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
+.PHONY: all images images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
