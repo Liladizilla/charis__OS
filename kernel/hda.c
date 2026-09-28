@@ -52,7 +52,7 @@ static void hda_write(u32 offset, u32 value) {
     regs[offset / 4] = value;
 }
 
-static int hda_get_response(u32* response) {
+static int hda_get_response(u64* response) {
     u32 rior = hda_read(HDA_REG_RIRBU);
     u32 rirb = hda_read(HDA_REG_RIRBL);
     if (rior & (1 << 4)) return -1; /* Unsol */
@@ -71,9 +71,9 @@ static u32 hda_send_cmd(u8 codec, u8 verb, u16 payload) {
         if (hda_read(HDA_REG_GSTS) & (1 << 1)) break;
     }
     
-    u32 response;
-    hda_get_response(&response);
-    return response;
+    u64 response = 0;
+    if (hda_get_response(&response) < 0) return 0;
+    return (u32)response;
 }
 
 int hda_init(void) {

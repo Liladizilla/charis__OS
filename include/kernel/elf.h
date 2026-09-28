@@ -1,6 +1,7 @@
 /* elf.h - ELF executable loader */
 #pragma once
 #include <kernel/types.h>
+#include <kernel/task.h>
 #include <kernel/vmm.h>
 #include <kernel/task.h>
 

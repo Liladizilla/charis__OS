@@ -34,6 +34,7 @@
 #include <kernel/signal.h>
 #include <kernel/pipe.h>
 #include <kernel/driver.h>
+#include <kernel/logo.h>
 
 void kernel_main(u32 magic, u32 info_ptr) {
     // Boot marker helper - writes sequential chars to VGA text buffer at even offsets
@@ -177,6 +178,12 @@ void kernel_main(u32 magic, u32 info_ptr) {
     scheduler_add_task(shell_task);
 
     vga_puts_success("All systems go. Starting shell.");
+
+    // Banner goes last, deliberately. BOOT_MARK writes its progress characters
+    // to fixed row-0 addresses throughout init, and vga_puts scrolls from the
+    // cursor, so printing the banner earlier means the two overwrite each
+    // other and neither survives.
+    logo_print();
 
     // Boot-completion sentinel.
     // Must go to the serial console (kprintf), not just VGA: CI runs QEMU with

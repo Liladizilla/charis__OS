@@ -40,7 +40,7 @@ LD_FLAGS = -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack
 
 # Source files
 BOOT_SOURCES = $(BOOT_DIR)/boot.asm $(BOOT_DIR)/long_mode.asm
-KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/bootmem.c $(KERNEL_DIR)/heap.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c $(KERNEL_DIR)/ata.c $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/vfs.c $(KERNEL_DIR)/elf.c $(KERNEL_DIR)/user.c $(KERNEL_DIR)/input.c $(KERNEL_DIR)/mouse.c $(KERNEL_DIR)/fb.c $(KERNEL_DIR)/psf.c $(KERNEL_DIR)/graphics.c $(KERNEL_DIR)/compositor.c $(KERNEL_DIR)/wm.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/socket.c $(KERNEL_DIR)/demo.c $(KERNEL_DIR)/desktop.c $(KERNEL_DIR)/apps.c $(KERNEL_DIR)/audio.c $(KERNEL_DIR)/usb.c $(KERNEL_DIR)/pci.c $(KERNEL_DIR)/services.c $(KERNEL_DIR)/diagnostics.c $(KERNEL_DIR)/display.c $(KERNEL_DIR)/config.c $(KERNEL_DIR)/power.c $(KERNEL_DIR)/security.c $(KERNEL_DIR)/widgets.c $(KERNEL_DIR)/signal.c $(KERNEL_DIR)/pipe.c $(KERNEL_DIR)/driver.c $(KERNEL_DIR)/raster.c $(KERNEL_DIR)/hda.c $(KERNEL_DIR)/gamepad.c $(KERNEL_DIR)/vmm_test.c
+KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/bootmem.c $(KERNEL_DIR)/heap.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c $(KERNEL_DIR)/ata.c $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/vfs.c $(KERNEL_DIR)/elf.c $(KERNEL_DIR)/user.c $(KERNEL_DIR)/input.c $(KERNEL_DIR)/mouse.c $(KERNEL_DIR)/fb.c $(KERNEL_DIR)/psf.c $(KERNEL_DIR)/graphics.c $(KERNEL_DIR)/compositor.c $(KERNEL_DIR)/wm.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/socket.c $(KERNEL_DIR)/demo.c $(KERNEL_DIR)/desktop.c $(KERNEL_DIR)/apps.c $(KERNEL_DIR)/audio.c $(KERNEL_DIR)/usb.c $(KERNEL_DIR)/pci.c $(KERNEL_DIR)/services.c $(KERNEL_DIR)/diagnostics.c $(KERNEL_DIR)/display.c $(KERNEL_DIR)/config.c $(KERNEL_DIR)/power.c $(KERNEL_DIR)/security.c $(KERNEL_DIR)/widgets.c $(KERNEL_DIR)/signal.c $(KERNEL_DIR)/pipe.c $(KERNEL_DIR)/driver.c $(KERNEL_DIR)/raster.c $(KERNEL_DIR)/hda.c $(KERNEL_DIR)/gamepad.c $(KERNEL_DIR)/logo.c $(KERNEL_DIR)/vmm_test.c
 ASM_SOURCES = $(KERNEL_DIR)/asm/interrupt_stubs.asm $(KERNEL_DIR)/asm/context.asm $(KERNEL_DIR)/asm/gdt.asm $(KERNEL_DIR)/asm/io.asm
 
 # Object files
@@ -116,6 +116,26 @@ run-debug: $(BUILD_DIR)/charisos.iso
 
 test: $(BUILD_DIR)/vmm_test.o
 	@echo "VMM test object built successfully with RUN_VMM_TESTS defined"
+
+# Fail early and legibly when the toolchain is incomplete, rather than part
+# way through a build with a confusing "command not found".
+check-tools:
+	@ok=1; \
+	for pair in "cc:$(CC)" "nasm:$(NASM)" "ld:$(LD)" "grub-mkrescue:$(GRUB)"; do \
+		name=$${pair%%:*}; cmd=$${pair#*:}; \
+		if command -v $$cmd >/dev/null 2>&1; then \
+			printf "  ok    %-16s %s\n" "$$name" "$$cmd"; \
+		else \
+			printf "  MISSING %-14s %s\n" "$$name" "$$cmd"; ok=0; \
+		fi; \
+	done; \
+	if [ "$$ok" = "0" ]; then \
+		echo; echo "Install the missing tools, e.g.:"; \
+		echo "  Debian/Ubuntu: sudo apt install build-essential nasm grub-pc-bin xorriso qemu-system-x86"; \
+		echo "  Fedora:        sudo dnf install gcc nasm binutils grub2-tools xorriso qemu-system-x86"; \
+		exit 1; \
+	fi; \
+	echo "  all build tools present"
 
 # ── Environment-specific runners ────────────────────────────────────
 

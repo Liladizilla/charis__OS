@@ -117,11 +117,16 @@ fi
 # flakiness, and buys nothing: the kernel has no network support yet. Removing
 # the device makes the boot short and deterministic.
 boot_once() {
+    # timeout returns 124 when it fires. That is the signal we want: QEMU was
+    # still running when the clock ran out, so the guest is alive and did not
+    # reset. Any other status means QEMU exited early, which for this kernel
+    # means the CPU took a triple fault and rebooted.
     timeout "$TIMEOUT" qemu-system-x86_64 \
         "${DRIVE[@]}" \
         -m 256M -nographic -no-reboot \
         -nic none \
-        2>&1 | tr -d '\r' > "$LOG" || true
+        2>&1 | tr -d '\r' > "$LOG"
+    QEMU_STATUS=${PIPESTATUS[0]}
 
     # Strip terminal control sequences before asserting on the text.
     #
@@ -190,6 +195,20 @@ grep -q 'Invalid Multiboot2 magic' "$LOG" \
 
 grep -q 'KERNEL PANIC' "$LOG" \
     && fail "kernel reported a panic"
+
+# LIVENESS. Reaching the scheduler is not the same as surviving it. A triple
+# fault after the init sequence reboots the guest, so the kernel can print
+# "[BOOT] init complete" and still never run a single process. A second
+# firmware banner in the log is the tell, and so is QEMU exiting before the
+# timeout fired.
+if grep -q 'SeaBIOS (version' "$LOG" && [ "$(grep -c 'SeaBIOS (version' "$LOG")" -gt 1 ]; then
+    fail "guest rebooted after init -- the kernel faults instead of staying up"
+fi
+if [ "${QEMU_STATUS:-124}" != "124" ]; then
+    fail "QEMU exited early (status $QEMU_STATUS) -- the guest did not stay alive
+      status 124 means 'timeout fired, still running', which is what we want.
+      Anything else means the guest shut down or reset."
+fi
 
 # A test run must never modify the artifact it is testing.
 if command -v sha256sum >/dev/null 2>&1; then

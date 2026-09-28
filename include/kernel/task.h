@@ -58,6 +58,9 @@ typedef struct task {
     struct task* ipc_wait_next;
 } task_t;
 
+task_t* task_allocate(void);
+u32 task_next_pid(void);
+
 typedef void (*task_func_t)(void* arg);
 
 void scheduler_init(void);

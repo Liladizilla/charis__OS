@@ -52,6 +52,8 @@ void task_init(void) {
     task_list = NULL;
 }
 
+extern void task_trampoline(void);
+
 task_t* task_allocate(void) {
     for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
         if (task_pool[i].state == TASK_STATE_ZOMBIE) {
@@ -180,6 +182,13 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
         *--stack_top = 0x202;
         *--stack_top = 0x1B;
         *--stack_top = (u64)func;
+        /* Six zeros, not five. context_switch pops six callee-saved registers
+         * (r15,r14,r13,r12,rbx,rbp) *before* it reaches the iretq, and iretq
+         * then consumes five more (RIP,CS,RFLAGS,RSP,SS). With only five zeros
+         * the frame was short by one slot, so iretq loaded RIP from the CS
+         * value and jumped to address 0x1B in ring 3 -- instant #GP, triple
+         * fault, reboot loop. The scheduler picked the user task first, so
+         * this fired before the shell ever got a chance to run. */
         *--stack_top = 0;
         *--stack_top = 0;
         *--stack_top = 0;
@@ -187,9 +196,16 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
         *--stack_top = 0;
         *--stack_top = 0;
     } else {
+        /* Layout must match the pops in context_switch, which take
+         * r15,r14,r13,r12,rbx,rbp and then `ret`. The return address has to
+         * be task_trampoline, not task_exit_handler: trampoline pops func and
+         * arg off this same stack and calls them. Returning into
+         * task_exit_handler instead skipped the entry function entirely and
+         * kfree'd the stack we were executing on, so the kernel took a triple
+         * fault the instant it entered the scheduler. */
         *--stack_top = (u64)arg;
         *--stack_top = (u64)func;
-        *--stack_top = (u64)task_exit_handler;
+        *--stack_top = (u64)task_trampoline;
         *--stack_top = 0;
         *--stack_top = 0;
         *--stack_top = 0;
@@ -230,6 +246,13 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
         *--stack_top = 0x202;
         *--stack_top = 0x1B;
         *--stack_top = (u64)func;
+        /* Six zeros, not five. context_switch pops six callee-saved registers
+         * (r15,r14,r13,r12,rbx,rbp) *before* it reaches the iretq, and iretq
+         * then consumes five more (RIP,CS,RFLAGS,RSP,SS). With only five zeros
+         * the frame was short by one slot, so iretq loaded RIP from the CS
+         * value and jumped to address 0x1B in ring 3 -- instant #GP, triple
+         * fault, reboot loop. The scheduler picked the user task first, so
+         * this fired before the shell ever got a chance to run. */
         *--stack_top = 0;
         *--stack_top = 0;
         *--stack_top = 0;
@@ -237,9 +260,16 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
         *--stack_top = 0;
         *--stack_top = 0;
     } else {
+        /* Layout must match the pops in context_switch, which take
+         * r15,r14,r13,r12,rbx,rbp and then `ret`. The return address has to
+         * be task_trampoline, not task_exit_handler: trampoline pops func and
+         * arg off this same stack and calls them. Returning into
+         * task_exit_handler instead skipped the entry function entirely and
+         * kfree'd the stack we were executing on, so the kernel took a triple
+         * fault the instant it entered the scheduler. */
         *--stack_top = (u64)arg;
         *--stack_top = (u64)func;
-        *--stack_top = (u64)task_exit_handler;
+        *--stack_top = (u64)task_trampoline;
         *--stack_top = 0;
         *--stack_top = 0;
         *--stack_top = 0;
