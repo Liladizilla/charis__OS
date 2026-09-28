@@ -181,8 +181,13 @@ fail() {
     exit 1
 }
 
-grep -q 'Booting kernel' "$LOG" \
-    || fail "GRUB never handed off to the kernel (image or firmware problem)"
+# NOTE: assertions below match only strings the KERNEL writes to the serial
+# port. Do not assert on GRUB's own output, for two reasons both learned the
+# hard way here:
+#   * GRUB suppresses its menu rendering when the runner has no TTY;
+#   * grub.cfg sets `terminal_output gfxterm`, so GRUB's `echo` lines go to the
+#     graphical terminal and never reach the serial log at all.
+# Kernel serial output is deterministic however the image was booted.
 
 grep -q 'Built:' "$LOG" \
     || fail "kernel_main never reached its banner"

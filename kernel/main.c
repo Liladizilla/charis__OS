@@ -35,11 +35,16 @@
 #include <kernel/pipe.h>
 #include <kernel/driver.h>
 #include <kernel/logo.h>
+#include <kernel/fb.h>
 
-void kernel_main(u32 magic, u32 info_ptr) {
+/* The multiboot2 info pointer arrives zero-extended in RDI, so it is a 64-bit
+ * value here. Declaring it u32 would silently truncate any address above 4GB. */
+void kernel_main(u32 magic, u64 info_ptr) {
     // Boot marker helper - writes sequential chars to VGA text buffer at even offsets
     static int boot_marker_col = 0;
-    #define BOOT_MARK(c) do { *(u16*)(0xB8000 + (boot_marker_col++ * 2)) = 0x0F00 | (c); } while(0)
+    #define BOOT_MARK(c) do { \
+        *(u16*)(uintptr_t)(0xB8000ULL + (u64)(boot_marker_col++) * 2) = 0x0F00 | (u16)(c); \
+    } while(0)
 
     // Debug: kernel entry
     BOOT_MARK('K');
@@ -67,7 +72,12 @@ void kernel_main(u32 magic, u32 info_ptr) {
     BOOT_MARK('M');
 
     // Initialize subsystems in exact order
-    memory_init((void*)(uintptr_t)info_ptr);
+    memory_init((multiboot_info_t*)(uintptr_t)info_ptr);
+
+    // Set up the linear framebuffer the firmware advertised. Until this runs,
+    // every drawing call in the window manager, desktop, widgets and apps is a
+    // no-op, because g_framebuffer.initialized is false.
+    if (fb_init() == 0) BOOT_MARK('F');
 
     // Optional: VMM tests after VMM init (compile-time flag)
 #ifdef RUN_VMM_TESTS
@@ -202,8 +212,14 @@ void kernel_main(u32 magic, u32 info_ptr) {
     // Banner goes last, deliberately. BOOT_MARK writes its progress characters
     // to fixed row-0 addresses throughout init, and vga_puts scrolls from the
     // cursor, so printing the banner earlier means the two overwrite each
-    // other and neither survives.
+    // other and neither survives. The same applies to the framebuffer: wm_init
+    // and desktop_init blit a cleared backbuffer over the screen, so anything
+    // drawn before them is wiped.
     logo_print();
+    if (g_framebuffer.initialized) {
+        fb_clear(FB_ARGB(0xFF, 0x0D, 0x11, 0x17));
+        logo_draw_gfx(300);
+    }
 
     // Boot-completion sentinel.
     // Must go to the serial console (kprintf), not just VGA: CI runs QEMU with

@@ -9,20 +9,13 @@
 #define PAGE_SHIFT      12
 #define HUGE_PAGE_SIZE  (2ULL * 1024ULL * 1024ULL)
 
-/* Multiboot2 memory map entry types from multiboot2 */
+/* Multiboot2 memory map entry types (mem_map_entry_t itself lives in
+ * multiboot.h, which this header includes). */
 #define MEM_AVAILABLE       1
 #define MEM_RESERVED        2
 #define MEM_ACPI_RECLAIM    3
 #define MEM_NVS             4
 #define MEM_BADRAM          5
-
-/* Multiboot2 memory map entry */
-typedef struct {
-    u64 base;
-    u64 length;
-    u32 type;
-    u32 reserved;
-} PACKED mem_map_entry_t;
 
 /* Physical memory manager (page allocator) */
 void pmm_init(multiboot_info_t* info);
