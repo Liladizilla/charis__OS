@@ -20,3 +20,20 @@
 *.elf binary
 *.iso binary
 *.img binary
+
+# ── Language statistics ───────────────────────────────────────────
+# CharisOS is a standalone operating system: it boots on bare metal and in a
+# virtual machine, and it is written in C and NASM. Nothing in this repository
+# runs on, links against, or depends on Windows, Linux or macOS.
+#
+# The .bat/.ps1/.sh files here are optional convenience wrappers that drive the
+# SAME host toolchain (gcc, nasm, grub-mkrescue) on whatever machine a
+# developer happens to use. They are not part of the OS and are not part of
+# what it executes. Marking them generated keeps them out of GitHub's language
+# bars, which otherwise report Batchfile and PowerShell as part of the project
+# and imply exactly the dependency that does not exist.
+*.bat linguist-generated=true
+*.ps1 linguist-generated=true
+*.sh  linguist-generated=true
+Makefile linguist-generated=true
+link.ld linguist-generated=true
