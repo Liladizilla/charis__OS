@@ -36,6 +36,8 @@
 #include <kernel/driver.h>
 #include <kernel/logo.h>
 #include <kernel/fb.h>
+#include <kernel/mouse.h>
+#include <kernel/shell_ui.h>
 
 /* The multiboot2 info pointer arrives zero-extended in RDI, so it is a 64-bit
  * value here. Declaring it u32 would silently truncate any address above 4GB. */
@@ -110,6 +112,17 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('C');
     graphics_init();
     BOOT_MARK('G');
+
+    // A linear framebuffer means no hardware text cursor and no hardware mouse
+    // pointer, so both are drawn by the shell. Start the mouse here and clamp
+    // it to the real display size rather than the placeholder the driver
+    // ships with.
+    mouse_init();
+    if (g_framebuffer.initialized) {
+        mouse_set_bounds(g_framebuffer.width, g_framebuffer.height);
+    }
+    ui_install_input_hooks();
+
     wm_init();
     BOOT_MARK('W');
     input_init();
@@ -206,6 +219,19 @@ void kernel_main(u32 magic, u64 info_ptr) {
         }
     }
     scheduler_add_task(shell_task);
+
+    // The graphical desktop needs a linear framebuffer. Under a BIOS boot the
+    // firmware hands over the 80x25 text buffer instead and fb_init() declines,
+    // so there is nothing to draw on and the text shell is the whole interface.
+    if (g_framebuffer.initialized) {
+        task_t* ui_task = task_create("desktop", (task_func_t)shell_ui_main, NULL,
+                                      CAP_SPAWN | CAP_FS_READ | CAP_FS_WRITE, false);
+        if (ui_task) {
+            scheduler_add_task(ui_task);
+        } else {
+            vga_puts_error("ERROR: Failed to create desktop task!");
+        }
+    }
 
     vga_puts_success("All systems go. Starting shell.");
 

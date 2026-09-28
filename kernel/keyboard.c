@@ -34,6 +34,15 @@ void keyboard_init(void) {
     vga_puts("Keyboard initialized\n");
 }
 
+/* Optional sink for raw scancodes. The ASCII buffer cannot express keys that
+ * have no character -- the Windows/Super key, the arrows, F-keys -- so a
+ * graphical shell needs to see the scancode itself. */
+static void (*key_event_hook)(u8 scancode, bool pressed) = 0;
+
+void keyboard_set_key_event_hook(void (*hook)(u8 scancode, bool pressed)) {
+    key_event_hook = hook;
+}
+
 void keyboard_handler(reg_frame_t* frame) {
     (void)frame;
     u8 scancode;
@@ -51,17 +60,38 @@ void keyboard_handler(reg_frame_t* frame) {
         return;
     }
 
-    if (scancode < 128) {
+    /* Extended keys arrive as 0xE0 followed by the real code. Track the prefix
+     * so the hook sees a single scancode and can tell press from release
+     * (release is the code with bit 7 set). */
+    static bool extended = false;
+    if (scancode == 0xE0) {
+        extended = true;
+        pic_send_eoi(IRQ_KEYBOARD);
+        return;
+    }
+
+    u8 code = scancode & 0x7F;
+    bool pressed = (scancode & 0x80) == 0;
+
+    if (key_event_hook) {
+        /* Left/right modifiers share codes with the numeric keypad in set 1.
+         * The extended prefix is what distinguishes them, so encode it in the
+         * high bit when forwarding. */
+        key_event_hook((u8)(code | (extended ? 0x80 : 0)), pressed);
+    }
+
+    if (pressed && !extended && code < 128) {
         const char* table = shift_held ? keyboard_scancode_set1_shift : keyboard_scancode_set1;
-        char c = table[scancode];
+        char c = table[code];
         if (c) {
             keyboard_buffer[keyboard_write_pos] = c;
             keyboard_write_pos = (keyboard_write_pos + 1) % 256;
-            
+
             /* Wake up any task waiting for input */
             wait_queue_wake();
         }
     }
+    extended = false;
     pic_send_eoi(IRQ_KEYBOARD);
 }
 
