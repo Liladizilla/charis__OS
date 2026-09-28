@@ -54,26 +54,37 @@ compiles with `gcc -ffreestanding` and links with a hand-written `link.ld`.
 
 ### Project status
 
-This is an active educational kernel. It boots reliably in QEMU and runs to the
-shell. Several subsystems are complete and verified; others are present but
-partial. [`TODO.md`](./TODO.md) is the authoritative status document and is
-kept honest — a phase is only marked complete once it has been booted and
-exercised, not merely compiled.
+This is an active educational kernel. It boots in QEMU and reaches an
+interactive shell, verified in CI on every push. Several subsystems are
+complete and exercised; others are present but partial.
+[`TODO.md`](./TODO.md) is the authoritative status document and is kept honest
+— a phase is only marked complete once it has been booted and exercised, not
+merely compiled.
 
 | Area | Status |
 |---|---|
-| Boot (Multiboot2 → long mode) | ✅ Working |
+| Boot (Multiboot2 → long mode), BIOS and UEFI | ✅ Working |
 | Physical + virtual memory, heap | ✅ Working |
 | IDT/IRQ, PIT timer, PS/2 keyboard, serial | ✅ Working |
-| Preemptive round-robin scheduler | ✅ Working |
+| Preemptive round-robin scheduler, task stacks | ✅ Working (kernel-mode tasks) |
+| Interactive shell | ✅ Working |
 | SYSCALL/SYSRET ABI + syscall table | ✅ Working |
 | VFS + FAT32 (read path) | ✅ Working |
-| ELF loader (`sys_exec`) | ✅ Working |
+| ELF loader (`sys_exec`) | ⚠️ Loads, but cannot enter ring 3 yet |
+| **Ring-3 userspace** | ❌ **Not implemented — see below** |
 | Framebuffer, window manager, desktop | ⚠️ Partial |
 | Capability-based security | ⚠️ Partial — enforced on `open`/`exec` only |
 | Config persistence (`/etc/charisos.conf`) | ⚠️ Read path works; no file creation yet |
 | RTL8139 networking | ⚠️ TX wired; no TCP/IP or RX |
 | USB, audio, gamepad | ⚠️ Stubs |
+
+> **Ring 3 is not implemented.** The kernel boots and runs its shell, but only
+> because the ring-3 "user" task is deliberately not enqueued. Four gaps remain
+> — CR3 is never loaded on the first switch, `TSS.rsp0` is never set, the
+> scheduler switches on a field the setup path never assigns, and the user
+> stack is unmapped in the new address space. Enqueuing the user task today
+> makes the machine triple-fault on the first timer tick.
+> [`TODO.md`](./TODO.md) tracks each one.
 
 ---
 
@@ -424,7 +435,7 @@ Near-term work, in rough priority order:
 - [ ] Enforce capabilities on VFS read/write, sockets and shared memory
 - [ ] Add `-Werror` to the build to prevent regression
 - [ ] Run `vmm_run_tests()` at boot behind a build flag
-- [ ] Userspace: real Ring 3 processes, not just an ELF loader
+- [ ] Userspace: real Ring 3 processes — CR3 load on first switch, `TSS.rsp0`, wire `address_space`, map a real user stack. Detailed in [`TODO.md`](./TODO.md).
 
 [`TODO.md`](./TODO.md) tracks all of this in detail.
 

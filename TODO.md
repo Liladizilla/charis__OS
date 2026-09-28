@@ -164,6 +164,9 @@ initialised after the hang point had never actually executed** — so several
 | FAT32 walk with no volume | `kernel/fs.c` | `fs_init()` bails with "Not FAT32" when no disk is attached, but set no validity flag. `fs_open()` then walked a garbage FAT chain from an uninitialised boot sector and hung inside `config_load()`. This is the common case: booting from CD-ROM with no hard disk. | Added an `fs_mounted` flag plus geometry validation (non-zero `sectors_per_cluster`/`num_fats`/`fat_size_32`, sane `data_start` and `root_cluster`); `fs_open`/`fs_read` now return `-1` immediately when unmounted. |
 | Multiboot2 magic clobbered | `boot/boot.asm` | The debug output at the top of `start:` wrote to `AL` and `AH` before `EAX` was saved, so `mb_magic` stored corrupted data. The kernel then rejected its own boot. | Save `EAX`/`EBX` as the first two instructions of `start:`, before any debug output. |
 | `char c` compared `> 127` | `kernel/psf.c:30,62` | `char` is signed on x86, so `c > 127` is always false. Latin-1/high-byte characters are never skipped and index out of the intended glyph range. | Cast to `unsigned char`, or compare `(u8)c > 127`. *(not yet fixed)* |
+| Wrong initial return address | `kernel/task.c` | `task_create()` pushed `task_exit_handler` where `context_switch`'s `ret` lands. The task's entry function was never called; `task_exit_handler` ran instead and `kfree`'d the stack it was executing on. Triple fault the instant the scheduler started. | Push `task_trampoline`, which pops `func` and `arg` off the same stack and calls them. |
+| Ring-3 frame one slot short | `kernel/task.c` | `context_switch` pops six callee-saved registers before reaching `iretq`, which then consumes five more. Only five zeros were pushed, so `iretq` loaded RIP from the CS value and jumped to address `0x1B` in ring 3. | Push six zeros so the frame is 6 register slots + the 5-slot `iretq` frame. |
+| Boot gate could not see a crash | `tools/verify-boot.sh` | The gate only checked that init printed a line, so a kernel that completed init and then faulted passed. The two bugs above were invisible to CI. | Also assert liveness: QEMU exiting before the timeout fires, or a second firmware banner, both mean the guest reset. |
 
 ### Why this happened
 
@@ -175,7 +178,30 @@ which is printed *before* the Multiboot2 magic is validated.
 
 CI now asserts on `[BOOT] init complete, entering scheduler`, a line emitted
 only after the magic validates, every `init*()` returns, and the shell task is
-created. Any hang in the init sequence fails the build.
+created — **and** that the guest is still alive afterwards. A kernel that boots
+and then crashes now fails the build.
+
+---
+
+## Deferred: ring-3 userspace
+
+The kernel boots to an interactive shell, but only because the ring-3 "user"
+task is deliberately **not** enqueued. Four things block a working ring 3:
+
+1. `scheduler_start()` never loads CR3. `vmm_switch()` is only called from the
+   timer-interrupt path in `scheduler_schedule()`, so the first switch still
+   runs on the kernel's address space.
+2. `TSS.rsp0` is never set anywhere, so a ring-3 interrupt has no kernel stack
+   to land on.
+3. `scheduler.c` switches on `task->address_space`, but the setup path in
+   `main.c` assigns `task->mm.pml4`. The field `address_space` is left unset.
+4. The task stack is allocated with `kmalloc()` from the kernel heap, and
+   `vmm_copy_kernel_mappings()` does not map it into the new PML4, so the RSP
+   that `iretq` installs is unmapped.
+
+Until all four are fixed, switching into ring 3 takes a triple fault and the
+machine reboots on the first 1 kHz timer tick. `kernel/main.c` creates the user
+task but does not call `scheduler_add_task()` on it, and says why inline.
 
 ---
 

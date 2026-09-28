@@ -153,7 +153,25 @@ void kernel_main(u32 magic, u32 info_ptr) {
     wm_create_window("CharisOS Desktop", 100, 100, 400, 300);
     apps_init();
 
-    // Create user task with separate address space
+    // Ring-3 userspace is not functional yet. Four gaps have to be closed
+    // before a task can be switched into ring 3:
+    //
+    //   1. scheduler_start() never loads CR3. vmm_switch() is only called from
+    //      the timer-interrupt path in scheduler_schedule(), so the very first
+    //      switch still runs on the kernel's address space.
+    //   2. TSS.rsp0 is never set anywhere, so a ring-3 interrupt has no
+    //      kernel stack to land on.
+    //   3. scheduler.c switches on task->address_space, but this setup path
+    //      assigns task->mm.pml4, so the field is left NULL.
+    //   4. The task stack comes from kmalloc(), i.e. the kernel heap, and
+    //      vmm_copy_kernel_mappings() does not map it into the new PML4, so
+    //      the RSP that iretq installs is unmapped.
+    //
+    // Enqueuing the user task today makes the scheduler switch into ring 3 on
+    // the first 1 kHz timer tick and take a triple fault, so the machine
+    // reboots instead of reaching a shell. The task is still built, which
+    // keeps this setup path compiled and ready, but it is deliberately left
+    // out of the ready queue. See TODO.md.
     extern void user_main(void);
     pml4_t* user_pml4 = vmm_create_address_space();
     if (user_pml4) {
@@ -162,12 +180,14 @@ void kernel_main(u32 magic, u32 info_ptr) {
     task_t* user_task = task_create("user", (task_func_t)user_main, NULL, CAP_SPAWN | CAP_FS_READ, true);
     if (user_task) {
         user_task->mm.pml4 = user_pml4;
-        scheduler_add_task(user_task);
+        user_task->address_space = (void*)user_pml4;
+        // NOT scheduler_add_task(user_task) -- see above.
     } else {
         vga_puts_error("ERROR: Failed to create user task!");
     }
 
-    // Create shell task with minimal caps
+    // Create shell task with minimal caps. This is a kernel-mode task, so it
+    // is the only one that can actually run today.
     task_t* shell_task = task_create("shell", (task_func_t)shell_main, NULL, CAP_SPAWN | CAP_FS_READ | CAP_FS_WRITE, false);
     if (shell_task == NULL) {
         vga_puts_error("ERROR: Failed to create shell task!");
