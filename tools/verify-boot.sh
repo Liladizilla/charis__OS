@@ -111,10 +111,12 @@ if [ -n "$FIRMWARE" ]; then
     case "$FIRMWARE" in *4M*) FIRMWARE_4M=1 ;; esac
 
     if [ "$FIRMWARE_4M" = "1" ]; then
-        # The VARS image is a sibling, but the naming is not consistent: it
-        # carries the _4M suffix only when the CODE file does, and the
-        # extension follows whichever form was used. Try the likely names
-        # rather than deriving exactly one.
+        # The VARS image is not reliably a sibling. The naming is not
+        # consistent -- the _4M suffix appears on the CODE name only when it
+        # is there, and the extension follows whichever form was used -- and on
+        # Ubuntu the CODE image lives at /usr/share/qemu/OVMF.fd while its VARS
+        # companion is under /usr/share/OVMF with a different name. Try the
+        # likely siblings, then the standard install directories.
         VARS=""
         # Some builds are named OVMF.fd with no _CODE component at all, in
         # which case the suffix-strip forms above yield nonsense
@@ -126,7 +128,13 @@ if [ -n "$FIRMWARE" ]; then
                     "${FIRMWARE%_CODE*}_VARS_4M.qcow2" \
                     "${FIRMWARE%.fd}_VARS.fd" \
                     "${FIRMWARE%.qcow2}_VARS.qcow2" \
-                    "${FIRMWARE%.fd}_VARS_4M.fd"; do
+                    "${FIRMWARE%.fd}_VARS_4M.fd" \
+                    /usr/share/OVMF/OVMF_VARS_4M.fd \
+                    /usr/share/OVMF/OVMF_VARS_4M.qcow2 \
+                    /usr/share/OVMF/OVMF_VARS.fd \
+                    /usr/share/edk2/ovmf/OVMF_VARS_4M.fd \
+                    /usr/share/edk2/ovmf/OVMF_VARS_4M.qcow2 \
+                    /usr/share/edk2-ovmf/OVMF_VARS_4M.fd; do
             if [ -f "$cand" ]; then VARS="$cand"; break; fi
         done
         if [ -z "$VARS" ]; then
