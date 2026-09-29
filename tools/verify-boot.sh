@@ -116,11 +116,17 @@ if [ -n "$FIRMWARE" ]; then
         # extension follows whichever form was used. Try the likely names
         # rather than deriving exactly one.
         VARS=""
+        # Some builds are named OVMF.fd with no _CODE component at all, in
+        # which case the suffix-strip forms above yield nonsense
+        # ("OVMF.fd_VARS"). Strip the extension as well.
         for cand in "${FIRMWARE%_CODE*}_VARS${FIRMWARE#*_CODE}" \
                     "${FIRMWARE%_CODE*}_VARS.fd" \
                     "${FIRMWARE%_CODE*}_VARS.qcow2" \
                     "${FIRMWARE%_CODE*}_VARS_4M.fd" \
-                    "${FIRMWARE%_CODE*}_VARS_4M.qcow2"; do
+                    "${FIRMWARE%_CODE*}_VARS_4M.qcow2" \
+                    "${FIRMWARE%.fd}_VARS.fd" \
+                    "${FIRMWARE%.qcow2}_VARS.qcow2" \
+                    "${FIRMWARE%.fd}_VARS_4M.fd"; do
             if [ -f "$cand" ]; then VARS="$cand"; break; fi
         done
         if [ -z "$VARS" ]; then
