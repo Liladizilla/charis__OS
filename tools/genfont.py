@@ -29,9 +29,17 @@ FIRST = 32
 LAST = 126
 
 FONT_CANDIDATES = [
-    "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
-    "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
-    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    # Monospace on purpose. The cell is 8px wide, and a proportional face at a
+    # size that fits vertically is far wider than that: Liberation Sans at 16px
+    # has a 13.3px advance, so two thirds of every glyph was being clipped at
+    # the cell edge. That is what made the text look deformed. A monospace face
+    # at a size whose advance fits leaves the glyphs whole.
+    "/usr/share/fonts/liberation-sans-fonts/LiberationMono-Regular.ttf",
+    "/usr/share/fonts/liberation/LiberationMono-Regular.ttf",
+    "/usr/share/fonts/urw-base35/NimbusMonoPS-Regular.otf",
+    "/usr/share/fonts/google-noto-sans-mono-vf-fonts/NotoSansMono[wght].ttf",
+    "/usr/share/fonts/dejavu/DejaVuSansMono.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
 ]
 
 # CP437 glyphs the kernel draws, as offset from 0x80.
@@ -50,10 +58,26 @@ CP437 = {
 }
 
 
-def load_font(size=16):
+def load_font(indent=1):
+    """Pick the largest size whose advance still fits the cell width.
+
+    Sizing by eye is what produced the clipped font in the first place, so
+    the fit is measured instead: the chosen size must put 'M' -- the widest
+    glyph in a monospace face is every glyph -- inside CELL_W, and its line
+    height inside CELL_H.
+    """
     for path in FONT_CANDIDATES:
-        if Path(path).exists():
-            return ImageFont.truetype(path, size)
+        if not Path(path).exists():
+            continue
+        for size in range(20, 5, -1):
+            font = ImageFont.truetype(path, size)
+            advance = font.getlength("M") * indent
+            ascent, descent = font.getmetrics()
+            if advance <= CELL_W and (ascent + descent) <= CELL_H:
+                return font, ascent, descent
+        # Nothing fit at this path; take the smallest and let the caller see it.
+        font = ImageFont.truetype(path, 6)
+        return font, *font.getmetrics()
     raise SystemExit(
         "no usable font found; install fonts-liberation or DejaVu so this "
         "generator can run. The generated C file is committed, so building "
@@ -61,16 +85,21 @@ def load_font(size=16):
     )
 
 
-def render_ascii(font):
+def render_ascii(font, ascent, descent):
     """Return {codepoint: [row bytes]} for the printable ASCII range."""
     glyphs = {}
+    # Place the baseline explicitly rather than centring on the font's em box.
+    # PIL's ascent/descent cover the full line, not the ink, so centring on
+    # them leaves every capital sitting at the top of the cell with dead space
+    # beneath it. Baseline at 3/4 down the cell leaves room for descenders and
+    # puts capitals where the eye expects them.
+    baseline = (CELL_H * 3) // 4
+    y_offset = baseline - ascent
+
     for cp in range(FIRST, LAST + 1):
-        # Render at several sizes and keep the first that fills the cell well,
-        # so the font is not a single compromise point size.
         image = Image.new("1", (CELL_W, CELL_H), 0)
         draw = ImageDraw.Draw(image)
-        # Baseline sits so glyphs occupy the full cell without clipping.
-        draw.text((0, -1), chr(cp), font=font, fill=1)
+        draw.text((0, y_offset), chr(cp), font=font, fill=1)
         rows = []
         for y in range(CELL_H):
             bits = 0
@@ -160,8 +189,9 @@ def render_cp437():
 
 def main():
     dest = Path(sys.argv[1] if len(sys.argv) > 1 else "kernel/font_data.c")
-    font = load_font()
-    ascii_glyphs = render_ascii(font)
+    font, ascent, descent = load_font()
+    print(f"font: {font.path} advance(M)={font.getlength(chr(77)):.1f}px cell={CELL_W}x{CELL_H}")
+    ascii_glyphs = render_ascii(font, ascent, descent)
     cp437_glyphs = render_cp437()
 
     lines = []
@@ -188,7 +218,7 @@ def main():
     lines.append(f"const u16 font_first_char = {FIRST};")
     lines.append("")
     lines.append("/* codepoint -> index into font_glyphs, or -1 when absent. */")
-    lines.append("const i16 font_index[256] = {")
+    lines.append("const s16 font_index[256] = {")
     row = []
     for cp in range(256):
         if FIRST <= cp <= LAST:
