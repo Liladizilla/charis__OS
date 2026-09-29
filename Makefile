@@ -205,17 +205,11 @@ run-usb-uefi: $(USB_IMG)
 verify-boot: $(VM_ISO) $(USB_IMG)
 	./tools/verify-boot.sh $(VM_ISO)
 	./tools/verify-boot.sh $(USB_IMG) --disk
-	# Hardware acceleration, which is what GNOME Boxes, VirtualBox and most
-	# real users actually run. TCG accepts a class of bug that faults here --
-	# the MSR numbering mistake that broke every earlier release under KVM got
-	# through the whole suite without this.
+	@# Hardware acceleration is not optional coverage. TCG tolerates a class
+	@# of bug that faults here: the misnumbered SYSCALL MSRs shipped in every
+	@# release up to v1.1.0 passed the whole suite under emulation.
 	./tools/verify-boot.sh $(VM_ISO) --kvm
-	@if [ -n "$(OVMF)" ] && [ -f "$(OVMF)" ]; then \
-		OVMF=$(OVMF) ./tools/verify-boot.sh $(VM_ISO) --uefi; \
-		OVMF=$(OVMF) ./tools/verify-boot.sh $(USB_IMG) --disk --uefi; \
-	else \
-		echo "SKIP: no OVMF firmware found, skipping the UEFI boot checks"; \
-	fi
+	@if [ -f "$(OVMF)" ]; then 		OVMF="$(OVMF)" ./tools/verify-boot.sh $(VM_ISO) --uefi; 		OVMF="$(OVMF)" ./tools/verify-boot.sh $(USB_IMG) --disk --uefi; 		OVMF="$(OVMF)" ./tools/verify-boot.sh $(VM_ISO) --uefi --kvm; 	else 		echo "SKIP: no OVMF firmware at $(OVMF), skipping UEFI checks"; 	fi
 
 clean:
 	rm -rf $(BUILD_DIR) iso/boot/kernel.elf iso/charisos.iso

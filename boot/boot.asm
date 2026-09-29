@@ -49,6 +49,8 @@ mb_magic:
     dd 0
 mb_info:
     dd 0
+mb_mode:
+    db 0
 
 section .text
 bits 32
@@ -68,6 +70,27 @@ start:
     ; before the values have been stored.
     mov dword [mb_magic], eax
     mov dword [mb_info], ebx
+
+    ; Which mode did the loader hand us? Reported on serial as the first
+    ; character: 'P' protected mode, 'L' long mode.
+    ;
+    ; This was worth checking rather than assuming. GRUB's multiboot2 loader
+    ; enters the kernel in 32-bit protected mode on both BIOS and UEFI, so the
+    ; single mode-switch path below is correct either way -- but the earlier
+    ; UEFI+KVM failure looked exactly like a mode mismatch, and it was not.
+    mov ecx, 0xC0000080          ; IA32_EFER
+    rdmsr
+    test eax, 0x400              ; EFER.LMA
+    jz  .entered_protected
+    mov byte [mb_mode], 'L'
+    mov al, 'L'
+    jmp .mode_reported
+.entered_protected:
+    mov byte [mb_mode], 'P'
+    mov al, 'P'
+.mode_reported:
+    mov dx, 0x3F8
+    out dx, al
 
     ; Output debug char to serial COM1 (0x3F8)
     mov dx, 0x3F8

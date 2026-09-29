@@ -69,14 +69,26 @@ isr_noerr i
 ; ---------------------------------------------------------------------------
 ; Common handler: save all GPRs, call C dispatcher, restore, iretq
 ; ---------------------------------------------------------------------------
+; The push order below is the reverse of the field order in reg_frame_t
+; (idt.h), because pushes grow the frame downward: the last register pushed is
+; the one sitting at rsp+0, which is the struct's first field.
+;
+; Reading the frame through the struct is the whole point -- the exception
+; dump in idt_dispatch_handler() and the syscall argument path both index
+; into it. The old order (rax, rcx, rdx, rbx, rbp, rsi, rdi, r8..r15) laid the
+; frame out as r15..r8, rdi, rsi, rbp, rbx, rdx, rcx, rax, so rbp, rbx, rdx,
+; rcx, rax, rsi and rdi were each read from the neighbouring slot. Push/pop
+; were still a matched pair, so the kernel resumed correctly and nothing
+; crashed; the values reported to C were simply wrong, which is exactly the
+; kind of fault that makes a crash report point at the wrong line.
 isr_common:
+    push rdi
+    push rsi
     push rax
     push rcx
     push rdx
     push rbx
     push rbp
-    push rsi
-    push rdi
     push r8
     push r9
     push r10
@@ -97,13 +109,13 @@ isr_common:
     pop r10
     pop r9
     pop r8
-    pop rdi
-    pop rsi
     pop rbp
     pop rbx
     pop rdx
     pop rcx
     pop rax
+    pop rsi
+    pop rdi
     add rsp, 16                 ; Remove vector number and error code
     iretq
 

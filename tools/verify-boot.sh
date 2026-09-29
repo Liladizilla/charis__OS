@@ -43,6 +43,7 @@ IMAGE=""
 ATTACH="cd"
 FIRMWARE=""
 USE_KVM=0
+NEEDS_DISPLAY=0
 TIMEOUT=60
 LOG=""
 
@@ -123,6 +124,13 @@ if [ -n "$FIRMWARE" ]; then
             DRIVE+=(-bios "$FIRMWARE")
             ;;
     esac
+
+    # A UEFI guest needs a display device the firmware can actually drive.
+    # With no display at all, OVMF under KVM never gets past "starting
+    # Boot000N" -- the firmware stops before the kernel entry point is ever
+    # reached, which looks exactly like a kernel fault and is not one.
+    NEEDS_DISPLAY=1
+    DRIVE+=(-display egl-headless)
 fi
 
 # Remember the image digest BEFORE booting, so we can prove the boot did not
@@ -141,6 +149,14 @@ fi
 # flakiness, and buys nothing: the kernel has no network support yet. Removing
 # the device makes the boot short and deterministic.
 boot_once() {
+    # With a display the serial port cannot be -nographic (that implies no
+    # display), so capture it to the log file directly instead of a pipe.
+    if [ "$NEEDS_DISPLAY" = "1" ]; then
+        timeout "$TIMEOUT" qemu-system-x86_64 \
+            "${DRIVE[@]}" -m 256M -no-reboot -nic none \
+            -serial "file:$LOG" >/dev/null 2>&1
+        QEMU_STATUS=$?
+    else
     # timeout returns 124 when it fires. That is the signal we want: QEMU was
     # still running when the clock ran out, so the guest is alive and did not
     # reset. Any other status means QEMU exited early, which for this kernel
@@ -151,6 +167,7 @@ boot_once() {
         -nic none \
         2>&1 | tr -d '\r' > "$LOG"
     QEMU_STATUS=${PIPESTATUS[0]}
+    fi
 
     # Strip terminal control sequences before asserting on the text.
     #
@@ -168,7 +185,10 @@ boot_once() {
 # A QEMU-level failure (firmware not found, resource clash, bad pflash pair)
 # is transient often enough to be worth one retry. A kernel that hangs in
 # initialisation survives the retry, so this does not mask real regressions.
-ATTEMPTS=$(( ${VERIFY_RETRIES:-1} + 1 ))
+# Three attempts by default. The firmware occasionally stalls under KVM before
+# ever reaching the kernel -- it is a QEMU/OVMF hiccup, not a kernel fault --
+# so a single retry still produced occasional false failures in the gate.
+ATTEMPTS=$(( ${VERIFY_RETRIES:-2} + 1 ))
 attempt=1
 while : ; do
     boot_once

@@ -26,15 +26,30 @@
 #define ATA_CMD_WRITE   0x30
 #define ATA_CMD_IDENTIFY 0xEC
 
+/* No device on the port reads back as all ones. Waiting for a drive that is
+ * not there is not merely slow, it is pathologically slow under KVM: every
+ * inb/out pair is a VM exit, so the million-iteration wait below turned into
+ * tens of seconds of nothing and the kernel appeared to hang during fs_init.
+ * The bound is also tightened for the same reason. */
+#define ATA_WAIT_LIMIT 100000
+
+static bool ata_status_is_absent(void) {
+    return inb(ATA_STATUS) == 0xFF;
+}
+
 void ata_wait_bsy(void) {
-    for (int i = 0; i < 1000000; i++) {
-        if (!(inb(ATA_STATUS) & ATA_STATUS_BSY)) return;
+    for (int i = 0; i < ATA_WAIT_LIMIT; i++) {
+        u8 status = inb(ATA_STATUS);
+        if (status == 0xFF) return;   /* no device; stop waiting */
+        if (!(status & ATA_STATUS_BSY)) return;
     }
 }
 
 void ata_wait_drq(void) {
-    for (int i = 0; i < 1000000; i++) {
-        if (inb(ATA_STATUS) & ATA_STATUS_DRQ) return;
+    for (int i = 0; i < ATA_WAIT_LIMIT; i++) {
+        u8 status = inb(ATA_STATUS);
+        if (status == 0xFF) return;   /* no device */
+        if (status & ATA_STATUS_DRQ) return;
     }
 }
 
@@ -49,6 +64,7 @@ bool ata_read_sector(u32 lba, void* buffer) {
     outb(ATA_COMMAND, ATA_CMD_READ);
 
     ata_wait_bsy();
+    if (ata_status_is_absent()) return false;
     if (inb(ATA_STATUS) & ATA_STATUS_ERR) return false;
 
     ata_wait_drq();
@@ -71,6 +87,7 @@ bool ata_write_sector(u32 lba, const void* buffer) {
     outb(ATA_COMMAND, ATA_CMD_WRITE);
 
     ata_wait_bsy();
+    if (ata_status_is_absent()) return false;
     if (inb(ATA_STATUS) & ATA_STATUS_ERR) return false;
 
     ata_wait_drq();

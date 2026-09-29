@@ -105,60 +105,45 @@ static u64 syscall_getpid_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6
 
 static u64 syscall_fork_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    
-    task_t* parent = scheduler_current();
-    if (!parent) return -1;
-    
-    pml4_t* child_pml4 = vmm_create_address_space();
-    if (!child_pml4) return -1;
-    
-    vmm_copy_kernel_mappings(child_pml4, parent->mm.pml4);
-    
-    void* child_stack = kmalloc(TASK_STACK_SIZE + PAGE_SIZE);
-    if (!child_stack) return -1;
-    
-    task_t* child = task_allocate();
-    if (!child) {
-        kfree(child_stack);
-        return -1;
-    }
-    
-    kmemset(child, 0, sizeof(task_t));
-    child->pid = task_next_pid();
-    child->state = TASK_STATE_READY;
-    child->priority = parent->priority;
-    child->capabilities = parent->capabilities;
-    child->is_user = parent->is_user;
-    child->mm.pml4 = child_pml4;
-    child->stack_base = (u64)child_stack + PAGE_SIZE;
-    child->guard_page_addr = (u64)child_stack;
-    child->runtime_ticks = 0;
-    child->remaining_quantum = TASK_DEFAULT_QUANTUM;
-    
-    kstrncpy(child->name, parent->name, TASK_NAME_MAX - 1);
-    
-    u64* stack_top = (u64*)((u8*)child->stack_base + TASK_STACK_SIZE);
-    stack_top = (u64*)((u64)stack_top & ~0xFUL);
-    
-    *--stack_top = 0x23;
-    *--stack_top = child->stack_base + TASK_STACK_SIZE;
-    *--stack_top = 0x202;
-    *--stack_top = 0x1B;
-    *--stack_top = (u64)task_exit_handler;
-    *--stack_top = 0;
-    *--stack_top = 0;
-    *--stack_top = 0;
-    *--stack_top = 0;
-    *--stack_top = 0;
-    *--stack_top = 0;
-    
-    child->rsp = (u64)stack_top;
-    child->stack_canary_addr = child->stack_base + sizeof(u64);
-    *(u64*)child->stack_canary_addr = __stack_chk_guard;
-    
-    scheduler_add_task(child);
-    
-    return child->pid;
+
+    /* fork() is not implemented, and the shape it used to have could not work.
+     * Fail cleanly rather than hand back a child that is guaranteed to fault.
+     *
+     * 1. Real fork() semantics -- the child resumes at the parent's interrupted
+     *    RIP with a copied register frame and a fresh stack, differing only in
+     *    the return value -- need the parent's frame at the moment of the call.
+     *    A syscall handler signature of (a1..a6) does not carry it: the frame
+     *    built by interrupt_stubs.asm and by the syscall_entry fast path never
+     *    reaches this function. Substituting some other entry point would not
+     *    be fork() semantics.
+     *
+     * 2. What it actually built was worse than wrong. The child's frame was
+     *    CS=0x1B, SS=0x23 -- the ring-3 selectors, from gdt64.user_code and
+     *    user_data -- with RIP=task_exit_handler, which is kernel code. The
+     *    first instruction ran at CPL 3 and hit `hlt`; HLT is privileged above
+     *    CPL 0 and raises #GP, so the child died with EXCEPTION #13 the moment
+     *    fork() was called.
+     *
+     *    The same exit path has an independent fault: task_exit_handler()
+     *    kfree()s the stack of the task it is currently executing on. A task
+     *    that reaches it via task_trampoline after its entry function returns
+     *    is still standing on that stack. Freeing it is use-after-free, and it
+     *    applies to every exit path, not just this one.
+     *
+     * This is currently unreachable in practice: only a ring-3 process can
+     * issue SYS_FORK, and the ring-3 "user" task is deliberately not enqueued
+     * (see main.c). Ring-3 scheduling has its own open gaps listed there: CR3
+     * is not loaded on the first switch, TSS.rsp0 is never set,
+     * task->address_space is never assigned, and the task stack from kmalloc()
+     * is never mapped into the new PML4.
+     *
+     * TODO: implement once (1) the interrupted frame is threaded through to
+     * syscall handlers and (2) ring-3 scheduling works. Build the child stack
+     * from the parent's saved RIP/RSP/GPRs so it resumes at the fork() call
+     * site, and defer freeing a task's stack until after the scheduler has
+     * provably switched away from it.
+     */
+    return -1;
 }
 
 static u64 syscall_sleep_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
