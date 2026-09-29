@@ -52,36 +52,6 @@ compiles with `gcc -ffreestanding` and links with a hand-written `link.ld`.
 
 **Scale:** ~9,100 lines of C across 107 files, ~720 lines of NASM across 6 files.
 
-### Size, and what "real OS" means
-
-The full image is **30 MB** and the kernel inside it is **151 KB**. The rest is
-the bootloader: `grub-mkrescue` embeds 578 GRUB modules (290 for BIOS, 288 for
-UEFI) plus 86 locale files, almost none of which this kernel uses. The OS is
-0.5% of the image.
-
-That is worth saying plainly, because "make it a gigabyte" is the wrong goal.
-A distribution image is large when it contains real things: a C library, a
-compiler, a window manager, a browser engine, thousands of binaries, fonts,
-documentation and translations. Padding the ISO to a gigabyte with data nothing
-executes would make the number bigger and the system no more capable.
-
-The honest route to a substantial system is to build the subsystems, and the
-size follows from them. The order below is by dependency, not by appeal:
-
-| # | Work | Unblocks |
-|---|---|---|
-| 1 | **Fix `task_exit_handler`** — it `kfree()`s the stack it is executing on | Any process exit |
-| 2 | **Writable VFS** (`create`/`mkdir` in `vfs_node_t`) | Setup surviving a reboot, any app that saves |
-| 3 | **Ring-3 scheduling** — CR3 on first switch, `TSS.rsp0`, `address_space`, user stack mapped | Userspace, isolation, real processes |
-| 4 | **A libc** in C and assembly: `mem*`, `str*`, `printf`, syscalls | Every future program |
-| 5 | **Real `fork`/`exec`/`wait`** | Multitasking, a shell that runs programs |
-| 6 | **A build system for userland** | Compiling programs at all |
-| 7 | **Drivers: AHCI, USB HID, more NICs** | Using a real modern machine |
-| 8 | **Applications** | Anything to be "a real OS" for |
-
-Items 3 and 4 are the gate. Nothing that resembles a general-purpose OS exists
-until a process can run outside the kernel and call into a library.
-
 ### Project status
 
 This is an active educational kernel. It boots in QEMU and reaches an

@@ -23,6 +23,10 @@ void keyboard_read_line(char* buffer, usize max_len);
  * that carries bit 7 of the original scancode. */
 void keyboard_set_key_event_hook(void (*hook)(u8 scancode, bool pressed));
 
+/* Whether a scancode hook is installed. Without one the graphical shell
+ * never sees the Windows key or the arrows. */
+bool keyboard_has_key_hook(void);
+
 /* Scancode set 1, named because a graphical shell needs them by name. */
 #define KEY_UP        0x48
 #define KEY_DOWN      0x50

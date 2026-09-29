@@ -209,16 +209,26 @@ void kernel_main(u32 magic, u64 info_ptr) {
         vga_puts_error("ERROR: Failed to create user task!");
     }
 
-    // Create shell task with minimal caps. This is a kernel-mode task, so it
-    // is the only one that can actually run today.
-    task_t* shell_task = task_create("shell", (task_func_t)shell_main, NULL, CAP_SPAWN | CAP_FS_READ | CAP_FS_WRITE, false);
-    if (shell_task == NULL) {
-        vga_puts_error("ERROR: Failed to create shell task!");
-        while (1) {
-            asm volatile("hlt");
+    // The interactive shell and the desktop both read the keyboard, and
+    // keyboard_read_line() drains the driver's ring buffer directly rather
+    // than taking events from the input queue. Whichever task runs first
+    // takes the key, so with both alive the shell swallows everything and the
+    // desktop never sees the Super key or the arrows.
+    //
+    // So only one of them runs. With a framebuffer the desktop owns the
+    // keyboard; without one there is no desktop, and the shell has the
+    // keyboard to itself. The serial console still works either way, because
+    // kprintf writes to the serial port independently of the task running.
+    task_t* shell_task = 0;
+    if (!g_framebuffer.initialized) {
+        shell_task = task_create("shell", (task_func_t)shell_main, NULL,
+                                 CAP_SPAWN | CAP_FS_READ | CAP_FS_WRITE, false);
+        if (shell_task == NULL) {
+            vga_puts_error("ERROR: Failed to create shell task!");
+            while (1) asm volatile("hlt");
         }
+        scheduler_add_task(shell_task);
     }
-    scheduler_add_task(shell_task);
 
     // The graphical desktop needs a linear framebuffer. Under a BIOS boot the
     // firmware hands over the 80x25 text buffer instead and fb_init() declines,

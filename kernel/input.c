@@ -108,3 +108,10 @@ bool input_get_mouse_right(void) {
 bool input_get_mouse_middle(void) {
     return (g_mouse.buttons & 0x04) != 0;
 }
+u32 input_queue_depth(void) {
+    /* Single-producer, single-consumer ring; a full lap is not a concern at
+     * this queue size, so the count is just the distance between them. */
+    return (input_head >= input_tail)
+         ? (input_head - input_tail)
+         : (INPUT_QUEUE_SIZE - (input_tail - input_head));
+}

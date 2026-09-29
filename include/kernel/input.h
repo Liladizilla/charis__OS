@@ -31,6 +31,9 @@ bool input_push_event(input_event_t* evt);
 // Get event from queue (non-blocking)
 bool input_pop_event(input_event_t* evt);
 
+/* Number of events waiting. Zero while the queue is being drained. */
+u32 input_queue_depth(void);
+
 // Process all pending events
 void input_process_events(void);
 

@@ -15,6 +15,9 @@
 #include <kernel/services.h>
 #include <kernel/power.h>
 #include <kernel/security.h>
+#include <kernel/mouse.h>
+#include <kernel/input.h>
+#include <kernel/keyboard.h>
 
 static void shell_print_prompt(void) {
     vga_puts("charisos> ");
@@ -132,6 +135,28 @@ bool shell_execute(char* line) {
         }
         if (cmd_is(line, "audit")) {
             security_audit("manual_audit", scheduler_current());
+            return true;
+        }
+
+        /* Input diagnostic. The software cursor sits at the driver's initial
+         * position unless IRQ 12 is actually delivering packets, and "stuck in
+         * the corner" is the symptom of both a dead IRQ and a working one. */
+        if (cmd_is(line, "mouse")) {
+            mouse_state_t* m = mouse_get_state();
+            if (m) {
+                kprintf("mouse: x=%d y=%d buttons=%d dx=%d dy=%d\n",
+                        m->x, m->y, m->buttons, m->dx, m->dy);
+                kprintf("       packets=%u\n", g_mouse_packets);
+            } else {
+                vga_puts("mouse: driver not initialised");
+            }
+            return true;
+        }
+        if (cmd_is(line, "input")) {
+            mouse_state_t* m = mouse_get_state();
+            kprintf("keyboard hook: %s\n", keyboard_has_key_hook() ? "installed" : "MISSING");
+            kprintf("mouse hook:     %s\n", m ? "initialised" : "MISSING");
+            kprintf("key queue depth: %u\n", input_queue_depth());
             return true;
         }
 

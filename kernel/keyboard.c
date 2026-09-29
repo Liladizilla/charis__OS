@@ -127,3 +127,6 @@ void keyboard_read_line(char* buffer, usize max_len) {
     }
     buffer[i] = 0;
 }
+bool keyboard_has_key_hook(void) {
+    return key_event_hook != 0;
+}

@@ -1,5 +1,7 @@
 #include <kernel/mouse.h>
 #include <kernel/io.h>
+#include <kernel/printf.h>
+#include <kernel/irq.h>
 #include <kernel/vga.h>
 
 mouse_state_t g_mouse = {50, 50, 0, 0, 0};
@@ -11,27 +13,85 @@ void mouse_set_bounds(uint32_t width, uint32_t height) {
     mouse_screen_height = height;
 }
 
+/*
+ * PS/2 controller handshake helpers.
+ *
+ * Every command the controller accepts is answered with an acknowledge byte
+ * on the data port. Those bytes have to be consumed, and the original code
+ * consumed none of them, so the sequence was:
+ *
+ *   outb(0x64, 0x20)     ; ask for the config byte
+ *   config = inb(0x60)   ; ...this reads the ACK (0xFA), not the config
+ *   config |= 0x02
+ *   outb(0x64, 0x60)
+ *   outb(0x60, config)   ; writes 0xFA|0x02 back as the configuration
+ *
+ * which clobbered the aux-port bits and left IRQ 12 disabled -- the pointer
+ * never moved. The two bytes left over from the 0xF6 and 0xF4 commands also
+ * arrive as IRQ 12 data and get parsed as motion packets.
+ */
+static void ps2_wait_write(void) {
+    /* Wait for the input buffer to drain (IBF clear).
+     *
+     * The bound is small on purpose. Under KVM every inb() is a VM exit, so a
+     * long spin here is not slow, it is a boot that never finishes -- the same
+     * failure the ATA wait loop had. The controller answers within a few
+     * hundred microseconds or not at all, and either way the boot must
+     * continue. */
+    for (volatile int i = 0; i < 2000; i++) {
+        if (!(inb(0x64) & 0x02)) return;
+    }
+}
+
+static void ps2_drain_output(void) {
+    /* Give the device a moment, then throw away whatever it queued. */
+    for (volatile int i = 0; i < 200; i++) io_delay();
+    if (inb(0x64) & 0x01) (void)inb(0x60);
+}
+
+static void ps2_write_command(u8 cmd) {
+    ps2_wait_write();
+    outb(0x64, cmd);
+    ps2_drain_output();
+}
+
+static u8 ps2_write_data(u8 value) {
+    ps2_wait_write();
+    outb(0x60, value);
+    for (volatile int i = 0; i < 200; i++) io_delay();
+    if (inb(0x64) & 0x01) return inb(0x60);   /* the ACK, if any */
+    return 0xFF;                              /* timed out */
+}
+
 void mouse_init(void) {
-    /* Enable mouse in PS/2 controller (port 0x64) */
-    outb(0x64, 0xA8); /* Enable mouse port */
-    io_delay();
-    
-    /* Configure mouse (port 0x60) */
-    outb(0x64, 0x20); /* Command to read config byte */
-    io_delay();
-    u8 config = inb(0x60);
-    config |= 0x02; /* Enable IRQ 12 */
-    outb(0x64, 0x60); /* Write config byte */
-    io_delay();
-    outb(0x60, config);
-    io_delay();
-    
-    /* Send mouse initialization commands */
-    outb(0x60, 0xF6); /* Set defaults */
-    io_delay();
-    outb(0x60, 0xF4); /* Enable data reporting */
-    
-    vga_puts("Mouse initialized\n");
+    /* Disable the aux port while it is reconfigured, or stray bytes arrive
+     * mid-sequence and desynchronise the packet stream. */
+    ps2_write_command(0xA7);
+
+    /* Drain anything the controller was already holding. */
+    ps2_drain_output();
+
+    /* Enable the aux port. */
+    ps2_write_command(0xA8);
+
+    /* Read the configuration byte, skipping the ACK that answers 0x20. */
+    u8 config;
+    ps2_write_command(0x20);
+    config = inb(0x60);
+    config |= 0x02;        /* enable the aux interrupt (IRQ 12) */
+
+    /* Write it back, skipping the ACK that answers 0x60. */
+    ps2_write_command(0x60);
+    (void)ps2_write_data(config);
+
+    /* Defaults, then enable reporting. Each answers with an ACK. */
+    (void)ps2_write_data(0xF6);
+    (void)ps2_write_data(0xF4);
+
+    /* Make sure IRQ 12 is unmasked in the PIC, in case anything masked it. */
+    pic_unmask_irq(12);
+
+    kprintf("Mouse: PS/2 enabled, config=0x%02x\n", config);
 }
 
 void mouse_handler(void) {
@@ -58,6 +118,7 @@ void mouse_handler(void) {
     if (overflow_seen) { overflow_seen = false; return; }
 
     u8 flags = packet[0];
+    g_mouse_packets++;
     g_mouse.buttons = flags & 0x07;
 
     /* Deltas are signed and must be sign-extended, not masked. */
@@ -93,3 +154,11 @@ int mouse_get_buttons(int* buttons) {
     }
     return 0;
 }
+/* Counters and accessors for the shell's input diagnostics. Without these,
+ * "the pointer is stuck" is indistinguishable from "no packets ever arrived".
+ */
+u32 g_mouse_packets = 0;
+
+u32 mouse_packet_count(void) { return g_mouse_packets; }
+
+mouse_state_t* mouse_get_state(void) { return &g_mouse; }
