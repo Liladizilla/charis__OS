@@ -20,6 +20,24 @@ mb_header:
     dd start
     dd 0    ; Padding to reach 8-byte alignment
 
+    ; Framebuffer request tag (type 5).
+    ;
+    ;   u32 type = 5
+    ;   u32 flags
+    ;   u32 width
+    ;   u32 height
+    ;   u32 depth
+    ;
+    ; 20 bytes, padded to 24 for 8-byte tag alignment. The `size` field is the
+    ; tag's own length and excludes the padding, per the spec.
+    dw 5                             ; type (low half of the u32)
+    dw 0                             ; flags (high half)
+    dd 20                            ; size
+    dd 1024                          ; width
+    dd 768                           ; height
+    dd 32                            ; depth, bits per pixel
+    dd 0                             ; pad 20 -> 24
+
     ; End tag
     dw 0
     dw 0

@@ -27,7 +27,7 @@ if "--out" in sys.argv:
     OUT = sys.argv[sys.argv.index("--out") + 1]
 
 W, H, PITCH = 1024, 768, 4096
-FB_BASE = 0x80000000
+FB_BASE = int(os.environ.get("FB_BASE", "0x80000000"), 16)
 
 
 def monitor(cmd, sock, wait=0.35, budget=6.0):
@@ -66,6 +66,8 @@ def main():
     ]
     if USE_UEFI:
         cmd += ["-bios", OVMF]
+    elif "--bios" in sys.argv:
+        pass  # default: SeaBIOS, no -bios
 
     proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
