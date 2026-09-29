@@ -101,29 +101,44 @@ if [ -n "$FIRMWARE" ]; then
     #   * the classic ~2MB CODE/VARS pair, passed with -bios
     #   * the "4M" split builds (.fd or .qcow2), which must be mapped as pflash
     #     alongside a writable VARS region, and which QEMU rejects outright
-    #     with "could not load PC BIOS" if handed to -bios
-    # Pick the invocation that matches the file rather than assuming.
-    case "$FIRMWARE" in
-        *4M*)
-            VARS="${FIRMWARE%_CODE*}_VARS${FIRMWARE#*_CODE}"
-            [ -f "$VARS" ] || {
-                echo "verify-boot.sh: 4M firmware needs a VARS image, none found for $FIRMWARE" >&2
-                exit 2
-            }
-            # VARS is written by firmware; work on a copy so a real install
-            # on the host is never modified.
-            cp -f "$VARS" "$BUILD_DIR/ovmf-vars.img"
-            case "$FIRMWARE" in
-                *.qcow2) FMT=qcow2 ;;
-                *)       FMT=raw   ;;
-            esac
-            DRIVE+=(-drive "if=pflash,format=$FMT,readonly=on,file=$FIRMWARE"
-                    -drive "if=pflash,format=$FMT,file=$BUILD_DIR/ovmf-vars.img")
-            ;;
-        *)
-            DRIVE+=(-bios "$FIRMWARE")
-            ;;
-    esac
+    # Choose the invocation from the file's actual size, not its name. Some
+    # distributions ship the 4MB build as a plain "OVMF_CODE.fd", which is
+    # loadable only via pflash; handing that to -bios gives
+    # "could not load PC BIOS", which reads like a kernel fault and is not one.
+    FIRMWARE_BYTES=$(wc -c < "$FIRMWARE")
+    FIRMWARE_4M=0
+    [ "$FIRMWARE_BYTES" -gt 3000000 ] && FIRMWARE_4M=1
+    case "$FIRMWARE" in *4M*) FIRMWARE_4M=1 ;; esac
+
+    if [ "$FIRMWARE_4M" = "1" ]; then
+        # The VARS image is a sibling, but the naming is not consistent: it
+        # carries the _4M suffix only when the CODE file does, and the
+        # extension follows whichever form was used. Try the likely names
+        # rather than deriving exactly one.
+        VARS=""
+        for cand in "${FIRMWARE%_CODE*}_VARS${FIRMWARE#*_CODE}" \
+                    "${FIRMWARE%_CODE*}_VARS.fd" \
+                    "${FIRMWARE%_CODE*}_VARS.qcow2" \
+                    "${FIRMWARE%_CODE*}_VARS_4M.fd" \
+                    "${FIRMWARE%_CODE*}_VARS_4M.qcow2"; do
+            if [ -f "$cand" ]; then VARS="$cand"; break; fi
+        done
+        if [ -z "$VARS" ]; then
+            echo "verify-boot.sh: 4M firmware needs a VARS image, none found beside $FIRMWARE" >&2
+            exit 2
+        fi
+        # Firmware writes to VARS; work on a copy so a real host install is
+        # never modified.
+        cp -f "$VARS" "$BUILD_DIR/ovmf-vars.img"
+        case "$FIRMWARE" in
+            *.qcow2) FMT=qcow2 ;;
+            *)       FMT=raw   ;;
+        esac
+        DRIVE+=(-drive "if=pflash,format=$FMT,readonly=on,file=$FIRMWARE"
+                -drive "if=pflash,format=$FMT,file=$BUILD_DIR/ovmf-vars.img")
+    else
+        DRIVE+=(-bios "$FIRMWARE")
+    fi
 
     # A UEFI guest needs a display device the firmware can actually drive.
     # With no display at all, OVMF under KVM never gets past "starting
