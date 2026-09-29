@@ -80,6 +80,9 @@ jobs:
             ./tools/verify-boot.sh build/charisos-usb.img --disk
             ./tools/verify-boot.sh build/charisos-vm.iso --uefi
             ./tools/verify-boot.sh build/charisos-usb.img --disk --uefi
+            # UEFI on KVM: the configuration GNOME Boxes and VirtualBox use,
+            # and the one that stayed broken longest.
+            ./tools/verify-boot.sh build/charisos-vm.iso --uefi --kvm
           fi
 
       - name: Upload boot logs
