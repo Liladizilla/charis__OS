@@ -8,7 +8,7 @@ extern syscall_dispatch
 extern task_exit_handler
 
 ; ---------------------------------------------------------------------------
-; void context_switch(u64* old_rsp, u64 new_rsp, bool is_user);
+; void context_switch(u64* old_rsp, u64 new_rsp, bool use_iret);
 ; Saves callee-saved regs, switches stacks, restores callee-saved regs.
 ; Used for cooperative task switching (yield).
 ; ---------------------------------------------------------------------------
@@ -47,6 +47,7 @@ global task_trampoline
 task_trampoline:
     pop rax
     pop rdi
+    sti
     call rax
     call task_exit_handler
     hlt

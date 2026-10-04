@@ -87,8 +87,17 @@ void scheduler_start(void) {
     current_task = next;
     current_task->state = TASK_STATE_RUNNING;
 
+    /* The first task switch must also load that task's address space. Without
+     * this, the CPU keeps running in the kernel's CR3 even though the task is
+     * already selected for ring-3 execution. */
+    if (current_task->address_space) {
+        vmm_switch((pml4_t*)current_task->address_space);
+    }
+
+    bool use_iret = current_task->is_user && !current_task->started;
+    current_task->started = true;
     u64 bootstrap_rsp = 0;
-    context_switch(&bootstrap_rsp, current_task->rsp, current_task->is_user);
+    context_switch(&bootstrap_rsp, current_task->rsp, use_iret);
 }
 
 void scheduler_schedule(void) {
@@ -108,11 +117,21 @@ void scheduler_schedule(void) {
         vmm_switch((pml4_t*)current_task->address_space);
     }
 
+    bool use_iret = current_task->is_user && !current_task->started;
+    current_task->started = true;
     if (previous) {
-        context_switch(&previous->rsp, current_task->rsp, current_task->is_user);
+        context_switch(&previous->rsp, current_task->rsp, use_iret);
     } else {
-        context_switch(NULL, current_task->rsp, current_task->is_user);
+        context_switch(NULL, current_task->rsp, use_iret);
     }
+
+    /*
+     * Only the task that was switched *to* returns here, and it does so on its
+     * own stack. That makes this the first point where a previous task's pages
+     * are known to be dead to us, so anything it parked on the way out can be
+     * released without freeing memory under our own feet.
+     */
+    task_release_pending();
 }
 
 void scheduler_yield(void) {

@@ -9,7 +9,7 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & Boot Test
+    name: Build, Boot & Ring-3 Test
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -49,13 +49,15 @@ jobs:
           test -f build/charisos-usb.img
           ls -la build/charisos-vm.iso build/charisos-usb.img
 
-      - name: Boot matrix (CD/disk x BIOS/UEFI)
-        # The assertions live in tools/verify-boot.sh so CI and local runs use
-        # identical logic. See that file for why the boot banner is not a
-        # sufficient signal: it is printed before the Multiboot2 magic is
-        # validated, and GRUB suppresses its own output without a TTY.
+      - name: BIOS boot and ring-3 syscall checks
+        # The gate asserts init, a ring-3 syscall, user resumption after yield,
+        # and guest liveness. BIOS checks run even when OVMF is absent.
         run: |
           set -e
+          ./tools/verify-boot.sh build/charisos-vm.iso
+          ./tools/verify-boot.sh build/charisos-usb.img --disk
+
+          # UEFI checks are firmware-dependent and remain advisory on CI.
           # OVMF ships in two shapes and lives in different places across
           # Fedora, Debian and Ubuntu. Prefer the classic 2MB CODE image, which
           # works with -bios; the 4M split builds are handled by
@@ -76,8 +78,6 @@ jobs:
           else
             echo "Using OVMF: $OVMF"
             export OVMF
-            ./tools/verify-boot.sh build/charisos-vm.iso
-            ./tools/verify-boot.sh build/charisos-usb.img --disk
             # UEFI coverage is advisory in CI. The runner ships only
             # /usr/share/qemu/OVMF.fd, a 4MB build this QEMU will not load
             # the way the gate loads it, so a red run says nothing about the

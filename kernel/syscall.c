@@ -1,6 +1,7 @@
 #include <kernel/syscall.h>
 #include <kernel/scheduler.h>
 #include <kernel/vga.h>
+#include <kernel/printf.h>
 #include <kernel/idt.h>
 #include <kernel/task.h>
 #include <kernel/vmm.h>
@@ -94,6 +95,7 @@ static u64 syscall_print_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
     for (; i < sizeof(buf)-1 && s[i]; i++) buf[i] = s[i];
     buf[i] = 0;
     vga_puts(buf);
+    kprintf("%s", buf);
     return 0;
 }
 

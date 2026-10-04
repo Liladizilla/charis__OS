@@ -176,6 +176,13 @@ start:
      out dx, al
 
      ; Load TSS
+    ; The available 64-bit TSS descriptor must contain the TSS object's base.
+    ; A zero base lets LTR succeed but makes the first CPL3 stack switch fault.
+    mov eax, tss
+    mov word [gdt64 + gdt64.tss + 2], ax
+    shr eax, 16
+    mov byte [gdt64 + gdt64.tss + 4], al
+    mov byte [gdt64 + gdt64.tss + 7], ah
      mov ax, gdt64.tss
      ltr ax
      VGA_WRITE 'T'  ; TSS loaded OK

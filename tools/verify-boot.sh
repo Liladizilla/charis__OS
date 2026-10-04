@@ -2,10 +2,10 @@
 #
 # verify-boot.sh — boot gate for CharisOS.
 #
-# Boots a CharisOS image in QEMU and asserts the kernel actually reached the
-# scheduler. The kernel prints this line on the serial console only after the
-# Multiboot2 magic validated, every init*() returned, and the shell task was
-# created:
+# Boots a CharisOS image in QEMU and asserts kernel initialization completed,
+# the ring-3 task made a syscall, and the guest stayed alive. The kernel prints
+# the init sentinel only after the Multiboot2 magic validated and all init*()
+# calls returned:
 #
 #     [BOOT] init complete, entering scheduler
 #
@@ -34,8 +34,8 @@
 # Note: --kvm is applied to the BIOS path only. UEFI+KVM is a separate,
 # not-yet-diagnosed failure and is not part of the gate.
 #
-# Exits 0 if the kernel reached the scheduler, 1 otherwise. The captured log is
-# left at $BUILD_DIR/verify-<mode>.log (or verify.log) for inspection.
+# Exits 0 if the ring-3 task ran and the guest stayed alive, 1 otherwise. The
+# captured log is left at $BUILD_DIR/verify-<mode>.log for inspection.
 
 set -uo pipefail
 
@@ -178,24 +178,25 @@ fi
 # flakiness, and buys nothing: the kernel has no network support yet. Removing
 # the device makes the boot short and deterministic.
 boot_once() {
-    # With a display the serial port cannot be -nographic (that implies no
-    # display), so capture it to the log file directly instead of a pipe.
+    # Capture serial directly to a file in both modes. QEMU's -nographic
+    # stdio multiplexing can leave the pipeline empty on headless hosts.
     if [ "$NEEDS_DISPLAY" = "1" ]; then
         timeout "$TIMEOUT" qemu-system-x86_64 \
             "${DRIVE[@]}" -m 256M -no-reboot -nic none \
             -serial "file:$LOG" >/dev/null 2>&1
         QEMU_STATUS=$?
     else
-    # timeout returns 124 when it fires. That is the signal we want: QEMU was
-    # still running when the clock ran out, so the guest is alive and did not
-    # reset. Any other status means QEMU exited early, which for this kernel
-    # means the CPU took a triple fault and rebooted.
-    timeout "$TIMEOUT" qemu-system-x86_64 \
-        "${DRIVE[@]}" \
-        -m 256M -nographic -no-reboot \
-        -nic none \
-        2>&1 | tr -d '\r' > "$LOG"
-    QEMU_STATUS=${PIPESTATUS[0]}
+        # timeout returns 124 when it fires. That is the signal we want: QEMU
+        # was still running when the clock ran out, so the guest is alive.
+        # Keep emulator diagnostics separate from the kernel serial stream.
+        QEMU_LOG="$BUILD_DIR/verify-qemu.log"
+        timeout "$TIMEOUT" qemu-system-x86_64 \
+            "${DRIVE[@]}" \
+            -m 256M -nographic -no-reboot -nic none \
+            -monitor none -serial "file:$LOG" \
+            >"$QEMU_LOG" 2>&1
+        QEMU_STATUS=$?
+        cat "$QEMU_LOG" >> "$LOG"
     fi
 
     # Strip terminal control sequences before asserting on the text.
@@ -268,6 +269,12 @@ grep -q 'Built:' "$LOG" \
 grep -q '\[BOOT\] init complete, entering scheduler' "$LOG" \
     || fail "kernel did not complete initialisation — it hung or halted"
 
+grep -q 'Hello from user mode!' "$LOG" \
+    || fail "ring-3 task did not complete its print syscall"
+
+grep -q 'Back in user mode after yield.' "$LOG" \
+    || fail "ring-3 task did not resume after yielding to the kernel task"
+
 grep -q 'Invalid Multiboot2 magic' "$LOG" \
     && fail "Multiboot2 magic was rejected"
 
@@ -301,6 +308,6 @@ if command -v sha256sum >/dev/null 2>&1; then
     fi
 fi
 
-echo "PASS: kernel booted and entered the scheduler  ($IMAGE as $MODE${FIRMWARE:+, UEFI})"
+echo "PASS: kernel booted, ran ring 3, and stayed alive  ($IMAGE as $MODE${FIRMWARE:+, UEFI})"
 echo "      log: $LOG"
 exit 0

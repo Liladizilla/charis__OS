@@ -23,6 +23,8 @@ static inline u64* phys_to_virt_pt(u64 phys) {
     return (u64*)(phys);
 }
 
+static u64 kernel_cr3 = 0;
+
 // Get current CR3
 static u64 get_cr3(void) {
     u64 cr3;
@@ -183,23 +185,60 @@ pml4_t* vmm_create_address_space(void) {
     return (pml4_t*)phys;
 }
 
-// Copy kernel mappings into a new page table (needed for every new process).
-// Kernel is in the first 1GB identity-mapped region, so copy PML4[0].
-void vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src) {
-    (void)src;
-    u64* src_pml4 = (u64*)get_cr3();
-    
-    // Copy PML4 entry 0 (identity-mapped low memory)
-    ((u64*)dst)[0] = src_pml4[0];
+// Copy the low identity map while giving each process private lower-level
+// tables, so changing user permissions cannot alter the kernel's page tables.
+bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src) {
+    if (!dst) return false;
+
+    u64* src_pml4 = src ? (u64*)src : (u64*)get_cr3();
+    for (u32 i = 256; i < 512; i++) ((u64*)dst)[i] = src_pml4[i];
+    u64 pml4e = src_pml4[0];
+    if (!(pml4e & PTE_PRESENT)) return true;
+
+    u64 pdpt_phys = pmm_alloc_page();
+    if (!pdpt_phys) return false;
+    u64* src_pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
+    u64* dst_pdpt = phys_to_virt_pt(pdpt_phys);
+    for (u32 i = 0; i < 512; i++) dst_pdpt[i] = src_pdpt[i];
+
+    for (u32 i = 0; i < 512; i++) {
+        u64 pdpte = src_pdpt[i];
+        if (!(pdpte & PTE_PRESENT) || (pdpte & (1ULL << 7))) continue;
+
+        u64 pd_phys = pmm_alloc_page();
+        if (!pd_phys) return false;
+        u64* src_pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
+        u64* dst_pd = phys_to_virt_pt(pd_phys);
+        for (u32 j = 0; j < 512; j++) dst_pd[j] = src_pd[j];
+        dst_pdpt[i] = pd_phys | (pdpte & 0x8000000000000FFFULL);
+
+        for (u32 j = 0; j < 512; j++) {
+            u64 pde = src_pd[j];
+            if (!(pde & PTE_PRESENT) || (pde & (1ULL << 7))) continue;
+
+            u64 pt_phys = pmm_alloc_page();
+            if (!pt_phys) return false;
+            u64* src_pt = phys_to_virt_pt(pde & ~0xFFFULL);
+            u64* dst_pt = phys_to_virt_pt(pt_phys);
+            for (u32 k = 0; k < 512; k++) dst_pt[k] = src_pt[k];
+            dst_pd[j] = pt_phys | (pde & 0x8000000000000FFFULL);
+        }
+    }
+
+    ((u64*)dst)[0] = pdpt_phys | (pml4e & 0x8000000000000FFFULL);
+    return true;
 }
 
 // Switch the CPU to use a given page table.
 void vmm_switch(pml4_t* pml4) {
-    asm volatile("mov %0, %%cr3" : : "r"(pml4));
+    if (!kernel_cr3) kernel_cr3 = get_cr3();
+    u64 cr3 = pml4 ? (u64)pml4 : kernel_cr3;
+    asm volatile("mov %0, %%cr3" : : "r"(cr3) : "memory");
 }
 
 // Map a page into a specific address space (not current)
 bool vmm_map_page_pml4(pml4_t* pml4, u64 virt, u64 phys, u64 flags) {
+    if (!pml4) return false;
     u64* pml4_table = (u64*)pml4;
     
     u16 i1 = PML4_INDEX(virt);
@@ -215,8 +254,26 @@ bool vmm_map_page_pml4(pml4_t* pml4, u64 virt, u64 phys, u64 flags) {
     u16 i3 = PD_INDEX(virt);
     if (!get_or_create_table(pd, i3, 0)) return false;
     u64 pde = pd[i3];
+    if (pde & (1ULL << 7)) {
+        u64 pt_phys = pmm_alloc_page();
+        if (!pt_phys) return false;
+        u64* pt = phys_to_virt_pt(pt_phys);
+        u64 base = pde & 0x000FFFFFFFE00000ULL;
+        u64 page_flags = pde & 0x8000000000000FFFULL;
+        page_flags &= ~(1ULL << 7);
+        for (u32 i = 0; i < 512; i++) {
+            pt[i] = (base + (u64)i * PAGE_SIZE) | page_flags;
+        }
+        pde = pt_phys | (pde & 0x8000000000000FFFULL & ~(1ULL << 7));
+        pd[i3] = pde;
+    }
     u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
 
+    if (flags & VMM_FLAG_USER) {
+        pml4_table[i1] |= PTE_USER;
+        pdpt[i2] |= PTE_USER;
+        pd[i3] |= PTE_USER;
+    }
     pt[PT_INDEX(virt)] = (phys & ~0xFFFULL) | PTE_PRESENT | (flags & (PTE_WRITABLE | PTE_USER | PTE_NX));
 
     return true;

@@ -63,6 +63,12 @@ static u8 ps2_write_data(u8 value) {
     return 0xFF;                              /* timed out */
 }
 
+static u8 ps2_write_aux_data(u8 value) {
+    ps2_wait_write();
+    outb(0x64, 0xD4);                         /* route next byte to mouse */
+    return ps2_write_data(value);
+}
+
 void mouse_init(void) {
     /* Disable the aux port while it is reconfigured, or stray bytes arrive
      * mid-sequence and desynchronise the packet stream. */
@@ -84,14 +90,15 @@ void mouse_init(void) {
     ps2_write_command(0x60);
     (void)ps2_write_data(config);
 
-    /* Defaults, then enable reporting. Each answers with an ACK. */
-    (void)ps2_write_data(0xF6);
-    (void)ps2_write_data(0xF4);
+    /* Defaults, then enable reporting on the auxiliary mouse device. */
+    u8 defaults_ack = ps2_write_aux_data(0xF6);
+    u8 enable_ack = ps2_write_aux_data(0xF4);
 
     /* Make sure IRQ 12 is unmasked in the PIC, in case anything masked it. */
     pic_unmask_irq(12);
 
-    kprintf("Mouse: PS/2 enabled, config=0x%02x\n", config);
+        kprintf("Mouse: PS/2 enabled, config=0x%02x F6->0x%02x F4->0x%02x\n",
+            config, defaults_ack, enable_ack);
 }
 
 void mouse_handler(void) {
@@ -108,7 +115,7 @@ void mouse_handler(void) {
         /* Wait for a valid header byte. */
         if (!(byte & 0x08)) return;
         /* Overflow bits mean the packet is unreliable; skip it. */
-        overflow_seen = (byte & 0x40) || (byte & 0x20);
+        overflow_seen = (byte & 0xC0) != 0;
     }
 
     packet[index++] = byte;

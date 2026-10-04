@@ -19,7 +19,7 @@ u64 vmm_get_phys(u64 virt);
 void vmm_init(void);
 
 pml4_t* vmm_create_address_space(void);
-void vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src);
+bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src);
 void vmm_switch(pml4_t* pml4);
 
 #endif

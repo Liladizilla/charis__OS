@@ -67,34 +67,67 @@ u32 task_next_pid(void) {
     return next_pid++;
 }
 
+/*
+ * Deferred stack release.
+ *
+ * A task cannot free the stack it is standing on. kfree() hands the pages back
+ * to the allocator while the return address, the frame pointer and every local
+ * of task_exit_handler() still live on them -- the corruption is invisible
+ * until something reuses that memory. Both task_exit() and the trampoline's
+ * task_exit_handler() did exactly that.
+ *
+ * So the exit path parks the pointer here and the scheduler reclaims it once
+ * it has switched to a different task and is provably no longer on those
+ * pages. One deep is enough: a task cannot reach this point twice, because the
+ * scheduler only ever picks TASK_STATE_READY tasks, so a task parked here is
+ * never resumed and never parks another.
+ */
+static void* g_pending_stack = 0;
+static task_t* g_pending_task = 0;
+
+void task_defer_release(task_t* t) {
+    if (!t) return;
+    if (t->stack_base) {
+        g_pending_task  = t;
+        g_pending_stack = (void*)t->stack_base;
+        t->stack_base  = 0;      /* the slot owns the pages now */
+    }
+    t->state = TASK_STATE_ZOMBIE;
+    t->runtime_ticks = 0;
+}
+
+/* Called by the scheduler from a *different* task's stack. */
+bool task_release_pending(void) {
+    if (!g_pending_stack) return false;
+
+    void*    stack = g_pending_stack;
+    task_t*  task  = g_pending_task;
+    g_pending_stack = 0;
+    g_pending_task  = 0;
+
+    kfree(stack);
+    if (task) {
+        /* The task_t itself stays in the table, stackless and unreaped, so a
+         * future waitpid() has something to find. Reaping it here would
+         * outlive this change's scope. */
+        task->state = TASK_STATE_ZOMBIE;
+    }
+    return true;
+}
+
 void task_exit_handler(void) {
     task_t* current = scheduler_current();
-    if (current) {
-        /* Free the task's stack memory */
-        if (current->stack_base) {
-            kfree((void*)current->stack_base);
-        }
-        
-        current->state = TASK_STATE_ZOMBIE;
-        current->runtime_ticks = 0;
-    }
+    task_defer_release(current);
     scheduler_yield();
-    while (1) {
-        asm volatile("hlt");
-    }
+    /* Unreachable: the task is a zombie and the scheduler only picks READY
+     * tasks, so it is never scheduled again. Kept so that a scheduler bug
+     * halts here rather than returning into freed memory. */
+    while (1) asm volatile("hlt");
 }
 
 void task_exit(void) {
     task_t* current = scheduler_current();
-    if (current) {
-        /* Free the task's stack memory */
-        if (current->stack_base) {
-            kfree((void*)current->stack_base);
-            current->stack_base = 0;
-        }
-        
-        current->state = TASK_STATE_ZOMBIE;
-    }
+    task_defer_release(current);
     scheduler_yield();
 }
 
@@ -119,6 +152,7 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->stack_base = (u64)stack + PAGE_SIZE;
     task->guard_page_addr = (u64)stack;
     task->is_user = is_user;
+    task->started = false;
     task->pid = next_pid++;
     task->state = TASK_STATE_READY;
     task->priority = 0;
@@ -142,6 +176,44 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->prev = NULL;
     task->stack_canary_addr = task->stack_base + sizeof(u64);
     *(u64*)task->stack_canary_addr = 0xDEADC0DEDEADC0DEULL;
+}
+
+bool task_prepare_user_space(task_t* task, void* entry_point) {
+    if (!task || !task->address_space || !entry_point) {
+        return false;
+    }
+
+    pml4_t* pml4 = (pml4_t*)task->address_space;
+    u64 entry = (u64)entry_point;
+    u64 user_start = entry & ~0xFFFULL;
+    u64 user_end = ((entry + 0x1000 + 0xFFFULL) & ~0xFFFULL);
+
+    for (u64 addr = user_start; addr < user_end; addr += PAGE_SIZE) {
+        if (!vmm_map_page_pml4(pml4, addr, addr,
+                VMM_FLAG_PRESENT | VMM_FLAG_USER)) {
+            return false;
+        }
+    }
+
+    u64 kernel_stack_start = task->stack_base & ~0xFFFULL;
+    u64 kernel_stack_end = ((task->stack_base + TASK_STACK_SIZE + 0xFFFULL) & ~0xFFFULL);
+    u64 user_stack_top = 0x00007FFFFFFFE000ULL;
+    u64 user_stack_start = user_stack_top - (kernel_stack_end - kernel_stack_start);
+
+    for (u64 addr = kernel_stack_start; addr < kernel_stack_end; addr += PAGE_SIZE) {
+        u64 phys = vmm_get_phys(addr);
+        u64 user_addr = user_stack_start + (addr - kernel_stack_start);
+        if (!phys || !vmm_map_page_pml4(pml4, user_addr, phys,
+                VMM_FLAG_PRESENT | VMM_FLAG_USER | VMM_FLAG_WRITABLE)) {
+            return false;
+        }
+    }
+
+    task->user_stack_base = user_stack_start;
+    task->user_rsp = user_stack_top;
+    ((u64*)task->rsp)[9] = user_stack_top;
+    task->mm.pml4 = pml4;
+    return true;
 }
 
 task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user) {

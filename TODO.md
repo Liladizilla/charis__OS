@@ -9,8 +9,7 @@
 - [x] PMM safety: double-free check, next-fit cursor
 
 ## Phase 2: Syscall Interface & User Space (COMPLETE)
-- [x] SYSCALL/SYSRET assembly entry with register save/restore
-- [x] MSRs setup (LSTAR, STAR, SF_MASK)
+- [x] SYSCALL/SYSRET assembly entry and MSR setup (user bootstrap wrappers currently use DPL3 `int 0x80`)
 - [x] sys_exit(), sys_getpid(), sys_yield(), sys_sleep()
 - [x] sys_read()/sys_write() with fd-based I/O
 - [x] sys_print() - debug output
@@ -118,7 +117,7 @@
 
 ## Phase 16: Build & Quality (IN PROGRESS)
 - [x] Kernel compiles cleanly (all 7 errors fixed)
-- [x] CI workflow (.github/workflows/ci.yml) - build + QEMU boot test
+- [x] CI workflow (.github/workflows/ci.yml) - build + QEMU ring-3 yield/resume boot test
 - [x] Repo hygiene: .gitattributes, .gitignore, CRLF→LF fixed
 - [x] Boot debug markers fixed (no collisions, full coverage)
 - [ ] vmm_test.c wired into make test (compiles, but RUN_VMM_TESTS only for vmm_test.o)
@@ -126,7 +125,12 @@
 - [ ] Add -Werror to Makefile
 - [ ] Automated regression test suite
 
-## Phase 17: Process Management (INCOMPLETE)
+## Phase 17: Process Management (IN PROGRESS)
+- [x] Bootstrap user task enters ring 3 with a private address-space branch and mapped user stack
+- [x] DPL3 syscall, yield to a kernel task, and resume the user interrupt frame (QEMU verified)
+- [ ] Load ELF programs into runnable user tasks
+- [ ] Complete user ABI/libc and validate SYSRET path
+- [ ] Per-task kernel interrupt stacks and SMP-safe TSS handling
 - [ ] wait()/waitpid() syscall for zombie reaping
 - [ ] Process groups/sessions
 - [ ] Signal delivery to process groups
@@ -183,25 +187,16 @@ and then crashes now fails the build.
 
 ---
 
-## Deferred: ring-3 userspace
+## Userspace status
 
-The kernel boots to an interactive shell, but only because the ring-3 "user"
-task is deliberately **not** enqueued. Four things block a working ring 3:
+The QEMU boot gate verifies a ring-3 task enters through `iretq`, prints via
+the DPL3 `int 0x80` interface, yields to a kernel task, resumes its saved
+interrupt frame, prints again, and leaves the guest alive. The test task is
+still compiled into the kernel image; this does not yet mean ELF binaries can
+be loaded as isolated user programs.
 
-1. `scheduler_start()` never loads CR3. `vmm_switch()` is only called from the
-   timer-interrupt path in `scheduler_schedule()`, so the first switch still
-   runs on the kernel's address space.
-2. `TSS.rsp0` is never set anywhere, so a ring-3 interrupt has no kernel stack
-   to land on.
-3. `scheduler.c` switches on `task->address_space`, but the setup path in
-   `main.c` assigns `task->mm.pml4`. The field `address_space` is left unset.
-4. The task stack is allocated with `kmalloc()` from the kernel heap, and
-   `vmm_copy_kernel_mappings()` does not map it into the new PML4, so the RSP
-   that `iretq` installs is unmapped.
-
-Until all four are fixed, switching into ring 3 takes a triple fault and the
-machine reboots on the first 1 kHz timer tick. `kernel/main.c` creates the user
-task but does not call `scheduler_add_task()` on it, and says why inline.
+The SYSCALL/SYSRET assembly path, libc, ELF-to-task handoff, complete user
+pointer validation, and per-task kernel interrupt stacks remain incomplete.
 
 ---
 

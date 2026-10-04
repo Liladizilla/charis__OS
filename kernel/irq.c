@@ -35,6 +35,11 @@ void pic_init(void) {
     // Mask all IRQs initially
     outb(PIC1_DATA, 0xFF);
     outb(PIC2_DATA, 0xFF);
+
+    // The slave PIC is connected through IRQ 2 on the master. Leave that
+    // cascade open so unmasked slave IRQs, including the PS/2 mouse on IRQ 12,
+    // can reach the CPU.
+    pic_unmask_irq(2);
 }
 
 void pic_send_eoi(u8 irq) {

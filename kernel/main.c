@@ -176,37 +176,21 @@ void kernel_main(u32 magic, u64 info_ptr) {
     wm_create_window("CharisOS Desktop", 100, 100, 400, 300);
     apps_init();
 
-    // Ring-3 userspace is not functional yet. Four gaps have to be closed
-    // before a task can be switched into ring 3:
-    //
-    //   1. scheduler_start() never loads CR3. vmm_switch() is only called from
-    //      the timer-interrupt path in scheduler_schedule(), so the very first
-    //      switch still runs on the kernel's address space.
-    //   2. TSS.rsp0 is never set anywhere, so a ring-3 interrupt has no
-    //      kernel stack to land on.
-    //   3. scheduler.c switches on task->address_space, but this setup path
-    //      assigns task->mm.pml4, so the field is left NULL.
-    //   4. The task stack comes from kmalloc(), i.e. the kernel heap, and
-    //      vmm_copy_kernel_mappings() does not map it into the new PML4, so
-    //      the RSP that iretq installs is unmapped.
-    //
-    // Enqueuing the user task today makes the scheduler switch into ring 3 on
-    // the first 1 kHz timer tick and take a triple fault, so the machine
-    // reboots instead of reaching a shell. The task is still built, which
-    // keeps this setup path compiled and ready, but it is deliberately left
-    // out of the ready queue. See TODO.md.
+    // Bootstrap one ring-3 task using the shared low identity map and private
+    // page-table levels for its user entry and stack mappings.
     extern void user_main(void);
     pml4_t* user_pml4 = vmm_create_address_space();
-    if (user_pml4) {
-        vmm_copy_kernel_mappings(user_pml4, NULL);
-    }
-    task_t* user_task = task_create("user", (task_func_t)user_main, NULL, CAP_SPAWN | CAP_FS_READ, true);
-    if (user_task) {
-        user_task->mm.pml4 = user_pml4;
-        user_task->address_space = (void*)user_pml4;
-        // NOT scheduler_add_task(user_task) -- see above.
+    if (user_pml4 && vmm_copy_kernel_mappings(user_pml4, NULL)) {
+        task_t* user_task = task_create_with_pml4(
+            "user", (task_func_t)user_main, NULL,
+            CAP_SPAWN | CAP_FS_READ, true, user_pml4);
+        if (user_task && task_prepare_user_space(user_task, (void*)user_main)) {
+            scheduler_add_task(user_task);
+        } else {
+            vga_puts_error("ERROR: Failed to prepare ring-3 task!");
+        }
     } else {
-        vga_puts_error("ERROR: Failed to create user task!");
+        vga_puts_error("ERROR: Failed to create user address space!");
     }
 
     // The interactive shell and the desktop both read the keyboard, and

@@ -50,6 +50,7 @@ typedef struct task {
     u64 event_data;
     u32 waiting_event;
     bool is_user;
+    bool started;
     u64 user_stack_base;
     u64 user_rsp;
     process_mm_t mm;
@@ -76,9 +77,18 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
 task_t* task_allocate(void);
 u32 task_next_pid(void);
 void task_exit(void);
+
+/* Park a task's stack for the scheduler to reclaim once it has switched away
+ * from it. A task must not kfree() the stack it is running on. */
+void task_defer_release(task_t* t);
+
+/* Reclaim a parked stack. Must be called from a different task's stack --
+ * the scheduler does this immediately after a context switch. */
+bool task_release_pending(void);
 void task_block(task_t* task);
 void task_unblock(task_t* task);
 void task_sleep_ms(u32 ms);
+bool task_prepare_user_space(task_t* task, void* entry_point);
 
 /* Assembly context switch */
 void context_switch(u64* old_rsp, u64 new_rsp, bool is_user);
