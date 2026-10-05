@@ -210,6 +210,7 @@ int elf_setup_stack(process_mm_t* mm, u64* user_rsp,
 }
 
 int elf_mmap_segment(process_mm_t* mm, u64 vaddr, u64 filesz, u64 memsz, u64 flags) {
+    (void)mm; (void)vaddr; (void)filesz; (void)memsz; (void)flags;
     return 0; // Handled in elf_load
 }
 

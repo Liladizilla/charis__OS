@@ -2,12 +2,6 @@
 #include <kernel/syscall.h>
 #include <kernel/syscall_wrappers.h>
 
-static void demo_window_paint(void* win) {
-    (void)win;
-    // Demo will draw a simple UI
-    sys_print("Demo window painting\n");
-}
-
 void demo_main(void) {
     sys_print("CharisOS GUI Demo starting...\n");
     

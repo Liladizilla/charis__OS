@@ -195,7 +195,6 @@ void wm_process_mouse(int x, int y, int button, bool pressed) {
 
 void wm_main_loop(void) {
     static bool mouse_left_down = false;
-    static bool dragging = false;
     static int drag_offset_x = 0, drag_offset_y = 0;
     static window_t* drag_window = NULL;
     
@@ -220,7 +219,6 @@ void wm_main_loop(void) {
                         if (win) {
                             wm_focus_window(win);
                             if (evt.mouse.y >= win->y && evt.mouse.y < win->y + WINDOW_TITLEBAR_HEIGHT) {
-                                dragging = true;
                                 drag_window = win;
                                 drag_offset_x = evt.mouse.x - win->x;
                                 drag_offset_y = evt.mouse.y - win->y;
@@ -233,7 +231,6 @@ void wm_main_loop(void) {
                 case INPUT_MOUSE_UP:
                     if (evt.mouse.button == 1) {
                         mouse_left_down = false;
-                        dragging = false;
                         drag_window = NULL;
                     }
                     break;

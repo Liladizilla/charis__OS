@@ -79,8 +79,6 @@ void graphics_circle(u32 cx, u32 cy, u32 r, bool filled) {
     s32 x = 0;
     s32 y = (s32)r;
     s32 d = 1 - (s32)r;
-    s32 dx = 0;
-    s32 dy = 0;
     
     if (!filled) {
         for (;;) {

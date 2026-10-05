@@ -96,7 +96,7 @@ int fb_init(void) {
     u32 pitch  = boot_info.framebuffer_pitch;
     u8  bpp    = boot_info.framebuffer_bpp;
 
-    if (!width || !height || bpp != 16 && bpp != 24 && bpp != 32) {
+    if (!width || !height || (bpp != 16 && bpp != 24 && bpp != 32)) {
         kprintf("FB: refusing %ux%u at %u bpp\n", width, height, bpp);
         return -1;
     }

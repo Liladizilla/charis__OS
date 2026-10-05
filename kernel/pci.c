@@ -45,7 +45,7 @@ int pci_scan(void) {
                     // Read class/subclass
                     outl(0xCF8, addr | 0x08);
                     u32 header = inl(0xCFC);
-                    u8 header_type = (header >> 16) & 0xFF;
+                    (void)header;
                     
                     outl(0xCF8, addr | 0x0A);
                     d->pci_class = inl(0xCFC) & 0xFF;

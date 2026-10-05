@@ -4,23 +4,7 @@
 #include <kernel/vga.h>
 #include <kernel/psf.h>
 
-static const char* app_names[] = {
-    "Terminal",
-    "File Manager", 
-    "Text Editor",
-    "Calculator",
-    "Settings"
-};
-
-static void (*app_funcs[])(void) = {
-    app_terminal_main,
-    app_filemanager_main,
-    app_texteditor_main,
-    app_calculator_main,
-    app_settings_main
-};
-
-#define APP_COUNT (sizeof(app_names) / sizeof(app_names[0]))
+#define APP_COUNT 5
 
 void apps_init(void) {
     vga_puts("Applications initialized\n");

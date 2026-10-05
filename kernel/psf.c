@@ -27,7 +27,7 @@ u32 psf_char_height(void) {
 
 void psf_draw_char(u32 x, u32 y, char c, u32 fg, u32 bg) {
     if (!g_font_loaded || !g_framebuffer.initialized) return;
-    if (c < 32 || c > 127) return; // Skip non-printable
+    if ((unsigned char)c < 32 || (unsigned char)c > 127) return; // Skip non-printable
     
     u8* glyph_data = (u8*)g_psf_font + g_psf_font->headersize;
     u32 bytes_per_row = (g_psf_font->width + 7) / 8;
@@ -59,7 +59,7 @@ void psf_draw_string_buffer(u32 x, u32 y, const char* str, u32 fg, u32 bg, u32* 
 
 void psf_draw_char_buffer(u32 x, u32 y, char c, u32 fg, u32 bg, u32* buffer, u32 buf_width) {
     if (!g_font_loaded || !buffer) return;
-    if (c < 32 || c > 127) return; /* Skip non-printable */
+    if ((unsigned char)c < 32 || (unsigned char)c > 127) return; /* Skip non-printable */
     
     u8* glyph_data = (u8*)g_psf_font + g_psf_font->headersize;
     u32 bytes_per_row = (g_psf_font->width + 7) / 8;

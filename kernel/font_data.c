@@ -40,7 +40,7 @@ const s16 font_index[256] = {
       -1,   -1,   -1,   -1,   -1,   -1,   -1,   -1,   -1,   -1,   -1,   -1,   -1,   -1,   -1,   -1,
 };
 
-static const u8 font_glyphs[][GLYPH_H] = {
+static const u8 font_glyphs[] = {
     /*   */
     0x00,
     0x00,
@@ -1981,6 +1981,6 @@ static const u8 font_glyphs[][GLYPH_H] = {
     0xFF,
 };
 
-const u8* font_glyph_rows(u16 index) { return font_glyphs[index]; }
+const u8* font_glyph_rows(u16 index) { return &font_glyphs[index * GLYPH_H]; }
 
 const u16 font_glyph_count = 114;
