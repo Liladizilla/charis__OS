@@ -102,7 +102,9 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('F');  // Filesystem
     vfs_init();
     BOOT_MARK('v');  // VFS
+#ifdef TEST_FS
     fs_self_test();
+#endif
     // net_init();    // Network support for low-end devices
     // BOOT_MARK('N');
     task_init();

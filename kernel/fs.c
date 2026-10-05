@@ -258,6 +258,15 @@ static bool fat_set(u32 cluster, u32 value) {
     value &= 0x0FFFFFFF;
     kmemcpy(buffer + offset, &value, 4);
     if (!ata_write_sector(sector, buffer)) return false;
+
+    /* Update the second FAT copy as well. A mismatch here is what `fsck.vfat`
+     * reports as " FATs differ" and what Windows offers to "fix". */
+    if (boot_sector.num_fats >= 2) {
+        u32 sector2 = sector + boot_sector.fat_size_32;
+        if (!ata_read_sector(sector2, buffer)) return false;
+        kmemcpy(buffer + offset, &value, 4);
+        if (!ata_write_sector(sector2, buffer)) return false;
+    }
     return true;
 }
 

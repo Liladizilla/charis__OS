@@ -175,7 +175,7 @@ static void draw_welcome(void) {
     button(cx + 260, cy + ch - 76, 160, 44, "Use defaults", false);
 }
 
-static void draw_step_header(const char* title, const char* hint, u32 cx, u32 cy, u32 cw) {
+static void draw_step_header(const char* title, const char* hint, u32 cx, u32 cy) {
     text(cx + 40, cy + 32, title, W_FG);
     text(cx + 40, cy + 58, hint, W_DIM);
 }
@@ -183,7 +183,6 @@ static void draw_step_header(const char* title, const char* hint, u32 cx, u32 cy
 static void draw_mode(void) {
     static const char* const items[] = {
         "Run from this device (nothing is written to disk)",
-        "Install to disk (copies the system to a drive)",
     };
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
     u32 cw = 640, ch = 340;
@@ -192,26 +191,14 @@ static void draw_mode(void) {
     card(cx, cy, cw, ch);
 
     draw_step_header("How should CharisOS run?",
-                     "Pick where this system lives.", cx, cy, cw);
-    draw_list(cx + 40, cy + 110, cw - 80, items, 2, w.sel[STEP_MODE]);
+                     "Pick where this system lives.", cx, cy);
+    draw_list(cx + 40, cy + 110, cw - 80, items, 1, w.sel[STEP_MODE]);
 
-    if (w.sel[STEP_MODE] == 1) {
-        text(cx + 40, cy + 210,
-             "Not yet implemented: writing an image to a drive needs a",
-             W_HINT);
-        text(cx + 40, cy + 230,
-             "writable FAT32 filesystem, which the VFS cannot create yet.",
-             W_HINT);
-        text(cx + 40, cy + 250,
-             "Your choice is recorded and the step can be finished later.",
-             W_HINT);
-    } else {
-        text(cx + 40, cy + 210,
-             "Changes are kept on this boot medium only. Nothing on any",
-             W_HINT);
-        text(cx + 40, cy + 230,
-             "attached drive is touched.", W_HINT);
-    }
+    text(cx + 40, cy + 210,
+         "Changes are kept on this boot medium only. Nothing on any",
+         W_HINT);
+    text(cx + 40, cy + 230,
+         "attached drive is touched.", W_HINT);
 }
 
 static void draw_language(void) {
@@ -222,7 +209,7 @@ static void draw_language(void) {
     card(cx, cy, cw, ch);
 
     draw_step_header("Language", "Used for system messages and the default locale.",
-                     cx, cy, cw);
+                     cx, cy);
     draw_list(cx + 40, cy + 100, cw - 80, LANGUAGES, LANGUAGE_COUNT, w.language);
 
     text(cx + 40, cy + ch - 44,
@@ -238,7 +225,7 @@ static void draw_timezone(void) {
     card(cx, cy, cw, ch);
 
     draw_step_header("Time zone", "The kernel has no timezone database, so this is an offset.",
-                     cx, cy, cw);
+                     cx, cy);
     draw_list(cx + 40, cy + 100, cw - 80, TIMEZONES, TIMEZONE_COUNT, w.timezone);
 }
 
@@ -250,7 +237,7 @@ static void draw_disk(void) {
     card(cx, cy, cw, ch);
 
     draw_step_header("Target drive", "Where the system would be installed.",
-                     cx, cy, cw);
+                     cx, cy);
 
     text(cx + 40, cy + 110, "No drive detected.", W_ACCENT);
     text(cx + 40, cy + 140,
@@ -280,7 +267,7 @@ static void draw_network(void) {
 
     net_interface_t* ni = net_get_interface();
     draw_step_header("Network", "Connect this machine to a network.",
-                     cx, cy, cw);
+                     cx, cy);
 
     if (ni && ni->initialized) {
         text(cx + 40, cy + 96, "Adapter: RTL8139, initialised.", W_DIM);

@@ -1,6 +1,7 @@
 #include <kernel/ata.h>
 #include <kernel/vga.h>
 #include <kernel/io.h>
+#include <kernel/timer.h>
 
 #define ATA_SECTOR_SIZE 512
 
@@ -27,7 +28,7 @@
 #define ATA_CMD_IDENTIFY 0xEC
 
 /* Keep polling finite: each port read can exit to the host under KVM. */
-#define ATA_WAIT_LIMIT 5000
+#define ATA_TIMEOUT_MS 30
 
 static bool ata_status_is_absent(void) {
     u8 status = inb(ATA_STATUS);
@@ -35,21 +36,23 @@ static bool ata_status_is_absent(void) {
 }
 
 static bool ata_wait_bsy(void) {
-    for (u32 i = 0; i < ATA_WAIT_LIMIT; i++) {
+    u64 start = timer_get_ms();
+    while (1) {
+        if (timer_get_ms() - start >= ATA_TIMEOUT_MS) return false;
         u8 status = inb(ATA_STATUS);
         if (status == 0 || status == 0xFF) return false;
         if (!(status & ATA_STATUS_BSY)) return true;
     }
-    return false;
 }
 
 static bool ata_wait_drq(void) {
-    for (u32 i = 0; i < ATA_WAIT_LIMIT; i++) {
+    u64 start = timer_get_ms();
+    while (1) {
+        if (timer_get_ms() - start >= ATA_TIMEOUT_MS) return false;
         u8 status = inb(ATA_STATUS);
         if (status == 0 || status == 0xFF || (status & ATA_STATUS_ERR)) return false;
         if (status & ATA_STATUS_DRQ) return true;
     }
-    return false;
 }
 
 bool ata_read_sector(u32 lba, void* buffer) {
