@@ -24,10 +24,14 @@
 - [x] FAT32 integration with VFS (read-only)
 - [x] sys_open() / sys_close() syscalls
 
-## Phase 4: ELF Loader (COMPLETE)
-- [x] elf.h - ELF header/structures
-- [x] elf.c - ELF parsing (ehdr, phdr), PT_LOAD mapping
-- [x] sys_exec() syscall - load and run ELF program
+## Phase 4: ELF Loader (IN PROGRESS)
+- [x] Validate static ELF64 x86-64 `ET_EXEC` headers and program-header bounds
+- [x] Copy `PT_LOAD` file contents, zero pages for BSS, and map user permissions
+- [x] `sys_exec` replaces the ring-3 IRET frame with the ELF entry and stack
+- [x] QEMU FAT32 smoke test enters an ELF and prints `ELF_EXEC_OK`
+- [x] Build bounded `argc`/`argv`/`envp` vectors plus `AT_NULL` on the initial stack
+- [ ] `ET_DYN` and relocations/interpreters
+- [ ] Tear down/reclaim old image mappings on repeated exec
 
 ## Phase 5: Graphics & Display (COMPLETE)
 - [x] fb.h/fb.c - framebuffer driver (VESA/GOP ready)
@@ -118,6 +122,7 @@
 ## Phase 16: Build & Quality (IN PROGRESS)
 - [x] Kernel compiles cleanly (all 7 errors fixed)
 - [x] CI workflow (.github/workflows/ci.yml) - build + QEMU ring-3 yield/resume boot test
+- [x] QEMU regression gate covers BIOS ring-3 yield/resume and static ELF execution
 - [x] Repo hygiene: .gitattributes, .gitignore, CRLF→LF fixed
 - [x] Boot debug markers fixed (no collisions, full coverage)
 - [ ] vmm_test.c wired into make test (compiles, but RUN_VMM_TESTS only for vmm_test.o)
@@ -128,7 +133,7 @@
 ## Phase 17: Process Management (IN PROGRESS)
 - [x] Bootstrap user task enters ring 3 with a private address-space branch and mapped user stack
 - [x] DPL3 syscall, yield to a kernel task, and resume the user interrupt frame (QEMU verified)
-- [ ] Load ELF programs into runnable user tasks
+- [x] `sys_exec` loads a static ELF into the running ring-3 task (QEMU verified)
 - [ ] Complete user ABI/libc and validate SYSRET path
 - [ ] Per-task kernel interrupt stacks and SMP-safe TSS handling
 - [ ] wait()/waitpid() syscall for zombie reaping
@@ -209,3 +214,13 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 5. **Wire vmm_run_tests() at boot** - with RUN_VMM_TESTS=1 build target
 6. **Implement sys_read/sys_write capability checks** - VFS path
 7. **Add DHCP client** - for net_enabled=true to get real IP
+
+## Implementation Details (merged from PROGRESS.md, source of truth)
+
+- `kernel/irq.c`: `pic_init`, `pic_send_eoi`, `pic_mask_irq`, `pic_unmask_irq`; EOI added to timer and keyboard handlers
+- `kernel/input.c`: mouse button state tracking; `wm_process_mouse` for window dragging
+- `kernel/services.c`: background service manager (not yet reflected in a TODO phase)
+- `kernel/display.c`: multi-monitor support (up to 4 displays; not yet in TODO)
+- `kernel/power.c`: power state management (idle, sleep, shutdown; not yet in TODO)
+
+> PROGRESS.md was removed on 2026-10-05. TODO.md is the single source of truth.

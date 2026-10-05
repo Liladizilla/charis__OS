@@ -26,35 +26,34 @@
 #define ATA_CMD_WRITE   0x30
 #define ATA_CMD_IDENTIFY 0xEC
 
-/* No device on the port reads back as all ones. Waiting for a drive that is
- * not there is not merely slow, it is pathologically slow under KVM: every
- * inb/out pair is a VM exit, so the million-iteration wait below turned into
- * tens of seconds of nothing and the kernel appeared to hang during fs_init.
- * The bound is also tightened for the same reason. */
-#define ATA_WAIT_LIMIT 100000
+/* Keep polling finite: each port read can exit to the host under KVM. */
+#define ATA_WAIT_LIMIT 5000
 
 static bool ata_status_is_absent(void) {
-    return inb(ATA_STATUS) == 0xFF;
+    u8 status = inb(ATA_STATUS);
+    return status == 0 || status == 0xFF;
 }
 
-void ata_wait_bsy(void) {
-    for (int i = 0; i < ATA_WAIT_LIMIT; i++) {
+static bool ata_wait_bsy(void) {
+    for (u32 i = 0; i < ATA_WAIT_LIMIT; i++) {
         u8 status = inb(ATA_STATUS);
-        if (status == 0xFF) return;   /* no device; stop waiting */
-        if (!(status & ATA_STATUS_BSY)) return;
+        if (status == 0 || status == 0xFF) return false;
+        if (!(status & ATA_STATUS_BSY)) return true;
     }
+    return false;
 }
 
-void ata_wait_drq(void) {
-    for (int i = 0; i < ATA_WAIT_LIMIT; i++) {
+static bool ata_wait_drq(void) {
+    for (u32 i = 0; i < ATA_WAIT_LIMIT; i++) {
         u8 status = inb(ATA_STATUS);
-        if (status == 0xFF) return;   /* no device */
-        if (status & ATA_STATUS_DRQ) return;
+        if (status == 0 || status == 0xFF || (status & ATA_STATUS_ERR)) return false;
+        if (status & ATA_STATUS_DRQ) return true;
     }
+    return false;
 }
 
 bool ata_read_sector(u32 lba, void* buffer) {
-    ata_wait_bsy();
+    if (!buffer || !ata_wait_bsy()) return false;
 
     outb(ATA_SECTOR_COUNT, 1);
     outb(ATA_LBA_LOW, lba & 0xFF);
@@ -63,11 +62,15 @@ bool ata_read_sector(u32 lba, void* buffer) {
     outb(ATA_DRIVE, 0xE0 | ((lba >> 24) & 0x0F));
     outb(ATA_COMMAND, ATA_CMD_READ);
 
-    ata_wait_bsy();
+    /* Standard ATA PIO: give the device ~400 ns to accept the command
+     * before polling BSY. Without this, QEMU's TCG mode sometimes sees
+     * BSY still set and the read fails with "post-busy" / "no-drq". */
+    io_delay();
+
+    if (!ata_wait_bsy()) return false;
     if (ata_status_is_absent()) return false;
     if (inb(ATA_STATUS) & ATA_STATUS_ERR) return false;
-
-    ata_wait_drq();
+    if (!ata_wait_drq()) return false;
 
     for (int i = 0; i < ATA_SECTOR_SIZE / 2; i++) {
         ((u16*)buffer)[i] = inw(ATA_DATA);
@@ -77,7 +80,7 @@ bool ata_read_sector(u32 lba, void* buffer) {
 }
 
 bool ata_write_sector(u32 lba, const void* buffer) {
-    ata_wait_bsy();
+    if (!buffer || !ata_wait_bsy()) return false;
 
     outb(ATA_SECTOR_COUNT, 1);
     outb(ATA_LBA_LOW, lba & 0xFF);
@@ -86,25 +89,21 @@ bool ata_write_sector(u32 lba, const void* buffer) {
     outb(ATA_DRIVE, 0xE0 | ((lba >> 24) & 0x0F));
     outb(ATA_COMMAND, ATA_CMD_WRITE);
 
-    ata_wait_bsy();
+    if (!ata_wait_bsy()) return false;
     if (ata_status_is_absent()) return false;
     if (inb(ATA_STATUS) & ATA_STATUS_ERR) return false;
-
-    ata_wait_drq();
+    if (!ata_wait_drq()) return false;
 
     for (int i = 0; i < ATA_SECTOR_SIZE / 2; i++) {
         outw(ATA_DATA, ((u16*)buffer)[i]);
     }
 
     // Wait for write to complete
-    ata_wait_bsy();
-
-    return true;
+    return ata_wait_bsy();
 }
 
 void ata_init(void) {
     // Identify drive
-    ata_wait_bsy();
     outb(ATA_DRIVE, 0xA0); // Master drive
     outb(ATA_SECTOR_COUNT, 0);
     outb(ATA_LBA_LOW, 0);
@@ -112,12 +111,18 @@ void ata_init(void) {
     outb(ATA_LBA_HIGH, 0);
     outb(ATA_COMMAND, ATA_CMD_IDENTIFY);
 
-    ata_wait_bsy();
-    if (inb(ATA_STATUS) == 0) {
+    bool ready = ata_wait_bsy();
+    u8 status = inb(ATA_STATUS);
+    if (!ready || status == 0 || status == 0xFF || (status & ATA_STATUS_ERR)) {
         vga_puts("ATA: No drive detected\n");
         return;
     }
 
-    // Skip reading identify data for now
+    // IDENTIFY leaves a 512-byte data phase pending. Drain it before the
+    // first READ SECTORS command or the following PIO read consumes this data.
+    if (status & ATA_STATUS_DRQ) {
+        for (int i = 0; i < ATA_SECTOR_SIZE / 2; i++) (void)inw(ATA_DATA);
+    }
+
     vga_puts("ATA initialized\n");
 }

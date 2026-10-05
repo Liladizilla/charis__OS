@@ -276,6 +276,10 @@ bool vmm_map_page_pml4(pml4_t* pml4, u64 virt, u64 phys, u64 flags) {
     }
     pt[PT_INDEX(virt)] = (phys & ~0xFFFULL) | PTE_PRESENT | (flags & (PTE_WRITABLE | PTE_USER | PTE_NX));
 
+    if ((get_cr3() & ~0xFFFULL) == ((u64)pml4 & ~0xFFFULL)) {
+        asm volatile("invlpg (%0)" : : "r"(virt) : "memory");
+    }
+
     return true;
 }
 

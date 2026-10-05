@@ -15,6 +15,7 @@
 #define sys_open(path) syscall_invoke(SYS_OPEN, (u64)(path), 0, 0, 0, 0, 0)
 #define sys_close(fd) syscall_invoke(SYS_CLOSE, (fd), 0, 0, 0, 0, 0)
 #define sys_exec(path) syscall_invoke(SYS_EXEC, (u64)(path), 0, 0, 0, 0, 0)
+#define sys_execve(path, argv, envp) syscall_invoke(SYS_EXEC, (u64)(path), (u64)(argv), (u64)(envp), 0, 0, 0)
 
 // IPC
 #define sys_ipc_create(name) syscall_invoke(SYS_IPC_CREATE, (u64)(name), 0, 0, 0, 0, 0)

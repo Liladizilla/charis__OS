@@ -108,43 +108,10 @@ static u64 syscall_getpid_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6
 static u64 syscall_fork_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
 
-    /* fork() is not implemented, and the shape it used to have could not work.
-     * Fail cleanly rather than hand back a child that is guaranteed to fault.
-     *
-     * 1. Real fork() semantics -- the child resumes at the parent's interrupted
-     *    RIP with a copied register frame and a fresh stack, differing only in
-     *    the return value -- need the parent's frame at the moment of the call.
-     *    A syscall handler signature of (a1..a6) does not carry it: the frame
-     *    built by interrupt_stubs.asm and by the syscall_entry fast path never
-     *    reaches this function. Substituting some other entry point would not
-     *    be fork() semantics.
-     *
-     * 2. What it actually built was worse than wrong. The child's frame was
-     *    CS=0x1B, SS=0x23 -- the ring-3 selectors, from gdt64.user_code and
-     *    user_data -- with RIP=task_exit_handler, which is kernel code. The
-     *    first instruction ran at CPL 3 and hit `hlt`; HLT is privileged above
-     *    CPL 0 and raises #GP, so the child died with EXCEPTION #13 the moment
-     *    fork() was called.
-     *
-     *    The same exit path has an independent fault: task_exit_handler()
-     *    kfree()s the stack of the task it is currently executing on. A task
-     *    that reaches it via task_trampoline after its entry function returns
-     *    is still standing on that stack. Freeing it is use-after-free, and it
-     *    applies to every exit path, not just this one.
-     *
-     * This is currently unreachable in practice: only a ring-3 process can
-     * issue SYS_FORK, and the ring-3 "user" task is deliberately not enqueued
-     * (see main.c). Ring-3 scheduling has its own open gaps listed there: CR3
-     * is not loaded on the first switch, TSS.rsp0 is never set,
-     * task->address_space is never assigned, and the task stack from kmalloc()
-     * is never mapped into the new PML4.
-     *
-     * TODO: implement once (1) the interrupted frame is threaded through to
-     * syscall handlers and (2) ring-3 scheduling works. Build the child stack
-     * from the parent's saved RIP/RSP/GPRs so it resumes at the fork() call
-     * site, and defer freeing a task's stack until after the scheduler has
-     * provably switched away from it.
-     */
+    /* Fork needs the interrupted user register frame so the child can resume
+     * at the call site. This handler receives only syscall arguments, so fail
+     * rather than create a child with an invalid entry frame. Ring-3 startup
+     * and static ELF exec are tested; process cloning remains unimplemented. */
     return -1;
 }
 
@@ -227,50 +194,135 @@ static u64 syscall_ipc_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 
 }
 
 static u64 syscall_exec_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
-    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    if (!a1) return -1;
-    
-    task_t* task = scheduler_current();
-    if (!task) return -1;
-    
-    // Capability check: need SPAWN to execute new programs
-    if (!security_check_capability(task, CAP_SPAWN)) {
-        return -1; // EPERM
+    (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    return (u64)-1;
+}
+
+static bool syscall_copy_user_string(task_t* task, u64 user_address,
+                                     char* destination, usize capacity) {
+    if (!task || !task->mm.pml4 || !user_address || !destination || !capacity ||
+        user_address >= 0x0000800000000000ULL) return false;
+
+    for (usize i = 0; i < capacity; i++) {
+        u64 address = user_address + i;
+        if (address < user_address || address >= 0x0000800000000000ULL) return false;
+        pte_t* pte = vmm_walk(task->mm.pml4, address, false);
+        if (!pte || !(*pte & VMM_FLAG_PRESENT) || !(*pte & VMM_FLAG_USER)) return false;
+        u64 phys = (*pte & ~0xFFFULL) | (address & 0xFFFULL);
+        destination[i] = *(const char*)(uintptr_t)phys;
+        if (!destination[i]) return true;
     }
+    destination[capacity - 1] = '\0';
+    return false;
+}
+
+static bool syscall_copy_user_data(task_t* task, u64 user_address,
+                                   void* destination, usize size) {
+    if (!task || !task->mm.pml4 || !destination ||
+        user_address >= 0x0000800000000000ULL ||
+        size > 0x0000800000000000ULL - user_address) return false;
+
+    usize copied = 0;
+    while (copied < size) {
+        u64 address = user_address + copied;
+        pte_t* pte = vmm_walk(task->mm.pml4, address, false);
+        if (!pte || !(*pte & VMM_FLAG_PRESENT) || !(*pte & VMM_FLAG_USER)) return false;
+        u64 phys = (*pte & ~0xFFFULL) | (address & 0xFFFULL);
+        usize chunk = PAGE_SIZE - (usize)(address & (PAGE_SIZE - 1));
+        if (chunk > size - copied) chunk = size - copied;
+        kmemcpy((u8*)destination + copied, (const void*)(uintptr_t)phys, chunk);
+        copied += chunk;
+    }
+    return true;
+}
+
+static bool syscall_copy_user_vector(task_t* task, u64 user_vector,
+                                     char** strings, u32* string_count,
+                                     char* storage, usize storage_size,
+                                     usize* storage_used) {
+    *string_count = 0;
+    if (!user_vector) return true;
+
+    for (u32 i = 0; i < 16; i++) {
+        u64 pointer_address = user_vector + (u64)i * sizeof(u64);
+        u64 string_address;
+        if (pointer_address < user_vector ||
+            !syscall_copy_user_data(task, pointer_address, &string_address,
+                                    sizeof(string_address))) return false;
+        if (!string_address) {
+            *string_count = i;
+            return true;
+        }
+        if (*storage_used >= storage_size) return false;
+
+        strings[i] = storage + *storage_used;
+        usize remaining = storage_size - *storage_used;
+        if (!syscall_copy_user_string(task, string_address, strings[i], remaining)) return false;
+        *storage_used += kstrlen(strings[i]) + 1;
+    }
+    return false;
+}
+
+bool syscall_exec_from_frame(reg_frame_t* frame) {
+    if (!frame || (frame->cs & 3) != 3) return false;
+    task_t* task = scheduler_current();
+    if (!task || !task->is_user || !task->mm.pml4 ||
+        task->address_space != task->mm.pml4 ||
+        !security_check_capability(task, CAP_SPAWN)) return false;
 
     char path[256];
-    const char* path_str = (const char*)a1;
-    usize i = 0;
-    for (; i < sizeof(path)-1 && path_str[i]; i++) path[i] = path_str[i];
-    path[i] = 0;
-    
-    // Path traversal check
-    if (!security_verify_path(path, task)) {
-        return -1; // EPERM
+    if (!syscall_copy_user_string(task, frame->rdi, path, sizeof(path)) ||
+        !security_verify_path(path, task)) return false;
+
+    char** strings = (char**)kmalloc(4096);
+    char* storage = (char*)kmalloc(4096);
+    if (!strings || !storage) {
+        if (strings) kfree(strings);
+        if (storage) kfree(storage);
+        return false;
     }
-    
+
+    char** argv = strings;
+    char** envp = strings + 16;
+    u32 argc = 0;
+    u32 envc = 0;
+    usize storage_used = 0;
+    bool vectors_valid =
+        syscall_copy_user_vector(task, frame->rsi, argv, &argc, storage, 4096,
+                                 &storage_used) &&
+        syscall_copy_user_vector(task, frame->rdx, envp, &envc, storage, 4096,
+                                 &storage_used);
+    if (!vectors_valid) {
+        kfree(storage);
+        kfree(strings);
+        return false;
+    }
+
     u64 entry_point;
     if (elf_load(path, &task->mm, &entry_point) < 0) {
-        return -1;
+        kfree(storage);
+        kfree(strings);
+        return false;
     }
-    
-    // Set up new stack for the process
+
     u64 stack_top;
-    elf_setup_stack(&task->mm, &stack_top, NULL, 0, NULL, 0);
-    
-    // Build iretq frame for new entry point
-    u64* stack_ptr = (u64*)(stack_top - 64); // Leave some room
-    
-    *--stack_ptr = 0x23;              // SS
-    *--stack_ptr = stack_top;         // RSP
-    *--stack_ptr = 0x202;             // RFLAGS
-    *--stack_ptr = 0x1B;              // CS
-    *--stack_ptr = entry_point;         // RIP
-    
-    task->user_rsp = (u64)stack_ptr;
-    task->is_user = true;
-    
-    return 0; // Success - won't actually return in real exec
+    bool stack_ready = elf_setup_stack(&task->mm, &stack_top,
+        (const char* const*)argv, (int)argc,
+        (const char* const*)envp, (int)envc) == 0;
+    kfree(storage);
+    kfree(strings);
+    if (!stack_ready) return false;
+
+    vmm_switch(task->mm.pml4);
+    task->mm.stack_top = stack_top;
+    task->user_rsp = stack_top;
+    frame->rip = entry_point;
+    frame->cs = 0x1B;
+    frame->rflags = 0x202;
+    frame->rsp = stack_top;
+    frame->ss = 0x23;
+    frame->rax = 0;
+    return true;
 }
 
 static u64 syscall_socket_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {

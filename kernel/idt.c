@@ -51,6 +51,10 @@ void idt_set_gate(u8 vector, u64 handler, u8 ist, u8 type_attr) {
 
 void idt_dispatch_handler(reg_frame_t* frame) {
     if (frame->vector == 0x80) {
+        if (frame->rax == SYS_EXEC && (frame->cs & 3) == 3) {
+            if (!syscall_exec_from_frame(frame)) frame->rax = (u64)-1;
+            return;
+        }
         // System call
         frame->rax = syscall_dispatch(frame->rax, frame->rdi, frame->rsi, frame->rdx, frame->r10, frame->r8, frame->r9);
         return;

@@ -59,8 +59,15 @@ static int fat32_vfs_read(vfs_node_t* node, u64 offset, u64 size, u8* buf) {
 }
 
 static int fat32_vfs_write(vfs_node_t* node, u64 offset, u64 size, const u8* buf) {
-    (void)node; (void)offset; (void)size; (void)buf;
-    return -1; // Read-only for now
+    if (!node || !size) return -1;
+    file_t file;
+    if (fs_open(node->name, &file) != 0) return -1;
+    file.pos = offset;
+    int ret = fs_write(&file, buf, size);
+    if (ret >= 0) {
+        node->size = file.size;
+    }
+    return ret;
 }
 
 static vfs_node_t* fat32_vfs_finddir(vfs_node_t* node, const char* name) {

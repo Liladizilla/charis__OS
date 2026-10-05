@@ -17,7 +17,7 @@
 # own output on a runner with no TTY.
 #
 # Usage:
-#   verify-boot.sh <image> [--disk] [--uefi] [--timeout SECONDS]
+#   verify-boot.sh <image> [--disk] [--uefi] [--elf-test-disk PATH] [--timeout SECONDS]
 #
 #   --disk     attach the image as a raw hard disk (a flashed USB stick)
 #              instead of a CD-ROM
@@ -46,6 +46,7 @@ USE_KVM=0
 NEEDS_DISPLAY=0
 TIMEOUT=60
 LOG=""
+ELF_TEST_DISK=""
 
 usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
@@ -54,6 +55,7 @@ while [ $# -gt 0 ]; do
         --disk)   ATTACH="disk"; shift ;;
         --uefi)   FIRMWARE="${OVMF:-/usr/share/edk2/ovmf/OVMF_CODE.fd}"; shift ;;
         --kvm)    USE_KVM=1; shift ;;
+        --elf-test-disk) ELF_TEST_DISK="$2"; shift 2 ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         -h|--help) usage ;;
         -*) echo "unknown option: $1" >&2; exit 2 ;;
@@ -63,6 +65,10 @@ done
 
 [ -n "$IMAGE" ] || { echo "verify-boot.sh: no image given" >&2; exit 2; }
 [ -f "$IMAGE" ] || { echo "verify-boot.sh: image not found: $IMAGE" >&2; exit 2; }
+if [ -n "$ELF_TEST_DISK" ]; then
+    [ -f "$ELF_TEST_DISK" ] || { echo "verify-boot.sh: ELF test disk not found: $ELF_TEST_DISK" >&2; exit 2; }
+    [ "$ATTACH" = "cd" ] || { echo "verify-boot.sh: --elf-test-disk requires CD boot mode" >&2; exit 2; }
+fi
 
 BUILD_DIR="${BUILD_DIR:-build}"
 mkdir -p "$BUILD_DIR"
@@ -83,6 +89,12 @@ if [ "$ATTACH" = "disk" ]; then
     DRIVE=(-drive "file=$IMAGE,format=raw,if=ide,snapshot=on")
 else
     DRIVE=(-cdrom "$IMAGE")
+fi
+if [ -n "$ELF_TEST_DISK" ]; then
+    DRIVE+=(-drive "file=$ELF_TEST_DISK,format=raw,if=ide,index=0,snapshot=on")
+    BOOT_ORDER=(-boot order=d)
+else
+    BOOT_ORDER=()
 fi
 
 # Only add -enable-kvm if the host really offers it; otherwise QEMU fails to
@@ -182,7 +194,7 @@ boot_once() {
     # stdio multiplexing can leave the pipeline empty on headless hosts.
     if [ "$NEEDS_DISPLAY" = "1" ]; then
         timeout "$TIMEOUT" qemu-system-x86_64 \
-            "${DRIVE[@]}" -m 256M -no-reboot -nic none \
+            "${DRIVE[@]}" "${BOOT_ORDER[@]}" -m 256M -no-reboot -nic none \
             -serial "file:$LOG" >/dev/null 2>&1
         QEMU_STATUS=$?
     else
@@ -191,7 +203,7 @@ boot_once() {
         # Keep emulator diagnostics separate from the kernel serial stream.
         QEMU_LOG="$BUILD_DIR/verify-qemu.log"
         timeout "$TIMEOUT" qemu-system-x86_64 \
-            "${DRIVE[@]}" \
+            "${DRIVE[@]}" "${BOOT_ORDER[@]}" \
             -m 256M -nographic -no-reboot -nic none \
             -monitor none -serial "file:$LOG" \
             >"$QEMU_LOG" 2>&1
@@ -272,8 +284,13 @@ grep -q '\[BOOT\] init complete, entering scheduler' "$LOG" \
 grep -q 'Hello from user mode!' "$LOG" \
     || fail "ring-3 task did not complete its print syscall"
 
-grep -q 'Back in user mode after yield.' "$LOG" \
-    || fail "ring-3 task did not resume after yielding to the kernel task"
+if [ -n "$ELF_TEST_DISK" ]; then
+    grep -q 'ELF_EXEC_OK' "$LOG" \
+        || fail "ELF image did not execute its user-mode smoke test"
+else
+    grep -q 'Back in user mode after yield.' "$LOG" \
+        || fail "ring-3 task did not resume after yielding to the kernel task"
+fi
 
 grep -q 'Invalid Multiboot2 magic' "$LOG" \
     && fail "Multiboot2 magic was rejected"
@@ -308,6 +325,10 @@ if command -v sha256sum >/dev/null 2>&1; then
     fi
 fi
 
-echo "PASS: kernel booted, ran ring 3, and stayed alive  ($IMAGE as $MODE${FIRMWARE:+, UEFI})"
+if [ -n "$ELF_TEST_DISK" ]; then
+    echo "PASS: kernel booted and executed the ELF smoke test  ($IMAGE with $ELF_TEST_DISK)"
+else
+    echo "PASS: kernel booted, ran ring 3, and stayed alive  ($IMAGE as $MODE${FIRMWARE:+, UEFI})"
+fi
 echo "      log: $LOG"
 exit 0

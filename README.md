@@ -54,25 +54,27 @@ compiles with `gcc -ffreestanding` and links with a hand-written `link.ld`.
 
 ### Project status
 
-This is an active educational kernel. It boots in QEMU and reaches an
-interactive shell, verified in CI on every push. Several subsystems are
-complete and exercised; others are present but partial.
+This is an active educational kernel. BIOS CD and raw-disk boots are verified
+in CI, including a ring-3 syscall and yield/resume round trip. Several
+subsystems are complete and exercised; others are present but partial.
 [`TODO.md`](./TODO.md) is the authoritative status document and is kept honest
 — a phase is only marked complete once it has been booted and exercised, not
 merely compiled.
 
 | Area | Status |
 |---|---|
-| Boot (Multiboot2 → long mode), BIOS and UEFI | ✅ Working |
+| Boot (Multiboot2 → long mode), BIOS | ✅ Working; CI tested as CD and raw disk |
+| UEFI boot | ✅ BIOS/UEFI CD and disk paths pass locally; CI UEFI remains advisory |
 | Graphics on BIOS (framebuffer request in the MB2 header) | ✅ Working |
 | Physical + virtual memory, heap | ✅ Working |
 | IDT/IRQ, PIT timer, PS/2 keyboard, serial | ✅ Working |
-| Preemptive round-robin scheduler, task stacks | ✅ Working (kernel-mode tasks) |
+| Preemptive round-robin scheduler, task stacks | ✅ Kernel-task scheduling and ring-3 yield/resume tested |
 | Interactive shell | ✅ Working |
-| SYSCALL/SYSRET ABI + syscall table | ✅ Working |
+| DPL3 `int 0x80` syscall path | ✅ Used by the ring-3 bootstrap and tested in QEMU |
+| SYSCALL/SYSRET fast path | ⚠️ Configured, but not yet validated from user mode |
 | VFS + FAT32 (read path) | ✅ Working |
-| ELF loader (`sys_exec`) | ⚠️ Loads, but cannot enter ring 3 yet |
-| **Ring-3 userspace** | ❌ **Not implemented — the gate on everything below** |
+| ELF loader (`sys_exec`) | ✅ Static x86-64 `ET_EXEC` loaded from FAT32 and entered in ring 3 (QEMU smoke test) |
+| **Ring-3 bootstrap** | ✅ Kernel-embedded task enters, syscalls, yields, and resumes |
 | **libc / userland build** | ❌ Not started |
 | Framebuffer, window manager, desktop | ⚠️ Partial |
 | Capability-based security | ⚠️ Partial — enforced on `open`/`exec` only |
@@ -80,13 +82,13 @@ merely compiled.
 | RTL8139 networking | ⚠️ TX wired; no TCP/IP or RX |
 | USB, audio, gamepad | ⚠️ Stubs |
 
-> **Ring 3 is not implemented.** The kernel boots and runs its shell, but only
-> because the ring-3 "user" task is deliberately not enqueued. Four gaps remain
-> — CR3 is never loaded on the first switch, `TSS.rsp0` is never set, the
-> scheduler switches on a field the setup path never assigns, and the user
-> stack is unmapped in the new address space. Enqueuing the user task today
-> makes the machine triple-fault on the first timer tick.
-> [`TODO.md`](./TODO.md) tracks each one.
+> A tiny static `ET_EXEC` smoke binary is loaded from a FAT32 test disk and
+> entered through the current task’s IRET frame. `ET_DYN`, relocations,
+> dynamic relocations, rich auxv entries, address-space teardown, libc,
+> complete user-pointer validation, and per-task kernel interrupt stacks
+> remain incomplete. Bounded `argv`/`envp` vectors are placed on the initial
+> stack and checked by the smoke ELF.
+> [`TODO.md`](./TODO.md) tracks the remaining work.
 
 ---
 
@@ -98,11 +100,11 @@ merely compiled.
 | **Memory** | Bitmap PMM (next-fit, double-free guarded) · split/merge heap (`kmalloc`/`kfree`) · per-process PML4 address spaces |
 | **Scheduling** | Preemptive round-robin on a 1kHz PIT tick · 32 tasks · 8KB stacks · guard pages + stack canaries |
 | **Interrupts** | 256-entry IDT · PIC remapped to IRQ 32–47 · page-fault and exception handlers with diagnostics |
-| **Syscalls** | `SYSCALL`/`SYSRET` via MSR (LSTAR/STAR/SFMASK) · 34 registered syscalls |
+| **Syscalls** | DPL3 `int 0x80` tested from ring 3 · `SYSCALL`/`SYSRET` MSRs configured but user path unvalidated · 34 registered calls |
 | **Security** | Capability bitmask per task, inherited across `fork` · stack canaries · path-traversal rejection · enforced on `open`/`exec` |
 | **VFS** | Node abstraction with read/write/open/close/readdir/finddir function pointers · device nodes · per-task fd tables |
 | **Storage** | ATA PIO driver · FAT32 read path |
-| **Loader** | `sys_exec` — parses ELF64 headers, maps `PT_LOAD` segments, builds an initial stack |
+| **Loader** | `sys_exec` — validates ELF64 `ET_EXEC`, copies `PT_LOAD` contents, zeros BSS, maps permissions, and enters through IRET |
 | **Graphics** | Framebuffer driver · PSF2 bitmap font renderer · 2D primitives (line/rect/circle) · window manager with drag, focus and z-order · desktop with taskbar |
 | **Drivers** | VGA text · PS/2 keyboard and mouse · PIT · PCI enumeration with a probe/remove driver framework · HDA audio · RTL8139 Ethernet |
 | **Shell** | Built-in interpreter: `help`, `ls`, `echo`, `net`, `uptime`, `clear` |
@@ -142,8 +144,8 @@ kernel/main.c :: kernel_main()
    ├─ display_init → desktop_init → services_init → diag_init
    ├─ power_init → security_init
    ├─ net_init  (gated on config "net_enabled")
-   ├─ create "user" and "shell" tasks
-   └─ sti; scheduler_start()  →  shell_main()
+  ├─ create the ring-3 bootstrap and the active shell/desktop task
+  └─ sti; scheduler_start()  →  ring-3 bootstrap, then kernel shell/desktop
 ```
 
 ### Boot markers

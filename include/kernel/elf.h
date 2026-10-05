@@ -56,7 +56,7 @@ typedef struct {
 int elf_load(const char* path, process_mm_t* mm, u64* entry_point);
 
 // Set up initial stack for a new process
-int elf_setup_stack(process_mm_t* mm, u64* stack_top, 
+int elf_setup_stack(process_mm_t* mm, u64* user_rsp,
                   const char* const argv[], int argc,
                   const char* const envp[], int envc);
 

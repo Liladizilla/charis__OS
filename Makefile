@@ -42,7 +42,7 @@ NASM_FLAGS = -f elf64
 # build, and the build looked correct the whole time.
 DEPFLAGS = -MMD -MP
 
-GCC_FLAGS = -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -fno-omit-frame-pointer -Wall -Wextra -fstack-protector-strong -I$(INCLUDE_DIR) $(DEPFLAGS)
+GCC_FLAGS = -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -fno-omit-frame-pointer -Wall -Wextra -Werror -fstack-protector-strong -I$(INCLUDE_DIR) $(DEPFLAGS)
 LD_FLAGS = -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack
 
 # Source files
@@ -81,6 +81,22 @@ VM_ISO  = $(BUILD_DIR)/charisos-vm.iso
 USB_IMG = $(BUILD_DIR)/charisos-usb.img
 
 images: $(VM_ISO) $(USB_IMG)
+
+ELF_SMOKE_IMAGE = $(BUILD_DIR)/elf-smoke-disk.img
+
+elf-test: $(ELF_SMOKE_IMAGE)
+
+$(BUILD_DIR)/elf-smoke.o: tests/elf_smoke.asm
+	mkdir -p $(BUILD_DIR)
+	$(NASM) $(NASM_FLAGS) -o $@ $<
+
+$(BUILD_DIR)/elf-smoke.elf: $(BUILD_DIR)/elf-smoke.o tests/elf_smoke.ld
+	$(LD) -m elf_x86_64 -nostdlib -T tests/elf_smoke.ld -o $@ $<
+
+$(ELF_SMOKE_IMAGE): $(BUILD_DIR)/elf-smoke.elf
+	dd if=/dev/zero of=$@ bs=1M count=64 status=none
+	mkfs.fat -F 32 $@
+	mcopy -i $@ $< ::TEST.ELF
 
 # ── Text-only variant ─────────────────────────────────────────────────
 # Same source, graphics compiled out. Boots to the VGA text console and the
@@ -202,9 +218,10 @@ run-usb-uefi: $(USB_IMG)
 # magic validated, every init*() returned and the shell task was created.
 # The assertions live in tools/verify-boot.sh so CI and humans run identical
 # logic; see that file for why grepping the banner is not sufficient.
-verify-boot: $(VM_ISO) $(USB_IMG)
+verify-boot: $(VM_ISO) $(USB_IMG) elf-test
 	./tools/verify-boot.sh $(VM_ISO)
 	./tools/verify-boot.sh $(USB_IMG) --disk
+	./tools/verify-boot.sh $(VM_ISO) --elf-test-disk $(ELF_SMOKE_IMAGE)
 	@# Hardware acceleration is not optional coverage. TCG tolerates a class
 	@# of bug that faults here: the misnumbered SYSCALL MSRs shipped in every
 	@# release up to v1.1.0 passed the whole suite under emulation.
@@ -217,4 +234,4 @@ clean:
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-.PHONY: all images images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
+.PHONY: all images elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
