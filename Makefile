@@ -108,14 +108,15 @@ TEXT_ELIG  = $(filter-out $(BUILD_DIR)/fb.o $(BUILD_DIR)/font_data.o \
 TEXT_ISO   = $(BUILD_DIR)/charisos-text.iso
 TEXT_FLAGS = -DCHARIS_TEXT_ONLY
 
-images-text: $(TEXT_ISO)
+images-text: $(TEXT_ISO) $(BUILD_DIR)/charisos-text-usb.img
 
-$(TEXT_ISO): $(KERNEL_DIR)/main.c
+$(TEXT_ISO):
 	@echo "==> Building text-only image"
-	$(MAKE) clean
-	$(MAKE) EXTRA_CFLAGS="$(TEXT_FLAGS)" images
-	@cp $(VM_ISO) $@
-	@cp $(USB_IMG) $(BUILD_DIR)/charisos-text-usb.img
+	@rm -rf $(BUILD_DIR)/.text-only
+	@mkdir -p $(BUILD_DIR)/.text-only
+	$(MAKE) EXTRA_CFLAGS="$(TEXT_FLAGS)" BUILD_DIR=$(BUILD_DIR)/.text-only images
+	@cp $(BUILD_DIR)/.text-only/charisos.iso $@
+	@cp $@ $(BUILD_DIR)/charisos-text-usb.img
 	@echo "==> text-only images: $@ and $(BUILD_DIR)/charisos-text-usb.img"
 
 $(VM_ISO): $(BUILD_DIR)/charisos.iso
