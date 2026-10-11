@@ -314,7 +314,16 @@ static void remote_complete(bool success, void* context) {
 }
 
 static void remote_reset_parser(void) {
-    remote_reset_parser();
+    remote_in_tag = false;
+    remote_tag_name_done = false;
+    remote_closing_tag = false;
+    remote_suppress_content = false;
+    remote_in_entity = false;
+    remote_entity_length = 0;
+    remote_entity[0] = 0;
+    remote_tag_length = 0;
+    remote_tag_name[0] = 0;
+    remote_last_space = false;
 }
 
 static bool remote_navigate(const char* url) {
@@ -357,16 +366,7 @@ static bool remote_navigate(const char* url) {
     remote_text_length = 0;
     remote_text[0] = 0;
     remote_status_code = 0;
-    remote_in_tag = false;
-    remote_tag_name_done = false;
-    remote_closing_tag = false;
-    remote_suppress_content = false;
-    remote_in_entity = false;
-    remote_entity_length = 0;
-    remote_entity[0] = 0;
-    remote_tag_length = 0;
-    remote_tag_name[0] = 0;
-    remote_last_space = false;
+    remote_reset_parser();
     remote_ready = false;
     remote_loading = true;
     set_status("Resolving host and connecting over HTTP...");
