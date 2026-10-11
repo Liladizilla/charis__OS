@@ -121,7 +121,7 @@ static void test_invalid_and_overflow_chunk_sizes_are_rejected(void) {
 
 static void test_content_length_response(void) {
     static const char response[] =
-        "HTTP/1.1 200 OK\\r\\nContent-Length: 5\\r\\n\\r\\nhelloEXTRA";
+        "HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhelloEXTRA";
     reset_parser();
     http_on_data((const u8*)response, sizeof(response) - 1u, 0);
     expect(!active && completion_calls == 1 && completion_success,
@@ -131,8 +131,8 @@ static void test_content_length_response(void) {
 }
 static void test_conflicting_framing_is_rejected(void) {
     static const char response[] =
-        "HTTP/1.1 200 OK\\r\\nContent-Length: 4\\r\\n"
-        "Transfer-Encoding: chunked\\r\\n\\r\\n0\\r\\n\\r\\n";
+        "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n"
+        "Transfer-Encoding: chunked\r\n\r\n0\r\n\r\n";
     reset_parser();
     http_on_data((const u8*)response, sizeof(response) - 1u, 0);
     expect(!active && completion_calls == 1 && !completion_success,
@@ -140,7 +140,7 @@ static void test_conflicting_framing_is_rejected(void) {
 }
 static void test_no_body_status_completes_at_headers(void) {
     static const char response[] =
-        "HTTP/1.1 204 No Content\\r\\nConnection: close\\r\\n\\r\\n";
+        "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n";
     reset_parser();
     http_on_data((const u8*)response, sizeof(response) - 1u, 0);
     expect(!active && completion_calls == 1 && completion_success,
