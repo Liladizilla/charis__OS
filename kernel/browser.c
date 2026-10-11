@@ -47,7 +47,6 @@ static u16 remote_status_code;
 static bool remote_loading;
 static bool remote_ready;
 static bool remote_in_tag;
-static bool remote_tag_closing;
 static char remote_tag_name[8];
 static usize remote_tag_length;
 static bool remote_last_space;
@@ -137,7 +136,6 @@ static void remote_body(const u8* data, usize length, void* context) {
                 remote_tag_name[0] = 0;
             } else if (remote_tag_length + 1u < sizeof(remote_tag_name)) {
                 if (ch == '/' && remote_tag_length == 0) {
-                    remote_tag_closing = true;
                 } else if ((ch >= 'A' && ch <= 'Z') ||
                            (ch >= 'a' && ch <= 'z') ||
                            (ch >= '0' && ch <= '9')) {
@@ -150,7 +148,6 @@ static void remote_body(const u8* data, usize length, void* context) {
         }
         if (ch == '<') {
             remote_in_tag = true;
-            remote_tag_closing = false;
             remote_tag_length = 0;
             remote_tag_name[0] = 0;
             continue;
@@ -190,8 +187,8 @@ static bool remote_navigate(const char* url) {
     usize host_len = (usize)(end - host);
     if (!host_len || host_len >= sizeof(remote_url)) return false;
 
-    char hostname[HTTP_HOST_MAX + 1u];
-    char path_buffer[HTTP_PATH_MAX + 1u];
+    char hostname[BROWSER_URL_MAX];
+    char path_buffer[BROWSER_URL_MAX];
     if (host_len >= sizeof(hostname)) return false;
     kstrncpy(hostname, host, host_len);
     hostname[host_len] = 0;
@@ -220,7 +217,6 @@ static bool remote_navigate(const char* url) {
     remote_text[0] = 0;
     remote_status_code = 0;
     remote_in_tag = false;
-    remote_tag_closing = false;
     remote_tag_length = 0;
     remote_tag_name[0] = 0;
     remote_last_space = false;
