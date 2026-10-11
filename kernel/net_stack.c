@@ -135,7 +135,10 @@ void net_stack_init(void) {
     kmemset(local_mask, 0, sizeof(local_mask));
     kmemset(default_gateway, 0, sizeof(default_gateway));
     kmemset(arp_cache, 0, sizeof(arp_cache));
+    kmemset(arp_pending, 0, sizeof(arp_pending));
     arp_cache_next = 0;
+    arp_pending_next = 0;
+    arp_clock = 0;
 
     const char* configured = config_get_string("net_ip", "0.0.0.0");
     if (!parse_ipv4(configured, local_ip))
