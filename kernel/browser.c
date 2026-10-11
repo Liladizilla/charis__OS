@@ -137,13 +137,22 @@ static void remote_body(const u8* data, usize length, void* context) {
         if (remote_in_tag) {
             if (ch == '>') {
                 remote_in_tag = false;
-                if (remote_block_tag() && remote_text_length &&
+                bool script_or_style = kstrcmp(remote_tag_name, "script") == 0 ||
+                                       kstrcmp(remote_tag_name, "style") == 0;
+                if (script_or_style) {
+                    if (remote_closing_tag) remote_suppress_content = false;
+                    else remote_suppress_content = true;
+                }
+                if (!remote_suppress_content && remote_block_tag() &&
+                    remote_text_length &&
                     remote_text[remote_text_length - 1u] != '\n')
                     remote_append('\n');
                 remote_tag_length = 0;
                 remote_tag_name[0] = 0;
+                remote_closing_tag = false;
             } else if (remote_tag_length + 1u < sizeof(remote_tag_name)) {
                 if (ch == '/' && remote_tag_length == 0) {
+                    remote_closing_tag = true;
                 } else if ((ch >= 'A' && ch <= 'Z') ||
                            (ch >= 'a' && ch <= 'z') ||
                            (ch >= '0' && ch <= '9')) {
@@ -156,10 +165,12 @@ static void remote_body(const u8* data, usize length, void* context) {
         }
         if (ch == '<') {
             remote_in_tag = true;
+            remote_closing_tag = false;
             remote_tag_length = 0;
             remote_tag_name[0] = 0;
             continue;
         }
+        if (remote_suppress_content) continue;
         if (ch == '\r' || ch == '\n' || ch == '\t' || ch == ' ') {
             if (remote_text_length && !remote_last_space &&
                 remote_text[remote_text_length - 1u] != '\n') {
