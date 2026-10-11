@@ -43,7 +43,6 @@ static u8 tx_buffers[4][NET_MAX_PACKET_SIZE] __attribute__((aligned(256)));
 static u16 rtl8139_port;
 static u16 rx_offset;
 static u8 tx_slot;
-static bool rtl8139_found;
 
 static u16 ring_read16(u16 offset) {
     u16 lo = rx_buffer[offset & RTL_RX_RING_MASK];
@@ -58,7 +57,6 @@ static void ring_copy_out(u8* dst, u16 offset, usize length) {
 
 void net_init(void) {
     net_if.initialized = false;
-    rtl8139_found = false;
     rtl8139_port = 0;
     rx_offset = 0;
     tx_slot = 0;
@@ -74,7 +72,6 @@ void net_init(void) {
         vga_puts("Network: RTL8139 has an invalid I/O BAR\n");
         return;
     }
-    rtl8139_found = true;
 
     /* Enable PCI I/O-space access and bus mastering for DMA. Write zero to
      * the status half because PCI status bits are write-one-to-clear. */
@@ -93,7 +90,6 @@ void net_init(void) {
         asm volatile("pause");
     }
     if (!reset_done) {
-        rtl8139_found = false;
         vga_puts("Network: RTL8139 reset timed out\n");
         return;
     }
