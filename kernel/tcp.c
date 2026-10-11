@@ -243,7 +243,8 @@ void net_tcp_input(const u8 source_ip[4], const u8 destination_ip[4],
             (TCP_FLAG_SYN | TCP_FLAG_ACK) || acknowledgement != local_seq)
             return;
         remote_seq = sequence + 1u;
-        local_seq++;
+        retries = 0;
+        /* The transmitted SYN already consumed one local sequence number. */
         state = TCP_ESTABLISHED;
         (void)emit_segment(TCP_FLAG_ACK, local_seq, remote_seq, 0, 0);
         net_tcp_connect_callback_t callback = connect_callback;
@@ -258,19 +259,28 @@ void net_tcp_input(const u8 source_ip[4], const u8 destination_ip[4],
         return;
     }
 
+    /* A cumulative ACK beyond our single outstanding segment is not trusted. */
     if ((flags & TCP_FLAG_ACK) && tx_pending && tx_transmitted &&
-        acknowledgement >= local_seq) {
+        acknowledgement == tx_sequence + (u32)tx_length) {
         tx_pending = false;
         tx_transmitted = false;
         tx_length = 0;
+        retries = 0;
     }
     if (payload_length && sequence == remote_seq) {
         remote_seq += (u32)payload_length;
+        retries = 0;
         if (data_callback) data_callback(payload, payload_length, callback_context);
         (void)emit_segment(TCP_FLAG_ACK, local_seq, remote_seq, 0, 0);
     }
     if (flags & TCP_FLAG_FIN) {
-        if (sequence + (u32)payload_length == remote_seq) remote_seq++;
+        /* A FIN is valid only after any payload in this segment is in-order. */
+        if (sequence + (u32)payload_length != remote_seq) {
+            (void)emit_segment(TCP_FLAG_ACK, local_seq, remote_seq, 0, 0);
+            return;
+        }
+        remote_seq++;
+        retries = 0;
         (void)emit_segment(TCP_FLAG_ACK, local_seq, remote_seq, 0, 0);
         net_tcp_close_callback_t on_close = close_callback;
         void* context = callback_context;
@@ -279,8 +289,10 @@ void net_tcp_input(const u8 source_ip[4], const u8 destination_ip[4],
         return;
     }
     if (state == TCP_FIN_WAIT && (flags & TCP_FLAG_ACK) &&
-        acknowledgement >= local_seq)
+        acknowledgement == local_seq) {
+        retries = 0;
         clear_connection();
+    }
 }
 
 void net_tcp_poll(void) {
