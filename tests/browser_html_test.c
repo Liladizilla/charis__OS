@@ -175,6 +175,26 @@ static void test_http_url_parser_rejects_unsupported_or_malformed_urls(void) {
     expect(!parse_http_url("http://example.com/a b", host, sizeof(host),
                            path, sizeof(path)), "path control and spaces rejected");
 }
+
+static void test_http_status_feedback_distinguishes_redirects_and_errors(void) {
+    remote_loading = true;
+    remote_status_code = 302u;
+    remote_complete(true, 0);
+    expect(strcmp(browser_status,
+           "HTTP redirect received; automatic redirects are not supported yet") == 0,
+           "redirect is reported without pretending it loaded");
+    remote_loading = true;
+    remote_status_code = 404u;
+    remote_complete(true, 0);
+    expect(strcmp(browser_status,
+           "HTTP server returned an error status; response text may explain why") == 0,
+           "server error status is visible to the user");
+    remote_loading = true;
+    remote_status_code = 200u;
+    remote_complete(true, 0);
+    expect(strcmp(browser_status, "HTTP text preview loaded") == 0,
+           "successful HTTP status is reported");
+}
 int main(void) {
     test_tags_and_block_boundaries();
     test_scripts_and_styles_are_hidden();
@@ -189,6 +209,7 @@ int main(void) {
     test_preview_scroll_counts_soft_wrapped_rows();
     test_http_url_parser_normalizes_fragments_and_queries();
     test_http_url_parser_rejects_unsupported_or_malformed_urls();
+    test_http_status_feedback_distinguishes_redirects_and_errors();
     puts("Browser HTML extraction tests passed");
     return 0;
 }
