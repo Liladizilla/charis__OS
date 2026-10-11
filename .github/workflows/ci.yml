@@ -47,6 +47,11 @@ jobs:
           gcc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/browser_html_test.c -Wl,--gc-sections -o /tmp/browser_html_test
           /tmp/browser_html_test
 
+      - name: Test HTTP chunked response parser
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Iinclude tests/http_chunked_test.c -o /tmp/http_chunked_test
+          /tmp/http_chunked_test
+
       - name: Build ELF smoke-test disk
         run: make elf-test
 
