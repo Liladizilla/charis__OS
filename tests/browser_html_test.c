@@ -41,6 +41,14 @@ static void test_entity_split_across_network_chunks(void) {
     expect(strcmp(remote_text, "left & right A") == 0,
            "entity state must survive body callback boundaries");
 }
+static void test_html_comments_are_hidden_across_chunks(void) {
+    reset_html();
+    feed("before<!-- private > markup");
+    feed(" and --");
+    feed(">after");
+    expect(strcmp(remote_text, "beforeafter") == 0,
+           "HTML comments and embedded greater-than signs are hidden");
+}
 static void test_unknown_entities_remain_literal(void) {
     reset_html();
     feed("keep &notAnEntity; visible");
@@ -70,6 +78,7 @@ int main(void) {
     test_scripts_and_styles_are_hidden();
     test_entities_and_numeric_forms();
     test_entity_split_across_network_chunks();
+    test_html_comments_are_hidden_across_chunks();
     test_unknown_entities_remain_literal();
     test_navigation_reset_clears_partial_state();
     puts("Browser HTML extraction tests passed");
