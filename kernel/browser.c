@@ -591,12 +591,37 @@ static void draw_card(u32 x, u32 y, u32 w, const char* eyebrow, const char* titl
     gfx_draw_string(x + 14, y + 56, detail, C_MUTED, FB_TRANSPARENT);
 }
 
+/* Count the visual rows used by draw_page(), including soft-wrapped text.
+ * Each rendered row holds at most 95 bytes because its line buffer reserves
+ * one byte for the terminator. */
 static usize preview_count_lines(const char* text, usize length) {
     if (!text || !length) return 0;
-    usize lines = 1;
-    for (usize i = 0; i < length; i++)
-        if (text[i] == '\n') lines++;
+    usize lines = 0;
+    usize pos = 0;
+    while (pos < length) {
+        usize row_length = 0;
+        while (pos < length && text[pos] != '\n' && row_length < 95u) {
+            pos++;
+            row_length++;
+        }
+        if (pos < length && text[pos] == '\n') pos++;
+        lines++;
+    }
     return lines;
+}
+
+static usize preview_skip_lines(const char* text, usize length, usize rows) {
+    usize pos = 0;
+    while (pos < length && rows) {
+        usize row_length = 0;
+        while (pos < length && text[pos] != '\n' && row_length < 95u) {
+            pos++;
+            row_length++;
+        }
+        if (pos < length && text[pos] == '\n') pos++;
+        rows--;
+    }
+    return pos;
 }
 
 static void browser_scroll_preview(bool down) {
@@ -679,13 +704,8 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
             }
             gfx_draw_string(x + 24, y + 64, status_line, C_TEXT, FB_TRANSPARENT);
             u32 line_y = y + 94;
-            usize pos = 0;
-            usize skipped_lines = 0;
-            while (pos < remote_text_length && skipped_lines < remote_scroll_lines) {
-                while (pos < remote_text_length && remote_text[pos] != '\n') pos++;
-                if (pos < remote_text_length) pos++;
-                skipped_lines++;
-            }
+            usize pos = preview_skip_lines(remote_text, remote_text_length,
+                                            remote_scroll_lines);
             while (pos < remote_text_length && line_y + 18u < y + h) {
                 char line[96];
                 usize n = 0;
@@ -715,13 +735,8 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
             gfx_draw_string(x + 24, y + 22, "LOCAL TEXT FILE", C_ACCENT, FB_TRANSPARENT);
             gfx_draw_string(x + 24, y + 48, address, C_MUTED, FB_TRANSPARENT);
             u32 line_y = y + 78;
-            usize pos = 0;
-            usize skipped_lines = 0;
-            while (pos < file_preview_length && skipped_lines < file_scroll_lines) {
-                while (pos < file_preview_length && file_preview[pos] != '\n') pos++;
-                if (pos < file_preview_length) pos++;
-                skipped_lines++;
-            }
+            usize pos = preview_skip_lines(file_preview, file_preview_length,
+                                            file_scroll_lines);
             while (pos < file_preview_length && line_y + 18u < y + h) {
                 char line[96];
                 usize n = 0;
