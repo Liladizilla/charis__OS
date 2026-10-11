@@ -330,7 +330,7 @@ static void handle_event(const input_event_t* e) {
             super_held = (e->type == INPUT_KEY_DOWN);
             if (super_held) {
                 ui.menu_open = !ui.menu_open;
-                ui.hover_item = -1;
+                ui.hover_item = ui.menu_open ? 0 : -1;
                 ui.needs_redraw = true;
             }
             return;
@@ -350,6 +350,11 @@ static void handle_event(const input_event_t* e) {
         }
 
         if (e->type == INPUT_KEY_DOWN && ui.menu_open) {
+            if (base == 0x47 || base == 0x4F) { /* Home / End */
+                ui.hover_item = base == 0x47 ? 0 : (int)MENU_ITEM_COUNT - 1;
+                ui.needs_redraw = true;
+                return;
+            }
             if (base == 0x48 || base == 0x50) { /* Up / Down */
                 if (ui.hover_item < 0 || ui.hover_item >= (int)MENU_ITEM_COUNT) {
                     ui.hover_item = base == 0x50 ? 0 : (int)MENU_ITEM_COUNT - 1;
@@ -414,7 +419,7 @@ static void handle_event(const input_event_t* e) {
 
         if (on_taskbar && mx < (int)START_BTN_W) {
             ui.menu_open = !ui.menu_open;
-            ui.hover_item = -1;
+            ui.hover_item = ui.menu_open ? 0 : -1;
             ui.needs_redraw = true;
             return;
         }
