@@ -73,6 +73,26 @@ static void test_navigation_reset_clears_partial_state(void) {
     expect(strcmp(remote_text, "new page") == 0,
            "new page content is not hidden by stale parser state");
 }
+static void test_document_title_is_extracted_across_chunks(void) {
+    reset_html();
+    feed("<html><head><title>  Charis &amp;");
+    feed(" OS  </title><style>.hidden{}</style></head><body><p>Visible body</p></body></html>");
+    expect(strcmp(remote_title, "Charis & OS ") == 0 ||
+           strcmp(remote_title, "Charis & OS") == 0,
+           "document title survives callback boundaries and decodes entities");
+    expect(strcmp(remote_text, "Visible body\\n") == 0,
+           "title text is metadata, not duplicated in body preview");
+}
+static void test_title_state_resets_for_new_page(void) {
+    reset_html();
+    feed("<title>Old title");
+    expect(remote_in_title, "opening title enters title capture");
+    remote_reset_parser();
+    expect(!remote_in_title, "new page clears title capture state");
+    feed("Body only");
+    expect(strcmp(remote_text, "Body only") == 0,
+           "content after navigation is not captured as stale title");
+}
 int main(void) {
     test_tags_and_block_boundaries();
     test_scripts_and_styles_are_hidden();
@@ -81,6 +101,8 @@ int main(void) {
     test_html_comments_are_hidden_across_chunks();
     test_unknown_entities_remain_literal();
     test_navigation_reset_clears_partial_state();
+    test_document_title_is_extracted_across_chunks();
+    test_title_state_resets_for_new_page();
     puts("Browser HTML extraction tests passed");
     return 0;
 }
