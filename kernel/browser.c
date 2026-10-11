@@ -185,11 +185,16 @@ static void remote_complete(bool success, void* context) {
 static bool remote_navigate(const char* url) {
     if (!url || kstrncmp(url, "http://", 7u) != 0) return false;
     const char* host = url + 7u;
+    const char* url_end = host + kstrlen(host);
+    const char* fragment = kstrchr(host, '#');
+    if (fragment) url_end = fragment;
     const char* path = kstrchr(host, '/');
     const char* query = kstrchr(host, '?');
+    if (path && path >= url_end) path = 0;
+    if (query && query >= url_end) query = 0;
     const char* end = path;
     if (!end || (query && query < end)) end = query;
-    if (!end) end = host + kstrlen(host);
+    if (!end) end = url_end;
     usize host_len = (usize)(end - host);
     if (!host_len || host_len >= sizeof(remote_url)) return false;
 
