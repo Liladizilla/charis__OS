@@ -39,7 +39,7 @@ jobs:
         run: make images
 
       - name: Test calculator arithmetic
-        # shell_ui.c contains the kernel's GNU-style asm statement; the host harness uses GNU C mode.
+        # shell_ui.c contains GNU-style asm; the host harness uses GNU C mode and tests the same keypad/key handlers.
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/calculator_test.c -Wl,--gc-sections -o /tmp/calculator_test
           /tmp/calculator_test
