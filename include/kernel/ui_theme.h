@@ -6,6 +6,7 @@
 #pragma once
 
 #define CHARIS_UI_BACKGROUND       0xFF0D1117u
+#define CHARIS_UI_SHADOW            0xFF080B11u
 #define CHARIS_UI_PANEL            0xFF151B26u
 #define CHARIS_UI_PANEL_RAISED     0xFF1B2432u
 #define CHARIS_UI_SURFACE          0xFF202B3Au
