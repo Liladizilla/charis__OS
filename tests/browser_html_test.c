@@ -10,6 +10,10 @@ static void expect(bool ok, const char* message) {
 static void reset_html(void) {
     remote_text_length = 0;
     remote_text[0] = 0;
+    remote_title_length = 0;
+    remote_title[0] = 0;
+    remote_title_last_space = false;
+    remote_scroll_lines = 0;
     remote_reset_parser();
 }
 static void feed(const char* text) {
