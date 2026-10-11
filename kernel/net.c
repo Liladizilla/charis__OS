@@ -203,7 +203,3 @@ int net_recv_packet(void* buffer, usize max_len) {
     return (int)copy_len;
 }
 
-void net_handle_tcpip(void) {
-    /* Intentionally empty until an actual protocol stack is implemented.
-     * Ethernet polling is available through net_recv_packet(). */
-}

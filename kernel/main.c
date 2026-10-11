@@ -12,6 +12,7 @@
 #include <kernel/shell.h>
 #include <kernel/printf.h>
 #include <kernel/net.h>
+#include <kernel/net_stack.h>
 #include <kernel/ata.h>
 #include <kernel/fs.h>
 #include <kernel/vfs.h>
@@ -168,6 +169,12 @@ void kernel_main(u32 magic, u64 info_ptr) {
     if (config_get_bool("net_enabled", true)) {
         BOOT_MARK('N');
         net_init();
+        if (net_get_interface()->initialized) {
+            task_t* net_task = task_create("network", net_poll_task, NULL,
+                                           CAP_FS_READ, false);
+            if (net_task) scheduler_add_task(net_task);
+            else vga_puts_error("Network: failed to create polling task");
+        }
         BOOT_MARK('n');
     }
     /* The graphical shell owns the framebuffer. Do not allocate an empty
