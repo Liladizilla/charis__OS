@@ -464,7 +464,8 @@ static bool handle_event(const input_event_t* e) {
             return true;
         }
 
-        u32 count = (w.step == STEP_MODE || w.step == STEP_NETWORK) ? 2
+        u32 count = (w.step == STEP_MODE) ? 1
+                  : (w.step == STEP_NETWORK) ? 2
                   : (w.step == STEP_LANGUAGE) ? LANGUAGE_COUNT
                   : (w.step == STEP_TIMEZONE) ? TIMEZONE_COUNT : 0;
         if (!count) return false;
