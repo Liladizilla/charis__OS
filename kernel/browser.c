@@ -210,8 +210,10 @@ static bool remote_navigate(const char* url) {
     const char* host = url + 7u;
     const char* path = kstrchr(host, '/');
     const char* query = kstrchr(host, '?');
+    const char* url_fragment = kstrchr(host, (char)35);
     const char* end = path;
     if (!end || (query && query < end)) end = query;
+    if (url_fragment && (!end || url_fragment < end)) end = url_fragment;
     if (!end) end = host + kstrlen(host);
     usize host_len = (usize)(end - host);
     if (!host_len || host_len >= sizeof(remote_url)) return false;
