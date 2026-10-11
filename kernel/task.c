@@ -22,6 +22,7 @@ void task_init(void) {
         task_pool[i].state = TASK_STATE_UNUSED;
         task_pool[i].pid = 0;
         task_pool[i].exit_code = 0;
+        task_pool[i].parent_pid = 0;
         task_pool[i].slot_index = i;
         task_pool[i].priority = 0;
         task_pool[i].next = NULL;
@@ -68,6 +69,18 @@ task_t* task_allocate(void) {
 
 u32 task_next_pid(void) {
     return next_pid++;
+}
+
+/* Search the fixed task table by PID. Zombie records remain discoverable until
+ * a future wait/reap path explicitly releases them. */
+task_t* task_find_by_pid(u32 pid) {
+    if (!pid) return NULL;
+    for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
+        if (task_pool[i].state != TASK_STATE_UNUSED && task_pool[i].pid == pid) {
+            return &task_pool[i];
+        }
+    }
+    return NULL;
 }
 
 /*
@@ -165,6 +178,8 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->started = false;
     task->pid = next_pid++;
     task->exit_code = 0;
+    task_t* parent = scheduler_current();
+    task->parent_pid = parent ? parent->pid : 0;
     signal_reset_task(task);
     task->state = TASK_STATE_READY;
     task->priority = 0;
@@ -253,6 +268,8 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
              * allocation failure cannot permanently consume a task-table slot. */
             task->state = TASK_STATE_UNUSED;
             task->pid = 0;
+            task->parent_pid = 0;
+            task->exit_code = 0;
             task->rsp = 0;
             task->stack_base = 0;
             task->guard_page_addr = 0;
