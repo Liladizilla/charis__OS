@@ -334,10 +334,15 @@ static void draw_done(void) {
 
 static void draw_footer(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    if (sh < 60) return;
-    const char* help = "Up/Down choose    Enter continue    Esc back";
-    u32 tw = 8 * (u32)kstrlen(help);
-    gfx_draw_string((sw > tw) ? (sw - tw) / 2 : 0, sh - 40, help, W_HINT, FB_TRANSPARENT);
+    if (sh < 60 || w.step == STEP_WELCOME) return;
+
+    /* One consistent navigation bar, with exactly one primary action. */
+    u32 y = sh - 48;
+    fb_fill_rect(0, y, sw, 48, W_BG);
+    fb_fill_rect(0, y, sw, 1, W_BORDER);
+    button(sw > 228 ? sw - 228 : 0, y + 8, 88, 32, "Back", false);
+    button(sw > 128 ? sw - 128 : 0, y + 8, 112, 32,
+           w.step == STEP_DONE ? "Finish" : "Continue", true);
 }
 
 /* ── Input handling ───────────────────────────────────────────────────── */
@@ -358,7 +363,7 @@ static void apply_and_save(void) {
 static void step_leave(wizard_step_t from) {
     switch (from) {
     case STEP_WELCOME: break;                 /* nothing to record */
-    case STEP_MODE:      w.install = (w.sel[STEP_MODE] == 1); break;
+    case STEP_MODE:      w.install = false; break;
     case STEP_LANGUAGE:  w.language = w.sel[STEP_LANGUAGE]; break;
     case STEP_TIMEZONE:  w.timezone = w.sel[STEP_TIMEZONE]; break;
     case STEP_DISK:      break;               /* informational */
@@ -397,7 +402,7 @@ static void go_back(void) {
 static void adjust(int delta) {
     u32 count = 0;
     switch (w.step) {
-    case STEP_MODE:      count = 2; break;
+    case STEP_MODE:      count = 1; break;
     case STEP_LANGUAGE:  count = LANGUAGE_COUNT; break;
     case STEP_TIMEZONE:  count = TIMEZONE_COUNT; break;
     case STEP_DISK:      return;
@@ -452,8 +457,7 @@ static bool handle_event(const input_event_t* e) {
         u32 cy = (sh > card_h) ? (sh - card_h) / 2 : 0;
 
         if (w.step == STEP_WALLPAPER) {
-            /* Step through with hover over the preview. */
-            if (hit(cx, cy, card_w, card_h)) adjust(1);
+            /* Hover never changes the selected wallpaper. Use a click. */
             return true;
         }
 
@@ -475,15 +479,47 @@ static bool handle_event(const input_event_t* e) {
             u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
             if (hit(cx + 40, cy + ch - 76, 200, 44)) { advance(); return true; }
             if (hit(cx + 260, cy + ch - 76, 160, 44)) {
-                /* "Use defaults": keep every current value and go straight
-                 * to the summary, which is what the button promises. */
+                /* "Use defaults" goes to the summary with the stated defaults. */
                 w.step = STEP_DONE;
                 return true;
             }
             return true;
         }
 
-        if (w.step == STEP_DONE) { advance(); return true; }
+        /* Back and the single primary action are in the same footer on every
+         * step. A random click no longer finishes setup by accident. */
+        u32 footer_y = sh > 48 ? sh - 48 : 0;
+        if (hit(sw > 228 ? sw - 228 : 0, footer_y + 8, 88, 32)) {
+            go_back();
+            return true;
+        }
+        if (hit(sw > 128 ? sw - 128 : 0, footer_y + 8, 112, 32)) {
+            advance();
+            return true;
+        }
+        if (w.step == STEP_DONE) return true;
+
+        u32 card_w = 640, card_h = 320;
+        u32 row_x = 40, row_y = 0, row_w = 560, row_count = 0;
+        switch (w.step) {
+        case STEP_MODE:      card_h = 340; row_y = 110; row_count = 1; break;
+        case STEP_LANGUAGE:  card_h = 460; row_y = 100; row_count = LANGUAGE_COUNT; break;
+        case STEP_TIMEZONE:  card_h = 470; row_y = 100; row_count = TIMEZONE_COUNT; break;
+        case STEP_NETWORK:   card_h = 400; row_y = 150; row_count = 2; break;
+        case STEP_WALLPAPER: {
+            card_w = 720; card_h = 300;
+            u32 cx = sw > card_w ? (sw - card_w) / 2 : 0;
+            u32 cy = sh > card_h ? (sh - card_h) / 2 : 0;
+            if (hit(cx, cy, card_w, card_h)) adjust(1);
+            return true;
+        }
+        default: return true;
+        }
+
+        u32 cx = sw > card_w ? (sw - card_w) / 2 : 0;
+        u32 cy = sh > card_h ? (sh - card_h) / 2 : 0;
+        int row = hit_list(cx + row_x, cy + row_y, row_w, row_count);
+        if (row >= 0) w.sel[w.step] = (u32)row;
         return true;
     }
 
@@ -505,11 +541,11 @@ bool wizard_run(void) {
     w.step = STEP_WELCOME;
     w.sel[STEP_MODE] = 0;
     w.sel[STEP_LANGUAGE] = 0;
-    w.sel[STEP_TIMEZONE] = 4;        /* UTC+00:00, which covers Nairobi */
+    w.sel[STEP_TIMEZONE] = 6;        /* UTC+03:00, East Africa */
     w.sel[STEP_NETWORK] = 0;
     w.sel[STEP_WALLPAPER] = 0;
     w.language = 0;
-    w.timezone = 4;
+    w.timezone = 6;
     w.wallpaper = 0;
     w.install = false;
     w.network_static = false;
