@@ -128,6 +128,7 @@ void browser_open(void) {
         tab_count = 1;
         active_tab = 0;
         kmemset(&tabs[0], 0, sizeof(tabs[0]));
+        tabs[0].history_index = -1;
         address_set(&tabs[0], "charis://home");
         history_push(&tabs[0], "charis://home");
     }
@@ -273,6 +274,7 @@ static void new_tab(void) {
     }
     active_tab = tab_count++;
     kmemset(&tabs[active_tab], 0, sizeof(tabs[active_tab]));
+    tabs[active_tab].history_index = -1;
     address_set(&tabs[active_tab], "charis://home");
     history_push(&tabs[active_tab], "charis://home");
     set_status("New local tab");
@@ -400,8 +402,7 @@ bool browser_handle_key(u8 scancode, bool pressed) {
         tab->select_all = false;
         return true;
     }
-    if (code == 0x2E && browser_ctrl) {
-        tab->address[0] = 0;
+    if (code == 0x1E && browser_ctrl) {
         tab->select_all = true;
         return true;
     }
