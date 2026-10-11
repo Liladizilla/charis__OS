@@ -252,6 +252,9 @@ static bool file_path_has_parent(const char* path) {
 }
 
 static bool load_local_file(const char* url) {
+    file_preview_ready = false;
+    file_preview_length = 0;
+    file_preview[0] = 0;
     if (!url || kstrncmp(url, "file://", 7u) != 0) return false;
     const char* path = url + 7u;
     usize path_len = kstrlen(path);
