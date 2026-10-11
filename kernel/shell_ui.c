@@ -415,9 +415,16 @@ static bool calculator_handle_key(u8 code, bool pressed) {
         if (calculator_error) calculator_press('C');
         else {
             usize length = kstrlen(calculator_display);
-            if (length > 1u) calculator_display[length - 1u] = 0;
-            else {
+            if (calculator_display[0] == '-' && length <= 2u) {
                 calculator_display[0] = '0';
+                calculator_display[1] = 0;
+                calculator_new_entry = true;
+            } else if (length > 1u) {
+                calculator_display[length - 1u] = 0;
+                calculator_new_entry = false;
+            } else {
+                calculator_display[0] = '0';
+                calculator_display[1] = 0;
                 calculator_new_entry = true;
             }
         }
