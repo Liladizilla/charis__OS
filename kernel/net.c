@@ -98,7 +98,7 @@ void net_init(void) {
      * static image/buffers; reject addresses the 32-bit device cannot DMA. */
     u64 rx_addr = (u64)(uintptr_t)rx_buffer;
     if (rx_addr > 0xFFFFFFFFULL) {
-        rtl8139_found = false;
+
         vga_puts("Network: RX DMA buffer is above 4 GiB\n");
         return;
     }
