@@ -1,12 +1,8 @@
-/* wallpaper.c - Procedural desktop backgrounds
+/* wallpaper.c - Low-cost solid desktop fields.
  *
- * Generated rather than stored: a handful of gradients, each with its own
- * geometry, all cheap to compute and none of them needing image data in the
- * kernel. The wizard previews them and the desktop uses whichever was chosen.
- *
- * 8-bit colour makes a wide gradient band visibly, so every ramp is dithered
- * with a 4x4 ordered matrix, which pushes adjacent pixels a shade apart and
- * hides the steps.
+ * Each choice uses opaque colours and a small number of geometric planes.
+ * This keeps the framebuffer path predictable on low-end hardware and gives
+ * text and application surfaces visual priority over decorative effects.
  */
 
 #include <kernel/wallpaper.h>
@@ -68,7 +64,7 @@ const char* wallpaper_description(u32 style) {
     switch (style) {
     case WALLPAPER_EMBER: return "Warm and dark";
     case WALLPAPER_FOREST: return "Cool green";
-    case WALLPAPER_DUSK:  return "Purple with a glow";
+    case WALLPAPER_DUSK:  return "Deep purple planes";
     case WALLPAPER_MONO:  return "Dim, low power";
     case WALLPAPER_CHARIS:
     default:              return "Charis navy";
