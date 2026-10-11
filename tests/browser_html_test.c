@@ -4,6 +4,8 @@
 #include <string.h>
 #include "../kernel/browser.c"
 
+framebuffer_t g_framebuffer;
+
 static void expect(bool ok, const char* message) {
     if (!ok) { fprintf(stderr, "FAIL: %s\n", message); exit(1); }
 }
@@ -84,7 +86,7 @@ static void test_document_title_is_extracted_across_chunks(void) {
     expect(strcmp(remote_title, "Charis & OS ") == 0 ||
            strcmp(remote_title, "Charis & OS") == 0,
            "document title survives callback boundaries and decodes entities");
-    expect(strcmp(remote_text, "Visible body\\n") == 0,
+    expect(strcmp(remote_text, "Visible body\n") == 0,
            "title text is metadata, not duplicated in body preview");
 }
 static void test_title_state_resets_for_new_page(void) {
@@ -110,7 +112,7 @@ static void test_preview_keyboard_scroll_is_bounded(void) {
     remote_text_length = 0;
     for (int i = 0; i < 30; i++) {
         remote_text[remote_text_length++] = 'x';
-        remote_text[remote_text_length++] = '\\n';
+        remote_text[remote_text_length++] = '\n';
     }
     remote_text[remote_text_length] = 0;
     remote_scroll_lines = 0;
