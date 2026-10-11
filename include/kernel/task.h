@@ -38,6 +38,7 @@ typedef struct task {
     u64 stack_base;
     u32 state;
     u32 pid;
+    u32 slot_index; /* Stable array index; PID is monotonic and not bounded by TASK_MAX_TASKS. */
     u32 priority;
     char name[TASK_NAME_MAX];
     struct task* next;

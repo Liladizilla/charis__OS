@@ -5,6 +5,7 @@
 #include <kernel/timer.h>
 #include <kernel/vmm.h>
 #include <kernel/security.h>
+#include <kernel/signal.h>
 
 static task_t task_pool[TASK_MAX_TASKS];
 static task_t* task_list = NULL;
@@ -20,6 +21,7 @@ void task_init(void) {
         task_pool[i].stack_base = 0;
         task_pool[i].state = TASK_STATE_ZOMBIE;
         task_pool[i].pid = 0;
+        task_pool[i].slot_index = i;
         task_pool[i].priority = 0;
         task_pool[i].next = NULL;
         task_pool[i].prev = NULL;
@@ -158,6 +160,7 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->is_user = is_user;
     task->started = false;
     task->pid = next_pid++;
+    signal_reset_task(task);
     task->state = TASK_STATE_READY;
     task->priority = 0;
     task->runtime_ticks = 0;
