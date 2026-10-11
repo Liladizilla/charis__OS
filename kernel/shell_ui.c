@@ -64,14 +64,14 @@ static const char* const NOTICE_LINE_1[] = {
     "A graphical terminal is not wired up yet.",
     "The VFS exists, but the graphical browser is",
     "No graphical editor is implemented yet.",
-    "Setup choices are temporary for this boot.",
+    "A graphical settings panel is not wired up.",
     "CharisOS is a from-scratch x86_64 kernel.",
 };
 static const char* const NOTICE_LINE_2[] = {
     "Kernel output remains on the text/serial console.",
     "not connected to file operations yet.",
     "This screen will not pretend to show source code.",
-    "Configuration-file persistence is not implemented.",
+    "Persistence needs an existing writable config file.",
     "The desktop and built-in apps are still partial.",
 };
 #define MENU_ITEM_COUNT ((u32)(sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0])))
