@@ -2,13 +2,14 @@
 #pragma once
 #include <kernel/types.h>
 #include <kernel/graphics.h>
+#include <kernel/ui_theme.h>
 
 #define MAX_WINDOWS 16
 #define WINDOW_TITLEBAR_HEIGHT 28
 
-#define COLOR_SURFACE 0x161B22
-#define COLOR_BORDER  0x21262D
-#define COLOR_ACCENT  0x58A6FF
+#define COLOR_SURFACE CHARIS_UI_PANEL
+#define COLOR_BORDER  CHARIS_UI_BORDER
+#define COLOR_ACCENT  CHARIS_UI_ACCENT
 
 typedef struct window {
     int x, y;
