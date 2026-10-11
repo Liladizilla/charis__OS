@@ -211,7 +211,8 @@ static bool valid_http_hostname(const char* host, usize length) {
     for (usize i = 0; i < length; i++) {
         char ch = host[i];
         if (ch == '.') {
-            if (!label_length || label_length > 63u) return false;
+            if (!label_length || label_length > 63u || host[i - 1u] == '-')
+                return false;
             label_length = 0;
             continue;
         }
@@ -247,9 +248,6 @@ static bool remote_navigate(const char* url) {
     if (!end) end = host + kstrlen(host);
     usize host_len = (usize)(end - host);
     if (!host_len || host_len >= sizeof(remote_url)) return false;
-    /* Reject user-info, whitespace, IPv6 literals and malformed host labels. */
-    if (!valid_http_hostname(host, host_len)) return false;
-
     char hostname[BROWSER_URL_MAX];
     char path_buffer[BROWSER_URL_MAX];
     if (host_len >= sizeof(hostname)) return false;
@@ -262,6 +260,7 @@ static bool remote_navigate(const char* url) {
         *colon = 0;
         if (!hostname[0]) return false;
     }
+    if (!valid_http_hostname(hostname, kstrlen(hostname))) return false;
     if (end[0] == '/') {
         kstrncpy(path_buffer, end, sizeof(path_buffer) - 1u);
         path_buffer[sizeof(path_buffer) - 1u] = 0;
