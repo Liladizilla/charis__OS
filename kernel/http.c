@@ -117,6 +117,9 @@ static bool parse_headers(void) {
         while (value < end && (*value == ' ' || *value == '\t')) value++;
         usize name_length = (usize)(colon - line);
         usize value_length = (usize)(end - value);
+        while (value_length && (value[value_length - 1u] == ' ' ||
+                                value[value_length - 1u] == '\\t'))
+            value_length--;
         if (ascii_equal(line, name_length, "content-length")) {
             u32 parsed;
             if (!parse_decimal(value, value_length, &parsed)) return false;
@@ -151,6 +154,7 @@ static void deliver_body(const u8* data, usize length) {
 
 static bool parse_chunk_size(void) {
     usize n = chunk_line_length;
+    if (n && chunk_line[n - 1u] == '\\n') n--;
     if (n && chunk_line[n - 1u] == '\\r') n--;
     if (!n) return false;
     u32 size = 0;
