@@ -20,6 +20,9 @@
 #define ARP_REPLY      2u
 #define IPV4_MIN_LEN   20u
 #define IPV4_PROTO_ICMP 1u
+#define IPV4_PROTO_UDP 17u
+#define UDP_HEADER_LEN 8u
+#define NET_UDP_MAX_HANDLERS 8u
 #define ICMP_ECHO_REPLY 0u
 #define ICMP_ECHO_REQUEST 8u
 #define NET_FRAME_CAP  NET_MAX_PACKET_SIZE
@@ -39,6 +42,12 @@ static u8 local_ip[4];
 static u8 frame_in[NET_FRAME_CAP];
 static u8 frame_out[NET_FRAME_CAP];
 static bool stack_ready;
+
+typedef struct {
+    u16 port;
+    net_udp_handler_t handler;
+} udp_binding_t;
+static udp_binding_t udp_bindings[NET_UDP_MAX_HANDLERS];
 
 static u16 read_be16(const u8* p) {
     return (u16)(((u16)p[0] << 8) | p[1]);
@@ -92,7 +101,81 @@ void net_stack_init(void) {
     const char* configured = config_get_string("net_ip", "0.0.0.0");
     if (!parse_ipv4(configured, local_ip))
         kmemset(local_ip, 0, sizeof(local_ip));
+    net_interface_t* iface = net_get_interface();
+    if (iface) kmemcpy(iface->ip_addr, local_ip, sizeof(local_ip));
     stack_ready = true;
+}
+
+bool net_udp_bind(u16 port, net_udp_handler_t handler) {
+    if (!port || !handler) return false;
+    for (usize i = 0; i < NET_UDP_MAX_HANDLERS; i++) {
+        if (udp_bindings[i].port == port) {
+            udp_bindings[i].handler = handler;
+            return true;
+        }
+    }
+    for (usize i = 0; i < NET_UDP_MAX_HANDLERS; i++) {
+        if (udp_bindings[i].port == 0) {
+            udp_bindings[i].port = port;
+            udp_bindings[i].handler = handler;
+            return true;
+        }
+    }
+    return false;
+}
+
+void net_udp_unbind(u16 port) {
+    if (!port) return;
+    for (usize i = 0; i < NET_UDP_MAX_HANDLERS; i++) {
+        if (udp_bindings[i].port == port) {
+            udp_bindings[i].port = 0;
+            udp_bindings[i].handler = 0;
+            return;
+        }
+    }
+}
+
+static bool udp_checksum_valid(const u8* src, const u8* dst,
+                               const u8* udp, usize length) {
+    u32 sum = 0;
+    for (usize i = 0; i < 4; i += 2) {
+        sum += read_be16(src + i);
+        sum += read_be16(dst + i);
+    }
+    sum += IPV4_PROTO_UDP;
+    sum += (u32)length;
+    usize remaining = length;
+    const u8* p = udp;
+    while (remaining >= 2) {
+        sum += read_be16(p);
+        p += 2;
+        remaining -= 2;
+    }
+    if (remaining) sum += (u16)((u16)p[0] << 8);
+    while (sum >> 16) sum = (sum & 0xFFFFu) + (sum >> 16);
+    return (u16)~sum == 0;
+}
+
+static void handle_udp(const u8* ip, usize ip_len, u8 ihl) {
+    if (!ip_is_configured() || !same_bytes(ip + 16, local_ip, 4) ||
+        ip_len < (usize)ihl + UDP_HEADER_LEN)
+        return;
+    const u8* udp = ip + ihl;
+    usize udp_len = read_be16(udp + 4);
+    if (udp_len < UDP_HEADER_LEN || udp_len > ip_len - ihl) return;
+    u16 wire_checksum = read_be16(udp + 6);
+    /* A zero UDP checksum means "not supplied" for IPv4. */
+    if (wire_checksum && !udp_checksum_valid(ip + 12, ip + 16, udp, udp_len))
+        return;
+    u16 dst_port = read_be16(udp + 2);
+    u16 src_port = read_be16(udp);
+    for (usize i = 0; i < NET_UDP_MAX_HANDLERS; i++) {
+        if (udp_bindings[i].port == dst_port && udp_bindings[i].handler) {
+            udp_bindings[i].handler(src_port, ip + 12, udp + UDP_HEADER_LEN,
+                                    udp_len - UDP_HEADER_LEN);
+            return;
+        }
+    }
 }
 
 static void handle_arp(const ethernet_header_t* eth, usize length) {
@@ -171,7 +254,11 @@ static void handle_ipv4(const ethernet_header_t* eth, usize length) {
     if (total < ihl || total > ip_available) return;
     /* Do not respond to fragmented packets until reassembly is implemented. */
     if (read_be16(ip + 6) & 0x3FFFu) return;
-    handle_icmp(eth, ip, total);
+    if (checksum(ip, ihl) != 0) return;
+    if (ip[9] == IPV4_PROTO_ICMP)
+        handle_icmp(eth, ip, total);
+    else if (ip[9] == IPV4_PROTO_UDP)
+        handle_udp(ip, total, ihl);
 }
 
 void net_handle_tcpip(void) {
