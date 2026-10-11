@@ -8,6 +8,7 @@
 - Static IPv4 next-hop selection using a subnet mask and optional gateway.
 - Outbound UDP/IPv4 frames with IPv4 and UDP checksums.
 - A bounded asynchronous DNS A-record resolver.
+- A minimal single-connection TCP client with SYN/SYN-ACK handshake, checksummed segments, basic ACK handling, data callbacks and FIN close.
 
 ## Configuration
 
@@ -32,7 +33,7 @@ The resolver uses UDP port 53 and the configured `net_dns` address. Network conf
 ## Not implemented yet
 
 - DHCP, IPv6 and IP fragment reassembly.
-- TCP, congestion/retransmission handling, sockets usable by applications and TLS.
+- Full TCP socket support, congestion control, robust retransmission timers, multiple concurrent connections and TLS.
 - HTTP/1.1, redirects, certificate validation, HTML/CSS layout, JavaScript and browser document rendering.
 - End-to-end hardware tests against a real LAN.
 
