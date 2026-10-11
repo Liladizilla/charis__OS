@@ -23,7 +23,7 @@ static void test_tags_and_block_boundaries(void) {
 }
 static void test_scripts_and_styles_are_hidden(void) {
     reset_html();
-    feed("<p>Visible</p><script>secret()</script><style>.hidden{}</style><p>Still visible</p>");
+    feed("<p>Visible</p><script type=\"text/javascript\">secret()</script><style media=\"screen\">.hidden{}</style><p>Still visible</p>");
     expect(strcmp(remote_text, "Visible\nStill visible\n") == 0,
            "script and style contents must not leak into text");
 }
