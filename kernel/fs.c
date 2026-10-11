@@ -174,7 +174,7 @@ void fs_init(void) {
 
     total_clusters = (boot_sector.total_sectors_32 - data_start) / boot_sector.sectors_per_cluster;
     /* Every data cluster needs a 4-byte entry in the FAT. */
-    if (total_clusters == 0 ||
+    if (total_clusters == 0 || total_clusters > 0x0FFFFFEEu ||
         (u64)total_clusters + 2 > ((u64)boot_sector.fat_size_32 * FAT32_SECTOR_SIZE) / 4) {
         vga_puts("FS: Invalid FAT32 geometry (FAT too small)\n");
         return;
@@ -284,31 +284,46 @@ int fs_read(file_t* file, void* buffer, usize size) {
 /* ------------------------------------------------------------------ */
 
 static u32 fat_get(u32 cluster) {
-    u32 sector = fat_start + (cluster * 4 / FAT32_SECTOR_SIZE);
-    u32 offset = (cluster * 4) % FAT32_SECTOR_SIZE;
+    if (!fs_mounted || !cluster_valid(cluster)) return 0x0FFFFFFF;
+    u32 entry_offset = cluster * 4;
+    u32 fat_sector_index = entry_offset / FAT32_SECTOR_SIZE;
+    if (fat_sector_index >= boot_sector.fat_size_32) return 0x0FFFFFFF;
+
+    u32 sector = fat_start + fat_sector_index;
+    u32 offset = entry_offset % FAT32_SECTOR_SIZE;
+    if (sector >= boot_sector.total_sectors_32) return 0x0FFFFFFF;
     u8 buffer[FAT32_SECTOR_SIZE];
     if (!ata_read_sector(sector, buffer)) return 0x0FFFFFFF;
+
     u32 entry;
-    kmemcpy(&entry, buffer + offset, 4);
+    kmemcpy(&entry, buffer + offset, sizeof(entry));
     return entry & 0x0FFFFFFF;
 }
 
 static bool fat_set(u32 cluster, u32 value) {
-    u32 sector = fat_start + (cluster * 4 / FAT32_SECTOR_SIZE);
-    u32 offset = (cluster * 4) % FAT32_SECTOR_SIZE;
+    if (!fs_mounted || !cluster_valid(cluster)) return false;
+    value &= 0x0FFFFFFF;
+    if (value != 0 && value < 0x0FFFFFF8 && !cluster_valid(value)) return false;
+
+    u32 entry_offset = cluster * 4;
+    u32 fat_sector_index = entry_offset / FAT32_SECTOR_SIZE;
+    if (fat_sector_index >= boot_sector.fat_size_32) return false;
+
+    u32 sector = fat_start + fat_sector_index;
+    u32 offset = entry_offset % FAT32_SECTOR_SIZE;
+    if (sector >= boot_sector.total_sectors_32) return false;
     u8 buffer[FAT32_SECTOR_SIZE];
     if (!ata_read_sector(sector, buffer)) return false;
-    value &= 0x0FFFFFFF;
-    kmemcpy(buffer + offset, &value, 4);
+    kmemcpy(buffer + offset, &value, sizeof(value));
     if (!ata_write_sector(sector, buffer)) return false;
 
-    /* Update the second FAT copy as well. A mismatch here is what `fsck.vfat`
-     * reports as " FATs differ" and what Windows offers to "fix". */
+    /* Keep the mirrored FAT copy consistent when the volume has two FATs. */
     if (boot_sector.num_fats >= 2) {
-        u32 sector2 = sector + boot_sector.fat_size_32;
-        if (!ata_read_sector(sector2, buffer)) return false;
-        kmemcpy(buffer + offset, &value, 4);
-        if (!ata_write_sector(sector2, buffer)) return false;
+        u64 sector2_wide = (u64)sector + boot_sector.fat_size_32;
+        if (sector2_wide >= boot_sector.total_sectors_32) return false;
+        if (!ata_read_sector((u32)sector2_wide, buffer)) return false;
+        kmemcpy(buffer + offset, &value, sizeof(value));
+        if (!ata_write_sector((u32)sector2_wide, buffer)) return false;
     }
     return true;
 }
@@ -338,19 +353,34 @@ static bool fs_update_dir_entry(file_t* file) {
     return ata_write_sector(sector, buffer);
 }
 
-static bool fs_extend(file_t* file, usize needed_clusters) {
+static bool fs_extend(file_t* file, usize needed_bytes) {
     u32 cluster_size = boot_sector.sectors_per_cluster * FAT32_SECTOR_SIZE;
-    u32 current_clusters = (file->size + cluster_size - 1) / cluster_size;
-    u32 target_clusters = ((file->pos + needed_clusters) + cluster_size - 1) / cluster_size;
-    if (target_clusters <= current_clusters) return true;
+    if (!cluster_size || needed_bytes > 0xFFFFFFFFULL - file->pos) return false;
+
+    u64 final_pos = (u64)file->pos + needed_bytes;
+    u64 current_clusters = ((u64)file->size + cluster_size - 1) / cluster_size;
+    u64 target_clusters = (final_pos + cluster_size - 1) / cluster_size;
+    if (target_clusters > total_clusters) return false;
 
     u32 prev = file->cluster;
-    if (!prev) {
-        prev = fat_alloc_cluster();
-        if (!prev) return false;
-        file->cluster = prev;
+    /* fs_create() reserves the first cluster even for a zero-length file. */
+    if (current_clusters == 0) {
+        if (!cluster_valid(prev)) {
+            prev = fat_alloc_cluster();
+            if (!prev) return false;
+            file->cluster = prev;
+        }
+        current_clusters = 1;
+    } else {
+        if (!cluster_valid(prev)) return false;
+        for (u64 i = 1; i < current_clusters; i++) {
+            u32 next = fat_get(prev);
+            if (!cluster_valid(next)) return false;
+            prev = next;
+        }
     }
-    for (u32 i = current_clusters; i < target_clusters; i++) {
+
+    for (u64 i = current_clusters; i < target_clusters; i++) {
         u32 next = fat_alloc_cluster();
         if (!next) return false;
         if (!fat_set(prev, next)) return false;
@@ -381,7 +411,14 @@ int fs_write(file_t* file, const void* buffer, usize size) {
         u32 sector_offset = offset / FAT32_SECTOR_SIZE;
 
         while (written < size) {
-            u32 sector = cluster_to_sector(cluster) + sector_offset;
+            if (!cluster_valid(cluster) || sector_offset >= boot_sector.sectors_per_cluster)
+                return written ? (int)written : -1;
+            u32 cluster_sector = cluster_to_sector(cluster);
+            if (cluster_sector == 0xFFFFFFFF ||
+                cluster_sector >= boot_sector.total_sectors_32 ||
+                cluster_sector + sector_offset >= boot_sector.total_sectors_32)
+                return written ? (int)written : -1;
+            u32 sector = cluster_sector + sector_offset;
             u8 sec_buffer[FAT32_SECTOR_SIZE];
 
             /* Only zero-fill if we start mid-sector; otherwise we will
@@ -408,12 +445,7 @@ int fs_write(file_t* file, const void* buffer, usize size) {
 
             if (offset >= cluster_size) {
                 u32 next = fat_get(cluster);
-                if (next < 2 || next >= 0x0FFFFFF8) {
-                    /* Extend the chain by one more cluster. */
-                    next = fat_alloc_cluster();
-                    if (!next) return written;
-                    if (!fat_set(cluster, next)) return written;
-                }
+                if (!cluster_valid(next)) return written ? (int)written : -1;
                 cluster = next;
                 offset = 0;
                 sector_offset = 0;
@@ -437,8 +469,11 @@ int fs_create(const char* path) {
     int free_index = -1;
     u32 free_sector = 0;
 
-    while (cluster >= 2 && cluster < 0x0FFFFFF8) {
+    for (u32 visited = 0; visited < total_clusters && cluster_valid(cluster); visited++) {
         u32 sector = cluster_to_sector(cluster);
+        if (sector == 0xFFFFFFFF || sector >= boot_sector.total_sectors_32 ||
+            boot_sector.sectors_per_cluster > boot_sector.total_sectors_32 - sector)
+            return -1;
         for (u32 s = 0; s < boot_sector.sectors_per_cluster; s++) {
             if (!ata_read_sector(sector + s, buffer)) return -1;
             fat32_dir_entry_t* entries = (fat32_dir_entry_t*)buffer;
@@ -456,6 +491,7 @@ int fs_create(const char* path) {
             }
         }
         cluster = next_cluster(cluster);
+        if (cluster == 0x0FFFFFFF) break;
     }
 
 found_free:
