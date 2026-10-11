@@ -20,6 +20,7 @@ typedef enum {
 typedef void (*signal_handler_t)(int sig);
 
 void signal_init(void);
+void signal_reset_task(task_t* task);
 
 int signal_register(int sig, signal_handler_t handler);
 int signal_unregister(int sig);
