@@ -444,11 +444,14 @@ int fs_write(file_t* file, const void* buffer, usize size) {
             if (file->pos > file->size) file->size = file->pos;
 
             if (offset >= cluster_size) {
-                u32 next = fat_get(cluster);
-                if (!cluster_valid(next)) return written ? (int)written : -1;
-                cluster = next;
                 offset = 0;
                 sector_offset = 0;
+                /* Do not demand a following cluster after the final byte. */
+                if (written < size) {
+                    u32 next = fat_get(cluster);
+                    if (!cluster_valid(next)) return written ? (int)written : -1;
+                    cluster = next;
+                }
             } else {
                 sector_offset = offset / FAT32_SECTOR_SIZE;
             }
