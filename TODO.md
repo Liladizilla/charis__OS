@@ -58,6 +58,7 @@
 - [ ] Unix domain sockets (socket.c is INET-only)
 - [x] Distinguish unused task slots from exited zombies; exited tasks are no longer silently reused
 - [x] Preserve the `SYS_EXIT` status in zombie metadata for future `waitpid()` collection
+- [x] Track each task's creator PID and provide task-table PID lookup for child collection
 - [ ] wait()/waitpid() syscall and safe resource reaping still missing
 
 ## Phase 8: Network Stack (PARTIAL - ENABLED BUT INCOMPLETE)
