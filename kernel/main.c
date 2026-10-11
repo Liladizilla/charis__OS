@@ -161,15 +161,9 @@ void kernel_main(u32 magic, u64 info_ptr) {
     security_init();
     BOOT_MARK('S');
 
-    // Initialize network if enabled in config
-    BOOT_MARK('n');
-    if (config_get_bool("net_enabled", true)) {
-        BOOT_MARK('N');
-        net_init();
-        BOOT_MARK('n');
-    }
-
-    // Initialize network if enabled in config
+    // Initialize network once, if enabled in config.
+    // net_init() resets the RTL8139 and reinitializes its RX/TX state, so
+    // calling it twice during boot is unnecessary and can disrupt the device.
     BOOT_MARK('n');
     if (config_get_bool("net_enabled", true)) {
         BOOT_MARK('N');
