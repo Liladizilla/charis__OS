@@ -13,8 +13,8 @@ static int wm_z_counter = 0;
 void wm_init(void) {
     wm_windows = NULL;
     wm_z_counter = 0;
-    g_graphics.bg_color = 0x0D1117; // Dark background (CharisOS theme)
-    fb_clear(FB_COLOR(0x0D, 0x11, 0x17, 0xFF));
+    g_graphics.bg_color = CHARIS_UI_BACKGROUND;
+    fb_clear(CHARIS_UI_BACKGROUND);
 }
 
 window_t* wm_create_window(const char* title, int x, int y, int w, int h) {
@@ -84,7 +84,7 @@ void wm_focus_window(window_t* win) {
 
 void wm_render(void) {
     // Clear screen (desktop background)
-    fb_clear(FB_COLOR(0x0D, 0x11, 0x17, 0xFF)); // Dark navy
+    fb_clear(CHARIS_UI_BACKGROUND);
     
     // Draw windows from back to front (by z_order)
     // Simple insertion sort

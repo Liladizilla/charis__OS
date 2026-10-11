@@ -29,16 +29,18 @@
 #include <kernel/timer.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
+#include <kernel/ui_theme.h>
+#include <kernel/scheduler.h>
 
-/* ── Palette, shared with the desktop ─────────────────────────────────── */
-#define W_BG       FB_ARGB(0xFF, 0x0D, 0x11, 0x17)
-#define W_CARD     FB_ARGB(0xFF, 0x10, 0x15, 0x1F)
-#define W_BORDER   FB_ARGB(0xFF, 0x3C, 0x4A, 0x63)
-#define W_FG       FB_ARGB(0xFF, 0xE8, 0xEE, 0xF6)
-#define W_DIM      FB_ARGB(0xFF, 0x8E, 0x9B, 0xB0)
-#define W_ACCENT   FB_ARGB(0xFF, 0x5E, 0xB4, 0xFF)
-#define W_SEL      FB_ARGB(0xFF, 0x24, 0x33, 0x4A)
-#define W_HINT     FB_ARGB(0xFF, 0x6E, 0x7A, 0x8C)
+/* ── Shared solid-morphism palette ────────────────────────────────────── */
+#define W_BG       CHARIS_UI_BACKGROUND
+#define W_CARD     CHARIS_UI_PANEL
+#define W_BORDER   CHARIS_UI_BORDER
+#define W_FG       CHARIS_UI_TEXT
+#define W_DIM      CHARIS_UI_MUTED
+#define W_ACCENT   CHARIS_UI_ACCENT
+#define W_SEL      CHARIS_UI_ACCENT_SURFACE
+#define W_HINT     CHARIS_UI_MUTED
 
 /* ── Option lists ─────────────────────────────────────────────────────── */
 
@@ -59,17 +61,17 @@ static const char* const LANGUAGES[] = {
  * pretending to know about "Europe/London" would be a lie. The offset is real
  * and usable. */
 static const char* const TIMEZONES[] = {
-    "UTC-12:00  Baker Island",
-    "UTC-08:00  Pacific",
-    "UTC-05:00  Eastern",
-    "UTC-03:00  Sao Paulo",
-    "UTC+00:00  London, Nairobi",
-    "UTC+01:00  Central Europe",
-    "UTC+03:00  Moscow, Nairobi time",
+    "UTC-12:00  Fixed offset",
+    "UTC-08:00  Fixed offset",
+    "UTC-05:00  Fixed offset",
+    "UTC-03:00  Fixed offset",
+    "UTC+00:00  Fixed offset",
+    "UTC+01:00  Fixed offset",
+    "UTC+03:00  East Africa",
     "UTC+05:30  India",
-    "UTC+08:00  Singapore, Beijing",
-    "UTC+09:00  Tokyo, Seoul",
-    "UTC+12:00  Auckland",
+    "UTC+08:00  Singapore / Beijing",
+    "UTC+09:00  Tokyo / Seoul",
+    "UTC+12:00  Fixed offset",
 };
 #define TIMEZONE_COUNT ((u32)(sizeof(TIMEZONES) / sizeof(TIMEZONES[0])))
 
@@ -104,6 +106,8 @@ static wizard_state_t w;
 /* ── Chrome ───────────────────────────────────────────────────────────── */
 
 static void card(u32 x, u32 y, u32 w, u32 h) {
+    /* Hard offset shadow: depth without blur or alpha blending. */
+    fb_fill_rect(x + 4, y + 4, w, h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, w, h, W_CARD);
     fb_draw_rect(x, y, w, h, W_BORDER);
 }
@@ -144,6 +148,7 @@ static void button(u32 x, u32 y, u32 w, u32 h, const char* label, bool primary) 
     int mx = input_get_mouse_x();
     int my = input_get_mouse_y();
     bool hot = mx >= (int)x && mx < (int)(x + w) && my >= (int)y && my < (int)(y + h);
+    fb_fill_rect(x + 2, y + 2, w, h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, w, h, primary ? W_SEL : W_CARD);
     fb_draw_rect(x, y, w, h, hot ? W_ACCENT : W_BORDER);
     u32 tw = 8 * (u32)kstrlen(label);
@@ -182,7 +187,7 @@ static void draw_step_header(const char* title, const char* hint, u32 cx, u32 cy
 
 static void draw_mode(void) {
     static const char* const items[] = {
-        "Run from this device (nothing is written to disk)",
+        "Live session from the boot medium",
     };
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
     u32 cw = 640, ch = 340;
@@ -190,15 +195,16 @@ static void draw_mode(void) {
     u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
     card(cx, cy, cw, ch);
 
-    draw_step_header("How should CharisOS run?",
-                     "Pick where this system lives.", cx, cy);
+    draw_step_header("Live session",
+                     "An installer is not available in this build.", cx, cy);
     draw_list(cx + 40, cy + 110, cw - 80, items, 1, w.sel[STEP_MODE]);
 
     text(cx + 40, cy + 210,
-         "Changes are kept on this boot medium only. Nothing on any",
+         "There is no installer yet; this session runs from the boot medium.",
          W_HINT);
     text(cx + 40, cy + 230,
-         "attached drive is touched.", W_HINT);
+         "Setup persists only when an existing writable config file is present.",
+         W_HINT);
 }
 
 static void draw_language(void) {
@@ -210,7 +216,7 @@ static void draw_language(void) {
 
     draw_step_header("Language", "Used for system messages and the default locale.",
                      cx, cy);
-    draw_list(cx + 40, cy + 100, cw - 80, LANGUAGES, LANGUAGE_COUNT, w.language);
+    draw_list(cx + 40, cy + 100, cw - 80, LANGUAGES, LANGUAGE_COUNT, w.sel[STEP_LANGUAGE]);
 
     text(cx + 40, cy + ch - 44,
          "Keyboard layout is US QWERTY for now; other layouts are not mapped yet.",
@@ -226,7 +232,7 @@ static void draw_timezone(void) {
 
     draw_step_header("Time zone", "The kernel has no timezone database, so this is an offset.",
                      cx, cy);
-    draw_list(cx + 40, cy + 100, cw - 80, TIMEZONES, TIMEZONE_COUNT, w.timezone);
+    draw_list(cx + 40, cy + 100, cw - 80, TIMEZONES, TIMEZONE_COUNT, w.sel[STEP_TIMEZONE]);
 }
 
 static void draw_disk(void) {
@@ -239,18 +245,20 @@ static void draw_disk(void) {
     draw_step_header("Target drive", "Where the system would be installed.",
                      cx, cy);
 
-    text(cx + 40, cy + 110, "No drive detected.", W_ACCENT);
+    text(cx + 40, cy + 110,
+         ata_is_present() ? "Primary ATA device detected." : "No primary ATA device detected.",
+         W_ACCENT);
     text(cx + 40, cy + 140,
-         "The storage driver speaks legacy ATA PIO on the primary channel",
+         "The driver supports legacy ATA PIO on the primary channel only.",
          W_DIM);
     text(cx + 40, cy + 160,
-         "only. A machine on AHCI or NVMe has nothing for it to talk to.",
+         "It does not provide SATA/AHCI or NVMe support.",
          W_DIM);
     text(cx + 40, cy + 190,
-         "Install is not implemented, so this step is informational.",
+         "Disk installation is not implemented; this step is informational.",
          W_HINT);
     text(cx + 40, cy + 210,
-         "Attach a disk on the IDE channel to see it detected here.",
+         "This screen reports detection only and will not modify a disk.",
          W_HINT);
 }
 
@@ -272,9 +280,9 @@ static void draw_network(void) {
     if (ni && ni->initialized) {
         text(cx + 40, cy + 96, "Adapter: RTL8139, initialised.", W_DIM);
     } else {
-        text(cx + 40, cy + 96, "No network adapter found.", W_HINT);
+        text(cx + 40, cy + 96, "Network interface is not initialized.", W_HINT);
         text(cx + 40, cy + 116,
-             "Only RTL8139 (PCI 10EC:8139) is supported.", W_HINT);
+             "The current network driver supports RTL8139 only.", W_HINT);
     }
 
     draw_list(cx + 40, cy + 150, cw - 80, items, 2, w.sel[STEP_NETWORK]);
@@ -286,8 +294,7 @@ static void draw_network(void) {
         text(cx + 40, cy + 270,
              "The choice is recorded for when it is.", W_HINT);
     } else {
-        char buf[64] = "Address: 192.168.1.100";
-        text(cx + 40, cy + 250, buf, W_DIM);
+        text(cx + 40, cy + 250, "No address is configured.", W_DIM);
         text(cx + 40, cy + 270,
              "A static address is recorded but not yet applied to the driver.",
              W_HINT);
@@ -301,11 +308,12 @@ static void draw_wallpaper(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
     u32 cw = 420, ch = 96;
     u32 cx = (sw > cw) ? (sw - cw) / 2 : 0;
-    u32 cy = sh - 200;
+    u32 cy = sh > 200 ? sh - 200 : 0;
 
     card(cx, cy, cw, ch);
-    text(cx + 20, cy + 22, wallpaper_name(w.wallpaper), W_FG);
-    text(cx + 20, cy + 48, wallpaper_description(w.wallpaper), W_DIM);
+    text(cx + 20, cy + 18, wallpaper_name(w.sel[STEP_WALLPAPER]), W_FG);
+    text(cx + 20, cy + 42, wallpaper_description(w.sel[STEP_WALLPAPER]), W_DIM);
+    text(cx + 20, cy + 68, "Click this panel to cycle styles.", W_HINT);
 }
 
 static void draw_done(void) {
@@ -316,7 +324,7 @@ static void draw_done(void) {
     card(cx, cy, cw, ch);
 
     text(cx + 40, cy + 40, "Setup complete", W_ACCENT);
-    text(cx + 40, cy + 78, "Saved:", W_DIM);
+    text(cx + 40, cy + 78, "Summary:", W_DIM);
 
     text(cx + 40, cy + 106, LANGUAGES[w.language], W_FG);
     text(cx + 40, cy + 128, TIMEZONES[w.timezone], W_FG);
@@ -324,20 +332,26 @@ static void draw_done(void) {
     text(cx + 40, cy + 172, w.install ? "install to disk" : "run from device", W_FG);
 
     text(cx + 40, cy + 200,
-         "These are kept in memory this boot: the VFS cannot create the",
+         "Config can update an existing writable file, but cannot create",
          W_HINT);
     text(cx + 40, cy + 220,
-         "config file yet, so they reset on restart.", W_HINT);
+         "a missing config file. Persistence depends on that file existing.",
+         W_HINT);
 }
 
 /* ── Footer ───────────────────────────────────────────────────────────── */
 
 static void draw_footer(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    if (sh < 60) return;
-    const char* help = "Up/Down choose    Enter continue    Esc back";
-    u32 tw = 8 * (u32)kstrlen(help);
-    gfx_draw_string((sw > tw) ? (sw - tw) / 2 : 0, sh - 40, help, W_HINT, FB_TRANSPARENT);
+    if (sh < 60 || w.step == STEP_WELCOME) return;
+
+    /* One consistent navigation bar, with exactly one primary action. */
+    u32 y = sh - 48;
+    fb_fill_rect(0, y, sw, 48, W_BG);
+    fb_fill_rect(0, y, sw, 1, W_BORDER);
+    button(sw > 228 ? sw - 228 : 0, y + 8, 88, 32, "Back", false);
+    button(sw > 128 ? sw - 128 : 0, y + 8, 112, 32,
+           w.step == STEP_DONE ? "Finish" : "Continue", true);
 }
 
 /* ── Input handling ───────────────────────────────────────────────────── */
@@ -358,7 +372,7 @@ static void apply_and_save(void) {
 static void step_leave(wizard_step_t from) {
     switch (from) {
     case STEP_WELCOME: break;                 /* nothing to record */
-    case STEP_MODE:      w.install = (w.sel[STEP_MODE] == 1); break;
+    case STEP_MODE:      w.install = false; break;
     case STEP_LANGUAGE:  w.language = w.sel[STEP_LANGUAGE]; break;
     case STEP_TIMEZONE:  w.timezone = w.sel[STEP_TIMEZONE]; break;
     case STEP_DISK:      break;               /* informational */
@@ -390,14 +404,16 @@ static void go_back(void) {
     if (w.step == STEP_WELCOME) return;
     if (w.step == STEP_DONE) { w.step = STEP_WALLPAPER; return; }
     wizard_step_t prev = (wizard_step_t)(w.step - 1);
-    if (prev == STEP_DISK && !w.install) prev = STEP_MODE;
+    /* The install-only disk step is skipped in both directions. Returning
+     * from Network should land on Time zone, not jump back to Mode. */
+    if (w.step == STEP_NETWORK && !w.install) prev = STEP_TIMEZONE;
     w.step = prev;
 }
 
 static void adjust(int delta) {
     u32 count = 0;
     switch (w.step) {
-    case STEP_MODE:      count = 2; break;
+    case STEP_MODE:      count = 1; break;
     case STEP_LANGUAGE:  count = LANGUAGE_COUNT; break;
     case STEP_TIMEZONE:  count = TIMEZONE_COUNT; break;
     case STEP_DISK:      return;
@@ -452,12 +468,12 @@ static bool handle_event(const input_event_t* e) {
         u32 cy = (sh > card_h) ? (sh - card_h) / 2 : 0;
 
         if (w.step == STEP_WALLPAPER) {
-            /* Step through with hover over the preview. */
-            if (hit(cx, cy, card_w, card_h)) adjust(1);
+            /* Hover never changes the selected wallpaper. Use a click. */
             return true;
         }
 
-        u32 count = (w.step == STEP_MODE || w.step == STEP_NETWORK) ? 2
+        u32 count = (w.step == STEP_MODE) ? 1
+                  : (w.step == STEP_NETWORK) ? 2
                   : (w.step == STEP_LANGUAGE) ? LANGUAGE_COUNT
                   : (w.step == STEP_TIMEZONE) ? TIMEZONE_COUNT : 0;
         if (!count) return false;
@@ -475,15 +491,47 @@ static bool handle_event(const input_event_t* e) {
             u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
             if (hit(cx + 40, cy + ch - 76, 200, 44)) { advance(); return true; }
             if (hit(cx + 260, cy + ch - 76, 160, 44)) {
-                /* "Use defaults": keep every current value and go straight
-                 * to the summary, which is what the button promises. */
+                /* "Use defaults" goes to the summary with the stated defaults. */
                 w.step = STEP_DONE;
                 return true;
             }
             return true;
         }
 
-        if (w.step == STEP_DONE) { advance(); return true; }
+        /* Back and the single primary action are in the same footer on every
+         * step. A random click no longer finishes setup by accident. */
+        u32 footer_y = sh > 48 ? sh - 48 : 0;
+        if (hit(sw > 228 ? sw - 228 : 0, footer_y + 8, 88, 32)) {
+            go_back();
+            return true;
+        }
+        if (hit(sw > 128 ? sw - 128 : 0, footer_y + 8, 112, 32)) {
+            advance();
+            return true;
+        }
+        if (w.step == STEP_DONE) return true;
+
+        u32 card_w = 640, card_h = 320;
+        u32 row_x = 40, row_y = 0, row_w = 560, row_count = 0;
+        switch (w.step) {
+        case STEP_MODE:      card_h = 340; row_y = 110; row_count = 1; break;
+        case STEP_LANGUAGE:  card_h = 460; row_y = 100; row_count = LANGUAGE_COUNT; break;
+        case STEP_TIMEZONE:  card_h = 470; row_y = 100; row_count = TIMEZONE_COUNT; break;
+        case STEP_NETWORK:   card_h = 400; row_y = 150; row_count = 2; break;
+        case STEP_WALLPAPER: {
+            u32 cw = 420, ch = 96;
+            u32 cx = sw > cw ? (sw - cw) / 2 : 0;
+            u32 cy = sh > 200 ? sh - 200 : 0;
+            if (hit(cx, cy, cw, ch)) adjust(1);
+            return true;
+        }
+        default: return true;
+        }
+
+        u32 cx = sw > card_w ? (sw - card_w) / 2 : 0;
+        u32 cy = sh > card_h ? (sh - card_h) / 2 : 0;
+        int row = hit_list(cx + row_x, cy + row_y, row_w, row_count);
+        if (row >= 0) w.sel[w.step] = (u32)row;
         return true;
     }
 
@@ -505,11 +553,11 @@ bool wizard_run(void) {
     w.step = STEP_WELCOME;
     w.sel[STEP_MODE] = 0;
     w.sel[STEP_LANGUAGE] = 0;
-    w.sel[STEP_TIMEZONE] = 4;        /* UTC+00:00, which covers Nairobi */
+    w.sel[STEP_TIMEZONE] = 6;        /* UTC+03:00, East Africa */
     w.sel[STEP_NETWORK] = 0;
     w.sel[STEP_WALLPAPER] = 0;
     w.language = 0;
-    w.timezone = 4;
+    w.timezone = 6;
     w.wallpaper = 0;
     w.install = false;
     w.network_static = false;
@@ -548,7 +596,15 @@ bool wizard_run(void) {
         last_h = g_framebuffer.height;
         first = false;
 
-        if (!dirty) { asm volatile("hlt"); continue; }
+        if (!dirty) { scheduler_yield(); asm volatile("hlt"); continue; }
+
+        /* Repaint the full background before each dirty frame so old
+         * cards never ghost through after moving between setup steps. The
+         * wallpaper step previews the currently selected solid style. */
+        u32 preview_style = w.step == STEP_WALLPAPER
+                          ? w.sel[STEP_WALLPAPER]
+                          : (u32)config_get_int("wallpaper", 0);
+        wallpaper_draw(preview_style);
 
         switch (w.step) {
         case STEP_WELCOME:  draw_welcome(); break;
@@ -565,6 +621,9 @@ bool wizard_run(void) {
         draw_footer();
         ui_draw_cursor();
 
+        /* This wizard runs inside a cooperative task. Yield so the shell and
+         * ring-3 test task can make progress while setup waits for input. */
+        scheduler_yield();
         asm volatile("hlt");
     }
 

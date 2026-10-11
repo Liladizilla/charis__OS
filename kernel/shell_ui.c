@@ -19,25 +19,25 @@
 #include <kernel/mouse.h>
 #include <kernel/timer.h>
 #include <kernel/string.h>
+#include <kernel/ui_theme.h>
+#include <kernel/scheduler.h>
 #include <kernel/printf.h>
-#include <kernel/shell.h>
 #include <kernel/wallpaper.h>
 #include <kernel/config.h>
 #include <kernel/wizard.h>
-#include <kernel/string.h>
 
-/* ── Theme ────────────────────────────────────────────────────────── */
-#define T_BG          FB_ARGB(0xFF, 0x0B, 0x0F, 0x17)
-#define T_TASKBAR     FB_ARGB(0xEE, 0x15, 0x1B, 0x26)
-#define T_START_BTN   FB_ARGB(0xEE, 0x20, 0x28, 0x38)
-#define T_START_HOVER FB_ARGB(0xFF, 0x2C, 0x37, 0x4C)
-#define T_MENU        FB_ARGB(0xF5, 0x16, 0x1D, 0x29)
-#define T_MENU_ITEM   FB_ARGB(0xF5, 0x1E, 0x27, 0x36)
-#define T_MENU_HOVER  FB_ARGB(0xFF, 0x2E, 0x6B, 0xD6)
-#define T_FG          FB_ARGB(0xFF, 0xE6, 0xEC, 0xF5)
-#define T_FG_DIM      FB_ARGB(0xFF, 0x93, 0x9F, 0xB5)
-#define T_BORDER      FB_ARGB(0xFF, 0x2A, 0x33, 0x45)
-#define T_CURSOR      FB_ARGB(0xFF, 0xFF, 0xFF, 0xFF)
+/* ── Shared solid-morphism theme ─────────────────────────────────── */
+#define T_BG          CHARIS_UI_BACKGROUND
+#define T_TASKBAR     CHARIS_UI_PANEL
+#define T_START_BTN   CHARIS_UI_PANEL_RAISED
+#define T_START_HOVER CHARIS_UI_SURFACE_RAISED
+#define T_MENU        CHARIS_UI_PANEL
+#define T_MENU_ITEM   CHARIS_UI_SURFACE
+#define T_MENU_HOVER  CHARIS_UI_ACCENT_SURFACE
+#define T_FG          CHARIS_UI_TEXT
+#define T_FG_DIM      CHARIS_UI_MUTED
+#define T_BORDER      CHARIS_UI_BORDER
+#define T_CURSOR      CHARIS_UI_TEXT
 
 /* Layout. */
 #define TASKBAR_H     44
@@ -48,15 +48,32 @@
 
 typedef struct {
     const char* label;
-    const char* command;   /* what the shell runs when picked */
 } menu_entry_t;
 
 static const menu_entry_t MENU_ITEMS[] = {
-    { "Terminal",        "terminal" },
-    { "File Manager",    "files"    },
-    { "Text Editor",     "editor"   },
-    { "Settings",        "settings" },
-    { "About CharisOS",  "about"    },
+    { "Terminal" },
+    { "File Manager" },
+    { "Text Editor" },
+    { "Settings" },
+    { "About CharisOS" },
+};
+
+static bool notice_open = false;
+static int notice_item = -1;
+
+static const char* const NOTICE_LINE_1[] = {
+    "A graphical terminal is not wired up yet.",
+    "The VFS exists, but the graphical browser is",
+    "No graphical editor is implemented yet.",
+    "A graphical settings panel is not wired up.",
+    "CharisOS is a from-scratch x86_64 kernel.",
+};
+static const char* const NOTICE_LINE_2[] = {
+    "Kernel output remains on the text/serial console.",
+    "not connected to file operations yet.",
+    "This screen will not pretend to show source code.",
+    "Persistence needs an existing writable config file.",
+    "The desktop and built-in apps are still partial.",
 };
 #define MENU_ITEM_COUNT ((u32)(sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0])))
 
@@ -92,20 +109,21 @@ static void draw_taskbar(void) {
     u32 ty = y + (TASKBAR_H - font_cell_h) / 2;
     gfx_draw_string(14, ty, "Charis", T_FG, FB_TRANSPARENT);
 
-    /* Right side: a clock. The kernel has a running tick counter, which is
-     * uptime rather than wall-clock time, so it is labelled as such. */
+    /* The timer provides uptime, not wall-clock time. Label it explicitly
+     * and use one unambiguous HH:MM:SS format. */
     u64 secs = timer_get_ms() / 1000;
-    char clock[32];
-    clock[0] = '0' + (char)((secs / 36000) % 10);
-    clock[1] = '0' + (char)((secs / 3600) % 10);
-    clock[2] = ':';
-    clock[3] = '0' + (char)((secs / 600) % 10);
-    clock[4] = '0' + (char)((secs / 60) % 10);
-    clock[5] = '0' + (char)((secs / 10) % 10);
-    clock[6] = '0' + (char)(secs % 10);
-    clock[7] = 'u';   /* uptime, not time of day */
-    clock[8] = 0;
-    u32 cw = 8 * 8;   /* 8 glyphs * 8px */
+    char clock[12];
+    clock[0] = 'U'; clock[1] = 'P'; clock[2] = ' ';
+    clock[3] = '0' + (char)((secs / 36000) % 10);
+    clock[4] = '0' + (char)((secs / 3600) % 10);
+    clock[5] = ':';
+    clock[6] = '0' + (char)((secs / 600) % 10);
+    clock[7] = '0' + (char)((secs / 60) % 10);
+    clock[8] = ':';
+    clock[9] = '0' + (char)((secs / 10) % 10);
+    clock[10] = '0' + (char)(secs % 10);
+    clock[11] = 0;
+    u32 cw = 11 * 8;
     gfx_draw_string(w - cw - 16, ty, clock, T_FG_DIM, FB_TRANSPARENT);
 }
 
@@ -117,6 +135,7 @@ static void draw_menu(void) {
     u32 y = h - TASKBAR_H - menu_h;
     u32 x = 0;
 
+    fb_fill_rect(x + 4, y + 4, MENU_W, menu_h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, MENU_W, menu_h, T_MENU);
     fb_draw_rect(x, y, MENU_W, menu_h, T_BORDER);
 
@@ -128,6 +147,34 @@ static void draw_menu(void) {
         gfx_draw_string(x + 14, iy + (MENU_ITEM_H - font_cell_h) / 2,
                         MENU_ITEMS[i].label, T_FG, FB_TRANSPARENT);
     }
+}
+
+/* A launcher item must not silently send output to an invisible VGA console.
+ * Until each application has a real framebuffer UI, explain its current state
+ * in a consistent, dismissible panel instead of pretending it launched. */
+static void draw_notice(void) {
+    if (!notice_open || notice_item < 0 || notice_item >= (int)MENU_ITEM_COUNT) return;
+
+    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
+    u32 cw = 440, ch = 152;
+    u32 x = sw > cw ? (sw - cw) / 2 : 0;
+    u32 y = sh > ch ? (sh - ch) / 2 : 0;
+
+    fb_fill_rect(x + 4, y + 4, cw, ch, CHARIS_UI_SHADOW);
+    fb_fill_rect(x, y, cw, ch, T_MENU);
+    fb_draw_rect(x, y, cw, ch, T_BORDER);
+    fb_fill_rect(x, y, cw, 28, T_START_BTN);
+    fb_fill_rect(x, y, cw, 1, CHARIS_UI_BORDER_STRONG);
+    gfx_draw_string(x + 16, y + 7, MENU_ITEMS[notice_item].label, T_FG, FB_TRANSPARENT);
+
+    gfx_draw_string(x + 20, y + 48, NOTICE_LINE_1[notice_item], T_FG, FB_TRANSPARENT);
+    gfx_draw_string(x + 20, y + 72, NOTICE_LINE_2[notice_item], T_FG_DIM, FB_TRANSPARENT);
+
+    u32 bw = 88, bh = 28;
+    u32 bx = x + cw - bw - 16, by = y + ch - bh - 12;
+    fb_fill_rect(bx, by, bw, bh, CHARIS_UI_ACCENT_SURFACE);
+    fb_draw_rect(bx, by, bw, bh, CHARIS_UI_BORDER_STRONG);
+    gfx_draw_string(bx + 24, by + 6, "Close", T_FG, FB_TRANSPARENT);
 }
 
 /* Software cursor. The PS/2 mouse has no hardware cursor once the display is
@@ -176,6 +223,7 @@ static void redraw_all(void) {
     wallpaper_draw((u32)config_get_int("wallpaper", 0));
     draw_taskbar();
     draw_menu();
+    draw_notice();
     ui_draw_cursor();
 }
 
@@ -232,11 +280,17 @@ static void handle_event(const input_event_t* e) {
             return;
         }
 
-        /* Escape closes the menu. */
-        if (e->type == INPUT_KEY_DOWN && base == KEY_ESCAPE && ui.menu_open) {
-            ui.menu_open = false;
-            ui.hover_item = -1;
-            ui.needs_redraw = true;
+        /* Escape dismisses the topmost transient surface. */
+        if (e->type == INPUT_KEY_DOWN && base == KEY_ESCAPE) {
+            if (notice_open) {
+                notice_open = false;
+                notice_item = -1;
+                ui.needs_redraw = true;
+            } else if (ui.menu_open) {
+                ui.menu_open = false;
+                ui.hover_item = -1;
+                ui.needs_redraw = true;
+            }
         }
         return;
     }
@@ -252,6 +306,16 @@ static void handle_event(const input_event_t* e) {
 
     case INPUT_MOUSE_DOWN: {
         int mx = e->mouse.x, my = e->mouse.y;
+
+        if (notice_open) {
+            /* The notice is modal: clicking its Close button or outside it
+             * dismisses it, and the same click cannot activate an item below. */
+            notice_open = false;
+            notice_item = -1;
+            ui.needs_redraw = true;
+            return;
+        }
+
         bool on_taskbar = my >= (int)(g_framebuffer.height - TASKBAR_H);
 
         if (on_taskbar && mx < (int)START_BTN_W) {
@@ -265,8 +329,9 @@ static void handle_event(const input_event_t* e) {
         if (hit >= 0) {
             ui.menu_open = false;
             ui.hover_item = -1;
+            notice_item = hit;
+            notice_open = true;
             ui.needs_redraw = true;
-            shell_execute((char*)MENU_ITEMS[hit].command);
         }
         return;
     }
@@ -325,6 +390,9 @@ void shell_ui_main(void* arg) {
          * rather than waiting for a redraw decision. */
         ui_draw_cursor();
 
+        /* The scheduler is cooperative: yield after each frame so a busy
+         * desktop cannot monopolize the CPU while waiting for input. */
+        scheduler_yield();
         asm volatile("hlt");
     }
 }

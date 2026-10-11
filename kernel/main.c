@@ -170,7 +170,8 @@ void kernel_main(u32 magic, u64 info_ptr) {
         net_init();
         BOOT_MARK('n');
     }
-    wm_create_window("CharisOS Desktop", 100, 100, 400, 300);
+    /* The graphical shell owns the framebuffer. Do not allocate an empty
+     * placeholder WM window that is never painted or integrated with its loop. */
     apps_init();
 
     // Bootstrap one ring-3 task using the shared low identity map and private

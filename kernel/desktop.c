@@ -5,6 +5,7 @@
 #include <kernel/vga.h>
 #include <kernel/string.h>
 #include <kernel/psf.h>
+#include <kernel/ui_theme.h>
 
 static desktop_icon_t desktop_icons[32];
 static taskbar_window_t taskbar_windows[16];
@@ -13,14 +14,14 @@ int g_icon_count = 0;
 static int taskbar_count = 0;
 
 // CharisOS desktop theme
-#define COLOR_DESKTOP_BG  0x0D1117
-#define COLOR_TASKBAR_BG  0x161B22
-#define COLOR_TASKBAR_FG  0x58A6FF
+#define COLOR_DESKTOP_BG  CHARIS_UI_BACKGROUND
+#define COLOR_TASKBAR_BG  CHARIS_UI_PANEL
+#define COLOR_TASKBAR_FG  CHARIS_UI_ACCENT
 
 void desktop_init(void) {
     g_icon_count = 0;
     taskbar_count = 0;
-    fb_clear(FB_COLOR(0x0D, 0x11, 0x17, 0xFF));
+    fb_clear(CHARIS_UI_BACKGROUND);
     vga_puts("Desktop initialized\n");
 }
 

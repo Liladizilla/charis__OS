@@ -3,8 +3,8 @@
 #include <kernel/graphics.h>
 #include <kernel/vga.h>
 #include <kernel/psf.h>
+#include <kernel/ui_theme.h>
 
-#define APP_COUNT 5
 
 void apps_init(void) {
     vga_puts("Applications initialized\n");
@@ -13,9 +13,9 @@ void apps_init(void) {
 void app_terminal_main(void) {
     window_t* win = wm_create_window("Terminal", 50, 50, 500, 300);
     (void)win;
-    graphics_set_color(0x0D1117);
+    graphics_set_color(CHARIS_UI_BACKGROUND);
     graphics_rect(58, 58, 484, 272, true);
-    psf_draw_string(66, 66, "CharisOS Terminal", 0x58A6FF, 0x0D1117);
+    psf_draw_string(66, 66, "CharisOS Terminal", CHARIS_UI_ACCENT, 0x0D1117);
     wm_render();
     
     while (1) {
