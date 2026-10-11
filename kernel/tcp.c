@@ -243,7 +243,7 @@ void net_tcp_input(const u8 source_ip[4], const u8 destination_ip[4],
             (TCP_FLAG_SYN | TCP_FLAG_ACK) || acknowledgement != local_seq)
             return;
         remote_seq = sequence + 1u;
-        /* The transmitted SYN already consumed one local sequence number. */
+        /* SYN already consumed one local sequence number when it was sent. */
         state = TCP_ESTABLISHED;
         (void)emit_segment(TCP_FLAG_ACK, local_seq, remote_seq, 0, 0);
         net_tcp_connect_callback_t callback = connect_callback;
