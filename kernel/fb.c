@@ -215,25 +215,35 @@ void fb_put_pixel(u32 x, u32 y, u32 argb) {
 void fb_fill_rect(u32 x, u32 y, u32 w, u32 h, u32 argb) {
     if (!g_framebuffer.initialized || argb == FB_TRANSPARENT) return;
 
-    /* Clip to the screen. */
-    if (x >= g_framebuffer.width || y >= g_framebuffer.height) return;
-    if (x + w > g_framebuffer.width)  w = g_framebuffer.width - x;
-    if (y + h > g_framebuffer.height) h = g_framebuffer.height - y;
+    /* Clip by subtraction, not x+w: unsigned addition can wrap and bypass
+     * clipping when callers pass untrusted or accidentally huge dimensions. */
+    if (x >= g_framebuffer.width || y >= g_framebuffer.height || !w || !h) return;
+    u32 max_w = g_framebuffer.width - x;
+    u32 max_h = g_framebuffer.height - y;
+    if (w > max_w) w = max_w;
+    if (h > max_h) h = max_h;
 
-    for (u32 py = y; py < y + h; py++) {
-        for (u32 px = x; px < x + w; px++) {
+    u32 end_x = x + w; /* Safe after clipping against width - x. */
+    u32 end_y = y + h; /* Safe after clipping against height - y. */
+    for (u32 py = y; py < end_y; py++) {
+        for (u32 px = x; px < end_x; px++) {
             fb_put_pixel(px, py, argb);
         }
     }
 }
 
 void fb_draw_rect(u32 x, u32 y, u32 w, u32 h, u32 argb) {
-    if (!g_framebuffer.initialized) return;
-    if (w == 0 || h == 0) return;
+    if (!g_framebuffer.initialized || !w || !h ||
+        x >= g_framebuffer.width || y >= g_framebuffer.height) return;
+
+    /* Clip first so x+w-1 and y+h-1 cannot wrap before reaching fb_fill_rect. */
+    if (w > g_framebuffer.width - x) w = g_framebuffer.width - x;
+    if (h > g_framebuffer.height - y) h = g_framebuffer.height - y;
+
     fb_fill_rect(x, y, w, 1, argb);
-    fb_fill_rect(x, y + h - 1, w, 1, argb);
+    if (h > 1) fb_fill_rect(x, y + h - 1, w, 1, argb);
     fb_fill_rect(x, y, 1, h, argb);
-    fb_fill_rect(x + w - 1, y, 1, h, argb);
+    if (w > 1) fb_fill_rect(x + w - 1, y, 1, h, argb);
 }
 
 void fb_clear(u32 argb) {
