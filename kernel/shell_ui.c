@@ -24,7 +24,6 @@
 #include <kernel/wallpaper.h>
 #include <kernel/config.h>
 #include <kernel/wizard.h>
-#include <kernel/string.h>
 
 /* ── Shared solid-morphism theme ─────────────────────────────────── */
 #define T_BG          CHARIS_UI_BACKGROUND
@@ -109,10 +108,8 @@ static void draw_taskbar(void) {
     u32 ty = y + (TASKBAR_H - font_cell_h) / 2;
     gfx_draw_string(14, ty, "Charis", T_FG, FB_TRANSPARENT);
 
-    /* Right side: a clock. The kernel has a running tick counter, which is
-     * uptime rather than wall-clock time, so it is labelled as such. */
-    /* The timer provides uptime, not wall-clock time. Keep the label
-     * explicit and use one unambiguous HH:MM:SS format. */
+    /* The timer provides uptime, not wall-clock time. Label it explicitly
+     * and use one unambiguous HH:MM:SS format. */
     u64 secs = timer_get_ms() / 1000;
     char clock[12];
     clock[0] = 'U'; clock[1] = 'P'; clock[2] = ' ';
