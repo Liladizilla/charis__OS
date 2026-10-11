@@ -29,16 +29,17 @@
 #include <kernel/timer.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
+#include <kernel/ui_theme.h>
 
-/* ── Palette, shared with the desktop ─────────────────────────────────── */
-#define W_BG       FB_ARGB(0xFF, 0x0D, 0x11, 0x17)
-#define W_CARD     FB_ARGB(0xFF, 0x10, 0x15, 0x1F)
-#define W_BORDER   FB_ARGB(0xFF, 0x3C, 0x4A, 0x63)
-#define W_FG       FB_ARGB(0xFF, 0xE8, 0xEE, 0xF6)
-#define W_DIM      FB_ARGB(0xFF, 0x8E, 0x9B, 0xB0)
-#define W_ACCENT   FB_ARGB(0xFF, 0x5E, 0xB4, 0xFF)
-#define W_SEL      FB_ARGB(0xFF, 0x24, 0x33, 0x4A)
-#define W_HINT     FB_ARGB(0xFF, 0x6E, 0x7A, 0x8C)
+/* ── Shared solid-morphism palette ────────────────────────────────────── */
+#define W_BG       CHARIS_UI_BACKGROUND
+#define W_CARD     CHARIS_UI_PANEL
+#define W_BORDER   CHARIS_UI_BORDER
+#define W_FG       CHARIS_UI_TEXT
+#define W_DIM      CHARIS_UI_MUTED
+#define W_ACCENT   CHARIS_UI_ACCENT
+#define W_SEL      CHARIS_UI_ACCENT_SURFACE
+#define W_HINT     CHARIS_UI_MUTED
 
 /* ── Option lists ─────────────────────────────────────────────────────── */
 
@@ -63,9 +64,9 @@ static const char* const TIMEZONES[] = {
     "UTC-08:00  Pacific",
     "UTC-05:00  Eastern",
     "UTC-03:00  Sao Paulo",
-    "UTC+00:00  London, Nairobi",
+    "UTC+00:00  London",
     "UTC+01:00  Central Europe",
-    "UTC+03:00  Moscow, Nairobi time",
+    "UTC+03:00  East Africa",
     "UTC+05:30  India",
     "UTC+08:00  Singapore, Beijing",
     "UTC+09:00  Tokyo, Seoul",
@@ -286,8 +287,7 @@ static void draw_network(void) {
         text(cx + 40, cy + 270,
              "The choice is recorded for when it is.", W_HINT);
     } else {
-        char buf[64] = "Address: 192.168.1.100";
-        text(cx + 40, cy + 250, buf, W_DIM);
+        text(cx + 40, cy + 250, "No address is configured.", W_DIM);
         text(cx + 40, cy + 270,
              "A static address is recorded but not yet applied to the driver.",
              W_HINT);
