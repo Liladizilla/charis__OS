@@ -60,17 +60,17 @@ static const char* const LANGUAGES[] = {
  * pretending to know about "Europe/London" would be a lie. The offset is real
  * and usable. */
 static const char* const TIMEZONES[] = {
-    "UTC-12:00  Baker Island",
-    "UTC-08:00  Pacific",
-    "UTC-05:00  Eastern",
-    "UTC-03:00  Sao Paulo",
-    "UTC+00:00  London",
-    "UTC+01:00  Central Europe",
+    "UTC-12:00  Fixed offset",
+    "UTC-08:00  Fixed offset",
+    "UTC-05:00  Fixed offset",
+    "UTC-03:00  Fixed offset",
+    "UTC+00:00  Fixed offset",
+    "UTC+01:00  Fixed offset",
     "UTC+03:00  East Africa",
     "UTC+05:30  India",
-    "UTC+08:00  Singapore, Beijing",
-    "UTC+09:00  Tokyo, Seoul",
-    "UTC+12:00  Auckland",
+    "UTC+08:00  Singapore / Beijing",
+    "UTC+09:00  Tokyo / Seoul",
+    "UTC+12:00  Fixed offset",
 };
 #define TIMEZONE_COUNT ((u32)(sizeof(TIMEZONES) / sizeof(TIMEZONES[0])))
 
