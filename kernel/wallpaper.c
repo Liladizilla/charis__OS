@@ -65,7 +65,7 @@ const char* wallpaper_description(u32 style) {
     case WALLPAPER_EMBER: return "Warm and dark";
     case WALLPAPER_FOREST: return "Cool green";
     case WALLPAPER_DUSK:  return "Deep purple planes";
-    case WALLPAPER_MONO:  return "Dim, low power";
+    case WALLPAPER_MONO:  return "Near-black monochrome";
     case WALLPAPER_CHARIS:
     default:              return "Charis navy";
     }
