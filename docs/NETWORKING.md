@@ -11,6 +11,10 @@
 - A minimal single-connection TCP client with SYN/SYN-ACK handshake, checksummed segments, basic ACK handling, data callbacks and FIN close.
 - A plain HTTP GET client that composes DNS and TCP, parses bounded response headers and streams response body chunks.
 - Browser integration for `http://` URLs, with a bounded HTML-tag-stripped text preview; `https://` remains explicitly unsupported.
+- Browser URL validation for DNS-style hostnames and the default port 80, including fragment stripping and query-only request targets.
+- Visible status feedback for HTTP redirects and server errors; redirects are reported, not followed.
+- HTML document-title extraction and viewport-width text wrapping for remote and local previews.
+- PageUp/PageDown scrolling that follows the same visual row boundaries as the text renderer.
 
 ## Configuration
 
@@ -39,4 +43,4 @@ The resolver uses UDP port 53 and the configured `net_dns` address. Network conf
 - HTTPS/TLS, redirects, chunked transfer decoding, full HTML/CSS layout, JavaScript and standards-compliant document rendering.
 - End-to-end hardware tests against a real LAN.
 
-The current browser is still a local shell until the missing transport, security, HTTP and rendering layers are implemented and tested. Do not treat successful kernel CI as proof of Internet connectivity.
+The browser can fetch plain HTTP when static IP, gateway, DNS and ARP are configured correctly, but it remains a bounded text preview rather than a modern browser. HTTPS/TLS, redirects, JavaScript, full HTML/CSS layout and standards-compliant document rendering are not implemented. Do not treat successful kernel CI as proof of Internet connectivity.
