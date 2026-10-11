@@ -610,8 +610,8 @@ static void browser_scroll_preview(bool down) {
     usize total = remote
         ? preview_count_lines(remote_text, remote_text_length)
         : preview_count_lines(file_preview, file_preview_length);
-    usize visible = g_framebuffer.height > 200u
-        ? (g_framebuffer.height - 180u) / 20u : 1u;
+    usize visible = g_framebuffer.height > 274u
+        ? (g_framebuffer.height - 274u) / 20u : 1u;
     if (!visible) visible = 1u;
     usize maximum = total > visible ? total - visible : 0u;
     usize* offset = remote ? &remote_scroll_lines : &file_scroll_lines;
