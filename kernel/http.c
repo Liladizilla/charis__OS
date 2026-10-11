@@ -118,7 +118,7 @@ static bool parse_headers(void) {
         usize name_length = (usize)(colon - line);
         usize value_length = (usize)(end - value);
         while (value_length && (value[value_length - 1u] == ' ' ||
-                                value[value_length - 1u] == '\\t'))
+                                value[value_length - 1u] == '\t'))
             value_length--;
         if (ascii_equal(line, name_length, "content-length")) {
             u32 parsed;
@@ -154,8 +154,8 @@ static void deliver_body(const u8* data, usize length) {
 
 static bool parse_chunk_size(void) {
     usize n = chunk_line_length;
-    if (n && chunk_line[n - 1u] == '\\n') n--;
-    if (n && chunk_line[n - 1u] == '\\r') n--;
+    if (n && chunk_line[n - 1u] == '\n') n--;
+    if (n && chunk_line[n - 1u] == '\r') n--;
     if (!n) return false;
     u32 size = 0;
     usize digits = 0;
@@ -190,10 +190,10 @@ static void consume_chunked(const u8* data, usize length) {
             chunk_remaining -= (u32)take;
             if (chunk_remaining == 0) chunk_state = HTTP_CHUNK_DATA_CR;
         } else if (chunk_state == HTTP_CHUNK_DATA_CR) {
-            if (data[pos++] != '\\r') { finish_request(false, true); return; }
+            if (data[pos++] != '\r') { finish_request(false, true); return; }
             chunk_state = HTTP_CHUNK_DATA_LF;
         } else if (chunk_state == HTTP_CHUNK_DATA_LF) {
-            if (data[pos++] != '\\n') { finish_request(false, true); return; }
+            if (data[pos++] != '\n') { finish_request(false, true); return; }
             chunk_state = HTTP_CHUNK_SIZE;
         } else {
             char ch = (char)data[pos++];
@@ -202,9 +202,9 @@ static void consume_chunked(const u8* data, usize length) {
                 return;
             }
             chunk_line[chunk_line_length++] = ch;
-            if (ch == '\\n') {
+            if (ch == '\n') {
                 usize n = chunk_line_length;
-                if (n >= 2u && chunk_line[n - 2u] == '\\r') n -= 2u;
+                if (n >= 2u && chunk_line[n - 2u] == '\r') n -= 2u;
                 else { finish_request(false, true); return; }
                 if (chunk_state == HTTP_CHUNK_SIZE) {
                     if (!parse_chunk_size()) { finish_request(false, true); return; }
