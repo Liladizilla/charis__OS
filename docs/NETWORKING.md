@@ -10,6 +10,7 @@
 - A bounded asynchronous DNS A-record resolver.
 - A minimal single-connection TCP client with SYN/SYN-ACK handshake, checksummed segments, basic ACK handling, data callbacks and FIN close.
 - A plain HTTP GET client that composes DNS and TCP, parses bounded response headers and streams response body chunks.
+- Browser integration for `http://` URLs, with a bounded HTML-tag-stripped text preview; `https://` remains explicitly unsupported.
 
 ## Configuration
 
@@ -35,7 +36,7 @@ The resolver uses UDP port 53 and the configured `net_dns` address. Network conf
 
 - DHCP, IPv6 and IP fragment reassembly.
 - Full TCP socket support, congestion control, robust retransmission timers, multiple concurrent connections and TLS.
-- HTTPS/TLS, redirects, chunked transfer decoding, browser integration, HTML/CSS layout, JavaScript and document rendering.
+- HTTPS/TLS, redirects, chunked transfer decoding, full HTML/CSS layout, JavaScript and standards-compliant document rendering.
 - End-to-end hardware tests against a real LAN.
 
 The current browser is still a local shell until the missing transport, security, HTTP and rendering layers are implemented and tested. Do not treat successful kernel CI as proof of Internet connectivity.
