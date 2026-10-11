@@ -78,7 +78,7 @@ static int widget_get_buffer_height(int buf_w) {
 
 void widget_draw_label(widget_t* widget, u32* buffer, int buf_w) {
     int buf_h = widget_get_buffer_height(buf_w);
-    for (int y = widget->y; y < widget->y + widget->h && y < buf_h; y++) {
+    for (int y = widget->y < 0 ? 0 : widget->y; y < widget->y + widget->h && y < buf_h; y++) {
         for (int x = widget->x; x < widget->x + widget->w && x < buf_w; x++) {
             if (x >= 0 && y >= 0) {
                 buffer[y * buf_w + x] = widget->bg_color;
@@ -108,7 +108,7 @@ void widget_draw_button(widget_t* widget, u32* buffer, int buf_w) {
     }
     
     /* Fill button background */
-    for (int y = widget->y; y < widget->y + widget->h && y < buf_h; y++) {
+    for (int y = widget->y < 0 ? 0 : widget->y; y < widget->y + widget->h && y < buf_h; y++) {
         for (int x = widget->x; x < widget->x + widget->w && x < buf_w; x++) {
             if (x >= 0 && y >= 0) {
                 buffer[y * buf_w + x] = bg;
@@ -125,7 +125,7 @@ void widget_draw_button(widget_t* widget, u32* buffer, int buf_w) {
             buffer[(widget->y + widget->h - 1) * buf_w + x] = CHARIS_UI_BORDER;
         }
     }
-    for (int y = widget->y; y < widget->y + widget->h && y < buf_h; y++) {
+    for (int y = widget->y < 0 ? 0 : widget->y; y < widget->y + widget->h && y < buf_h; y++) {
         if (widget->x >= 0 && widget->x < buf_w) {
             buffer[y * buf_w + widget->x] = CHARIS_UI_BORDER;
         }
@@ -146,7 +146,7 @@ void widget_draw_button(widget_t* widget, u32* buffer, int buf_w) {
 void widget_draw_textbox(widget_t* widget, u32* buffer, int buf_w) {
     int buf_h = widget_get_buffer_height(buf_w);
     /* Fill background */
-    for (int y = widget->y; y < widget->y + widget->h && y < buf_h; y++) {
+    for (int y = widget->y < 0 ? 0 : widget->y; y < widget->y + widget->h && y < buf_h; y++) {
         for (int x = widget->x; x < widget->x + widget->w && x < buf_w; x++) {
             if (x >= 0 && y >= 0) {
                 buffer[y * buf_w + x] = widget->bg_color;
@@ -163,7 +163,7 @@ void widget_draw_textbox(widget_t* widget, u32* buffer, int buf_w) {
             buffer[(widget->y + widget->h - 1) * buf_w + x] = CHARIS_UI_BORDER;
         }
     }
-    for (int y = widget->y; y < widget->y + widget->h && y < buf_h; y++) {
+    for (int y = widget->y < 0 ? 0 : widget->y; y < widget->y + widget->h && y < buf_h; y++) {
         if (widget->x >= 0 && widget->x < buf_w) {
             buffer[y * buf_w + widget->x] = CHARIS_UI_BORDER;
         }
@@ -192,7 +192,7 @@ void widget_draw_textbox(widget_t* widget, u32* buffer, int buf_w) {
 void widget_draw_panel(widget_t* widget, u32* buffer, int buf_w) {
     int buf_h = widget_get_buffer_height(buf_w);
     /* Fill panel background */
-    for (int y = widget->y; y < widget->y + widget->h && y < buf_h; y++) {
+    for (int y = widget->y < 0 ? 0 : widget->y; y < widget->y + widget->h && y < buf_h; y++) {
         for (int x = widget->x; x < widget->x + widget->w && x < buf_w; x++) {
             if (x >= 0 && y >= 0) {
                 buffer[y * buf_w + x] = widget->bg_color;
@@ -208,7 +208,7 @@ void widget_draw_panel(widget_t* widget, u32* buffer, int buf_w) {
                 buffer[(widget->y + widget->h - 1) * buf_w + x] = CHARIS_UI_BORDER;
             }
         }
-        for (int y = widget->y; y < widget->y + widget->h && y < buf_h; y++) {
+        for (int y = widget->y < 0 ? 0 : widget->y; y < widget->y + widget->h && y < buf_h; y++) {
             if (widget->x >= 0 && widget->x < buf_w) buffer[y * buf_w + widget->x] = CHARIS_UI_BORDER;
             if (widget->x + widget->w - 1 >= 0 && widget->x + widget->w - 1 < buf_w) {
                 buffer[y * buf_w + (widget->x + widget->w - 1)] = CHARIS_UI_BORDER;
