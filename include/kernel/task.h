@@ -40,6 +40,7 @@ typedef struct task {
     u32 state;
     u32 pid;
     u32 exit_code; /* Status supplied to SYS_EXIT; retained while zombie. */
+    u32 parent_pid; /* PID that created this task, or 0 for kernel bootstrap tasks. */
     u32 slot_index; /* Stable array index; PID is monotonic and not bounded by TASK_MAX_TASKS. */
     u32 priority;
     char name[TASK_NAME_MAX];
@@ -64,6 +65,7 @@ typedef struct task {
 
 task_t* task_allocate(void);
 u32 task_next_pid(void);
+task_t* task_find_by_pid(u32 pid);
 
 typedef void (*task_func_t)(void* arg);
 
