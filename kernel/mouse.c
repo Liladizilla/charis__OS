@@ -11,6 +11,15 @@ static uint32_t mouse_screen_height = 600;
 void mouse_set_bounds(uint32_t width, uint32_t height) {
     mouse_screen_width = width;
     mouse_screen_height = height;
+
+    /* Clamp immediately when a video mode changes, not only after the next
+     * mouse packet. Avoid narrowing oversized unsigned dimensions to int. */
+    if (!width) g_mouse.x = 0;
+    else if (width <= 0x7FFFFFFFu && g_mouse.x >= (s32)width)
+        g_mouse.x = (s32)(width - 1);
+    if (!height) g_mouse.y = 0;
+    else if (height <= 0x7FFFFFFFu && g_mouse.y >= (s32)height)
+        g_mouse.y = (s32)(height - 1);
 }
 
 /*

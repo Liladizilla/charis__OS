@@ -27,6 +27,7 @@ bool input_push_event(input_event_t* evt) {
 }
 
 bool input_pop_event(input_event_t* evt) {
+    if (!evt) return false;
     if (input_tail == input_head) {
         return false; /* Queue empty */
     }
