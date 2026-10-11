@@ -399,8 +399,8 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
         gfx_draw_string(x + 24, y + 22, "ABOUT CHARIS BROWSER", C_ACCENT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 62, "Built into CharisOS. No external browser runtime is required for local pages.", C_TEXT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 92, "This version includes tabs, address entry, local navigation, history and bookmarks.", C_MUTED, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 122, "Remote websites need a real TCP/IP, DNS, TLS/HTTP client and document renderer.", C_WARNING, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 152, "The current kernel network receive and TCP/IP functions are placeholders.", C_MUTED, FB_TRANSPARENT);
+        gfx_draw_string(x + 24, y + 122, "Plain HTTP can load a bounded text preview when networking is configured.", C_TEXT, FB_TRANSPARENT);
+        gfx_draw_string(x + 24, y + 152, "HTTPS, JavaScript and full HTML/CSS rendering are not supported yet.", C_WARNING, FB_TRANSPARENT);
     } else if (kstrcmp(address, "charis://help") == 0) {
         gfx_draw_string(x + 24, y + 22, "BROWSER HELP", C_ACCENT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 58, "Click the address bar or press Ctrl+L, type a URL, then press Enter.", C_TEXT, FB_TRANSPARENT);
