@@ -14,6 +14,7 @@ void ipc_init(void) {
         ipc_channels[i].head = 0;
         ipc_channels[i].tail = 0;
         ipc_channels[i].count = 0;
+        ipc_channels[i].generation = 1;
         ipc_channels[i].wait_head = NULL;
     }
     for (int i = 0; i < SHM_MAX_BLOCKS; i++) {
@@ -101,19 +102,20 @@ int ipc_recv(int channel, void* buf, u64 max_size) {
     ipc_channel_t* ch = &ipc_channels[channel];
 
     /* A wake-up is only a hint: another receiver may have consumed the
-     * message first, or the channel may have been closed. Always re-check
-     * state before touching the ring buffer. */
+     * message first, or the channel may have been closed/reused. Re-check
+     * queue state and the generation before touching the ring buffer. */
     while (ch->count == 0) {
         task_t* current = scheduler_current();
         if (!current) return -1;
 
+        u32 wait_generation = ch->generation;
         ipc_remove_waiter(ch, current);
         current->ipc_wait_next = ch->wait_head;
         ch->wait_head = current;
         scheduler_block_task(current);
         scheduler_yield();
 
-        if (!ch->in_use) return -1;
+        if (!ch->in_use || ch->generation != wait_generation) return -1;
     }
 
     ipc_message_t* msg = &ch->messages[ch->tail];
@@ -136,9 +138,14 @@ void ipc_close(int channel) {
     ipc_channel_t* ch = &ipc_channels[channel];
     if (!ch->in_use) return;
 
+    /* Advance before waking waiters. Even if this slot is immediately reused,
+     * old receivers can distinguish the new channel from the one they joined. */
+    ch->generation++;
+    if (ch->generation == 0) ch->generation = 1;
+
     /* Closing a channel must not strand tasks forever in BLOCKED state.
      * Detach the entire wait list and wake each receiver so it can observe
-     * that the channel is closed and return an error. */
+     * the generation change and return an error. */
     task_t* waiter = ch->wait_head;
     ch->wait_head = NULL;
     while (waiter) {
