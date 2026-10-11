@@ -12,6 +12,8 @@
 #include <kernel/string.h>
 #include <kernel/ui_theme.h>
 #include <kernel/http.h>
+#include <kernel/vfs.h>
+#include <kernel/memory.h>
 
 #define BROWSER_MAX_TABS 4
 #define BROWSER_HISTORY  8
@@ -50,6 +52,10 @@ static bool remote_in_tag;
 static char remote_tag_name[8];
 static usize remote_tag_length;
 static bool remote_last_space;
+static char file_preview_url[BROWSER_URL_MAX];
+static char file_preview[2048];
+static usize file_preview_length;
+static bool file_preview_ready;
 static const u32 C_BG = CHARIS_UI_BACKGROUND;
 static const u32 C_PANEL = CHARIS_UI_PANEL;
 static const u32 C_RAISED = CHARIS_UI_PANEL_RAISED;
@@ -233,6 +239,56 @@ static bool remote_navigate(const char* url) {
     return true;
 }
 
+static bool file_path_has_parent(const char* path) {
+    usize i = 0;
+    while (path && path[i]) {
+        while (path[i] == '/') i++;
+        usize start = i;
+        while (path[i] && path[i] != '/') i++;
+        if (i - start == 2u && path[start] == '.' && path[start + 1u] == '.')
+            return true;
+    }
+    return false;
+}
+
+static bool load_local_file(const char* url) {
+    if (!url || kstrncmp(url, "file://", 7u) != 0) return false;
+    const char* path = url + 7u;
+    usize path_len = kstrlen(path);
+    if (!path_len || path[0] != '/' || path_len >= BROWSER_URL_MAX ||
+        file_path_has_parent(path) || kstrchr(path, '?') || kstrchr(path, '#') ||
+        kstrchr(path, '\\\\'))
+        return false;
+
+    vfs_node_t* node = vfs_resolve(path);
+    if (!node || node->flags != VFS_FILE || !node->read) {
+        if (node && node->flags == VFS_FILE) kfree(node);
+        return false;
+    }
+    usize limit = node->size < sizeof(file_preview) - 1u
+        ? (usize)node->size : sizeof(file_preview) - 1u;
+    int bytes = node->read(node, 0, limit, (u8*)file_preview);
+    kfree(node);
+    if (bytes < 0) return false;
+    usize count = (usize)bytes;
+    if (count > limit) count = limit;
+    usize output = 0;
+    for (usize i = 0; i < count; i++) {
+        u8 ch = (u8)file_preview[i];
+        if (ch == 0) return false; /* refuse binary data */
+        if (ch == '\r') continue;
+        if (ch == '\t') ch = ' ';
+        if (ch == '\n' || (ch >= 0x20u && ch != 0x7Fu))
+            file_preview[output++] = (char)ch;
+    }
+    file_preview[output] = 0;
+    file_preview_length = output;
+    kstrncpy(file_preview_url, url, sizeof(file_preview_url) - 1u);
+    file_preview_url[sizeof(file_preview_url) - 1u] = 0;
+    file_preview_ready = true;
+    return true;
+}
+
 static void navigate(const char* raw, bool add_history) {
     browser_tab_t* tab = current_tab();
     if (!tab || !raw || !raw[0]) return;
@@ -274,7 +330,10 @@ static void navigate(const char* raw, bool add_history) {
     } else if (kstrncmp(target, "https://", 8) == 0) {
         set_status("HTTPS unavailable until TLS and certificate validation exist");
     } else if (kstrncmp(target, "file://", 7) == 0) {
-        set_status("Local file viewer is not connected to VFS yet");
+        if (load_local_file(target))
+            set_status("Local file preview loaded");
+        else
+            set_status("Cannot open file; use a text file under the VFS root");
     } else {
         set_status("Unknown local page. Try charis://home");
     }
@@ -398,9 +457,31 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
         gfx_draw_string(x + 24, y + 60, address, C_TEXT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 104, "TLS and certificate validation must be implemented before HTTPS.", C_MUTED, FB_TRANSPARENT);
     } else {
-        gfx_draw_string(x + 24, y + 22, "LOCAL FILE VIEWER NOT READY", C_WARNING, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 60, address, C_TEXT, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 98, "The browser's file:// route still needs safe VFS read integration.", C_MUTED, FB_TRANSPARENT);
+        if (file_preview_ready && kstrcmp(address, file_preview_url) == 0) {
+            gfx_draw_string(x + 24, y + 22, "LOCAL TEXT FILE", C_ACCENT, FB_TRANSPARENT);
+            gfx_draw_string(x + 24, y + 48, address, C_MUTED, FB_TRANSPARENT);
+            u32 line_y = y + 78;
+            usize pos = 0;
+            while (pos < file_preview_length && line_y + 18u < y + h) {
+                char line[96];
+                usize n = 0;
+                while (pos < file_preview_length && n < sizeof(line) - 1u &&
+                       file_preview[pos] != '\n') {
+                    line[n++] = file_preview[pos++];
+                }
+                if (pos < file_preview_length && file_preview[pos] == '\n') pos++;
+                line[n] = 0;
+                if (n) gfx_draw_string(x + 24, line_y, line, C_TEXT, FB_TRANSPARENT);
+                line_y += 20u;
+            }
+            if (!file_preview_length)
+                gfx_draw_string(x + 24, line_y, "This file is empty.", C_MUTED, FB_TRANSPARENT);
+            gfx_draw_string(x + 24, y + h - 28, "Read-only preview, limited to 2 KiB.", C_MUTED, FB_TRANSPARENT);
+        } else {
+            gfx_draw_string(x + 24, y + 22, "LOCAL FILE UNAVAILABLE", C_WARNING, FB_TRANSPARENT);
+            gfx_draw_string(x + 24, y + 60, address, C_TEXT, FB_TRANSPARENT);
+            gfx_draw_string(x + 24, y + 98, "Use file:///path/to/text-file. Parent paths and binary files are rejected.", C_MUTED, FB_TRANSPARENT);
+        }
     }
 }
 
