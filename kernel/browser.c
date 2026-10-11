@@ -49,9 +49,15 @@ static u16 remote_status_code;
 static bool remote_loading;
 static bool remote_ready;
 static bool remote_in_tag;
-static bool remote_closing_tag;
+static bool remote_in_comment;
+static u8 remote_comment_dash_count;
+static u8 remote_comment_probe;
 static bool remote_tag_name_done;
-static bool remote_skip_content;
+static bool remote_closing_tag;
+static bool remote_suppress_content;
+static bool remote_in_entity;
+static char remote_entity[12];
+static usize remote_entity_length;
 static char remote_tag_name[8];
 static usize remote_tag_length;
 static bool remote_last_space;
@@ -110,6 +116,88 @@ static void remote_append(char ch) {
     remote_text[remote_text_length] = 0;
 }
 
+static void remote_append_text_char(char ch) {
+    if (ch == '\r' || ch == '\n' || ch == '\t' || ch == ' ') {
+        if (remote_text_length && !remote_last_space &&
+            remote_text[remote_text_length - 1u] != '\n') {
+            remote_append(' ');
+            remote_last_space = true;
+        }
+    } else if ((u8)ch >= 0x20u) {
+        remote_append(ch);
+        remote_last_space = false;
+    }
+}
+
+static char remote_lower(char ch) {
+    return ch >= 'A' && ch <= 'Z' ? (char)(ch - 'A' + 'a') : ch;
+}
+
+static bool remote_entity_equal(const char* entity, usize length,
+                               const char* expected) {
+    usize expected_length = kstrlen(expected);
+    if (length != expected_length) return false;
+    for (usize i = 0; i < length; i++)
+        if (remote_lower(entity[i]) != remote_lower(expected[i])) return false;
+    return true;
+}
+
+static bool remote_decode_entity(const char* entity, usize length, char* out) {
+    if (!entity || !out || !length) return false;
+    if (entity[0] == '#') {
+        usize i = 1;
+        u32 value = 0;
+        u32 base = 10u;
+        if (i < length && (entity[i] == 'x' || entity[i] == 'X')) {
+            base = 16u;
+            i++;
+        }
+        if (i == length) return false;
+        for (; i < length; i++) {
+            char ch = entity[i];
+            u32 digit;
+            if (ch >= '0' && ch <= '9') digit = (u32)(ch - '0');
+            else if (base == 16u && ch >= 'a' && ch <= 'f')
+                digit = (u32)(ch - 'a') + 10u;
+            else if (base == 16u && ch >= 'A' && ch <= 'F')
+                digit = (u32)(ch - 'A') + 10u;
+            else return false;
+            if (digit >= base || value > (0x10FFFFu - digit) / base)
+                return false;
+            value = value * base + digit;
+        }
+        if (value == 0u || value > 0x10FFFFu) return false;
+        if (value == 9u || value == 10u || value == 13u || value == 32u ||
+            value == 160u) *out = ' ';
+        else if (value >= 0x20u && value <= 0x7Eu) *out = (char)value;
+        else if (value == 0x2018u || value == 0x2019u) *out = '\'';
+        else if (value == 0x201Cu || value == 0x201Du) *out = '"';
+        else if (value == 0x2013u || value == 0x2014u) *out = '-';
+        else if (value == 0x2026u) *out = '.';
+        else if (value == 0x00A9u) *out = 'c';
+        else if (value == 0x00AEu) *out = 'R';
+        else *out = '?'; /* This text renderer is ASCII-only. */
+        return true;
+    }
+    if (remote_entity_equal(entity, length, "amp")) *out = '&';
+    else if (remote_entity_equal(entity, length, "lt")) *out = '<';
+    else if (remote_entity_equal(entity, length, "gt")) *out = '>';
+    else if (remote_entity_equal(entity, length, "quot")) *out = '"';
+    else if (remote_entity_equal(entity, length, "apos")) *out = '\'';
+    else if (remote_entity_equal(entity, length, "nbsp")) *out = ' ';
+    else if (remote_entity_equal(entity, length, "copy")) *out = 'c';
+    else if (remote_entity_equal(entity, length, "reg")) *out = 'R';
+    else if (remote_entity_equal(entity, length, "ndash") ||
+             remote_entity_equal(entity, length, "mdash")) *out = '-';
+    else if (remote_entity_equal(entity, length, "hellip")) *out = '.';
+    else if (remote_entity_equal(entity, length, "lsquo") ||
+             remote_entity_equal(entity, length, "rsquo")) *out = '\'';
+    else if (remote_entity_equal(entity, length, "ldquo") ||
+             remote_entity_equal(entity, length, "rdquo")) *out = '"';
+    else return false;
+    return true;
+}
+
 static bool remote_block_tag(void) {
     return kstrcmp(remote_tag_name, "p") == 0 ||
            kstrcmp(remote_tag_name, "br") == 0 ||
@@ -135,62 +223,119 @@ static void remote_body(const u8* data, usize length, void* context) {
     if (!data) return;
     for (usize i = 0; i < length; i++) {
         char ch = (char)data[i];
+        if (remote_in_comment) {
+            if (ch == '-') {
+                if (remote_comment_dash_count < 2u) remote_comment_dash_count++;
+            } else if (ch == '>' && remote_comment_dash_count >= 2u) {
+                remote_in_comment = false;
+                remote_comment_dash_count = 0;
+            } else {
+                remote_comment_dash_count = 0;
+            }
+            continue;
+        }
         if (remote_in_tag) {
+            if (remote_comment_probe == 0u && ch == '!' &&
+                remote_tag_length == 0u && !remote_closing_tag) {
+                remote_comment_probe = 1u;
+                continue;
+            }
+            if (remote_comment_probe == 1u) {
+                if (ch == '-') {
+                    remote_comment_probe = 2u;
+                    continue;
+                }
+                remote_comment_probe = 0u;
+            } else if (remote_comment_probe == 2u) {
+                if (ch == '-') {
+                    remote_in_comment = true;
+                    remote_in_tag = false;
+                    remote_comment_dash_count = 0;
+                    remote_comment_probe = 0u;
+                    continue;
+                }
+                remote_comment_probe = 0u;
+            }
             if (ch == '>') {
                 remote_in_tag = false;
-                bool hidden_tag = kstrcmp(remote_tag_name, "head") == 0 ||
-                                  kstrcmp(remote_tag_name, "script") == 0 ||
-                                  kstrcmp(remote_tag_name, "style") == 0;
-                if (hidden_tag) remote_skip_content = !remote_closing_tag;
-                if (!remote_skip_content && remote_block_tag() && remote_text_length &&
+                bool script_or_style = kstrcmp(remote_tag_name, "script") == 0 ||
+                                       kstrcmp(remote_tag_name, "style") == 0;
+                if (script_or_style) {
+                    if (remote_closing_tag) remote_suppress_content = false;
+                    else remote_suppress_content = true;
+                }
+                if (!remote_suppress_content && remote_block_tag() &&
+                    remote_text_length &&
                     remote_text[remote_text_length - 1u] != '\n')
                     remote_append('\n');
                 remote_tag_length = 0;
                 remote_tag_name[0] = 0;
                 remote_tag_name_done = false;
                 remote_closing_tag = false;
-            } else if (!remote_tag_name_done) {
-                if (ch == '/' && remote_tag_length == 0) {
-                    remote_closing_tag = true;
-                } else if ((ch >= 'A' && ch <= 'Z') ||
-                           (ch >= 'a' && ch <= 'z') ||
-                           (ch >= '0' && ch <= '9')) {
-                    if (remote_tag_length + 1u < sizeof(remote_tag_name)) {
-                        char lower = ch >= 'A' && ch <= 'Z' ? (char)(ch - 'A' + 'a') : ch;
-                        remote_tag_name[remote_tag_length++] = lower;
-                        remote_tag_name[remote_tag_length] = 0;
-                    }
-                } else {
-                    remote_tag_name_done = true;
-                }
+                remote_comment_probe = 0u;
+            } else if (ch == '/' && remote_tag_length == 0 &&
+                       !remote_tag_name_done) {
+                remote_closing_tag = true;
+            } else if (ch == ' ' || ch == '\t' || ch == '\r' ||
+                       ch == '\n' || ch == '/') {
+                if (remote_tag_length) remote_tag_name_done = true;
+            } else if (!remote_tag_name_done &&
+                       remote_tag_length + 1u < sizeof(remote_tag_name) &&
+                       ((ch >= 'A' && ch <= 'Z') ||
+                        (ch >= 'a' && ch <= 'z') ||
+                        (ch >= '0' && ch <= '9'))) {
+                char lower = ch >= 'A' && ch <= 'Z' ? (char)(ch - 'A' + 'a') : ch;
+                remote_tag_name[remote_tag_length++] = lower;
+                remote_tag_name[remote_tag_length] = 0;
             }
             continue;
         }
         if (ch == '<') {
             remote_in_tag = true;
+            remote_closing_tag = false;
+            remote_tag_name_done = false;
+            remote_comment_probe = 0u;
             remote_tag_length = 0;
             remote_tag_name[0] = 0;
-            remote_tag_name_done = false;
-            remote_closing_tag = false;
             continue;
         }
-        if (remote_skip_content) continue;
-        if (ch == '&') {
-            /* Entity decoding is intentionally conservative in this first renderer. */
-            remote_append(ch);
-            remote_last_space = false;
-            continue;
-        }
-        if (ch == '\r' || ch == '\n' || ch == '\t' || ch == ' ') {
-            if (remote_text_length && !remote_last_space &&
-                remote_text[remote_text_length - 1u] != '\n') {
-                remote_append(' ');
-                remote_last_space = true;
+        if (remote_suppress_content) continue;
+        if (remote_in_entity) {
+            if (ch == ';') {
+                char decoded;
+                if (remote_decode_entity(remote_entity, remote_entity_length, &decoded)) {
+                    remote_append_text_char(decoded);
+                } else {
+                    remote_append_text_char('&');
+                    for (usize j = 0; j < remote_entity_length; j++)
+                        remote_append_text_char(remote_entity[j]);
+                    remote_append_text_char(';');
+                }
+                remote_in_entity = false;
+                remote_entity_length = 0;
+                continue;
             }
-        } else if ((u8)ch >= 0x20u) {
-            remote_append(ch);
-            remote_last_space = false;
+            bool entity_char = (ch >= 'a' && ch <= 'z') ||
+                               (ch >= 'A' && ch <= 'Z') ||
+                               (ch >= '0' && ch <= '9') || ch == '#';
+            if (entity_char && remote_entity_length + 1u < sizeof(remote_entity)) {
+                remote_entity[remote_entity_length++] = ch;
+                remote_entity[remote_entity_length] = 0;
+                continue;
+            }
+            remote_append_text_char('&');
+            for (usize j = 0; j < remote_entity_length; j++)
+                remote_append_text_char(remote_entity[j]);
+            remote_in_entity = false;
+            remote_entity_length = 0;
         }
+        if (ch == '&') {
+            remote_in_entity = true;
+            remote_entity_length = 0;
+            remote_entity[0] = 0;
+            continue;
+        }
+        remote_append_text_char(ch);
     }
 }
 
@@ -203,6 +348,22 @@ static void remote_complete(bool success, void* context) {
     } else {
         set_status("HTTP request failed; check network configuration");
     }
+}
+
+static void remote_reset_parser(void) {
+    remote_in_tag = false;
+    remote_in_comment = false;
+    remote_comment_dash_count = 0;
+    remote_comment_probe = 0;
+    remote_tag_name_done = false;
+    remote_closing_tag = false;
+    remote_suppress_content = false;
+    remote_in_entity = false;
+    remote_entity_length = 0;
+    remote_entity[0] = 0;
+    remote_tag_length = 0;
+    remote_tag_name[0] = 0;
+    remote_last_space = false;
 }
 
 static bool remote_navigate(const char* url) {
@@ -245,13 +406,7 @@ static bool remote_navigate(const char* url) {
     remote_text_length = 0;
     remote_text[0] = 0;
     remote_status_code = 0;
-    remote_in_tag = false;
-    remote_closing_tag = false;
-    remote_tag_name_done = false;
-    remote_skip_content = false;
-    remote_tag_length = 0;
-    remote_tag_name[0] = 0;
-    remote_last_space = false;
+    remote_reset_parser();
     remote_ready = false;
     remote_loading = true;
     set_status("Resolving host and connecting over HTTP...");
@@ -425,8 +580,8 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
         gfx_draw_string(x + 24, y + 22, "ABOUT CHARIS BROWSER", C_ACCENT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 62, "Built into CharisOS. No external browser runtime is required for local pages.", C_TEXT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 92, "This version includes tabs, address entry, local navigation, history and bookmarks.", C_MUTED, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 122, "Remote pages use a basic HTTP text preview; HTTPS and full HTML/CSS are still unsupported.", C_WARNING, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 152, "Networking supports static IPv4, DNS, TCP and plain HTTP, with limited protocol coverage.", C_MUTED, FB_TRANSPARENT);
+        gfx_draw_string(x + 24, y + 122, "Remote websites need a real TCP/IP, DNS, TLS/HTTP client and document renderer.", C_WARNING, FB_TRANSPARENT);
+        gfx_draw_string(x + 24, y + 152, "The current kernel network receive and TCP/IP functions are placeholders.", C_MUTED, FB_TRANSPARENT);
     } else if (kstrcmp(address, "charis://help") == 0) {
         gfx_draw_string(x + 24, y + 22, "BROWSER HELP", C_ACCENT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 58, "Click the address bar or press Ctrl+L, type a URL, then press Enter.", C_TEXT, FB_TRANSPARENT);
