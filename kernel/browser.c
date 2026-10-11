@@ -306,6 +306,10 @@ static void remote_complete(bool success, void* context) {
     }
 }
 
+static void remote_reset_parser(void) {
+    remote_reset_parser();
+}
+
 static bool remote_navigate(const char* url) {
     if (!url || kstrncmp(url, "http://", 7u) != 0) return false;
     const char* host = url + 7u;
