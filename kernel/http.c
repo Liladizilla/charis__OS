@@ -88,6 +88,7 @@ static bool parse_decimal(const char* value, usize length, u32* out) {
 }
 
 static bool parse_headers(void) {
+    bool saw_transfer_encoding = false;
     header_buffer[header_length] = 0;
     char* text = (char*)header_buffer;
     char* line_end = kstrstr(text, "\r\n");
@@ -127,11 +128,16 @@ static bool parse_headers(void) {
             has_content_length = true;
             expected_body = parsed;
         } else if (ascii_equal(line, name_length, "transfer-encoding")) {
-            if (!ascii_equal(value, value_length, "chunked")) return false;
+            if (saw_transfer_encoding ||
+                !ascii_equal(value, value_length, "chunked"))
+                return false;
+            saw_transfer_encoding = true;
             chunked_encoding = true;
         }
         line = end + 2;
     }
+    /* RFC framing is ambiguous when both mechanisms are present. */
+    if (has_content_length && chunked_encoding) return false;
     headers_done = true;
     if (headers_callback)
         headers_callback(response_status, has_content_length, expected_body,
@@ -244,7 +250,9 @@ static void http_on_data(const u8* data, usize length, void* context) {
                 }
             }
         }
-        if (headers_done && has_content_length && expected_body == 0) {
+        if (headers_done &&
+            ((response_status == 204u || response_status == 304u) ||
+             (has_content_length && expected_body == 0))) {
             finish_request(true, true);
             return;
         }
