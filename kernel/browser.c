@@ -34,6 +34,8 @@ static bool browser_visible;
 static bool browser_shift;
 static bool browser_ctrl;
 static char browser_status[96] = "Ready";
+static char browser_bookmark[BROWSER_URL_MAX];
+static bool browser_has_bookmark;
 static const u32 C_BG = CHARIS_UI_BACKGROUND;
 static const u32 C_PANEL = CHARIS_UI_PANEL;
 static const u32 C_RAISED = CHARIS_UI_PANEL_RAISED;
@@ -188,12 +190,12 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
         gfx_draw_string(x + 24, y + 154, "Escape leaves address editing; Escape again closes the browser.", C_MUTED, FB_TRANSPARENT);
     } else if (kstrcmp(address, "charis://bookmarks") == 0) {
         gfx_draw_string(x + 24, y + 22, "BOOKMARKS", C_ACCENT, FB_TRANSPARENT);
-        if (tab && tab->bookmarked) {
-            gfx_draw_string(x + 24, y + 62, "charis://bookmarks", C_TEXT, FB_TRANSPARENT);
-            gfx_draw_string(x + 24, y + 90, "This local bookmarks view is available in the current tab.", C_MUTED, FB_TRANSPARENT);
+        if (browser_has_bookmark) {
+            gfx_draw_string(x + 24, y + 62, browser_bookmark, C_TEXT, FB_TRANSPARENT);
+            gfx_draw_string(x + 24, y + 90, "Click the saved entry to open it again.", C_MUTED, FB_TRANSPARENT);
         } else {
-            gfx_draw_string(x + 24, y + 62, "No bookmarks saved in this tab yet.", C_TEXT, FB_TRANSPARENT);
-            gfx_draw_string(x + 24, y + 90, "Open a local page and click the star to save it.", C_MUTED, FB_TRANSPARENT);
+            gfx_draw_string(x + 24, y + 62, "No bookmarks saved yet.", C_TEXT, FB_TRANSPARENT);
+            gfx_draw_string(x + 24, y + 90, "Open a page and click the star to save it.", C_MUTED, FB_TRANSPARENT);
         }
     } else if (kstrncmp(address, "http://", 7) == 0 || kstrncmp(address, "https://", 8) == 0) {
         gfx_draw_string(x + 24, y + 22, "CAN'T REACH THIS PAGE YET", C_WARNING, FB_TRANSPARENT);
@@ -247,14 +249,25 @@ void browser_render(void) {
     u32 addr_w = star_x - addr_x - 8;
     fb_fill_rect(addr_x, nav_y, addr_w, 30, tab->address_focus ? C_ACCENT_BG : C_SURFACE);
     fb_draw_rect(addr_x, nav_y, addr_w, 30, tab->address_focus ? C_ACCENT : C_BORDER);
+    char address_display[BROWSER_URL_MAX];
     const char* shown = tab->address;
-    char selected_hint[BROWSER_URL_MAX];
+    usize max_chars = addr_w > 16 ? (addr_w - 16) / 8 : 0;
     if (tab->select_all) {
-        kstrncpy(selected_hint, "Type address, then press Enter", sizeof(selected_hint) - 1);
-        selected_hint[sizeof(selected_hint) - 1] = 0;
-        shown = selected_hint;
+        kstrncpy(address_display, "Type address...", sizeof(address_display) - 1);
+        address_display[sizeof(address_display) - 1] = 0;
+        shown = address_display;
+    } else if (kstrlen(tab->address) > max_chars && max_chars > 4) {
+        usize len = kstrlen(tab->address);
+        usize keep = max_chars - 3;
+        address_display[0] = '.';
+        address_display[1] = '.';
+        address_display[2] = '.';
+        kstrncpy(address_display + 3, tab->address + len - keep, keep);
+        address_display[max_chars] = 0;
+        shown = address_display;
     }
     gfx_draw_string(addr_x + 8, nav_y + 8, shown, tab->select_all ? C_MUTED : C_TEXT, FB_TRANSPARENT);
+    tab->bookmarked = browser_has_bookmark && kstrcmp(tab->address, browser_bookmark) == 0;
     draw_button(star_x, nav_y, 72, 30, tab->bookmarked ? "* Saved" : "* Save", tab->bookmarked);
 
     /* Main page area and status bar. */
@@ -339,8 +352,19 @@ bool browser_handle_mouse(int mx, int my) {
         } else if (mx >= (int)(x + 130) && mx < (int)(x + 164)) {
             navigate("charis://home", true);
         } else if (mx >= (int)(x + w - 86)) {
-            tab->bookmarked = !tab->bookmarked;
-            set_status(tab->bookmarked ? "Bookmark saved in this tab" : "Bookmark removed");
+            if (browser_has_bookmark && kstrcmp(browser_bookmark, tab->address) == 0) {
+                browser_has_bookmark = false;
+                browser_bookmark[0] = 0;
+                tab->bookmarked = false;
+                set_status("Bookmark removed");
+            } else {
+                address_set((browser_tab_t*)tab, tab->address);
+                kstrncpy(browser_bookmark, tab->address, sizeof(browser_bookmark) - 1);
+                browser_bookmark[sizeof(browser_bookmark) - 1] = 0;
+                browser_has_bookmark = true;
+                tab->bookmarked = true;
+                set_status("Bookmark saved");
+            }
         } else if (mx >= (int)(x + 174)) {
             tab->address_focus = true;
             tab->select_all = true;
@@ -360,8 +384,8 @@ bool browser_handle_mouse(int mx, int my) {
                 else if (mx < (int)(x + 48 + card_w * 2 + 12)) navigate("charis://help", true);
                 else navigate("charis://bookmarks", true);
             }
-        } else if (kstrcmp(tab->address, "charis://bookmarks") == 0 && tab->bookmarked) {
-            navigate("charis://home", true);
+        } else if (kstrcmp(tab->address, "charis://bookmarks") == 0 && browser_has_bookmark) {
+            navigate(browser_bookmark, true);
         }
     }
     return true;
