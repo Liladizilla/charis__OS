@@ -259,6 +259,7 @@ void net_tcp_input(const u8 source_ip[4], const u8 destination_ip[4],
         return;
     }
 
+    /* A cumulative ACK beyond our single outstanding segment is not trusted. */
     if ((flags & TCP_FLAG_ACK) && tx_pending && tx_transmitted &&
         acknowledgement == tx_sequence + (u32)tx_length) {
         tx_pending = false;
