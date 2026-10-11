@@ -233,12 +233,35 @@ static u64 syscall_ipc_create_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u6
 
 static u64 syscall_ipc_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a4; (void)a5; (void)a6;
-    return ipc_send((int)a1, (void*)a2, a3);
+    task_t* task = scheduler_current();
+    if (task && task->is_user) {
+        if (a3 > SYSCALL_IO_MAX) return (u64)-1;
+        u8* bounce = (u8*)kmalloc((usize)a3);
+        if (!bounce && a3) return (u64)-1;
+        if (!syscall_copy_user_data(task, a2, bounce, (usize)a3)) {
+            if (bounce) kfree(bounce);
+            return (u64)-1;
+        }
+        int result = ipc_send((int)a1, bounce, a3);
+        if (bounce) kfree(bounce);
+        return (u64)result;
+    }
+    return (u64)ipc_send((int)a1, (void*)a2, a3);
 }
 
 static u64 syscall_ipc_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a4; (void)a5; (void)a6;
-    return ipc_recv((int)a1, (void*)a2, a3);
+    task_t* task = scheduler_current();
+    if (task && task->is_user) {
+        if (a3 > SYSCALL_IO_MAX) return (u64)-1;
+        u8* bounce = (u8*)kmalloc((usize)a3);
+        if (!bounce && a3) return (u64)-1;
+        int result = ipc_recv((int)a1, bounce, a3);
+        if (result > 0 && !syscall_copy_to_user_data(task, a2, bounce, (usize)result)) result = -1;
+        if (bounce) kfree(bounce);
+        return (u64)(s64)result;
+    }
+    return (u64)ipc_recv((int)a1, (void*)a2, a3);
 }
 
 static u64 syscall_exec_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
@@ -421,12 +444,35 @@ static u64 syscall_accept_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6
 
 static u64 syscall_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a4; (void)a5; (void)a6;
-    return socket_send((int)a1, (void*)a2, a3);
+    task_t* task = scheduler_current();
+    if (task && task->is_user) {
+        if (a3 > SYSCALL_IO_MAX) return (u64)-1;
+        u8* bounce = (u8*)kmalloc((usize)a3);
+        if (!bounce && a3) return (u64)-1;
+        if (!syscall_copy_user_data(task, a2, bounce, (usize)a3)) {
+            if (bounce) kfree(bounce);
+            return (u64)-1;
+        }
+        int result = socket_send((int)a1, bounce, (usize)a3);
+        if (bounce) kfree(bounce);
+        return (u64)(s64)result;
+    }
+    return (u64)socket_send((int)a1, (void*)a2, (usize)a3);
 }
 
 static u64 syscall_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a4; (void)a5; (void)a6;
-    return socket_recv((int)a1, (void*)a2, a3);
+    task_t* task = scheduler_current();
+    if (task && task->is_user) {
+        if (a3 > SYSCALL_IO_MAX) return (u64)-1;
+        u8* bounce = (u8*)kmalloc((usize)a3);
+        if (!bounce && a3) return (u64)-1;
+        int result = socket_recv((int)a1, bounce, (usize)a3);
+        if (result > 0 && !syscall_copy_to_user_data(task, a2, bounce, (usize)result)) result = -1;
+        if (bounce) kfree(bounce);
+        return (u64)(s64)result;
+    }
+    return (u64)socket_recv((int)a1, (void*)a2, (usize)a3);
 }
 
 static u64 syscall_socket_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
@@ -443,8 +489,14 @@ static u64 syscall_beep_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
 
 static u64 syscall_diag_stats_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    system_stats_t* stats = (system_stats_t*)a1;
-    if (stats) diag_collect_stats(stats);
+    if (!a1) return (u64)-1;
+    task_t* task = scheduler_current();
+    if (task && task->is_user) {
+        system_stats_t stats;
+        diag_collect_stats(&stats);
+        return syscall_copy_to_user_data(task, a1, &stats, sizeof(stats)) ? 0 : (u64)-1;
+    }
+    diag_collect_stats((system_stats_t*)a1);
     return 0;
 }
 
