@@ -25,9 +25,16 @@ void desktop_init(void) {
 }
 
 void desktop_render(void) {
+    if (!g_framebuffer.initialized) return;
+
+    // Use the actual firmware mode instead of assuming a 640x480 display.
+    u32 width = g_framebuffer.width;
+    u32 height = g_framebuffer.height;
+    u32 desktop_height = height > TASKBAR_HEIGHT ? height - TASKBAR_HEIGHT : height;
+
     // Clear desktop background
     graphics_set_color(COLOR_DESKTOP_BG);
-    graphics_rect(0, 0, 640, 480 - TASKBAR_HEIGHT, true);
+    graphics_rect(0, 0, width, desktop_height, true);
     
     // Draw icons
     for (int i = 0; i < g_icon_count; i++) {
@@ -83,21 +90,29 @@ void taskbar_init(void) {
 }
 
 void taskbar_render(void) {
-    // Taskbar background
+    if (!g_framebuffer.initialized) return;
+
+    u32 width = g_framebuffer.width;
+    u32 height = g_framebuffer.height;
+    u32 bar_height = height < TASKBAR_HEIGHT ? height : TASKBAR_HEIGHT;
+    u32 bar_y = height - bar_height;
+
     graphics_set_color(COLOR_TASKBAR_BG);
-    graphics_rect(0, 480 - TASKBAR_HEIGHT, 640, TASKBAR_HEIGHT, true);
-    
-    // Draw window buttons
+    graphics_rect(0, bar_y, width, bar_height, true);
+
+    // Draw only buttons that begin on-screen; the rectangle primitive clips
+    // the final button to the available width.
     int btn_x = 8;
-    for (int i = 0; i < taskbar_count; i++) {
-        // Button background
+    for (int i = 0; i < taskbar_count && (u32)btn_x < width; i++) {
         graphics_set_color(COLOR_TASKBAR_FG);
-        graphics_rect(btn_x, 480 - TASKBAR_HEIGHT + 4, 100, 24, true);
-        
-        // Window title
-        psf_draw_string(btn_x + 8, 480 - TASKBAR_HEIGHT + 10,
-                       taskbar_windows[i].title, COLOR_TASKBAR_BG, COLOR_TASKBAR_FG);
-        
+        graphics_rect((u32)btn_x, bar_y + (bar_height > 28 ? 4 : 0), 100,
+                      bar_height > 28 ? 24 : bar_height, true);
+
+        if ((u32)(btn_x + 8) < width && bar_height > 12) {
+            psf_draw_string((u32)btn_x + 8, bar_y + (bar_height > 20 ? 10 : 0),
+                            taskbar_windows[i].title, COLOR_TASKBAR_BG, COLOR_TASKBAR_FG);
+        }
+
         btn_x += 110;
     }
 }
