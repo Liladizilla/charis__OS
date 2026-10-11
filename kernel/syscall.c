@@ -201,16 +201,28 @@ static u64 syscall_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
 
 static u64 syscall_shm_alloc_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    return shm_alloc();
+    task_t* task = scheduler_current();
+    /* Shared-memory IDs are currently global and have no per-task ownership.
+     * Keep the API kernel-only until user mappings and access checks exist. */
+    if (task && task->is_user) return (u64)-1;
+    return (u64)(s64)shm_alloc();
 }
 
 static u64 syscall_shm_get_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    task_t* task = scheduler_current();
+    /* shm_get currently returns a kernel pointer, not a user-mapped region.
+     * Never disclose that pointer through the ring-3 syscall boundary. */
+    if (task && task->is_user) return (u64)-1;
     return (u64)shm_get((int)a1);
 }
 
 static u64 syscall_shm_free_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    task_t* task = scheduler_current();
+    /* Until IDs are owned by a process, userspace must not free global blocks
+     * allocated by unrelated tasks. */
+    if (task && task->is_user) return (u64)-1;
     shm_free((int)a1);
     return 0;
 }
