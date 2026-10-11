@@ -121,7 +121,7 @@ static void test_preview_keyboard_scroll_is_bounded(void) {
     browser_scroll_preview(true);
     expect(remote_scroll_lines == 5, "page down advances preview");
     for (int i = 0; i < 20; i++) browser_scroll_preview(true);
-    expect(remote_scroll_lines <= preview_count_lines(remote_text, remote_text_length),
+    expect(remote_scroll_lines <= preview_count_lines(remote_text, remote_text_length, 8u),
            "scroll offset remains bounded by document lines");
     for (int i = 0; i < 20; i++) browser_scroll_preview(false);
     expect(remote_scroll_lines == 0, "scroll up returns to top");
@@ -134,11 +134,11 @@ static void test_preview_scroll_counts_soft_wrapped_rows(void) {
     char text[301];
     memset(text, 'x', 300);
     text[300] = 0;
-    expect(preview_count_lines(text, 300) == 4,
+    expect(preview_count_lines(text, 300, 95u) == 4,
            "300 unbroken characters occupy four visual rows");
-    expect(preview_skip_lines(text, 300, 1) == 95,
+    expect(preview_skip_lines(text, 300, 1, 95u) == 95,
            "scroll skips one rendered row, not the entire paragraph");
-    expect(preview_skip_lines(text, 300, 3) == 285,
+    expect(preview_skip_lines(text, 300, 3, 95u) == 285,
            "scroll offset follows the renderer's 95-character row width");
 }
 
@@ -195,6 +195,14 @@ static void test_http_status_feedback_distinguishes_redirects_and_errors(void) {
     expect(strcmp(browser_status, "HTTP text preview loaded") == 0,
            "successful HTTP status is reported");
 }
+
+static void test_wrapping_prefers_word_boundaries(void) {
+    const char text[] = "alpha beta gamma";
+    expect(preview_count_lines(text, sizeof(text) - 1u, 10u) == 2u,
+           "wrapped rows prefer a nearby word boundary");
+    expect(preview_skip_lines(text, sizeof(text) - 1u, 1u, 10u) == 11u,
+           "scroll skips the first word-wrapped row and following spaces");
+}
 int main(void) {
     test_tags_and_block_boundaries();
     test_scripts_and_styles_are_hidden();
@@ -210,6 +218,7 @@ int main(void) {
     test_http_url_parser_normalizes_fragments_and_queries();
     test_http_url_parser_rejects_unsupported_or_malformed_urls();
     test_http_status_feedback_distinguishes_redirects_and_errors();
+    test_wrapping_prefers_word_boundaries();
     puts("Browser HTML extraction tests passed");
     return 0;
 }
