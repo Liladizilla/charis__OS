@@ -3,28 +3,18 @@
 # Tools
 UNAME := $(shell uname -s 2>/dev/null || echo Windows)
 
-ifeq ($(UNAME),Linux)
-# Native Linux/WSL - use host GCC for compilation
-NASM = nasm
-GCC = gcc
-LD = ld
-QEMU = qemu-system-x86_64
-GRUB = grub-mkrescue
-else ifeq ($(UNAME),MINGW64)
-# MSYS2 MinGW-w64 environment
-NASM = nasm
-GCC = x86_64-w64-mingw32-gcc
-LD = x86_64-w64-mingw32-ld
-QEMU = qemu-system-x86_64
-GRUB = grub-mkrescue
-else
-# Assume MSYS2 or try common paths
-NASM = nasm
-GCC = gcc
-LD = ld
-QEMU = qemu-system-x86_64
-GRUB = grub-mkrescue
-endif
+# Prefer the freestanding x86_64-elf toolchain when installed. A blank prefix
+# preserves compatibility with CI images that have only the native compiler;
+# set CROSS_COMPILE=x86_64-elf- to require the cross compiler explicitly.
+CROSS_COMPILE ?= $(if $(shell command -v x86_64-elf-gcc 2>/dev/null),x86_64-elf-,)
+GCC = $(CROSS_COMPILE)gcc
+LD = $(CROSS_COMPILE)ld
+NASM ?= nasm
+QEMU ?= qemu-system-x86_64
+
+# Fedora names this grub2-mkrescue; Debian/Ubuntu use grub-mkrescue.
+# An explicit GRUB=... override remains supported.
+GRUB ?= $(shell command -v grub2-mkrescue 2>/dev/null || command -v grub-mkrescue 2>/dev/null || echo grub2-mkrescue)
 
 # Directories
 SRC_DIR = .
@@ -165,7 +155,7 @@ test: $(BUILD_DIR)/vmm_test.o
 # way through a build with a confusing "command not found".
 check-tools:
 	@ok=1; \
-	for pair in "cc:$(CC)" "nasm:$(NASM)" "ld:$(LD)" "grub-mkrescue:$(GRUB)"; do \
+	for pair in "compiler:$(GCC)" "linker:$(LD)" "nasm:$(NASM)" "qemu:$(QEMU)" "grub rescue:$(GRUB)"; do \
 		name=$${pair%%:*}; cmd=$${pair#*:}; \
 		if command -v $$cmd >/dev/null 2>&1; then \
 			printf "  ok    %-16s %s\n" "$$name" "$$cmd"; \
@@ -175,10 +165,11 @@ check-tools:
 	done; \
 	if [ "$$ok" = "0" ]; then \
 		echo; echo "Install the missing tools, e.g.:"; \
-		echo "  Debian/Ubuntu: sudo apt install build-essential nasm grub-pc-bin xorriso qemu-system-x86"; \
-		echo "  Fedora:        sudo dnf install gcc nasm binutils grub2-tools xorriso qemu-system-x86"; \
+		echo "  Debian/Ubuntu: install a freestanding x86_64-elf toolchain, nasm, grub-pc-bin, xorriso, qemu-system-x86"; \
+		echo "  Fedora:        install an x86_64-elf cross-toolchain, nasm, grub2-tools, xorriso, qemu-system-x86"; \
 		exit 1; \
 	fi; \
+	if [ "$(CROSS_COMPILE)" = "" ]; then echo "  NOTE: x86_64-elf-gcc not found; using native gcc. Set CROSS_COMPILE=x86_64-elf- to require the cross toolchain."; fi; \
 	echo "  all build tools present"
 
 # ── Environment-specific runners ────────────────────────────────────
