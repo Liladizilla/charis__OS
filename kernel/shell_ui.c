@@ -303,6 +303,20 @@ void ui_install_input_hooks(void) {
 
 static bool super_held = false;
 
+static void activate_menu_item(int item) {
+    if (item < 0 || item >= (int)MENU_ITEM_COUNT) return;
+    ui.menu_open = false;
+    ui.hover_item = -1;
+    if (item == 0) {
+        notice_open = false;
+        browser_open();
+    } else {
+        notice_item = item;
+        notice_open = true;
+    }
+    ui.needs_redraw = true;
+}
+
 static void handle_event(const input_event_t* e) {
     switch (e->type) {
     case INPUT_KEY_DOWN:
@@ -326,6 +340,32 @@ static void handle_event(const input_event_t* e) {
             browser_handle_key(base, e->type == INPUT_KEY_DOWN);
             ui.needs_redraw = true;
             return;
+        }
+
+        if (e->type == INPUT_KEY_DOWN && notice_open && base == KEY_ENTER) {
+            notice_open = false;
+            notice_item = -1;
+            ui.needs_redraw = true;
+            return;
+        }
+
+        if (e->type == INPUT_KEY_DOWN && ui.menu_open) {
+            if (base == 0x48 || base == 0x50) { /* Up / Down */
+                if (ui.hover_item < 0 || ui.hover_item >= (int)MENU_ITEM_COUNT) {
+                    ui.hover_item = base == 0x50 ? 0 : (int)MENU_ITEM_COUNT - 1;
+                } else if (base == 0x48) {
+                    ui.hover_item = ui.hover_item == 0
+                        ? (int)MENU_ITEM_COUNT - 1 : ui.hover_item - 1;
+                } else {
+                    ui.hover_item = (ui.hover_item + 1) % (int)MENU_ITEM_COUNT;
+                }
+                ui.needs_redraw = true;
+                return;
+            }
+            if (base == KEY_ENTER && ui.hover_item >= 0) {
+                activate_menu_item(ui.hover_item);
+                return;
+            }
         }
 
         /* Escape dismisses the topmost transient surface. */
@@ -380,18 +420,7 @@ static void handle_event(const input_event_t* e) {
         }
 
         int hit = hit_menu_item(mx, my);
-        if (hit >= 0) {
-            ui.menu_open = false;
-            ui.hover_item = -1;
-            if (hit == 0) {
-                notice_open = false;
-                browser_open();
-            } else {
-                notice_item = hit;
-                notice_open = true;
-            }
-            ui.needs_redraw = true;
-        }
+        if (hit >= 0) activate_menu_item(hit);
         return;
     }
 
