@@ -330,6 +330,109 @@ static void draw_menu(void) {
 /* A launcher item must not silently send output to an invisible VGA console.
  * Until each application has a real framebuffer UI, explain its current state
  * in a consistent, dismissible panel instead of pretending it launched. */
+
+static void draw_calculator(void) {
+    if (!calculator_open) return;
+    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
+    u32 cw = 300, ch = 278;
+    u32 x = sw > cw ? (sw - cw) / 2u : 0;
+    u32 y = sh > ch ? (sh - ch) / 2u : 0;
+    fb_fill_rect(x + 5, y + 5, cw, ch, CHARIS_UI_SHADOW);
+    fb_fill_rect(x, y, cw, ch, T_MENU);
+    fb_draw_rect(x, y, cw, ch, T_BORDER);
+    fb_fill_rect(x, y, cw, 30, T_START_BTN);
+    gfx_draw_string(x + 14, y + 8, "Calculator", T_FG, FB_TRANSPARENT);
+    fb_fill_rect(x + 14, y + 42, cw - 28, 36, CHARIS_UI_BACKGROUND);
+    fb_draw_rect(x + 14, y + 42, cw - 28, 36, T_BORDER);
+    gfx_draw_string(x + 22, y + 52, calculator_display, T_FG, FB_TRANSPARENT);
+
+    static const char* const labels[4][4] = {
+        { "7", "8", "9", "/" },
+        { "4", "5", "6", "*" },
+        { "1", "2", "3", "-" },
+        { "C", "0", "=", "+" }
+    };
+    for (u32 row = 0; row < 4; row++) {
+        for (u32 col = 0; col < 4; col++) {
+            u32 bx = x + 15u + col * 66u;
+            u32 by = y + 88u + row * 42u;
+            u32 bg = col == 3u ? CHARIS_UI_ACCENT_SURFACE : CHARIS_UI_SURFACE;
+            fb_fill_rect(bx, by, 60, 36, bg);
+            fb_draw_rect(bx, by, 60, 36, T_BORDER);
+            gfx_draw_string(bx + 25u, by + 11u, labels[row][col],
+                            T_FG, FB_TRANSPARENT);
+        }
+    }
+}
+
+static bool calculator_handle_mouse(int mx, int my) {
+    if (!calculator_open) return false;
+    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
+    u32 cw = 300, ch = 278;
+    u32 x = sw > cw ? (sw - cw) / 2u : 0;
+    u32 y = sh > ch ? (sh - ch) / 2u : 0;
+    if (mx < (int)x || mx >= (int)(x + cw) ||
+        my < (int)y || my >= (int)(y + ch)) {
+        calculator_open = false;
+        return true;
+    }
+    if (mx >= (int)(x + 15u) && mx < (int)(x + 279u) &&
+        my >= (int)(y + 88u) && my < (int)(y + 256u)) {
+        u32 col = (u32)(mx - (int)(x + 15u)) / 66u;
+        u32 row = (u32)(my - (int)(y + 88u)) / 42u;
+        if (col < 4u && row < 4u &&
+            (u32)(mx - (int)(x + 15u)) % 66u < 60u &&
+            (u32)(my - (int)(y + 88u)) % 42u < 36u) {
+            static const char keys[4][4] = {
+                { '7', '8', '9', '/' },
+                { '4', '5', '6', '*' },
+                { '1', '2', '3', '-' },
+                { 'C', '0', '=', '+' }
+            };
+            calculator_press(keys[row][col]);
+        }
+    }
+    return true;
+}
+
+static bool calculator_handle_key(u8 code, bool pressed) {
+    if (!calculator_open) return false;
+    if (code == 0x2A || code == 0x36) {
+        calculator_shift = pressed;
+        return true;
+    }
+    if (!pressed) return true;
+    if (code == KEY_ESCAPE) {
+        calculator_open = false;
+        calculator_shift = false;
+        return true;
+    }
+    if (code == KEY_ENTER) {
+        calculator_press('=');
+        return true;
+    }
+    if (code == KEY_BACKSPACE) {
+        if (calculator_error) calculator_press('C');
+        else {
+            usize length = kstrlen(calculator_display);
+            if (length > 1u) calculator_display[length - 1u] = 0;
+            else {
+                calculator_display[0] = '0';
+                calculator_new_entry = true;
+            }
+        }
+        return true;
+    }
+    char ch = calculator_shift
+        ? keyboard_scancode_set1_shift[code & 0x7Fu]
+        : keyboard_scancode_set1[code & 0x7Fu];
+    if ((ch >= '0' && ch <= '9') || ch == '+' || ch == '-' ||
+        ch == '*' || ch == '/' || ch == '=') {
+        calculator_press(ch);
+    }
+    return true;
+}
+
 static void draw_notice(void) {
     if (!notice_open || notice_item < 0 || notice_item >= (int)MENU_ITEM_COUNT) return;
 
@@ -402,6 +505,7 @@ static void redraw_all(void) {
     browser_render();
     draw_taskbar();
     draw_menu();
+    draw_calculator();
     draw_notice();
     ui_draw_cursor();
 }
