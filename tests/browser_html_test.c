@@ -129,6 +129,18 @@ static void test_preview_keyboard_scroll_is_bounded(void) {
     remote_scroll_lines = 0;
     g_framebuffer.initialized = false;
 }
+
+static void test_preview_scroll_counts_soft_wrapped_rows(void) {
+    char text[301];
+    memset(text, 'x', 300);
+    text[300] = 0;
+    expect(preview_count_lines(text, 300) == 4,
+           "300 unbroken characters occupy four visual rows");
+    expect(preview_skip_lines(text, 300, 1) == 95,
+           "scroll skips one rendered row, not the entire paragraph");
+    expect(preview_skip_lines(text, 300, 3) == 285,
+           "scroll offset follows the renderer's 95-character row width");
+}
 int main(void) {
     test_tags_and_block_boundaries();
     test_scripts_and_styles_are_hidden();
@@ -140,6 +152,7 @@ int main(void) {
     test_document_title_is_extracted_across_chunks();
     test_title_state_resets_for_new_page();
     test_preview_keyboard_scroll_is_bounded();
+    test_preview_scroll_counts_soft_wrapped_rows();
     puts("Browser HTML extraction tests passed");
     return 0;
 }
