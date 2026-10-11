@@ -19,7 +19,7 @@ void task_init(void) {
     for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
         task_pool[i].rsp = 0;
         task_pool[i].stack_base = 0;
-        task_pool[i].state = TASK_STATE_ZOMBIE;
+        task_pool[i].state = TASK_STATE_UNUSED;
         task_pool[i].pid = 0;
         task_pool[i].slot_index = i;
         task_pool[i].priority = 0;
@@ -58,7 +58,7 @@ extern void task_trampoline(void);
 
 task_t* task_allocate(void) {
     for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
-        if (task_pool[i].state == TASK_STATE_ZOMBIE) {
+        if (task_pool[i].state == TASK_STATE_UNUSED) {
             return &task_pool[i];
         }
     }
@@ -246,7 +246,7 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
             kfree(stack);
             /* task_init_common already marked this slot READY. Roll it back so
              * allocation failure cannot permanently consume a task-table slot. */
-            task->state = TASK_STATE_ZOMBIE;
+            task->state = TASK_STATE_UNUSED;
             task->pid = 0;
             task->rsp = 0;
             task->stack_base = 0;
