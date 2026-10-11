@@ -105,6 +105,8 @@ static wizard_state_t w;
 /* ── Chrome ───────────────────────────────────────────────────────────── */
 
 static void card(u32 x, u32 y, u32 w, u32 h) {
+    /* Hard offset shadow: depth without blur or alpha blending. */
+    fb_fill_rect(x + 4, y + 4, w, h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, w, h, W_CARD);
     fb_draw_rect(x, y, w, h, W_BORDER);
 }
@@ -145,6 +147,7 @@ static void button(u32 x, u32 y, u32 w, u32 h, const char* label, bool primary) 
     int mx = input_get_mouse_x();
     int my = input_get_mouse_y();
     bool hot = mx >= (int)x && mx < (int)(x + w) && my >= (int)y && my < (int)(y + h);
+    fb_fill_rect(x + 2, y + 2, w, h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, w, h, primary ? W_SEL : W_CARD);
     fb_draw_rect(x, y, w, h, hot ? W_ACCENT : W_BORDER);
     u32 tw = 8 * (u32)kstrlen(label);
