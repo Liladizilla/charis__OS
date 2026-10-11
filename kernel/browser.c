@@ -754,3 +754,4 @@ bool browser_handle_key(u8 scancode, bool pressed) {
     }
     return true;
 }
+
