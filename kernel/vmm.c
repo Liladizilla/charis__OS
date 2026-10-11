@@ -102,6 +102,38 @@ void vmm_unmap_page(u64 virt) {
     flush_tlb();
 }
 
+
+/* Remove a 4 KiB leaf mapping from a specified address space. This does not
+ * free the mapped physical page or intermediate page-table pages; ownership
+ * stays with the caller. Returns the mapped physical page base, or 0 if the
+ * address was not mapped as a 4 KiB page. */
+u64 vmm_unmap_page_pml4(pml4_t* pml4, u64 virt) {
+    if (!pml4) return 0;
+
+    u64* pml4_table = (u64*)pml4;
+    u64 pml4e = pml4_table[PML4_INDEX(virt)];
+    if (!(pml4e & PTE_PRESENT)) return 0;
+
+    u64* pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
+    u64 pdpte = pdpt[PDPT_INDEX(virt)];
+    if (!(pdpte & PTE_PRESENT) || (pdpte & (1ULL << 7))) return 0;
+
+    u64* pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
+    u64 pde = pd[PD_INDEX(virt)];
+    if (!(pde & PTE_PRESENT) || (pde & (1ULL << 7))) return 0;
+
+    u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
+    u64* pte = &pt[PT_INDEX(virt)];
+    if (!(*pte & PTE_PRESENT)) return 0;
+
+    u64 phys = *pte & ~0xFFFULL;
+    *pte = 0;
+    if ((get_cr3() & ~0xFFFULL) == ((u64)pml4 & ~0xFFFULL)) {
+        asm volatile("invlpg (%0)" : : "r"(virt) : "memory");
+    }
+    return phys;
+}
+
 u64 vmm_get_phys(u64 virt) {
     u64* pml4 = (u64*)get_cr3();
     u64 pml4e = pml4[PML4_INDEX(virt)];
