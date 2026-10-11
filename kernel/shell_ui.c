@@ -544,6 +544,25 @@ void ui_install_input_hooks(void) {
 
 static bool super_held = false;
 
+static void activate_menu_item(int item) {
+    if (item < 0 || item >= (int)MENU_ITEM_COUNT) return;
+    ui.menu_open = false;
+    ui.hover_item = -1;
+    notice_open = false;
+    notice_item = -1;
+    calculator_open = false;
+    if (item == 0) {
+        browser_open();
+    } else if (item == 4) {
+        calculator_press('C');
+        calculator_open = true;
+    } else {
+        notice_item = item;
+        notice_open = true;
+    }
+    ui.needs_redraw = true;
+}
+
 static void handle_event(const input_event_t* e) {
     switch (e->type) {
     case INPUT_KEY_DOWN:
@@ -556,10 +575,17 @@ static void handle_event(const input_event_t* e) {
         if (extended && (base == 0x5B || base == 0x5C)) {
             super_held = (e->type == INPUT_KEY_DOWN);
             if (super_held) {
+                calculator_open = false;
                 ui.menu_open = !ui.menu_open;
                 ui.hover_item = -1;
                 ui.needs_redraw = true;
             }
+            return;
+        }
+
+        if (calculator_open) {
+            (void)calculator_handle_key(base, e->type == INPUT_KEY_DOWN);
+            ui.needs_redraw = true;
             return;
         }
 
@@ -596,6 +622,12 @@ static void handle_event(const input_event_t* e) {
     case INPUT_MOUSE_DOWN: {
         int mx = e->mouse.x, my = e->mouse.y;
 
+        if (calculator_open) {
+            (void)calculator_handle_mouse(mx, my);
+            ui.needs_redraw = true;
+            return;
+        }
+
         if (browser_is_open()) {
             browser_handle_mouse(mx, my);
             ui.needs_redraw = true;
@@ -621,18 +653,7 @@ static void handle_event(const input_event_t* e) {
         }
 
         int hit = hit_menu_item(mx, my);
-        if (hit >= 0) {
-            ui.menu_open = false;
-            ui.hover_item = -1;
-            if (hit == 0) {
-                notice_open = false;
-                browser_open();
-            } else {
-                notice_item = hit;
-                notice_open = true;
-            }
-            ui.needs_redraw = true;
-        }
+        if (hit >= 0) activate_menu_item(hit);
         return;
     }
 
