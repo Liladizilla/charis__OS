@@ -21,7 +21,6 @@
 #include <kernel/string.h>
 #include <kernel/ui_theme.h>
 #include <kernel/printf.h>
-#include <kernel/shell.h>
 #include <kernel/wallpaper.h>
 #include <kernel/config.h>
 #include <kernel/wizard.h>
@@ -49,15 +48,32 @@
 
 typedef struct {
     const char* label;
-    const char* command;   /* what the shell runs when picked */
 } menu_entry_t;
 
 static const menu_entry_t MENU_ITEMS[] = {
-    { "Terminal",        "terminal" },
-    { "File Manager",    "files"    },
-    { "Text Editor",     "editor"   },
-    { "Settings",        "settings" },
-    { "About CharisOS",  "about"    },
+    { "Terminal" },
+    { "File Manager" },
+    { "Text Editor" },
+    { "Settings" },
+    { "About CharisOS" },
+};
+
+static bool notice_open = false;
+static int notice_item = -1;
+
+static const char* const NOTICE_LINE_1[] = {
+    "A graphical terminal is not wired up yet.",
+    "The VFS exists, but the graphical browser is",
+    "No graphical editor is implemented yet.",
+    "Setup choices are temporary for this boot.",
+    "CharisOS is a from-scratch x86_64 kernel.",
+};
+static const char* const NOTICE_LINE_2[] = {
+    "Kernel output remains on the text/serial console.",
+    "not connected to file operations yet.",
+    "This screen will not pretend to show source code.",
+    "Configuration-file persistence is not implemented.",
+    "The desktop and built-in apps are still partial.",
 };
 #define MENU_ITEM_COUNT ((u32)(sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0])))
 
@@ -134,6 +150,33 @@ static void draw_menu(void) {
     }
 }
 
+/* A launcher item must not silently send output to an invisible VGA console.
+ * Until each application has a real framebuffer UI, explain its current state
+ * in a consistent, dismissible panel instead of pretending it launched. */
+static void draw_notice(void) {
+    if (!notice_open || notice_item < 0 || notice_item >= (int)MENU_ITEM_COUNT) return;
+
+    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
+    u32 cw = 440, ch = 152;
+    u32 x = sw > cw ? (sw - cw) / 2 : 0;
+    u32 y = sh > ch ? (sh - ch) / 2 : 0;
+
+    fb_fill_rect(x, y, cw, ch, T_MENU);
+    fb_draw_rect(x, y, cw, ch, T_BORDER);
+    fb_fill_rect(x, y, cw, 28, T_START_BTN);
+    fb_fill_rect(x, y, cw, 1, CHARIS_UI_BORDER_STRONG);
+    gfx_draw_string(x + 16, y + 7, MENU_ITEMS[notice_item].label, T_FG, FB_TRANSPARENT);
+
+    gfx_draw_string(x + 20, y + 48, NOTICE_LINE_1[notice_item], T_FG, FB_TRANSPARENT);
+    gfx_draw_string(x + 20, y + 72, NOTICE_LINE_2[notice_item], T_FG_DIM, FB_TRANSPARENT);
+
+    u32 bw = 88, bh = 28;
+    u32 bx = x + cw - bw - 16, by = y + ch - bh - 12;
+    fb_fill_rect(bx, by, bw, bh, CHARIS_UI_ACCENT_SURFACE);
+    fb_draw_rect(bx, by, bw, bh, CHARIS_UI_BORDER_STRONG);
+    gfx_draw_string(bx + 24, by + 6, "Close", T_FG, FB_TRANSPARENT);
+}
+
 /* Software cursor. The PS/2 mouse has no hardware cursor once the display is
  * in graphics mode, so the pointer is drawn into the framebuffer. */
 void ui_draw_cursor(void) {
@@ -180,6 +223,7 @@ static void redraw_all(void) {
     wallpaper_draw((u32)config_get_int("wallpaper", 0));
     draw_taskbar();
     draw_menu();
+    draw_notice();
     ui_draw_cursor();
 }
 
@@ -236,11 +280,17 @@ static void handle_event(const input_event_t* e) {
             return;
         }
 
-        /* Escape closes the menu. */
-        if (e->type == INPUT_KEY_DOWN && base == KEY_ESCAPE && ui.menu_open) {
-            ui.menu_open = false;
-            ui.hover_item = -1;
-            ui.needs_redraw = true;
+        /* Escape dismisses the topmost transient surface. */
+        if (e->type == INPUT_KEY_DOWN && base == KEY_ESCAPE) {
+            if (notice_open) {
+                notice_open = false;
+                notice_item = -1;
+                ui.needs_redraw = true;
+            } else if (ui.menu_open) {
+                ui.menu_open = false;
+                ui.hover_item = -1;
+                ui.needs_redraw = true;
+            }
         }
         return;
     }
@@ -256,6 +306,16 @@ static void handle_event(const input_event_t* e) {
 
     case INPUT_MOUSE_DOWN: {
         int mx = e->mouse.x, my = e->mouse.y;
+
+        if (notice_open) {
+            /* The notice is modal: clicking its Close button or outside it
+             * dismisses it, and the same click cannot activate an item below. */
+            notice_open = false;
+            notice_item = -1;
+            ui.needs_redraw = true;
+            return;
+        }
+
         bool on_taskbar = my >= (int)(g_framebuffer.height - TASKBAR_H);
 
         if (on_taskbar && mx < (int)START_BTN_W) {
@@ -269,8 +329,9 @@ static void handle_event(const input_event_t* e) {
         if (hit >= 0) {
             ui.menu_open = false;
             ui.hover_item = -1;
+            notice_item = hit;
+            notice_open = true;
             ui.needs_redraw = true;
-            shell_execute((char*)MENU_ITEMS[hit].command);
         }
         return;
     }
