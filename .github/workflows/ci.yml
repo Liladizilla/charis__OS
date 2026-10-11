@@ -30,7 +30,6 @@ jobs:
             mtools \
             dosfstools \
             ovmf \
-            qemu-system-x86 \
             libvirt-daemon-system
 
       - name: Verify build toolchain
