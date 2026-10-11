@@ -62,7 +62,7 @@ static void test_chunked_split_at_every_boundary(void) {
         "Connection: close\r\n\r\n"
         "4\r\nWiki\r\n"
         "5;foo=bar\r\npedia\r\n"
-        "0\r\nX-Test: yes\r\n\r\n";
+        "0\r\nX-Long-Trailer: accepted\r\n\r\n";
     usize total = sizeof(response) - 1u;
     for (usize split = 0; split <= total; split++) {
         reset_parser();
@@ -102,6 +102,22 @@ static void test_unsupported_transfer_encoding_is_rejected(void) {
     expect(!active && completion_calls == 1 && !completion_success,
            "unsupported transfer encoding must fail closed");
 }
+static void test_invalid_and_overflow_chunk_sizes_are_rejected(void) {
+    static const char invalid[] =
+        "HTTP/1.1 200 OK\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n"
+        "Z\\r\\nnope\\r\\n0\\r\\n\\r\\n";
+    static const char overflow[] =
+        "HTTP/1.1 200 OK\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n"
+        "100000000\\r\\n";
+    reset_parser();
+    http_on_data((const u8*)invalid, sizeof(invalid) - 1u, 0);
+    expect(!active && completion_calls == 1 && !completion_success,
+           "non-hex chunk size must fail");
+    reset_parser();
+    http_on_data((const u8*)overflow, sizeof(overflow) - 1u, 0);
+    expect(!active && completion_calls == 1 && !completion_success,
+           "overflowing chunk size must fail");
+}
 static void test_truncated_chunk_is_not_success(void) {
     static const char response[] =
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
@@ -117,7 +133,7 @@ int main(void) {
     test_chunked_one_byte_at_a_time();
     test_malformed_chunk_is_rejected();
     test_unsupported_transfer_encoding_is_rejected();
-    test_truncated_chunk_is_not_success();
+    test_invalid_and_overflow_chunk_sizes_are_rejected();\n    test_truncated_chunk_is_not_success();
     puts("HTTP chunked parser tests passed");
     return 0;
 }
