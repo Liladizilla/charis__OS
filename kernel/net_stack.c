@@ -5,6 +5,8 @@
  * ICMP echo replies. Routing, DHCP, UDP, TCP, DNS, TLS and HTTP are future work.
  */
 #include <kernel/net_stack.h>
+#include <kernel/dns.h>
+#include <kernel/tcp.h>
 #include <kernel/net.h>
 #include <kernel/config.h>
 #include <kernel/string.h>
@@ -18,6 +20,7 @@
 #define ARP_PTYPE_IPV4 0x0800u
 #define ARP_REQUEST    1u
 #define ARP_REPLY      2u
+#define ARP_CACHE_ENTRIES 16u
 #define IPV4_MIN_LEN   20u
 #define IPV4_PROTO_ICMP 1u
 #define IPV4_PROTO_UDP 17u
@@ -39,9 +42,19 @@ typedef struct PACKED {
 } arp_packet_t;
 
 static u8 local_ip[4];
+static u8 local_mask[4];
+static u8 default_gateway[4];
 static u8 frame_in[NET_FRAME_CAP];
 static u8 frame_out[NET_FRAME_CAP];
 static bool stack_ready;
+
+typedef struct {
+    u8 ip[4];
+    u8 mac[6];
+    bool valid;
+} arp_cache_entry_t;
+static arp_cache_entry_t arp_cache[ARP_CACHE_ENTRIES];
+static u8 arp_cache_next;
 
 typedef struct {
     u16 port;
@@ -62,6 +75,17 @@ static bool same_bytes(const u8* a, const u8* b, usize n) {
 }
 static bool ip_is_configured(void) {
     return local_ip[0] || local_ip[1] || local_ip[2] || local_ip[3];
+}
+
+static bool valid_netmask(const u8 mask[4]) {
+    u32 value = ((u32)mask[0] << 24) | ((u32)mask[1] << 16) |
+                ((u32)mask[2] << 8) | mask[3];
+    bool saw_zero = false;
+    for (u32 bit = 0x80000000u; bit; bit >>= 1) {
+        if (!(value & bit)) saw_zero = true;
+        else if (saw_zero) return false;
+    }
+    return true;
 }
 
 /* Strict dotted-decimal parser; malformed values leave networking unconfigured. */
@@ -98,12 +122,103 @@ static u16 checksum(const u8* data, usize length) {
 
 void net_stack_init(void) {
     kmemset(local_ip, 0, sizeof(local_ip));
+    kmemset(local_mask, 0, sizeof(local_mask));
+    kmemset(default_gateway, 0, sizeof(default_gateway));
+    kmemset(arp_cache, 0, sizeof(arp_cache));
+    arp_cache_next = 0;
+
     const char* configured = config_get_string("net_ip", "0.0.0.0");
     if (!parse_ipv4(configured, local_ip))
         kmemset(local_ip, 0, sizeof(local_ip));
+    if (!parse_ipv4(config_get_string("net_mask", "255.255.255.0"), local_mask) ||
+        !valid_netmask(local_mask)) {
+        local_mask[0] = 255;
+        local_mask[1] = 255;
+        local_mask[2] = 255;
+        local_mask[3] = 0;
+    }
+    if (!parse_ipv4(config_get_string("net_gateway", "0.0.0.0"), default_gateway))
+        kmemset(default_gateway, 0, sizeof(default_gateway));
+
     net_interface_t* iface = net_get_interface();
     if (iface) kmemcpy(iface->ip_addr, local_ip, sizeof(local_ip));
     stack_ready = true;
+}
+
+static bool ip_is_zero(const u8 ip[4]) {
+    return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0;
+}
+
+static bool mac_is_zero(const u8 mac[6]) {
+    for (usize i = 0; i < 6; i++) if (mac[i] != 0) return false;
+    return true;
+}
+
+static void arp_cache_learn(const u8 ip[4], const u8 mac[6]) {
+    if (ip_is_zero(ip) || mac_is_zero(mac) || (mac[0] & 1u)) return;
+    for (usize i = 0; i < ARP_CACHE_ENTRIES; i++) {
+        if (arp_cache[i].valid && same_bytes(arp_cache[i].ip, ip, 4)) {
+            kmemcpy(arp_cache[i].mac, mac, 6);
+            return;
+        }
+    }
+    arp_cache_entry_t* entry = &arp_cache[arp_cache_next];
+    kmemcpy(entry->ip, ip, 4);
+    kmemcpy(entry->mac, mac, 6);
+    entry->valid = true;
+    arp_cache_next = (u8)((arp_cache_next + 1u) % ARP_CACHE_ENTRIES);
+}
+
+/* Resolve an on-link neighbour. A cache miss sends ARP and returns false;
+ * the caller retries after net_poll_task processes the response. */
+bool net_stack_resolve_ipv4(const u8 ip[4], u8 mac_out[6]) {
+    if (!stack_ready) net_stack_init();
+    if (!ip || !mac_out || !ip_is_configured() || ip_is_zero(ip)) return false;
+    for (usize i = 0; i < ARP_CACHE_ENTRIES; i++) {
+        if (arp_cache[i].valid && same_bytes(arp_cache[i].ip, ip, 4)) {
+            kmemcpy(mac_out, arp_cache[i].mac, 6);
+            return true;
+        }
+    }
+
+    net_interface_t* iface = net_get_interface();
+    if (!iface || !iface->initialized) return false;
+    kmemset(frame_out, 0, ETH_HEADER_LEN + sizeof(arp_packet_t));
+    ethernet_header_t* eth = (ethernet_header_t*)frame_out;
+    kmemset(eth->dest, 0xFF, 6);
+    kmemcpy(eth->src, iface->mac_addr, 6);
+    write_be16(&eth->type_hi, ETH_TYPE_ARP);
+
+    arp_packet_t* req = (arp_packet_t*)(frame_out + ETH_HEADER_LEN);
+    req->htype_hi = 0; req->htype_lo = ARP_HTYPE_ETH;
+    req->ptype_hi = 0x08; req->ptype_lo = 0x00;
+    req->hlen = 6; req->plen = 4;
+    req->oper_hi = 0; req->oper_lo = ARP_REQUEST;
+    kmemcpy(req->sha, iface->mac_addr, 6);
+    kmemcpy(req->spa, local_ip, 4);
+    kmemset(req->tha, 0, 6);
+    kmemcpy(req->tpa, ip, 4);
+    (void)net_send_packet(frame_out, ETH_HEADER_LEN + sizeof(*req));
+    return false;
+}
+
+/* Select the destination itself on-link, otherwise the configured gateway. */
+static bool route_ipv4(const u8 destination[4], u8 next_hop[4]) {
+    if (!ip_is_configured() || !destination) return false;
+    bool on_link = true;
+    for (usize i = 0; i < 4; i++) {
+        if ((destination[i] & local_mask[i]) != (local_ip[i] & local_mask[i])) {
+            on_link = false;
+            break;
+        }
+    }
+    if (on_link) {
+        kmemcpy(next_hop, destination, 4);
+        return true;
+    }
+    if (ip_is_zero(default_gateway)) return false;
+    kmemcpy(next_hop, default_gateway, 4);
+    return true;
 }
 
 bool net_udp_bind(u16 port, net_udp_handler_t handler) {
@@ -135,7 +250,7 @@ void net_udp_unbind(u16 port) {
     }
 }
 
-static bool udp_checksum_valid(const u8* src, const u8* dst,
+static u16 udp_checksum_value(const u8* src, const u8* dst,
                                const u8* udp, usize length) {
     u32 sum = 0;
     for (usize i = 0; i < 4; i += 2) {
@@ -153,7 +268,97 @@ static bool udp_checksum_valid(const u8* src, const u8* dst,
     }
     if (remaining) sum += (u16)((u16)p[0] << 8);
     while (sum >> 16) sum = (sum & 0xFFFFu) + (sum >> 16);
-    return (u16)~sum == 0;
+    return (u16)~sum;
+}
+
+static bool udp_checksum_valid(const u8* src, const u8* dst,
+                               const u8* udp, usize length) {
+    return udp_checksum_value(src, dst, udp, length) == 0;
+}
+
+int net_ipv4_send(const u8 destination_ip[4], u8 protocol,
+                  const void* payload, usize length) {
+    if (!stack_ready) net_stack_init();
+    if (!destination_ip || (!payload && length) ||
+        length > NET_FRAME_CAP - ETH_HEADER_LEN - IPV4_MIN_LEN ||
+        !ip_is_configured())
+        return -1;
+    net_interface_t* iface = net_get_interface();
+    if (!iface || !iface->initialized) return -1;
+
+    u8 next_hop[4], destination_mac[6];
+    if (!route_ipv4(destination_ip, next_hop)) return -1;
+    if (same_bytes(destination_ip, local_ip, 4)) {
+        kmemcpy(destination_mac, iface->mac_addr, 6);
+    } else if (!net_stack_resolve_ipv4(next_hop, destination_mac)) {
+        return -2;
+    }
+
+    usize ip_len = IPV4_MIN_LEN + length;
+    kmemset(frame_out, 0, ETH_HEADER_LEN + ip_len);
+    ethernet_header_t* eth = (ethernet_header_t*)frame_out;
+    kmemcpy(eth->dest, destination_mac, 6);
+    kmemcpy(eth->src, iface->mac_addr, 6);
+    write_be16(&eth->type_hi, ETH_TYPE_IPV4);
+    u8* ip = frame_out + ETH_HEADER_LEN;
+    ip[0] = 0x45;
+    write_be16(ip + 2u, (u16)ip_len);
+    write_be16(ip + 4u, 0);
+    write_be16(ip + 6u, 0x4000u);
+    ip[8] = 64;
+    ip[9] = protocol;
+    kmemcpy(ip + 12u, local_ip, 4);
+    kmemcpy(ip + 16u, destination_ip, 4);
+    write_be16(ip + 10u, checksum(ip, IPV4_MIN_LEN));
+    if (length) kmemcpy(ip + IPV4_MIN_LEN, payload, length);
+    return net_send_packet(frame_out, ETH_HEADER_LEN + ip_len);
+}
+
+int net_udp_send(const u8 destination_ip[4], u16 destination_port,
+                 u16 source_port, const void* payload, usize length) {
+    if (!stack_ready) net_stack_init();
+    if (!destination_ip || !destination_port || !source_port ||
+        (!payload && length != 0) || length > NET_FRAME_CAP - ETH_HEADER_LEN -
+        IPV4_MIN_LEN - UDP_HEADER_LEN || !ip_is_configured())
+        return -1;
+
+    net_interface_t* iface = net_get_interface();
+    if (!iface || !iface->initialized) return -1;
+
+    u8 next_hop[4], destination_mac[6];
+    if (!route_ipv4(destination_ip, next_hop)) return -1;
+    if (!net_stack_resolve_ipv4(next_hop, destination_mac)) return -2;
+
+    usize udp_len = UDP_HEADER_LEN + length;
+    usize ip_len = IPV4_MIN_LEN + udp_len;
+    kmemset(frame_out, 0, ETH_HEADER_LEN + ip_len);
+    ethernet_header_t* eth = (ethernet_header_t*)frame_out;
+    kmemcpy(eth->dest, destination_mac, 6);
+    kmemcpy(eth->src, iface->mac_addr, 6);
+    write_be16(&eth->type_hi, ETH_TYPE_IPV4);
+
+    u8* ip = frame_out + ETH_HEADER_LEN;
+    ip[0] = 0x45;
+    ip[1] = 0;
+    write_be16(ip + 2, (u16)ip_len);
+    write_be16(ip + 4, 0);
+    write_be16(ip + 6, 0x4000u); /* Don't Fragment */
+    ip[8] = 64;
+    ip[9] = IPV4_PROTO_UDP;
+    kmemcpy(ip + 12, local_ip, 4);
+    kmemcpy(ip + 16, destination_ip, 4);
+    write_be16(ip + 10, checksum(ip, IPV4_MIN_LEN));
+
+    u8* udp = ip + IPV4_MIN_LEN;
+    write_be16(udp, source_port);
+    write_be16(udp + 2, destination_port);
+    write_be16(udp + 4, (u16)udp_len);
+    write_be16(udp + 6, 0);
+    if (length) kmemcpy(udp + UDP_HEADER_LEN, payload, length);
+    u16 udp_sum = udp_checksum_value(ip + 12, ip + 16, udp, udp_len);
+    write_be16(udp + 6, udp_sum ? udp_sum : 0xFFFFu);
+
+    return net_send_packet(frame_out, ETH_HEADER_LEN + ip_len);
 }
 
 static void handle_udp(const u8* ip, usize ip_len, u8 ihl) {
@@ -182,16 +387,23 @@ static void handle_arp(const ethernet_header_t* eth, usize length) {
     if (length < ETH_HEADER_LEN + sizeof(arp_packet_t) || !ip_is_configured())
         return;
     const arp_packet_t* req = (const arp_packet_t*)((const u8*)eth + ETH_HEADER_LEN);
+    u16 operation = read_be16((const u8*)&req->oper_hi);
     if (read_be16((const u8*)&req->htype_hi) != ARP_HTYPE_ETH ||
         read_be16((const u8*)&req->ptype_hi) != ARP_PTYPE_IPV4 ||
         req->hlen != 6 || req->plen != 4 ||
-        read_be16((const u8*)&req->oper_hi) != ARP_REQUEST ||
+        (operation != ARP_REQUEST && operation != ARP_REPLY))
+        return;
+
+    arp_cache_learn(req->spa, req->sha);
+    if (operation != ARP_REQUEST || !ip_is_configured() ||
         !same_bytes(req->tpa, local_ip, 4))
         return;
 
+    net_interface_t* iface = net_get_interface();
+    if (!iface || !iface->initialized) return;
     ethernet_header_t* reply_eth = (ethernet_header_t*)frame_out;
     kmemcpy(reply_eth->dest, req->sha, 6);
-    kmemcpy(reply_eth->src, eth->dest, 6);
+    kmemcpy(reply_eth->src, iface->mac_addr, 6);
     write_be16(&reply_eth->type_hi, ETH_TYPE_ARP);
 
     arp_packet_t* reply = (arp_packet_t*)(frame_out + ETH_HEADER_LEN);
@@ -199,7 +411,7 @@ static void handle_arp(const ethernet_header_t* eth, usize length) {
     reply->ptype_hi = 0x08; reply->ptype_lo = 0x00;
     reply->hlen = 6; reply->plen = 4;
     reply->oper_hi = 0; reply->oper_lo = ARP_REPLY;
-    kmemcpy(reply->sha, eth->dest, 6);
+    kmemcpy(reply->sha, iface->mac_addr, 6);
     kmemcpy(reply->spa, local_ip, 4);
     kmemcpy(reply->tha, req->sha, 6);
     kmemcpy(reply->tpa, req->spa, 4);
@@ -259,6 +471,8 @@ static void handle_ipv4(const ethernet_header_t* eth, usize length) {
         handle_icmp(eth, ip, total);
     else if (ip[9] == IPV4_PROTO_UDP)
         handle_udp(ip, total, ihl);
+    else if (ip[9] == 6u)
+        net_tcp_input(ip + 12u, ip + 16u, ip + ihl, total - ihl);
 }
 
 void net_handle_tcpip(void) {
@@ -277,8 +491,12 @@ void net_handle_tcpip(void) {
 void net_poll_task(void* unused) {
     (void)unused;
     net_stack_init();
+    (void)net_dns_init();
+    (void)net_tcp_init();
     for (;;) {
         net_handle_tcpip();
+        net_dns_poll();
+        net_tcp_poll();
         scheduler_yield();
     }
 }
