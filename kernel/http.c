@@ -8,7 +8,7 @@
 #define HTTP_PATH_MAX 512u
 #define HTTP_HEADER_MAX 2048u
 #define HTTP_REQUEST_MAX 1024u
-#define HTTP_CHUNK_LINE_MAX 16u
+#define HTTP_CHUNK_LINE_MAX 128u
 
 typedef enum {
     HTTP_CHUNK_SIZE,
