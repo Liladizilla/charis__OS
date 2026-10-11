@@ -9,6 +9,7 @@
 #define TASK_STATE_RUNNING      1
 #define TASK_STATE_BLOCKED      2
 #define TASK_STATE_ZOMBIE       3
+#define TASK_STATE_UNUSED       4 /* Free task-table slot; distinct from an exited process. */
 
 #define TASK_NAME_MAX           32
 #define TASK_STACK_SIZE         8192
