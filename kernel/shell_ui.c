@@ -19,6 +19,7 @@
 #include <kernel/mouse.h>
 #include <kernel/timer.h>
 #include <kernel/string.h>
+#include <kernel/ui_theme.h>
 #include <kernel/printf.h>
 #include <kernel/shell.h>
 #include <kernel/wallpaper.h>
@@ -26,18 +27,18 @@
 #include <kernel/wizard.h>
 #include <kernel/string.h>
 
-/* ── Theme ────────────────────────────────────────────────────────── */
-#define T_BG          FB_ARGB(0xFF, 0x0B, 0x0F, 0x17)
-#define T_TASKBAR     FB_ARGB(0xEE, 0x15, 0x1B, 0x26)
-#define T_START_BTN   FB_ARGB(0xEE, 0x20, 0x28, 0x38)
-#define T_START_HOVER FB_ARGB(0xFF, 0x2C, 0x37, 0x4C)
-#define T_MENU        FB_ARGB(0xF5, 0x16, 0x1D, 0x29)
-#define T_MENU_ITEM   FB_ARGB(0xF5, 0x1E, 0x27, 0x36)
-#define T_MENU_HOVER  FB_ARGB(0xFF, 0x2E, 0x6B, 0xD6)
-#define T_FG          FB_ARGB(0xFF, 0xE6, 0xEC, 0xF5)
-#define T_FG_DIM      FB_ARGB(0xFF, 0x93, 0x9F, 0xB5)
-#define T_BORDER      FB_ARGB(0xFF, 0x2A, 0x33, 0x45)
-#define T_CURSOR      FB_ARGB(0xFF, 0xFF, 0xFF, 0xFF)
+/* ── Shared solid-morphism theme ─────────────────────────────────── */
+#define T_BG          CHARIS_UI_BACKGROUND
+#define T_TASKBAR     CHARIS_UI_PANEL
+#define T_START_BTN   CHARIS_UI_PANEL_RAISED
+#define T_START_HOVER CHARIS_UI_SURFACE_RAISED
+#define T_MENU        CHARIS_UI_PANEL
+#define T_MENU_ITEM   CHARIS_UI_SURFACE
+#define T_MENU_HOVER  CHARIS_UI_ACCENT_SURFACE
+#define T_FG          CHARIS_UI_TEXT
+#define T_FG_DIM      CHARIS_UI_MUTED
+#define T_BORDER      CHARIS_UI_BORDER
+#define T_CURSOR      CHARIS_UI_TEXT
 
 /* Layout. */
 #define TASKBAR_H     44
@@ -94,18 +95,21 @@ static void draw_taskbar(void) {
 
     /* Right side: a clock. The kernel has a running tick counter, which is
      * uptime rather than wall-clock time, so it is labelled as such. */
+    /* The timer provides uptime, not wall-clock time. Keep the label
+     * explicit and use one unambiguous HH:MM:SS format. */
     u64 secs = timer_get_ms() / 1000;
-    char clock[32];
-    clock[0] = '0' + (char)((secs / 36000) % 10);
-    clock[1] = '0' + (char)((secs / 3600) % 10);
-    clock[2] = ':';
-    clock[3] = '0' + (char)((secs / 600) % 10);
-    clock[4] = '0' + (char)((secs / 60) % 10);
-    clock[5] = '0' + (char)((secs / 10) % 10);
-    clock[6] = '0' + (char)(secs % 10);
-    clock[7] = 'u';   /* uptime, not time of day */
-    clock[8] = 0;
-    u32 cw = 8 * 8;   /* 8 glyphs * 8px */
+    char clock[12];
+    clock[0] = 'U'; clock[1] = 'P'; clock[2] = ' ';
+    clock[3] = '0' + (char)((secs / 36000) % 10);
+    clock[4] = '0' + (char)((secs / 3600) % 10);
+    clock[5] = ':';
+    clock[6] = '0' + (char)((secs / 600) % 10);
+    clock[7] = '0' + (char)((secs / 60) % 10);
+    clock[8] = ':';
+    clock[9] = '0' + (char)((secs / 10) % 10);
+    clock[10] = '0' + (char)(secs % 10);
+    clock[11] = 0;
+    u32 cw = 11 * 8;
     gfx_draw_string(w - cw - 16, ty, clock, T_FG_DIM, FB_TRANSPARENT);
 }
 
