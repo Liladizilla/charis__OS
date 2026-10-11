@@ -1,5 +1,6 @@
 /* tcp.c - Minimal polling TCP client: handshake, data ACKs and close. */
 #include <kernel/tcp.h>
+#include <kernel/net.h>
 #include <kernel/net_stack.h>
 #include <kernel/string.h>
 
