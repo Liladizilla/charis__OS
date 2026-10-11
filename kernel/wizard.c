@@ -301,11 +301,12 @@ static void draw_wallpaper(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
     u32 cw = 420, ch = 96;
     u32 cx = (sw > cw) ? (sw - cw) / 2 : 0;
-    u32 cy = sh - 200;
+    u32 cy = sh > 200 ? sh - 200 : 0;
 
     card(cx, cy, cw, ch);
-    text(cx + 20, cy + 22, wallpaper_name(w.wallpaper), W_FG);
-    text(cx + 20, cy + 48, wallpaper_description(w.wallpaper), W_DIM);
+    text(cx + 20, cy + 18, wallpaper_name(w.wallpaper), W_FG);
+    text(cx + 20, cy + 42, wallpaper_description(w.wallpaper), W_DIM);
+    text(cx + 20, cy + 68, "Click this panel to cycle styles.", W_HINT);
 }
 
 static void draw_done(void) {
@@ -507,10 +508,10 @@ static bool handle_event(const input_event_t* e) {
         case STEP_TIMEZONE:  card_h = 470; row_y = 100; row_count = TIMEZONE_COUNT; break;
         case STEP_NETWORK:   card_h = 400; row_y = 150; row_count = 2; break;
         case STEP_WALLPAPER: {
-            card_w = 720; card_h = 300;
-            u32 cx = sw > card_w ? (sw - card_w) / 2 : 0;
-            u32 cy = sh > card_h ? (sh - card_h) / 2 : 0;
-            if (hit(cx, cy, card_w, card_h)) adjust(1);
+            u32 cw = 420, ch = 96;
+            u32 cx = sw > cw ? (sw - cw) / 2 : 0;
+            u32 cy = sh > 200 ? sh - 200 : 0;
+            if (hit(cx, cy, cw, ch)) adjust(1);
             return true;
         }
         default: return true;
