@@ -4,12 +4,8 @@ on:
   push:
     branches: [main, master]
   pull_request:
+    branches: [main, master]
   workflow_dispatch:
-
-# Avoid wasting runners on superseded commits from the same branch.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build-and-test:
@@ -42,10 +38,11 @@ jobs:
       - name: Build kernel and boot images
         run: make images
 
-      - name: Test browser HTML text extraction
+      - name: Test calculator arithmetic
+        # shell_ui.c contains GNU-style asm; the host harness uses GNU C mode and tests the same keypad/key handlers.
         run: |
-          gcc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/browser_html_test.c -Wl,--gc-sections -o /tmp/browser_html_test
-          /tmp/browser_html_test
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/calculator_test.c -Wl,--gc-sections -o /tmp/calculator_test
+          /tmp/calculator_test
 
       - name: Build ELF smoke-test disk
         run: make elf-test

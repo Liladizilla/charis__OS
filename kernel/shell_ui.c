@@ -56,6 +56,7 @@ static const menu_entry_t MENU_ITEMS[] = {
     { "Terminal" },
     { "File Manager" },
     { "Text Editor" },
+    { "Calculator" },
     { "Settings" },
     { "About CharisOS" },
 };
@@ -63,11 +64,136 @@ static const menu_entry_t MENU_ITEMS[] = {
 static bool notice_open = false;
 static int notice_item = -1;
 
+static bool calculator_open = false;
+static char calculator_display[16] = "0";
+static s64 calculator_accumulator = 0;
+static char calculator_operator = 0;
+static bool calculator_new_entry = true;
+static bool calculator_error = false;
+static bool calculator_shift = false;
+
+static void calculator_set_value(s64 value) {
+    char reverse[16];
+    usize length = 0;
+    bool negative = value < 0;
+    u64 magnitude = negative ? (u64)(-(value + 1)) + 1u : (u64)value;
+    do {
+        reverse[length++] = (char)('0' + magnitude % 10u);
+        magnitude /= 10u;
+    } while (magnitude && length < sizeof(reverse) - 1u);
+    usize out = 0;
+    if (negative && out + 1u < sizeof(calculator_display))
+        calculator_display[out++] = '-';
+    while (length && out + 1u < sizeof(calculator_display))
+        calculator_display[out++] = reverse[--length];
+    calculator_display[out] = 0;
+}
+
+static bool calculator_parse(s64* value) {
+    if (!value || !calculator_display[0]) return false;
+    usize i = 0;
+    bool negative = false;
+    if (calculator_display[i] == '-') { negative = true; i++; }
+    if (!calculator_display[i]) return false;
+    s64 number = 0;
+    for (; calculator_display[i]; i++) {
+        char ch = calculator_display[i];
+        if (ch < '0' || ch > '9') return false;
+        number = number * 10 + (ch - '0');
+        if (number > 2147483648LL) return false;
+    }
+    *value = negative ? -number : number;
+    return *value >= (-2147483647LL - 1LL) && *value <= 2147483647LL;
+}
+
+static bool calculator_apply(s64 left, char op, s64 right, s64* result) {
+    if (!result) return false;
+    s64 value;
+    if (op == '+') value = left + right;
+    else if (op == '-') value = left - right;
+    else if (op == '*') value = left * right;
+    else if (op == '/') {
+        if (!right) return false;
+        value = left / right;
+    } else return false;
+    if (value < (-2147483647LL - 1LL) || value > 2147483647LL)
+        return false;
+    *result = value;
+    return true;
+}
+
+static void calculator_press(char key) {
+    if (key == 'C') {
+        calculator_accumulator = 0;
+        calculator_operator = 0;
+        calculator_new_entry = true;
+        calculator_error = false;
+        calculator_display[0] = '0';
+        calculator_display[1] = 0;
+        return;
+    }
+    if (key >= '0' && key <= '9') {
+        if (calculator_error || calculator_new_entry) {
+            calculator_display[0] = key;
+            calculator_display[1] = 0;
+            calculator_new_entry = false;
+            calculator_error = false;
+            return;
+        }
+        usize length = kstrlen(calculator_display);
+        if (length < 10u) {
+            if (length == 1u && calculator_display[0] == '0')
+                calculator_display[0] = key;
+            else {
+                calculator_display[length] = key;
+                calculator_display[length + 1u] = 0;
+            }
+        }
+        return;
+    }
+    s64 current = 0;
+    if (!calculator_parse(&current)) {
+        calculator_error = true;
+        kstrcpy(calculator_display, "Error");
+        calculator_new_entry = true;
+        return;
+    }
+    if (key == '+' || key == '-' || key == '*' || key == '/') {
+        if (calculator_operator && !calculator_new_entry) {
+            if (!calculator_apply(calculator_accumulator, calculator_operator,
+                                  current, &current)) {
+                calculator_error = true;
+                kstrcpy(calculator_display, "Error");
+                calculator_operator = 0;
+                calculator_new_entry = true;
+                return;
+            }
+            calculator_set_value(current);
+        }
+        calculator_accumulator = current;
+        calculator_operator = key;
+        calculator_new_entry = true;
+        return;
+    }
+    if (key == '=') {
+        if (calculator_operator) {
+            if (!calculator_apply(calculator_accumulator, calculator_operator,
+                                  current, &current)) {
+                calculator_error = true;
+                kstrcpy(calculator_display, "Error");
+            } else calculator_set_value(current);
+            calculator_operator = 0;
+        }
+        calculator_new_entry = true;
+    }
+}
+
 static const char* const NOTICE_LINE_1[] = {
     "Local pages work; remote web transport is not ready.",
     "A graphical terminal is not wired up yet.",
     "The VFS exists, but the graphical browser is",
     "No graphical editor is implemented yet.",
+    "The calculator window is not connected to the launcher.",
     "A graphical settings panel is not wired up.",
     "CharisOS is a from-scratch x86_64 kernel.",
 };
@@ -76,6 +202,7 @@ static const char* const NOTICE_LINE_2[] = {
     "Kernel output remains on the text/serial console.",
     "not connected to file operations yet.",
     "This screen will not pretend to show source code.",
+    "Its arithmetic UI still needs implementation.",
     "Persistence needs an existing writable config file.",
     "The desktop and built-in apps are still partial.",
 };
@@ -138,7 +265,8 @@ static void draw_app_icon(u32 app, u32 x, u32 y) {
               app == 1 ? 0xFF91D7A3u :
               app == 2 ? 0xFFF0C674u :
               app == 3 ? 0xFFB7A0F5u :
-              app == 4 ? 0xFF8FC7D8u : CHARIS_UI_TEXT;
+              app == 4 ? 0xFF8FC7D8u :
+              app == 5 ? 0xFF7EB6FFu : CHARIS_UI_TEXT;
     fb_fill_rect(x, y, 20, 20, CHARIS_UI_PANEL_RAISED);
     fb_draw_rect(x, y, 20, 20, CHARIS_UI_BORDER);
     if (app == 0) {
@@ -157,6 +285,15 @@ static void draw_app_icon(u32 app, u32 x, u32 y) {
         fb_fill_rect(x + 6, y + 10, 8, 1, CHARIS_UI_PANEL);
         fb_fill_rect(x + 6, y + 14, 6, 1, CHARIS_UI_PANEL);
     } else if (app == 4) {
+        /* Calculator: display plus a 3x2 keypad, all inside its own silhouette. */
+        fb_draw_rect(x + 4, y + 2, 12, 16, ink);
+        fb_fill_rect(x + 6, y + 4, 8, 3, CHARIS_UI_PANEL);
+        fb_fill_rect(x + 6, y + 9, 3, 3, ink);
+        fb_fill_rect(x + 11, y + 9, 3, 3, ink);
+        fb_fill_rect(x + 6, y + 14, 3, 2, ink);
+        fb_fill_rect(x + 11, y + 14, 3, 2, ink);
+    } else if (app == 5) {
+        /* Settings: a compact cross/gear glyph. */
         fb_draw_rect(x + 4, y + 4, 12, 12, ink);
         fb_fill_rect(x + 8, y + 1, 4, 18, ink);
         fb_fill_rect(x + 1, y + 8, 18, 4, ink);
@@ -193,6 +330,116 @@ static void draw_menu(void) {
 /* A launcher item must not silently send output to an invisible VGA console.
  * Until each application has a real framebuffer UI, explain its current state
  * in a consistent, dismissible panel instead of pretending it launched. */
+
+static void draw_calculator(void) {
+    if (!calculator_open) return;
+    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
+    u32 cw = 300, ch = 278;
+    u32 x = sw > cw ? (sw - cw) / 2u : 0;
+    u32 y = sh > ch ? (sh - ch) / 2u : 0;
+    fb_fill_rect(x + 5, y + 5, cw, ch, CHARIS_UI_SHADOW);
+    fb_fill_rect(x, y, cw, ch, T_MENU);
+    fb_draw_rect(x, y, cw, ch, T_BORDER);
+    fb_fill_rect(x, y, cw, 30, T_START_BTN);
+    gfx_draw_string(x + 14, y + 8, "Calculator", T_FG, FB_TRANSPARENT);
+    fb_fill_rect(x + 14, y + 42, cw - 28, 36, CHARIS_UI_BACKGROUND);
+    fb_draw_rect(x + 14, y + 42, cw - 28, 36, T_BORDER);
+    gfx_draw_string(x + 22, y + 52, calculator_display, T_FG, FB_TRANSPARENT);
+
+    static const char* const labels[4][4] = {
+        { "7", "8", "9", "/" },
+        { "4", "5", "6", "*" },
+        { "1", "2", "3", "-" },
+        { "C", "0", "=", "+" }
+    };
+    for (u32 row = 0; row < 4; row++) {
+        for (u32 col = 0; col < 4; col++) {
+            u32 bx = x + 15u + col * 66u;
+            u32 by = y + 88u + row * 42u;
+            u32 bg = col == 3u ? CHARIS_UI_ACCENT_SURFACE : CHARIS_UI_SURFACE;
+            fb_fill_rect(bx, by, 60, 36, bg);
+            fb_draw_rect(bx, by, 60, 36, T_BORDER);
+            gfx_draw_string(bx + 25u, by + 11u, labels[row][col],
+                            T_FG, FB_TRANSPARENT);
+        }
+    }
+}
+
+static bool calculator_handle_mouse(int mx, int my) {
+    if (!calculator_open) return false;
+    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
+    u32 cw = 300, ch = 278;
+    u32 x = sw > cw ? (sw - cw) / 2u : 0;
+    u32 y = sh > ch ? (sh - ch) / 2u : 0;
+    if (mx < (int)x || mx >= (int)(x + cw) ||
+        my < (int)y || my >= (int)(y + ch)) {
+        calculator_open = false;
+        return true;
+    }
+    if (mx >= (int)(x + 15u) && mx < (int)(x + 279u) &&
+        my >= (int)(y + 88u) && my < (int)(y + 256u)) {
+        u32 col = (u32)(mx - (int)(x + 15u)) / 66u;
+        u32 row = (u32)(my - (int)(y + 88u)) / 42u;
+        if (col < 4u && row < 4u &&
+            (u32)(mx - (int)(x + 15u)) % 66u < 60u &&
+            (u32)(my - (int)(y + 88u)) % 42u < 36u) {
+            static const char keys[4][4] = {
+                { '7', '8', '9', '/' },
+                { '4', '5', '6', '*' },
+                { '1', '2', '3', '-' },
+                { 'C', '0', '=', '+' }
+            };
+            calculator_press(keys[row][col]);
+        }
+    }
+    return true;
+}
+
+static bool calculator_handle_key(u8 code, bool pressed) {
+    if (!calculator_open) return false;
+    if (code == 0x2A || code == 0x36) {
+        calculator_shift = pressed;
+        return true;
+    }
+    if (!pressed) return true;
+    if (code == KEY_ESCAPE) {
+        calculator_open = false;
+        calculator_shift = false;
+        return true;
+    }
+    if (code == KEY_ENTER) {
+        calculator_press('=');
+        return true;
+    }
+    if (code == KEY_BACKSPACE) {
+        if (calculator_error) calculator_press('C');
+        else {
+            usize length = kstrlen(calculator_display);
+            if (calculator_display[0] == '-' && length <= 2u) {
+                calculator_display[0] = '0';
+                calculator_display[1] = 0;
+                calculator_new_entry = true;
+            } else if (length > 1u) {
+                calculator_display[length - 1u] = 0;
+                calculator_new_entry = false;
+            } else {
+                calculator_display[0] = '0';
+                calculator_display[1] = 0;
+                calculator_new_entry = true;
+            }
+        }
+        return true;
+    }
+    char ch = calculator_shift
+        ? keyboard_scancode_set1_shift[code & 0x7Fu]
+        : keyboard_scancode_set1[code & 0x7Fu];
+    if ((ch >= '0' && ch <= '9') || ch == '+' || ch == '-' ||
+        ch == '*' || ch == '/' || ch == '=') {
+        calculator_press(ch);
+    }
+    return true;
+}
+
 static void draw_notice(void) {
     if (!notice_open || notice_item < 0 || notice_item >= (int)MENU_ITEM_COUNT) return;
 
@@ -265,6 +512,7 @@ static void redraw_all(void) {
     browser_render();
     draw_taskbar();
     draw_menu();
+    draw_calculator();
     draw_notice();
     ui_draw_cursor();
 }
@@ -303,6 +551,25 @@ void ui_install_input_hooks(void) {
 
 static bool super_held = false;
 
+static void activate_menu_item(int item) {
+    if (item < 0 || item >= (int)MENU_ITEM_COUNT) return;
+    ui.menu_open = false;
+    ui.hover_item = -1;
+    notice_open = false;
+    notice_item = -1;
+    calculator_open = false;
+    if (item == 0) {
+        browser_open();
+    } else if (item == 4) {
+        calculator_press('C');
+        calculator_open = true;
+    } else {
+        notice_item = item;
+        notice_open = true;
+    }
+    ui.needs_redraw = true;
+}
+
 static void handle_event(const input_event_t* e) {
     switch (e->type) {
     case INPUT_KEY_DOWN:
@@ -315,10 +582,17 @@ static void handle_event(const input_event_t* e) {
         if (extended && (base == 0x5B || base == 0x5C)) {
             super_held = (e->type == INPUT_KEY_DOWN);
             if (super_held) {
+                calculator_open = false;
                 ui.menu_open = !ui.menu_open;
-                ui.hover_item = -1;
+                ui.hover_item = ui.menu_open ? 0 : -1;
                 ui.needs_redraw = true;
             }
+            return;
+        }
+
+        if (calculator_open) {
+            (void)calculator_handle_key(base, e->type == INPUT_KEY_DOWN);
+            ui.needs_redraw = true;
             return;
         }
 
@@ -326,6 +600,37 @@ static void handle_event(const input_event_t* e) {
             browser_handle_key(base, e->type == INPUT_KEY_DOWN);
             ui.needs_redraw = true;
             return;
+        }
+
+        if (e->type == INPUT_KEY_DOWN && notice_open && base == KEY_ENTER) {
+            notice_open = false;
+            notice_item = -1;
+            ui.needs_redraw = true;
+            return;
+        }
+
+        if (e->type == INPUT_KEY_DOWN && ui.menu_open) {
+            if (base == 0x47 || base == 0x4F) { /* Home / End */
+                ui.hover_item = base == 0x47 ? 0 : (int)MENU_ITEM_COUNT - 1;
+                ui.needs_redraw = true;
+                return;
+            }
+            if (base == 0x48 || base == 0x50) { /* Up / Down */
+                if (ui.hover_item < 0 || ui.hover_item >= (int)MENU_ITEM_COUNT) {
+                    ui.hover_item = base == 0x50 ? 0 : (int)MENU_ITEM_COUNT - 1;
+                } else if (base == 0x48) {
+                    ui.hover_item = ui.hover_item == 0
+                        ? (int)MENU_ITEM_COUNT - 1 : ui.hover_item - 1;
+                } else {
+                    ui.hover_item = (ui.hover_item + 1) % (int)MENU_ITEM_COUNT;
+                }
+                ui.needs_redraw = true;
+                return;
+            }
+            if (base == KEY_ENTER && ui.hover_item >= 0) {
+                activate_menu_item(ui.hover_item);
+                return;
+            }
         }
 
         /* Escape dismisses the topmost transient surface. */
@@ -355,6 +660,12 @@ static void handle_event(const input_event_t* e) {
     case INPUT_MOUSE_DOWN: {
         int mx = e->mouse.x, my = e->mouse.y;
 
+        if (calculator_open) {
+            (void)calculator_handle_mouse(mx, my);
+            ui.needs_redraw = true;
+            return;
+        }
+
         if (browser_is_open()) {
             browser_handle_mouse(mx, my);
             ui.needs_redraw = true;
@@ -374,24 +685,13 @@ static void handle_event(const input_event_t* e) {
 
         if (on_taskbar && mx < (int)START_BTN_W) {
             ui.menu_open = !ui.menu_open;
-            ui.hover_item = -1;
+            ui.hover_item = ui.menu_open ? 0 : -1;
             ui.needs_redraw = true;
             return;
         }
 
         int hit = hit_menu_item(mx, my);
-        if (hit >= 0) {
-            ui.menu_open = false;
-            ui.hover_item = -1;
-            if (hit == 0) {
-                notice_open = false;
-                browser_open();
-            } else {
-                notice_item = hit;
-                notice_open = true;
-            }
-            ui.needs_redraw = true;
-        }
+        if (hit >= 0) activate_menu_item(hit);
         return;
     }
 
