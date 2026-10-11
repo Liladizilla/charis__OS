@@ -93,6 +93,36 @@ static void test_title_state_resets_for_new_page(void) {
     expect(strcmp(remote_text, "Body only") == 0,
            "content after navigation is not captured as stale title");
 }
+static void test_preview_keyboard_scroll_is_bounded(void) {
+    reset_html();
+    remote_ready = true;
+    remote_loading = false;
+    strcpy(remote_url, "http://example.com/");
+    strcpy(tabs[0].address, "http://example.com/");
+    tab_count = 1;
+    active_tab = 0;
+    g_framebuffer.initialized = true;
+    g_framebuffer.height = 300;
+    remote_text_length = 0;
+    for (int i = 0; i < 30; i++) {
+        remote_text[remote_text_length++] = 'x';
+        remote_text[remote_text_length++] = '\\n';
+    }
+    remote_text[remote_text_length] = 0;
+    remote_scroll_lines = 0;
+    browser_scroll_preview(false);
+    expect(remote_scroll_lines == 0, "scroll up stays at top");
+    browser_scroll_preview(true);
+    expect(remote_scroll_lines == 5, "page down advances preview");
+    for (int i = 0; i < 20; i++) browser_scroll_preview(true);
+    expect(remote_scroll_lines <= preview_count_lines(remote_text, remote_text_length),
+           "scroll offset remains bounded by document lines");
+    for (int i = 0; i < 20; i++) browser_scroll_preview(false);
+    expect(remote_scroll_lines == 0, "scroll up returns to top");
+    remote_ready = false;
+    remote_scroll_lines = 0;
+    g_framebuffer.initialized = false;
+}
 int main(void) {
     test_tags_and_block_boundaries();
     test_scripts_and_styles_are_hidden();
@@ -103,6 +133,7 @@ int main(void) {
     test_navigation_reset_clears_partial_state();
     test_document_title_is_extracted_across_chunks();
     test_title_state_resets_for_new_page();
+    test_preview_keyboard_scroll_is_bounded();
     puts("Browser HTML extraction tests passed");
     return 0;
 }
