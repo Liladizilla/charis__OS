@@ -185,7 +185,16 @@ static void handle_dns_response(u16 source_port, const u8 source_ip[4],
     offset += 4u;
 
     for (u16 i = 0; i < answers; i++) {
-        if (!skip_name(payload, length, &offset) || offset + 10u > length) {
+        usize owner_end = offset;
+        bool owner_matches = question_matches_host(payload, length, &owner_end);
+        if (owner_matches) {
+            offset = owner_end;
+        } else if (!skip_name(payload, length, &offset)) {
+            const u8 zero[4] = {0, 0, 0, 0};
+            finish_query(false, zero);
+            return;
+        }
+        if (offset + 10u > length) {
             const u8 zero[4] = {0, 0, 0, 0};
             finish_query(false, zero);
             return;
@@ -199,7 +208,7 @@ static void handle_dns_response(u16 source_port, const u8 source_ip[4],
             finish_query(false, zero);
             return;
         }
-        if (type == 1u && klass == 1u && rdlength == 4u) {
+        if (owner_matches && type == 1u && klass == 1u && rdlength == 4u) {
             u8 ip[4];
             kmemcpy(ip, payload + offset, 4);
             if (ip[0] || ip[1] || ip[2] || ip[3]) {
