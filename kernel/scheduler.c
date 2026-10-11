@@ -73,8 +73,10 @@ void scheduler_block_task(task_t* task) {
 
 void scheduler_unblock_task(task_t* task) {
     if (!task || task->state != TASK_STATE_BLOCKED) return;
+    /* Blocked tasks remain linked in the scheduler's task list; the scheduler
+     * skips them by state. Appending the same node again corrupts the doubly
+     * linked list (and can create a self-loop when it is already the tail). */
     task->state = TASK_STATE_READY;
-    enqueue_task(task);
 }
 
 void scheduler_start(void) {

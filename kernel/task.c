@@ -87,10 +87,14 @@ static task_t* g_pending_task = 0;
 
 void task_defer_release(task_t* t) {
     if (!t) return;
-    if (t->stack_base) {
-        g_pending_task  = t;
-        g_pending_stack = (void*)t->stack_base;
-        t->stack_base  = 0;      /* the slot owns the pages now */
+    if (t->stack_base || t->guard_page_addr) {
+        g_pending_task = t;
+        /* stack_base points one page into the allocation, after the reserved
+         * guard page. The allocator must receive the original kmalloc pointer,
+         * not that interior address. */
+        g_pending_stack = (void*)(t->guard_page_addr ? t->guard_page_addr : t->stack_base);
+        t->stack_base = 0;
+        t->guard_page_addr = 0; /* pending slot owns the full allocation */
     }
     t->state = TASK_STATE_ZOMBIE;
     t->runtime_ticks = 0;
@@ -237,6 +241,17 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
         if (!task->address_space) {
             vga_puts("Failed to create address space\n");
             kfree(stack);
+            /* task_init_common already marked this slot READY. Roll it back so
+             * allocation failure cannot permanently consume a task-table slot. */
+            task->state = TASK_STATE_ZOMBIE;
+            task->pid = 0;
+            task->rsp = 0;
+            task->stack_base = 0;
+            task->guard_page_addr = 0;
+            task->stack_canary_addr = 0;
+            task->address_space = NULL;
+            task->next = NULL;
+            task->prev = NULL;
             return NULL;
         }
     } else {
