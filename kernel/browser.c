@@ -44,6 +44,10 @@ static bool browser_has_bookmark;
  * This is not yet an HTML/CSS document engine and intentionally has no script execution. */
 static char remote_url[BROWSER_URL_MAX];
 static char remote_text[2048];
+static char remote_title[96];
+static usize remote_title_length;
+static bool remote_in_title;
+static bool remote_title_last_space;
 static usize remote_text_length;
 static u16 remote_status_code;
 static bool remote_loading;
@@ -117,6 +121,23 @@ static void remote_append(char ch) {
 }
 
 static void remote_append_text_char(char ch) {
+    if (remote_in_title) {
+        if (ch == '\r' || ch == '\n' || ch == '\t' || ch == ' ') {
+            if (remote_title_length && !remote_title_last_space &&
+                remote_title[remote_title_length - 1u] != '\n' &&
+                remote_title_length + 1u < sizeof(remote_title)) {
+                remote_title[remote_title_length++] = ' ';
+                remote_title[remote_title_length] = 0;
+                remote_title_last_space = true;
+            }
+        } else if ((u8)ch >= 0x20u &&
+                   remote_title_length + 1u < sizeof(remote_title)) {
+            remote_title[remote_title_length++] = ch;
+            remote_title[remote_title_length] = 0;
+            remote_title_last_space = false;
+        }
+        return;
+    }
     if (ch == '\r' || ch == '\n' || ch == '\t' || ch == ' ') {
         if (remote_text_length && !remote_last_space &&
             remote_text[remote_text_length - 1u] != '\n') {
@@ -264,6 +285,8 @@ static void remote_body(const u8* data, usize length, void* context) {
                     if (remote_closing_tag) remote_suppress_content = false;
                     else remote_suppress_content = true;
                 }
+                if (kstrcmp(remote_tag_name, "title") == 0)
+                    remote_in_title = !remote_closing_tag;
                 if (!remote_suppress_content && remote_block_tag() &&
                     remote_text_length &&
                     remote_text[remote_text_length - 1u] != '\n')
@@ -353,6 +376,7 @@ static void remote_complete(bool success, void* context) {
 static void remote_reset_parser(void) {
     remote_in_tag = false;
     remote_in_comment = false;
+    remote_in_title = false;
     remote_comment_dash_count = 0;
     remote_comment_probe = 0;
     remote_tag_name_done = false;
@@ -405,6 +429,9 @@ static bool remote_navigate(const char* url) {
     remote_url[sizeof(remote_url) - 1u] = 0;
     remote_text_length = 0;
     remote_text[0] = 0;
+    remote_title_length = 0;
+    remote_title[0] = 0;
+    remote_title_last_space = false;
     remote_status_code = 0;
     remote_reset_parser();
     remote_ready = false;
@@ -599,7 +626,9 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
         }
     } else if (kstrncmp(address, "http://", 7) == 0) {
         if (remote_ready && kstrcmp(address, remote_url) == 0) {
-            gfx_draw_string(x + 24, y + 18, "HTTP TEXT PREVIEW", C_ACCENT, FB_TRANSPARENT);
+            gfx_draw_string(x + 24, y + 18,
+                            remote_title_length ? remote_title : "HTTP TEXT PREVIEW",
+                            C_ACCENT, FB_TRANSPARENT);
             gfx_draw_string(x + 24, y + 42, address, C_MUTED, FB_TRANSPARENT);
             char status_line[48];
             kstrncpy(status_line, "HTTP status: ", sizeof(status_line) - 1u);
