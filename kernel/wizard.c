@@ -216,7 +216,7 @@ static void draw_language(void) {
 
     draw_step_header("Language", "Used for system messages and the default locale.",
                      cx, cy);
-    draw_list(cx + 40, cy + 100, cw - 80, LANGUAGES, LANGUAGE_COUNT, w.language);
+    draw_list(cx + 40, cy + 100, cw - 80, LANGUAGES, LANGUAGE_COUNT, w.sel[STEP_LANGUAGE]);
 
     text(cx + 40, cy + ch - 44,
          "Keyboard layout is US QWERTY for now; other layouts are not mapped yet.",
@@ -232,7 +232,7 @@ static void draw_timezone(void) {
 
     draw_step_header("Time zone", "The kernel has no timezone database, so this is an offset.",
                      cx, cy);
-    draw_list(cx + 40, cy + 100, cw - 80, TIMEZONES, TIMEZONE_COUNT, w.timezone);
+    draw_list(cx + 40, cy + 100, cw - 80, TIMEZONES, TIMEZONE_COUNT, w.sel[STEP_TIMEZONE]);
 }
 
 static void draw_disk(void) {
@@ -311,8 +311,8 @@ static void draw_wallpaper(void) {
     u32 cy = sh > 200 ? sh - 200 : 0;
 
     card(cx, cy, cw, ch);
-    text(cx + 20, cy + 18, wallpaper_name(w.wallpaper), W_FG);
-    text(cx + 20, cy + 42, wallpaper_description(w.wallpaper), W_DIM);
+    text(cx + 20, cy + 18, wallpaper_name(w.sel[STEP_WALLPAPER]), W_FG);
+    text(cx + 20, cy + 42, wallpaper_description(w.sel[STEP_WALLPAPER]), W_DIM);
     text(cx + 20, cy + 68, "Click this panel to cycle styles.", W_HINT);
 }
 
@@ -602,7 +602,7 @@ bool wizard_run(void) {
          * cards never ghost through after moving between setup steps. The
          * wallpaper step previews the currently selected solid style. */
         u32 preview_style = w.step == STEP_WALLPAPER
-                          ? w.wallpaper
+                          ? w.sel[STEP_WALLPAPER]
                           : (u32)config_get_int("wallpaper", 0);
         wallpaper_draw(preview_style);
 
