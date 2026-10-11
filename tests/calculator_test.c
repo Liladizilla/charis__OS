@@ -5,6 +5,8 @@
 #include "../kernel/shell_ui.c"
 
 framebuffer_t g_framebuffer;
+const char keyboard_scancode_set1[128] = {0};
+const char keyboard_scancode_set1_shift[128] = {0};
 
 usize kstrlen(const char* s) { return strlen(s); }
 char* kstrcpy(char* dst, const char* src) { return strcpy(dst, src); }
@@ -93,6 +95,18 @@ static void test_mouse_keypad_uses_the_same_arithmetic_core(void) {
            "mouse keypad computes seventy plus zero");
     calculator_open = false;
 }
+
+static void test_backspace_handles_negative_result(void) {
+    reset_calculator();
+    enter_digits("3");
+    calculator_press('-');
+    enter_digits("8");
+    calculator_press('=');
+    expect(strcmp(calculator_display, "-5") == 0, "negative result prepared");
+    calculator_handle_key(KEY_BACKSPACE, true);
+    expect(strcmp(calculator_display, "0") == 0,
+           "backspace clears a one-digit negative result safely");
+}
 int main(void) {
     test_precedence_is_explicitly_sequential();
     test_subtraction_can_produce_negative_values();
@@ -100,6 +114,7 @@ int main(void) {
     test_signed_32_bit_overflow_is_rejected();
     test_clear_resets_pending_operation();
     test_mouse_keypad_uses_the_same_arithmetic_core();
+    test_backspace_handles_negative_result();
     puts("Calculator arithmetic tests passed");
     return 0;
 }
