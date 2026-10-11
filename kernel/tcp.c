@@ -41,6 +41,7 @@ static u8 tx_payload[TCP_SEGMENT_CAP];
 static u8 out_segment[TCP_HEADER_MIN + TCP_SEGMENT_CAP];
 static net_tcp_connect_callback_t connect_callback;
 static net_tcp_data_callback_t data_callback;
+static net_tcp_close_callback_t close_callback;
 static void* callback_context;
 static u16 next_local_port = 49152u;
 
@@ -121,6 +122,7 @@ static void clear_connection(void) {
     tx_length = 0;
     connect_callback = 0;
     data_callback = 0;
+    close_callback = 0;
     callback_context = 0;
 }
 
@@ -133,7 +135,8 @@ bool net_tcp_init(void) {
 
 bool net_tcp_connect(const u8 destination_ip[4], u16 destination_port,
                      net_tcp_connect_callback_t on_connect,
-                     net_tcp_data_callback_t on_data, void* context) {
+                     net_tcp_data_callback_t on_data,
+                     net_tcp_close_callback_t on_close, void* context) {
     if (!initialized) (void)net_tcp_init();
     if (!destination_ip || !destination_port || state != TCP_CLOSED ||
         !on_connect)
@@ -157,6 +160,7 @@ bool net_tcp_connect(const u8 destination_ip[4], u16 destination_port,
     tx_pending = false;
     connect_callback = on_connect;
     data_callback = on_data;
+    close_callback = on_close;
     callback_context = context;
     state = TCP_SYN_SENT;
     return true;
@@ -226,9 +230,11 @@ void net_tcp_input(const u8 source_ip[4], const u8 destination_ip[4],
     if (flags & TCP_FLAG_RST) {
         bool was_connecting = state == TCP_SYN_SENT;
         net_tcp_connect_callback_t callback = connect_callback;
+        net_tcp_close_callback_t on_close = close_callback;
         void* context = callback_context;
         clear_connection();
         if (was_connecting && callback) callback(false, context);
+        else if (on_close) on_close(false, context);
         return;
     }
 
@@ -266,7 +272,11 @@ void net_tcp_input(const u8 source_ip[4], const u8 destination_ip[4],
     if (flags & TCP_FLAG_FIN) {
         if (sequence + (u32)payload_length == remote_seq) remote_seq++;
         (void)emit_segment(TCP_FLAG_ACK, local_seq, remote_seq, 0, 0);
+        net_tcp_close_callback_t on_close = close_callback;
+        void* context = callback_context;
         clear_connection();
+        if (on_close) on_close(true, context);
+        return;
     }
     if (state == TCP_FIN_WAIT && (flags & TCP_FLAG_ACK) &&
         acknowledgement >= local_seq)
@@ -280,9 +290,11 @@ void net_tcp_poll(void) {
     if (retries >= TCP_MAX_RETRIES) {
         bool was_connecting = state == TCP_SYN_SENT;
         net_tcp_connect_callback_t callback = connect_callback;
+        net_tcp_close_callback_t on_close = close_callback;
         void* context = callback_context;
         clear_connection();
         if (was_connecting && callback) callback(false, context);
+        else if (on_close) on_close(false, context);
         return;
     }
     int result = -1;
