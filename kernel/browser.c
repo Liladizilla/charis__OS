@@ -205,6 +205,36 @@ static void remote_complete(bool success, void* context) {
     }
 }
 
+static bool valid_http_hostname(const char* host, usize length) {
+    if (!host || !length || length > 253u) return false;
+    usize label_length = 0;
+    for (usize i = 0; i < length; i++) {
+        char ch = host[i];
+        if (ch == '.') {
+            if (!label_length || label_length > 63u) return false;
+            label_length = 0;
+            continue;
+        }
+        bool alpha = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+        bool digit = ch >= '0' && ch <= '9';
+        if (!alpha && !digit && ch != '-') return false;
+        if (!label_length && ch == '-') return false;
+        label_length++;
+        if (label_length > 63u) return false;
+    }
+    if (!label_length || host[length - 1u] == '-') return false;
+    return true;
+}
+
+static bool valid_http_path(const char* path) {
+    if (!path || path[0] != '/') return false;
+    for (usize i = 0; path[i]; i++) {
+        u8 ch = (u8)path[i];
+        if (ch <= 0x20u || ch == 0x7Fu) return false;
+    }
+    return true;
+}
+
 static bool remote_navigate(const char* url) {
     if (!url || kstrncmp(url, "http://", 7u) != 0) return false;
     const char* host = url + 7u;
@@ -217,6 +247,8 @@ static bool remote_navigate(const char* url) {
     if (!end) end = host + kstrlen(host);
     usize host_len = (usize)(end - host);
     if (!host_len || host_len >= sizeof(remote_url)) return false;
+    /* Reject user-info, whitespace, IPv6 literals and malformed host labels. */
+    if (!valid_http_hostname(host, host_len)) return false;
 
     char hostname[BROWSER_URL_MAX];
     char path_buffer[BROWSER_URL_MAX];
@@ -243,6 +275,7 @@ static bool remote_navigate(const char* url) {
     /* URL fragments are client-side only and must never be sent in HTTP. */
     char* fragment = kstrchr(path_buffer, '#');
     if (fragment) *fragment = 0;
+    if (!valid_http_path(path_buffer)) return false;
 
     if (remote_loading) net_http_cancel();
     kstrncpy(remote_url, url, sizeof(remote_url) - 1u);
