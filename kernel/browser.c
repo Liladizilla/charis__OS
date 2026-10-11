@@ -368,10 +368,16 @@ static void remote_complete(bool success, void* context) {
     (void)context;
     remote_loading = false;
     remote_ready = true;
-    if (success) {
-        set_status(remote_status_code ? "HTTP text preview loaded" : "HTTP response received");
-    } else {
+    if (!success) {
         set_status("HTTP request failed; check network configuration");
+    } else if (remote_status_code >= 300u && remote_status_code < 400u) {
+        set_status("HTTP redirect received; automatic redirects are not supported yet");
+    } else if (remote_status_code >= 400u) {
+        set_status("HTTP server returned an error status; response text may explain why");
+    } else if (remote_status_code >= 200u && remote_status_code < 300u) {
+        set_status("HTTP text preview loaded");
+    } else {
+        set_status("HTTP response received; status is not a successful page response");
     }
 }
 
@@ -392,39 +398,92 @@ static void remote_reset_parser(void) {
     remote_last_space = false;
 }
 
-static bool remote_navigate(const char* url) {
-    if (!url || kstrncmp(url, "http://", 7u) != 0) return false;
-    const char* host = url + 7u;
-    const char* path = kstrchr(host, '/');
-    const char* query = kstrchr(host, '?');
-    const char* end = path;
-    if (!end || (query && query < end)) end = query;
-    if (!end) end = host + kstrlen(host);
-    usize host_len = (usize)(end - host);
-    if (!host_len || host_len >= sizeof(remote_url)) return false;
+static bool valid_http_hostname(const char* host, usize length) {
+    if (!host || !length || length > 253u) return false;
+    usize label_length = 0;
+    for (usize i = 0; i < length; i++) {
+        char ch = host[i];
+        if (ch == '.') {
+            if (!label_length || label_length > 63u || host[i - 1u] == '-')
+                return false;
+            label_length = 0;
+            continue;
+        }
+        bool alpha = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+        bool digit = ch >= '0' && ch <= '9';
+        if (!alpha && !digit && ch != '-') return false;
+        if (!label_length && ch == '-') return false;
+        label_length++;
+        if (label_length > 63u) return false;
+    }
+    return label_length != 0u && host[length - 1u] != '-';
+}
 
-    char hostname[BROWSER_URL_MAX];
-    char path_buffer[BROWSER_URL_MAX];
-    if (host_len >= sizeof(hostname)) return false;
-    kstrncpy(hostname, host, host_len);
-    hostname[host_len] = 0;
-    if (kstrchr(hostname, ':')) {
-        /* Only the default HTTP port is supported by this first client. */
-        char* colon = kstrchr(hostname, ':');
+static bool valid_http_path(const char* path) {
+    if (!path || path[0] != '/') return false;
+    for (usize i = 0; path[i]; i++) {
+        u8 ch = (u8)path[i];
+        if (ch <= 0x20u || ch == 0x7Fu || ch == '#') return false;
+    }
+    return true;
+}
+
+/* Split only the HTTP origin and request target this small client supports.
+ * Fragments are browser-side state and must never be sent over the network. */
+static bool parse_http_url(const char* url, char* hostname, usize host_capacity,
+                           char* path_buffer, usize path_capacity) {
+    if (!url || kstrncmp(url, "http://", 7u) != 0 ||
+        !hostname || !host_capacity || !path_buffer || path_capacity < 2u)
+        return false;
+    const char* host = url + 7u;
+    const char* url_end = url + kstrlen(url);
+    const char* fragment = kstrchr(host, '#');
+    if (fragment) url_end = fragment;
+    const char* slash = kstrchr(host, '/');
+    const char* query = kstrchr(host, '?');
+    if (slash && slash >= url_end) slash = 0;
+    if (query && query >= url_end) query = 0;
+    const char* end = slash;
+    if (!end || (query && query < end)) end = query;
+    if (!end) end = url_end;
+    usize host_length = (usize)(end - host);
+    if (!host_length || host_length >= host_capacity) return false;
+    kstrncpy(hostname, host, host_length);
+    hostname[host_length] = 0;
+
+    char* colon = kstrchr(hostname, ':');
+    if (colon) {
+        /* Only the default HTTP port is implemented. */
         if (kstrcmp(colon, ":80") != 0) return false;
         *colon = 0;
-        if (!hostname[0]) return false;
     }
-    if (end[0] == '/') {
-        kstrncpy(path_buffer, end, sizeof(path_buffer) - 1u);
-        path_buffer[sizeof(path_buffer) - 1u] = 0;
-    } else if (end[0] == '?') {
+    if (!valid_http_hostname(hostname, kstrlen(hostname))) return false;
+
+    usize path_length = 0;
+    if (end < url_end && end[0] == '/') {
+        path_length = (usize)(url_end - end);
+        if (path_length >= path_capacity) return false;
+        kstrncpy(path_buffer, end, path_length);
+        path_buffer[path_length] = 0;
+    } else if (end < url_end && end[0] == '?') {
+        path_length = (usize)(url_end - end);
+        if (path_length + 1u >= path_capacity) return false;
         path_buffer[0] = '/';
-        kstrncpy(path_buffer + 1u, end, sizeof(path_buffer) - 2u);
-        path_buffer[sizeof(path_buffer) - 1u] = 0;
+        kstrncpy(path_buffer + 1u, end, path_length);
+        path_buffer[path_length + 1u] = 0;
     } else {
-        kstrncpy(path_buffer, "/", sizeof(path_buffer));
+        path_buffer[0] = '/';
+        path_buffer[1] = 0;
     }
+    return valid_http_path(path_buffer);
+}
+
+static bool remote_navigate(const char* url) {
+    char hostname[BROWSER_URL_MAX];
+    char path_buffer[BROWSER_URL_MAX];
+    if (!parse_http_url(url, hostname, sizeof(hostname),
+                        path_buffer, sizeof(path_buffer)))
+        return false;
 
     if (remote_loading) net_http_cancel();
     kstrncpy(remote_url, url, sizeof(remote_url) - 1u);
@@ -439,7 +498,7 @@ static bool remote_navigate(const char* url) {
     remote_reset_parser();
     remote_ready = false;
     remote_loading = true;
-    set_status("Resolving host and connecting over HTTP...");
+    set_status("Resolving host over plain HTTP (no TLS)...");
     if (!net_http_get(hostname, path_buffer, remote_headers, remote_body,
                       remote_complete, 0)) {
         remote_loading = false;
@@ -516,10 +575,10 @@ static void navigate(const char* raw, bool add_history) {
         kstrncpy(target, raw, sizeof(target) - 1);
         target[sizeof(target) - 1] = 0;
     } else {
-        /* Treat an unqualified address as a web URL, not a search query. */
+        /* Bare hostnames use the implemented HTTP path, never fake HTTPS. */
         target[0] = 'h'; target[1] = 't'; target[2] = 't'; target[3] = 'p';
-        target[4] = 's'; target[5] = ':'; target[6] = '/'; target[7] = '/';
-        kstrncpy(target + 8, raw, sizeof(target) - 9);
+        target[4] = ':'; target[5] = '/'; target[6] = '/';
+        kstrncpy(target + 7, raw, sizeof(target) - 8);
         target[sizeof(target) - 1] = 0;
     }
 
@@ -667,8 +726,8 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
         gfx_draw_string(x + 24, y + 22, "ABOUT CHARIS BROWSER", C_ACCENT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 62, "Built into CharisOS. No external browser runtime is required for local pages.", C_TEXT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 92, "This version includes tabs, address entry, local navigation, history and bookmarks.", C_MUTED, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 122, "Remote websites need a real TCP/IP, DNS, TLS/HTTP client and document renderer.", C_WARNING, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 152, "The current kernel network receive and TCP/IP functions are placeholders.", C_MUTED, FB_TRANSPARENT);
+        gfx_draw_string(x + 24, y + 122, "Plain HTTP can load a bounded text preview when networking is configured.", C_TEXT, FB_TRANSPARENT);
+        gfx_draw_string(x + 24, y + 152, "HTTPS, JavaScript and full HTML/CSS rendering are not supported yet.", C_WARNING, FB_TRANSPARENT);
     } else if (kstrcmp(address, "charis://help") == 0) {
         gfx_draw_string(x + 24, y + 22, "BROWSER HELP", C_ACCENT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 58, "Click the address bar or press Ctrl+L, type a URL, then press Enter.", C_TEXT, FB_TRANSPARENT);
