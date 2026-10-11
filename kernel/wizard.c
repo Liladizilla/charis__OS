@@ -396,7 +396,9 @@ static void go_back(void) {
     if (w.step == STEP_WELCOME) return;
     if (w.step == STEP_DONE) { w.step = STEP_WALLPAPER; return; }
     wizard_step_t prev = (wizard_step_t)(w.step - 1);
-    if (prev == STEP_DISK && !w.install) prev = STEP_MODE;
+    /* The install-only disk step is skipped in both directions. Returning
+     * from Network should land on Time zone, not jump back to Mode. */
+    if (w.step == STEP_NETWORK && !w.install) prev = STEP_TIMEZONE;
     w.step = prev;
 }
 
