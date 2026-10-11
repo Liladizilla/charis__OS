@@ -186,7 +186,7 @@ static void draw_step_header(const char* title, const char* hint, u32 cx, u32 cy
 
 static void draw_mode(void) {
     static const char* const items[] = {
-        "Run from this device (nothing is written to disk)",
+        "Live session from the boot medium",
     };
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
     u32 cw = 640, ch = 340;
@@ -194,8 +194,8 @@ static void draw_mode(void) {
     u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
     card(cx, cy, cw, ch);
 
-    draw_step_header("How should CharisOS run?",
-                     "Pick where this system lives.", cx, cy);
+    draw_step_header("Live session",
+                     "An installer is not available in this build.", cx, cy);
     draw_list(cx + 40, cy + 110, cw - 80, items, 1, w.sel[STEP_MODE]);
 
     text(cx + 40, cy + 210,
@@ -323,7 +323,7 @@ static void draw_done(void) {
     card(cx, cy, cw, ch);
 
     text(cx + 40, cy + 40, "Setup complete", W_ACCENT);
-    text(cx + 40, cy + 78, "Saved:", W_DIM);
+    text(cx + 40, cy + 78, "Summary:", W_DIM);
 
     text(cx + 40, cy + 106, LANGUAGES[w.language], W_FG);
     text(cx + 40, cy + 128, TIMEZONES[w.timezone], W_FG);
