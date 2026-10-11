@@ -84,11 +84,13 @@ static void test_mouse_keypad_uses_the_same_arithmetic_core(void) {
     calculator_open = true;
     expect(calculator_handle_mouse(407, 351), "mouse click handled");
     expect(strcmp(calculator_display, "7") == 0, "first keypad button enters seven");
-    expect(calculator_handle_mouse(605, 477), "plus button click handled");
     expect(calculator_handle_mouse(473, 477), "zero button click handled");
+    expect(strcmp(calculator_display, "70") == 0, "keypad appends digits");
+    expect(calculator_handle_mouse(605, 477), "plus button click handled");
+    expect(calculator_handle_mouse(473, 477), "second zero button click handled");
     expect(calculator_handle_mouse(539, 477), "equals button click handled");
     expect(strcmp(calculator_display, "70") == 0,
-           "mouse keypad computes seven plus zero");
+           "mouse keypad computes seventy plus zero");
     calculator_open = false;
 }
 int main(void) {
