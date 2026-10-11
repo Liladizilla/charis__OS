@@ -149,6 +149,13 @@ done:
     return result;
 }
 
+static void elf_rollback_stack(pml4_t* pml4, u64 stack_base, u32 mapped_pages) {
+    for (u32 i = 0; i < mapped_pages; i++) {
+        u64 phys = vmm_unmap_page_pml4(pml4, stack_base + (u64)i * PAGE_SIZE);
+        if (phys) pmm_free_page(phys);
+    }
+}
+
 int elf_setup_stack(process_mm_t* mm, u64* user_rsp,
                   const char* const argv[], int argc,
                   const char* const envp[], int envc) {
@@ -157,34 +164,43 @@ int elf_setup_stack(process_mm_t* mm, u64* user_rsp,
         (argc && !argv) || (envc && !envp)) return -1;
     const u64 stack_top = 0x00007FFFFFFFE000ULL;
     const u64 stack_base = stack_top - 2 * PAGE_SIZE;
+
+    /* Do not overwrite mappings that belong to an existing image or caller. */
+    for (u64 addr = stack_base; addr < stack_top; addr += PAGE_SIZE) {
+        pte_t* existing = vmm_walk(mm->pml4, addr, false);
+        if (existing && (*existing & VMM_FLAG_PRESENT)) return -1;
+    }
+
+    u32 mapped_pages = 0;
     for (u64 addr = stack_base; addr < stack_top; addr += PAGE_SIZE) {
         u64 phys = pmm_alloc_page();
-        if (!phys) return -1;
+        if (!phys) goto fail;
         kmemset((void*)(uintptr_t)phys, 0, PAGE_SIZE);
         if (!vmm_map_page_pml4(mm->pml4, addr, phys,
                 VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER)) {
             pmm_free_page(phys);
-            return -1;
+            goto fail;
         }
+        mapped_pages++;
     }
 
     u64 argv_user[ELF_MAX_VECTOR_ENTRIES];
     u64 envp_user[ELF_MAX_VECTOR_ENTRIES];
     u64 cursor = stack_top;
     for (int i = envc - 1; i >= 0; i--) {
-        if (!envp[i]) return -1;
+        if (!envp[i]) goto fail;
         usize length = kstrlen(envp[i]) + 1;
-        if (length > cursor - stack_base) return -1;
+        if (length > cursor - stack_base) goto fail;
         cursor -= length;
-        if (!elf_write_user(mm->pml4, cursor, envp[i], length)) return -1;
+        if (!elf_write_user(mm->pml4, cursor, envp[i], length)) goto fail;
         envp_user[i] = cursor;
     }
     for (int i = argc - 1; i >= 0; i--) {
-        if (!argv[i]) return -1;
+        if (!argv[i]) goto fail;
         usize length = kstrlen(argv[i]) + 1;
-        if (length > cursor - stack_base) return -1;
+        if (length > cursor - stack_base) goto fail;
         cursor -= length;
-        if (!elf_write_user(mm->pml4, cursor, argv[i], length)) return -1;
+        if (!elf_write_user(mm->pml4, cursor, argv[i], length)) goto fail;
         argv_user[i] = cursor;
     }
 
@@ -199,14 +215,18 @@ int elf_setup_stack(process_mm_t* mm, u64* user_rsp,
     words[word_count++] = 0;
 
     u64 vector_size = word_count * sizeof(u64);
-    if (vector_size > cursor - stack_base) return -1;
+    if (vector_size > cursor - stack_base) goto fail;
     u64 vector_address = (cursor - vector_size) & ~0xFULL;
     if (vector_address < stack_base ||
-        !elf_write_user(mm->pml4, vector_address, words, vector_size)) return -1;
+        !elf_write_user(mm->pml4, vector_address, words, vector_size)) goto fail;
 
     *user_rsp = vector_address;
     mm->stack_top = vector_address;
     return 0;
+
+fail:
+    elf_rollback_stack(mm->pml4, stack_base, mapped_pages);
+    return -1;
 }
 
 int elf_mmap_segment(process_mm_t* mm, u64 vaddr, u64 filesz, u64 memsz, u64 flags) {
