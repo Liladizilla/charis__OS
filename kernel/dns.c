@@ -21,7 +21,6 @@ static u32 poll_ticks;
 static u8 attempts;
 static bool ready;
 static bool active;
-static bool udp_sent;
 static net_dns_callback_t pending_callback;
 static void* pending_context;
 
@@ -112,7 +111,6 @@ static void finish_query(bool success, const u8 ip[4]) {
     net_dns_callback_t callback = pending_callback;
     void* context = pending_context;
     active = false;
-    udp_sent = false;
     pending_callback = 0;
     pending_context = 0;
     if (callback) callback(pending_host, ip, success, context);
@@ -214,7 +212,6 @@ bool net_dns_query(const char* hostname, net_dns_callback_t callback,
     pending_context = context;
     attempts = 0;
     poll_ticks = DNS_POLL_INTERVAL - 1u;
-    udp_sent = false;
     active = true;
     return true;
 }
@@ -232,6 +229,6 @@ void net_dns_poll(void) {
                             query_packet, query_length);
     /* -2 means ARP resolution started. Retrying after an interval allows the
      * normal packet poller to receive the reply without flooding ARP. */
-    if (sent >= 0) udp_sent = true;
+    (void)sent;
     attempts++;
 }
