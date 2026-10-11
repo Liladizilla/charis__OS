@@ -653,34 +653,85 @@ static void draw_card(u32 x, u32 y, u32 w, const char* eyebrow, const char* titl
 /* Count the visual rows used by draw_page(), including soft-wrapped text.
  * Each rendered row holds at most 95 bytes because its line buffer reserves
  * one byte for the terminator. */
-static usize preview_count_lines(const char* text, usize length) {
-    if (!text || !length) return 0;
-    usize lines = 0;
-    usize pos = 0;
-    while (pos < length) {
-        usize row_length = 0;
-        while (pos < length && text[pos] != '\n' && row_length < 95u) {
-            pos++;
-            row_length++;
-        }
-        if (pos < length && text[pos] == '\n') pos++;
-        lines++;
+/* Share the exact row-splitting rules between drawing and scrolling so
+ * long lines and word-wrap boundaries cannot make the scroll offset drift. */
+static bool preview_next_row(const char* text, usize length, usize* position,
+                             usize max_chars, usize* row_start, usize* row_end) {
+    if (!text || !position || !row_start || !row_end || !max_chars) return false;
+    usize pos = *position;
+    while (pos < length && text[pos] == ' ') pos++;
+    if (pos >= length) {
+        *position = pos;
+        return false;
     }
+    *row_start = pos;
+    if (text[pos] == '\n') {
+        *row_end = pos;
+        *position = pos + 1u;
+        return true;
+    }
+    usize end = pos;
+    usize limit = pos + max_chars;
+    if (limit < pos || limit > length) limit = length;
+    while (end < limit && text[end] != '\n') end++;
+    if (end == limit && end < length && text[end] != '\n') {
+        usize wrap = end;
+        while (wrap > pos && text[wrap] != ' ') wrap--;
+        if (wrap > pos) end = wrap;
+    }
+    if (end == pos) end = pos + 1u;
+    *row_end = end;
+    pos = end;
+    while (pos < length && text[pos] == ' ') pos++;
+    if (pos < length && text[pos] == '\n') pos++;
+    *position = pos;
+    return true;
+}
+
+static usize preview_count_lines(const char* text, usize length, usize max_chars) {
+    if (!text || !length || !max_chars) return 0;
+    usize lines = 0, pos = 0, row_start = 0, row_end = 0;
+    while (preview_next_row(text, length, &pos, max_chars, &row_start, &row_end))
+        lines++;
     return lines;
 }
 
-static usize preview_skip_lines(const char* text, usize length, usize rows) {
-    usize pos = 0;
+static usize preview_skip_lines(const char* text, usize length, usize rows,
+                                usize max_chars) {
+    usize pos = 0, row_start = 0, row_end = 0;
     while (pos < length && rows) {
-        usize row_length = 0;
-        while (pos < length && text[pos] != '\n' && row_length < 95u) {
-            pos++;
-            row_length++;
-        }
-        if (pos < length && text[pos] == '\n') pos++;
+        if (!preview_next_row(text, length, &pos, max_chars, &row_start, &row_end))
+            break;
         rows--;
     }
     return pos;
+}
+
+static usize preview_max_chars(u32 width) {
+    usize count = width / 8u;
+    if (count > 127u) count = 127u;
+    return count ? count : 1u;
+}
+
+static u32 draw_wrapped_text(const char* text, usize length, u32 x, u32 y,
+                             u32 width, u32 bottom, u32 color, usize scroll_rows) {
+    usize max_chars = preview_max_chars(width);
+    usize pos = preview_skip_lines(text, length, scroll_rows, max_chars);
+    while (pos < length && y + 18u < bottom) {
+        usize row_start = 0, row_end = 0;
+        if (!preview_next_row(text, length, &pos, max_chars, &row_start, &row_end))
+            break;
+        if (row_end > row_start) {
+            char line[128];
+            usize count = row_end - row_start;
+            if (count > sizeof(line) - 1u) count = sizeof(line) - 1u;
+            kmemcpy(line, text + row_start, count);
+            line[count] = 0;
+            gfx_draw_string(x, y, line, color, FB_TRANSPARENT);
+        }
+        y += 20u;
+    }
+    return y;
 }
 
 static void browser_scroll_preview(bool down) {
@@ -691,9 +742,11 @@ static void browser_scroll_preview(bool down) {
     bool local_file = file_preview_ready &&
                       kstrcmp(tab->address, file_preview_url) == 0;
     if (!remote && !local_file) return;
+    usize max_chars = preview_max_chars(
+        g_framebuffer.width > 92u ? g_framebuffer.width - 92u : 8u);
     usize total = remote
-        ? preview_count_lines(remote_text, remote_text_length)
-        : preview_count_lines(file_preview, file_preview_length);
+        ? preview_count_lines(remote_text, remote_text_length, max_chars)
+        : preview_count_lines(file_preview, file_preview_length, max_chars);
     usize visible = g_framebuffer.height > 274u
         ? (g_framebuffer.height - 274u) / 20u : 1u;
     if (!visible) visible = 1u;
@@ -762,21 +815,9 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
                 kstrncpy(status_line, "HTTP response", sizeof(status_line) - 1u);
             }
             gfx_draw_string(x + 24, y + 64, status_line, C_TEXT, FB_TRANSPARENT);
-            u32 line_y = y + 94;
-            usize pos = preview_skip_lines(remote_text, remote_text_length,
-                                            remote_scroll_lines);
-            while (pos < remote_text_length && line_y + 18u < y + h) {
-                char line[96];
-                usize n = 0;
-                while (pos < remote_text_length && n < sizeof(line) - 1u &&
-                       remote_text[pos] != '\n') {
-                    line[n++] = remote_text[pos++];
-                }
-                if (pos < remote_text_length && remote_text[pos] == '\n') pos++;
-                line[n] = 0;
-                if (n) gfx_draw_string(x + 24, line_y, line, C_TEXT, FB_TRANSPARENT);
-                line_y += 20u;
-            }
+            u32 line_y = draw_wrapped_text(remote_text, remote_text_length,
+                                           x + 24, y + 94, w - 48,
+                                           y + h, C_TEXT, remote_scroll_lines);
             if (!remote_text_length)
                 gfx_draw_string(x + 24, line_y, "The server returned no displayable text.", C_MUTED, FB_TRANSPARENT);
         } else {
@@ -793,21 +834,9 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
         if (file_preview_ready && kstrcmp(address, file_preview_url) == 0) {
             gfx_draw_string(x + 24, y + 22, "LOCAL TEXT FILE", C_ACCENT, FB_TRANSPARENT);
             gfx_draw_string(x + 24, y + 48, address, C_MUTED, FB_TRANSPARENT);
-            u32 line_y = y + 78;
-            usize pos = preview_skip_lines(file_preview, file_preview_length,
-                                            file_scroll_lines);
-            while (pos < file_preview_length && line_y + 18u < y + h) {
-                char line[96];
-                usize n = 0;
-                while (pos < file_preview_length && n < sizeof(line) - 1u &&
-                       file_preview[pos] != '\n') {
-                    line[n++] = file_preview[pos++];
-                }
-                if (pos < file_preview_length && file_preview[pos] == '\n') pos++;
-                line[n] = 0;
-                if (n) gfx_draw_string(x + 24, line_y, line, C_TEXT, FB_TRANSPARENT);
-                line_y += 20u;
-            }
+            u32 line_y = draw_wrapped_text(file_preview, file_preview_length,
+                                           x + 24, y + 78, w - 48,
+                                           y + h - 28, C_TEXT, file_scroll_lines);
             if (!file_preview_length)
                 gfx_draw_string(x + 24, line_y, "This file is empty.", C_MUTED, FB_TRANSPARENT);
             gfx_draw_string(x + 24, y + h - 28, "Read-only preview, limited to 2 KiB.", C_MUTED, FB_TRANSPARENT);
