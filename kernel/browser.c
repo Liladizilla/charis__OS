@@ -257,7 +257,7 @@ static bool load_local_file(const char* url) {
     usize path_len = kstrlen(path);
     if (!path_len || path[0] != '/' || path_len >= BROWSER_URL_MAX ||
         file_path_has_parent(path) || kstrchr(path, '?') || kstrchr(path, '#') ||
-        kstrchr(path, '\\\\'))
+        kstrchr(path, '\\'))
         return false;
 
     vfs_node_t* node = vfs_resolve(path);
