@@ -133,7 +133,8 @@ int main(void) {
     test_chunked_one_byte_at_a_time();
     test_malformed_chunk_is_rejected();
     test_unsupported_transfer_encoding_is_rejected();
-    test_invalid_and_overflow_chunk_sizes_are_rejected();\n    test_truncated_chunk_is_not_success();
+    test_invalid_and_overflow_chunk_sizes_are_rejected();
+    test_truncated_chunk_is_not_success();
     puts("HTTP chunked parser tests passed");
     return 0;
 }
