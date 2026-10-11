@@ -118,6 +118,35 @@ static void test_invalid_and_overflow_chunk_sizes_are_rejected(void) {
     expect(!active && completion_calls == 1 && !completion_success,
            "overflowing chunk size must fail");
 }
+
+static void test_content_length_response(void) {
+    static const char response[] =
+        "HTTP/1.1 200 OK\\r\\nContent-Length: 5\\r\\n\\r\\nhelloEXTRA";
+    reset_parser();
+    http_on_data((const u8*)response, sizeof(response) - 1u, 0);
+    expect(!active && completion_calls == 1 && completion_success,
+           "content-length response should complete");
+    expect(strcmp(captured, "hello") == 0,
+           "bytes beyond content-length must not reach body callback");
+}
+static void test_conflicting_framing_is_rejected(void) {
+    static const char response[] =
+        "HTTP/1.1 200 OK\\r\\nContent-Length: 4\\r\\n"
+        "Transfer-Encoding: chunked\\r\\n\\r\\n0\\r\\n\\r\\n";
+    reset_parser();
+    http_on_data((const u8*)response, sizeof(response) - 1u, 0);
+    expect(!active && completion_calls == 1 && !completion_success,
+           "content-length plus transfer-encoding must be rejected");
+}
+static void test_no_body_status_completes_at_headers(void) {
+    static const char response[] =
+        "HTTP/1.1 204 No Content\\r\\nConnection: close\\r\\n\\r\\n";
+    reset_parser();
+    http_on_data((const u8*)response, sizeof(response) - 1u, 0);
+    expect(!active && completion_calls == 1 && completion_success,
+           "204 response should finish after headers");
+    expect(captured_length == 0, "204 response must not deliver body");
+}
 static void test_truncated_chunk_is_not_success(void) {
     static const char response[] =
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
@@ -134,6 +163,9 @@ int main(void) {
     test_malformed_chunk_is_rejected();
     test_unsupported_transfer_encoding_is_rejected();
     test_invalid_and_overflow_chunk_sizes_are_rejected();
+    test_content_length_response();
+    test_conflicting_framing_is_rejected();
+    test_no_body_status_completes_at_headers();
     test_truncated_chunk_is_not_success();
     puts("HTTP chunked parser tests passed");
     return 0;
