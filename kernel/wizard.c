@@ -243,18 +243,20 @@ static void draw_disk(void) {
     draw_step_header("Target drive", "Where the system would be installed.",
                      cx, cy);
 
-    text(cx + 40, cy + 110, "No drive detected.", W_ACCENT);
+    text(cx + 40, cy + 110,
+         ata_is_present() ? "Primary ATA device detected." : "No primary ATA device detected.",
+         W_ACCENT);
     text(cx + 40, cy + 140,
-         "The storage driver speaks legacy ATA PIO on the primary channel",
+         "The driver supports legacy ATA PIO on the primary channel only.",
          W_DIM);
     text(cx + 40, cy + 160,
-         "only. A machine on AHCI or NVMe has nothing for it to talk to.",
+         "It does not provide SATA/AHCI or NVMe support.",
          W_DIM);
     text(cx + 40, cy + 190,
-         "Install is not implemented, so this step is informational.",
+         "Disk installation is not implemented; this step is informational.",
          W_HINT);
     text(cx + 40, cy + 210,
-         "Attach a disk on the IDE channel to see it detected here.",
+         "This screen reports detection only and will not modify a disk.",
          W_HINT);
 }
 
@@ -276,9 +278,9 @@ static void draw_network(void) {
     if (ni && ni->initialized) {
         text(cx + 40, cy + 96, "Adapter: RTL8139, initialised.", W_DIM);
     } else {
-        text(cx + 40, cy + 96, "No network adapter found.", W_HINT);
+        text(cx + 40, cy + 96, "Network interface is not initialized.", W_HINT);
         text(cx + 40, cy + 116,
-             "Only RTL8139 (PCI 10EC:8139) is supported.", W_HINT);
+             "The current network driver supports RTL8139 only.", W_HINT);
     }
 
     draw_list(cx + 40, cy + 150, cw - 80, items, 2, w.sel[STEP_NETWORK]);
