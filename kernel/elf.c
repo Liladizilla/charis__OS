@@ -162,14 +162,35 @@ int elf_setup_stack(process_mm_t* mm, u64* user_rsp,
     if (!mm || !mm->pml4 || !user_rsp || argc < 0 || envc < 0 ||
         argc > ELF_MAX_VECTOR_ENTRIES || envc > ELF_MAX_VECTOR_ENTRIES ||
         (argc && !argv) || (envc && !envp)) return -1;
-    const u64 stack_top = 0x00007FFFFFFFE000ULL;
-    const u64 stack_base = stack_top - 2 * PAGE_SIZE;
-
-    /* Do not overwrite mappings that belong to an existing image or caller. */
-    for (u64 addr = stack_base; addr < stack_top; addr += PAGE_SIZE) {
-        pte_t* existing = vmm_walk(mm->pml4, addr, false);
-        if (existing && (*existing & VMM_FLAG_PRESENT)) return -1;
+    /*
+     * The bootstrap ring-3 task maps aliases of its kernel stack near the
+     * conventional top of user memory. exec() reuses that address space, so
+     * blindly insisting on the top two pages makes the first ELF exec fail.
+     * Find a free two-page window below the usual stack top instead of
+     * replacing mappings whose physical pages are still owned by the kernel.
+     */
+    u64 stack_top = 0x00007FFFFFFFE000ULL;
+    u64 stack_base = 0;
+    bool found_stack = false;
+    for (u32 attempt = 0; attempt < 4096; attempt++) {
+        if (stack_top < 2 * PAGE_SIZE) break;
+        u64 candidate_base = stack_top - 2 * PAGE_SIZE;
+        bool occupied = false;
+        for (u64 addr = candidate_base; addr < stack_top; addr += PAGE_SIZE) {
+            pte_t* existing = vmm_walk(mm->pml4, addr, false);
+            if (existing && (*existing & VMM_FLAG_PRESENT)) {
+                occupied = true;
+                break;
+            }
+        }
+        if (!occupied) {
+            stack_base = candidate_base;
+            found_stack = true;
+            break;
+        }
+        stack_top -= PAGE_SIZE;
     }
+    if (!found_stack) return -1;
 
     u32 mapped_pages = 0;
     for (u64 addr = stack_base; addr < stack_top; addr += PAGE_SIZE) {
