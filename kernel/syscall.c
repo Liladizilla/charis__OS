@@ -533,13 +533,32 @@ static u64 syscall_game_flip_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64
 
 static u64 syscall_game_audio_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    audio_stream_t* s = audio_open((int)a1, 2, 16);
-    return s ? (u64)s->buffer : (u64)-1;
+
+    task_t* task = scheduler_current();
+    /*
+     * The current audio API returns a kernel audio_stream_t/buffer pointer.
+     * Never expose that address through a ring-3 syscall. A handle table and
+     * bounded user-buffer copy are required before userspace audio is enabled.
+     */
+    if (task && task->is_user) return (u64)-1;
+
+    audio_stream_t* stream = audio_open((int)a1, 2, 16);
+    return stream ? (u64)stream->buffer : (u64)-1;
 }
 
 static u64 syscall_game_audio_play_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
-    (void)a3; (void)a4; (void)a5; (void)a6;
-    return audio_write((audio_stream_t*)a1, (void*)a2, (usize)a3) >= 0 ? 0 : -1;
+    (void)a4; (void)a5; (void)a6;
+
+    task_t* task = scheduler_current();
+    /*
+     * a1 is currently interpreted as a kernel audio_stream_t pointer and a2
+     * as a kernel-readable buffer. Reject both from userspace until the ABI
+     * uses opaque per-task handles and copies audio data through validated
+     * user mappings.
+     */
+    if (task && task->is_user) return (u64)-1;
+
+    return audio_write((audio_stream_t*)a1, (void*)a2, (usize)a3) >= 0 ? 0 : (u64)-1;
 }
 
 /* ── Model-specific register helpers ──────────────────────────────────── */
