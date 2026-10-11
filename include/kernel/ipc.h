@@ -24,6 +24,7 @@ typedef struct {
     u32 head;
     u32 tail;
     u32 count;
+    u32 generation; /* Changes on close so blocked receivers detect channel reuse. */
     bool in_use;
     task_t* wait_head;  // Tasks blocked waiting for messages
 } ipc_channel_t;
