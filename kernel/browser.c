@@ -175,10 +175,16 @@ static void remote_complete(bool success, void* context) {
     (void)context;
     remote_loading = false;
     remote_ready = true;
-    if (success) {
-        set_status(remote_status_code ? "HTTP text preview loaded" : "HTTP response received");
-    } else {
+    if (!success) {
         set_status("HTTP request failed; check network configuration");
+    } else if (remote_status_code >= 300u && remote_status_code < 400u) {
+        set_status("HTTP redirect received; automatic redirects are not supported yet");
+    } else if (remote_status_code >= 400u) {
+        set_status("HTTP server returned an error status; response text may explain why");
+    } else if (remote_status_code >= 200u && remote_status_code < 300u) {
+        set_status("HTTP text preview loaded");
+    } else {
+        set_status("HTTP response received; status is not a successful page response");
     }
 }
 
