@@ -13,107 +13,43 @@
 #include <kernel/fb.h>
 #include <kernel/printf.h>
 
-static const u8 BAYER[16] = {
-     0,  8,  2, 10,
-    12,  4, 14,  6,
-     3, 11,  1,  9,
-    15,  7, 13,  5,
-};
-
-static u8 dither(u8 base, u32 x, u32 y) {
-    int d = (int)BAYER[(y & 3) * 4 + (x & 3)] - 8;
-    int v = (int)base + ((d > 4) - (d < -4));
-    if (v < 0) v = 0;
-    if (v > 255) v = 255;
-    return (u8)v;
-}
-
-static void blend(u32 x, u32 y, u32 w, u32 h,
-                  u8 t0r, u8 t0g, u8 t0b,
-                  u8 t1r, u8 t1g, u8 t1b,
-                  u32 horizontal) {
-    /* 0..256 along the gradient axis. */
-    u32 t;
-    if (horizontal) t = (w > 1) ? (x * 256) / (w - 1) : 0;
-    else             t = (h > 1) ? (y * 256) / (h - 1) : 0;
-
-    u8 r = (u8)(t0r + ((int)t1r - (int)t0r) * (int)t / 256);
-    u8 g = (u8)(t0g + ((int)t1g - (int)t0g) * (int)t / 256);
-    u8 b = (u8)(t0b + ((int)t1b - (int)t0b) * (int)t / 256);
-
-    fb_put_pixel(x, y, FB_ARGB(0xFF, dither(r, x, y), dither(g, x, y), dither(b, x, y)));
-}
-
-/* A soft diagonal light bloom, added on top of a base wash. */
-static void add_bloom(u32 cx, u32 cy, u32 radius, u8 strength) {
-    if (!radius) return;
-    for (u32 y = 0; y < g_framebuffer.height; y++) {
-        for (u32 x = 0; x < g_framebuffer.width; x++) {
-            u32 dx = (x > cx) ? x - cx : cx - x;
-            u32 dy = (y > cy) ? y - cy : cy - y;
-            u32 d2 = dx * dx + dy * dy;
-            if (d2 >= radius * radius) continue;
-
-            u32 v = fb_unpack(((u32*)((u8*)(uintptr_t)FB_VIRT_BASE))[y * (g_framebuffer.pitch / 4) + x]);
-            u32 a = (u32)((u8)(v >> 16)) + strength;
-            u32 g = (u32)((u8)(v >> 8))  + strength;
-            u32 b = (u32)((u8)v)          + strength;
-            if (a > 255) a = 255;
-            if (g > 255) g = 255;
-            if (b > 255) b = 255;
-            fb_put_pixel(x, y, FB_ARGB(0xFF, a, g, b));
-        }
-    }
-}
-
+/* Solid desktop fields with restrained geometric planes. No gradient,
+ * glow, blur or transparency is required from the kernel graphics path. */
 void wallpaper_draw(u32 style) {
     if (!g_framebuffer.initialized) return;
     u32 w = g_framebuffer.width;
     u32 h = g_framebuffer.height;
+    u32 base = 0xFF0D1117u;
+    u32 plane = 0xFF121A26u;
+    u32 edge = 0xFF1B2A40u;
 
     switch (style) {
-    case WALLPAPER_CHARIS:
-        /* The default: deep navy, lighter towards the bottom. */
-        for (u32 y = 0; y < h; y++)
-            for (u32 x = 0; x < w; x++)
-                blend(x, y, w, h, 0x0B, 0x0F, 0x17, 0x1B, 0x2A, 0x46, 0);
-        break;
-
     case WALLPAPER_EMBER:
-        /* Warm, dark red to orange. */
-        for (u32 y = 0; y < h; y++)
-            for (u32 x = 0; x < w; x++)
-                blend(x, y, w, h, 0x14, 0x08, 0x0C, 0x5A, 0x22, 0x18, 0);
+        base = 0xFF140B10u; plane = 0xFF21131Au; edge = 0xFF38201Fu;
         break;
-
     case WALLPAPER_FOREST:
-        /* Cool green, side to side. */
-        for (u32 y = 0; y < h; y++)
-            for (u32 x = 0; x < w; x++)
-                blend(x, y, w, h, 0x06, 0x14, 0x0E, 0x16, 0x40, 0x2A, 1);
+        base = 0xFF0C1713u; plane = 0xFF12231Cu; edge = 0xFF1B352Au;
         break;
-
     case WALLPAPER_DUSK:
-        /* Purple, with a soft glow off-centre. */
-        for (u32 y = 0; y < h; y++)
-            for (u32 x = 0; x < w; x++)
-                blend(x, y, w, h, 0x10, 0x08, 0x1E, 0x38, 0x1C, 0x4E, 0);
-        add_bloom(w / 4, h / 3, (w > h ? w : h) / 2, 26);
+        base = 0xFF120D1Cu; plane = 0xFF1C1530u; edge = 0xFF2B2144u;
         break;
-
     case WALLPAPER_MONO:
-        /* Near-black with a faint vertical lift: low power, easy on the eyes. */
-        for (u32 y = 0; y < h; y++)
-            for (u32 x = 0; x < w; x++)
-                blend(x, y, w, h, 0x08, 0x08, 0x0A, 0x1A, 0x1A, 0x1E, 0);
+        base = 0xFF101114u; plane = 0xFF17191Eu; edge = 0xFF22262Du;
         break;
-
+    case WALLPAPER_CHARIS:
     case WALLPAPER_COUNT:
     default:
-        for (u32 y = 0; y < h; y++)
-            for (u32 x = 0; x < w; x++)
-                blend(x, y, w, h, 0x0B, 0x0F, 0x17, 0x1B, 0x2A, 0x46, 0);
         break;
+    }
+
+    fb_clear(base);
+    if (w >= 8 && h >= 8) {
+        /* A quiet, right-aligned plane gives the desktop depth without
+         * competing with text or pretending to be a photographed wallpaper. */
+        u32 plane_x = (w * 2) / 3;
+        fb_fill_rect(plane_x, h / 8, w - plane_x, (h * 3) / 4, plane);
+        fb_fill_rect(0, h - 6, w, 6, edge);
+        fb_fill_rect(plane_x, h / 8, 2, (h * 3) / 4, edge);
     }
 }
 
