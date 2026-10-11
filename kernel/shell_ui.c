@@ -20,6 +20,7 @@
 #include <kernel/timer.h>
 #include <kernel/string.h>
 #include <kernel/ui_theme.h>
+#include <kernel/scheduler.h>
 #include <kernel/printf.h>
 #include <kernel/wallpaper.h>
 #include <kernel/config.h>
@@ -389,6 +390,9 @@ void shell_ui_main(void* arg) {
          * rather than waiting for a redraw decision. */
         ui_draw_cursor();
 
+        /* The scheduler is cooperative: yield after each frame so a busy
+         * desktop cannot monopolize the CPU while waiting for input. */
+        scheduler_yield();
         asm volatile("hlt");
     }
 }
