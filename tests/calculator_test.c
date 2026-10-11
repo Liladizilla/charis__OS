@@ -76,12 +76,28 @@ static void test_clear_resets_pending_operation(void) {
     expect(strcmp(calculator_display, "4") == 0,
            "clear removes stale operator and accumulator");
 }
+
+static void test_mouse_keypad_uses_the_same_arithmetic_core(void) {
+    reset_calculator();
+    g_framebuffer.width = 1024;
+    g_framebuffer.height = 768;
+    calculator_open = true;
+    expect(calculator_handle_mouse(407, 351), "mouse click handled");
+    expect(strcmp(calculator_display, "7") == 0, "first keypad button enters seven");
+    expect(calculator_handle_mouse(605, 477), "plus button click handled");
+    expect(calculator_handle_mouse(473, 477), "zero button click handled");
+    expect(calculator_handle_mouse(539, 477), "equals button click handled");
+    expect(strcmp(calculator_display, "70") == 0,
+           "mouse keypad computes seven plus zero");
+    calculator_open = false;
+}
 int main(void) {
     test_precedence_is_explicitly_sequential();
     test_subtraction_can_produce_negative_values();
     test_division_by_zero_fails_closed();
     test_signed_32_bit_overflow_is_rejected();
     test_clear_resets_pending_operation();
+    test_mouse_keypad_uses_the_same_arithmetic_core();
     puts("Calculator arithmetic tests passed");
     return 0;
 }
