@@ -11,6 +11,7 @@
 #include <kernel/keyboard.h>
 #include <kernel/string.h>
 #include <kernel/ui_theme.h>
+#include <kernel/http.h>
 
 #define BROWSER_MAX_TABS 4
 #define BROWSER_HISTORY  8
@@ -36,6 +37,20 @@ static bool browser_ctrl;
 static char browser_status[96] = "Ready";
 static char browser_bookmark[BROWSER_URL_MAX];
 static bool browser_has_bookmark;
+
+/* Remote pages are currently displayed as a bounded plain-text preview.
+ * This is not yet an HTML/CSS document engine and intentionally has no script execution. */
+static char remote_url[BROWSER_URL_MAX];
+static char remote_text[2048];
+static usize remote_text_length;
+static u16 remote_status_code;
+static bool remote_loading;
+static bool remote_ready;
+static bool remote_in_tag;
+static bool remote_tag_closing;
+static char remote_tag_name[8];
+static usize remote_tag_length;
+static bool remote_last_space;
 static const u32 C_BG = CHARIS_UI_BACKGROUND;
 static const u32 C_PANEL = CHARIS_UI_PANEL;
 static const u32 C_RAISED = CHARIS_UI_PANEL_RAISED;
@@ -81,6 +96,147 @@ static void history_push(browser_tab_t* tab, const char* address) {
     tab->history_count = tab->history_index + 1;
 }
 
+static void remote_append(char ch) {
+    if (remote_text_length + 1u >= sizeof(remote_text)) return;
+    remote_text[remote_text_length++] = ch;
+    remote_text[remote_text_length] = 0;
+}
+
+static bool remote_block_tag(void) {
+    return kstrcmp(remote_tag_name, "p") == 0 ||
+           kstrcmp(remote_tag_name, "br") == 0 ||
+           kstrcmp(remote_tag_name, "div") == 0 ||
+           kstrcmp(remote_tag_name, "li") == 0 ||
+           kstrcmp(remote_tag_name, "h1") == 0 ||
+           kstrcmp(remote_tag_name, "h2") == 0 ||
+           kstrcmp(remote_tag_name, "h3") == 0 ||
+           kstrcmp(remote_tag_name, "h4") == 0 ||
+           kstrcmp(remote_tag_name, "tr") == 0 ||
+           kstrcmp(remote_tag_name, "hr") == 0;
+}
+
+static void remote_headers(u16 status, bool has_length, u32 length, void* context) {
+    (void)has_length;
+    (void)length;
+    (void)context;
+    remote_status_code = status;
+}
+
+static void remote_body(const u8* data, usize length, void* context) {
+    (void)context;
+    if (!data) return;
+    for (usize i = 0; i < length; i++) {
+        char ch = (char)data[i];
+        if (remote_in_tag) {
+            if (ch == '>') {
+                remote_in_tag = false;
+                if (remote_block_tag() && remote_text_length &&
+                    remote_text[remote_text_length - 1u] != '\n')
+                    remote_append('\n');
+                remote_tag_length = 0;
+                remote_tag_name[0] = 0;
+            } else if (remote_tag_length + 1u < sizeof(remote_tag_name)) {
+                if (ch == '/' && remote_tag_length == 0) {
+                    remote_tag_closing = true;
+                } else if ((ch >= 'A' && ch <= 'Z') ||
+                           (ch >= 'a' && ch <= 'z') ||
+                           (ch >= '0' && ch <= '9')) {
+                    char lower = ch >= 'A' && ch <= 'Z' ? (char)(ch - 'A' + 'a') : ch;
+                    remote_tag_name[remote_tag_length++] = lower;
+                    remote_tag_name[remote_tag_length] = 0;
+                }
+            }
+            continue;
+        }
+        if (ch == '<') {
+            remote_in_tag = true;
+            remote_tag_closing = false;
+            remote_tag_length = 0;
+            remote_tag_name[0] = 0;
+            continue;
+        }
+        if (ch == '\r' || ch == '\n' || ch == '\t' || ch == ' ') {
+            if (remote_text_length && !remote_last_space &&
+                remote_text[remote_text_length - 1u] != '\n') {
+                remote_append(' ');
+                remote_last_space = true;
+            }
+        } else if ((u8)ch >= 0x20u) {
+            remote_append(ch);
+            remote_last_space = false;
+        }
+    }
+}
+
+static void remote_complete(bool success, void* context) {
+    (void)context;
+    remote_loading = false;
+    remote_ready = true;
+    if (success) {
+        set_status(remote_status_code ? "HTTP text preview loaded" : "HTTP response received");
+    } else {
+        set_status("HTTP request failed; check network configuration");
+    }
+}
+
+static bool remote_navigate(const char* url) {
+    if (!url || kstrncmp(url, "http://", 7u) != 0) return false;
+    const char* host = url + 7u;
+    const char* path = kstrchr(host, '/');
+    const char* query = kstrchr(host, '?');
+    const char* end = path;
+    if (!end || (query && query < end)) end = query;
+    if (!end) end = host + kstrlen(host);
+    usize host_len = (usize)(end - host);
+    if (!host_len || host_len >= sizeof(remote_url)) return false;
+
+    char hostname[HTTP_HOST_MAX + 1u];
+    char path_buffer[HTTP_PATH_MAX + 1u];
+    if (host_len >= sizeof(hostname)) return false;
+    kstrncpy(hostname, host, host_len);
+    hostname[host_len] = 0;
+    if (kstrchr(hostname, ':')) {
+        /* Only the default HTTP port is supported by this first client. */
+        char* colon = kstrchr(hostname, ':');
+        if (kstrcmp(colon, ":80") != 0) return false;
+        *colon = 0;
+        if (!hostname[0]) return false;
+    }
+    if (end[0] == '/') {
+        kstrncpy(path_buffer, end, sizeof(path_buffer) - 1u);
+        path_buffer[sizeof(path_buffer) - 1u] = 0;
+    } else if (end[0] == '?') {
+        path_buffer[0] = '/';
+        kstrncpy(path_buffer + 1u, end, sizeof(path_buffer) - 2u);
+        path_buffer[sizeof(path_buffer) - 1u] = 0;
+    } else {
+        kstrncpy(path_buffer, "/", sizeof(path_buffer));
+    }
+
+    if (remote_loading) net_http_cancel();
+    kstrncpy(remote_url, url, sizeof(remote_url) - 1u);
+    remote_url[sizeof(remote_url) - 1u] = 0;
+    remote_text_length = 0;
+    remote_text[0] = 0;
+    remote_status_code = 0;
+    remote_in_tag = false;
+    remote_tag_closing = false;
+    remote_tag_length = 0;
+    remote_tag_name[0] = 0;
+    remote_last_space = false;
+    remote_ready = false;
+    remote_loading = true;
+    set_status("Resolving host and connecting over HTTP...");
+    if (!net_http_get(hostname, path_buffer, remote_headers, remote_body,
+                      remote_complete, 0)) {
+        remote_loading = false;
+        remote_ready = true;
+        set_status("HTTP unavailable; check network and static IP settings");
+        return false;
+    }
+    return true;
+}
+
 static void navigate(const char* raw, bool add_history) {
     browser_tab_t* tab = current_tab();
     if (!tab || !raw || !raw[0]) return;
@@ -100,6 +256,8 @@ static void navigate(const char* raw, bool add_history) {
         target[sizeof(target) - 1] = 0;
     }
 
+    if (remote_loading && kstrcmp(target, remote_url) != 0)
+        net_http_cancel();
     address_set(tab, target);
     tab->address_focus = false;
     tab->select_all = false;
@@ -114,9 +272,11 @@ static void navigate(const char* raw, bool add_history) {
         set_status("Browser help");
     } else if (kstrcmp(target, "charis://bookmarks") == 0) {
         set_status("Saved local bookmark list");
-    } else if (kstrncmp(target, "http://", 7) == 0 ||
-               kstrncmp(target, "https://", 8) == 0) {
-        set_status("Offline: TCP/IP, DNS, TLS and HTTP engine not implemented");
+    } else if (kstrncmp(target, "http://", 7) == 0) {
+        if (!remote_navigate(target))
+            set_status("HTTP preview unavailable; only default port 80 is supported");
+    } else if (kstrncmp(target, "https://", 8) == 0) {
+        set_status("HTTPS unavailable until TLS and certificate validation exist");
     } else if (kstrncmp(target, "file://", 7) == 0) {
         set_status("Local file viewer is not connected to VFS yet");
     } else {
@@ -197,12 +357,49 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
             gfx_draw_string(x + 24, y + 62, "No bookmarks saved yet.", C_TEXT, FB_TRANSPARENT);
             gfx_draw_string(x + 24, y + 90, "Open a page and click the star to save it.", C_MUTED, FB_TRANSPARENT);
         }
-    } else if (kstrncmp(address, "http://", 7) == 0 || kstrncmp(address, "https://", 8) == 0) {
-        gfx_draw_string(x + 24, y + 22, "CAN'T REACH THIS PAGE YET", C_WARNING, FB_TRANSPARENT);
+    } else if (kstrncmp(address, "http://", 7) == 0) {
+        if (remote_ready && kstrcmp(address, remote_url) == 0) {
+            gfx_draw_string(x + 24, y + 18, "HTTP TEXT PREVIEW", C_ACCENT, FB_TRANSPARENT);
+            gfx_draw_string(x + 24, y + 42, address, C_MUTED, FB_TRANSPARENT);
+            char status_line[48];
+            kstrncpy(status_line, "HTTP status: ", sizeof(status_line) - 1u);
+            status_line[sizeof(status_line) - 1u] = 0;
+            if (remote_status_code >= 100 && remote_status_code <= 599) {
+                usize n = kstrlen(status_line);
+                status_line[n++] = (char)('0' + remote_status_code / 100u);
+                status_line[n++] = (char)('0' + (remote_status_code / 10u) % 10u);
+                status_line[n++] = (char)('0' + remote_status_code % 10u);
+                status_line[n] = 0;
+            } else {
+                kstrncpy(status_line, "HTTP response", sizeof(status_line) - 1u);
+            }
+            gfx_draw_string(x + 24, y + 64, status_line, C_TEXT, FB_TRANSPARENT);
+            u32 line_y = y + 94;
+            usize pos = 0;
+            while (pos < remote_text_length && line_y + 18u < y + h) {
+                char line[96];
+                usize n = 0;
+                while (pos < remote_text_length && n < sizeof(line) - 1u &&
+                       remote_text[pos] != '\n') {
+                    line[n++] = remote_text[pos++];
+                }
+                if (pos < remote_text_length && remote_text[pos] == '\n') pos++;
+                line[n] = 0;
+                if (n) gfx_draw_string(x + 24, line_y, line, C_TEXT, FB_TRANSPARENT);
+                line_y += 20u;
+            }
+            if (!remote_text_length)
+                gfx_draw_string(x + 24, line_y, "The server returned no displayable text.", C_MUTED, FB_TRANSPARENT);
+        } else {
+            gfx_draw_string(x + 24, y + 22, remote_loading ? "LOADING HTTP PAGE..." : "HTTP PAGE NOT LOADED", C_ACCENT, FB_TRANSPARENT);
+            gfx_draw_string(x + 24, y + 60, address, C_TEXT, FB_TRANSPARENT);
+            gfx_draw_string(x + 24, y + 104, "CharisOS is fetching plain HTTP and showing a text-only preview.", C_TEXT, FB_TRANSPARENT);
+            gfx_draw_string(x + 24, y + 134, "HTTPS, JavaScript and full HTML/CSS layout are not supported yet.", C_MUTED, FB_TRANSPARENT);
+        }
+    } else if (kstrncmp(address, "https://", 8) == 0) {
+        gfx_draw_string(x + 24, y + 22, "HTTPS NOT SUPPORTED YET", C_WARNING, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 60, address, C_TEXT, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 104, "The browser interface is ready, but remote web transport is not.", C_TEXT, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 134, "CharisOS still needs TCP/IP, DNS, TLS/HTTP and an HTML/CSS renderer.", C_MUTED, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 164, "This is a real capability gap, not a fake loading spinner.", C_WARNING, FB_TRANSPARENT);
+        gfx_draw_string(x + 24, y + 104, "TLS and certificate validation must be implemented before HTTPS.", C_MUTED, FB_TRANSPARENT);
     } else {
         gfx_draw_string(x + 24, y + 22, "LOCAL FILE VIEWER NOT READY", C_WARNING, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 60, address, C_TEXT, FB_TRANSPARENT);
