@@ -379,6 +379,48 @@ static void draw_card(u32 x, u32 y, u32 w, const char* eyebrow, const char* titl
     gfx_draw_string(x + 14, y + 56, detail, C_MUTED, FB_TRANSPARENT);
 }
 
+
+static u32 draw_wrapped_text(const char* text, usize length, u32 x, u32 y,
+                             u32 width, u32 bottom, u32 color) {
+    if (!text || !length || width < 8u) return y;
+    usize max_chars = width / 8u;
+    if (max_chars > 127u) max_chars = 127u;
+    if (max_chars == 0u) max_chars = 1u;
+    usize pos = 0;
+    while (pos < length && y + 18u < bottom) {
+        while (pos < length && text[pos] == ' ') pos++;
+        if (pos >= length) break;
+        if (text[pos] == '\n') {
+            pos++;
+            y += 20u;
+            continue;
+        }
+        usize end = pos;
+        usize limit = pos + max_chars;
+        if (limit > length) limit = length;
+        while (end < limit && text[end] != '\n') end++;
+        if (end == limit && end < length && text[end] != '\n') {
+            usize wrap = end;
+            while (wrap > pos && text[wrap] != ' ') wrap--;
+            if (wrap > pos) end = wrap;
+        }
+        if (end == pos) {
+            end = pos + 1u;
+        }
+        char line[128];
+        usize count = end - pos;
+        if (count > sizeof(line) - 1u) count = sizeof(line) - 1u;
+        kmemcpy(line, text + pos, count);
+        line[count] = 0;
+        gfx_draw_string(x, y, line, color, FB_TRANSPARENT);
+        pos = end;
+        while (pos < length && text[pos] == ' ') pos++;
+        if (pos < length && text[pos] == '\n') pos++;
+        y += 20u;
+    }
+    return y;
+}
+
 static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
     fb_fill_rect(x, y, w, h, C_BG);
     fb_draw_rect(x, y, w, h, C_BORDER);
@@ -433,20 +475,9 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
                 kstrncpy(status_line, "HTTP response", sizeof(status_line) - 1u);
             }
             gfx_draw_string(x + 24, y + 64, status_line, C_TEXT, FB_TRANSPARENT);
-            u32 line_y = y + 94;
-            usize pos = 0;
-            while (pos < remote_text_length && line_y + 18u < y + h) {
-                char line[96];
-                usize n = 0;
-                while (pos < remote_text_length && n < sizeof(line) - 1u &&
-                       remote_text[pos] != '\n') {
-                    line[n++] = remote_text[pos++];
-                }
-                if (pos < remote_text_length && remote_text[pos] == '\n') pos++;
-                line[n] = 0;
-                if (n) gfx_draw_string(x + 24, line_y, line, C_TEXT, FB_TRANSPARENT);
-                line_y += 20u;
-            }
+            u32 line_y = draw_wrapped_text(remote_text, remote_text_length,
+                                           x + 24, y + 94, w - 48,
+                                           y + h, C_TEXT);
             if (!remote_text_length)
                 gfx_draw_string(x + 24, line_y, "The server returned no displayable text.", C_MUTED, FB_TRANSPARENT);
         } else {
@@ -463,20 +494,9 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
         if (file_preview_ready && kstrcmp(address, file_preview_url) == 0) {
             gfx_draw_string(x + 24, y + 22, "LOCAL TEXT FILE", C_ACCENT, FB_TRANSPARENT);
             gfx_draw_string(x + 24, y + 48, address, C_MUTED, FB_TRANSPARENT);
-            u32 line_y = y + 78;
-            usize pos = 0;
-            while (pos < file_preview_length && line_y + 18u < y + h) {
-                char line[96];
-                usize n = 0;
-                while (pos < file_preview_length && n < sizeof(line) - 1u &&
-                       file_preview[pos] != '\n') {
-                    line[n++] = file_preview[pos++];
-                }
-                if (pos < file_preview_length && file_preview[pos] == '\n') pos++;
-                line[n] = 0;
-                if (n) gfx_draw_string(x + 24, line_y, line, C_TEXT, FB_TRANSPARENT);
-                line_y += 20u;
-            }
+            u32 line_y = draw_wrapped_text(file_preview, file_preview_length,
+                                           x + 24, y + 78, w - 48,
+                                           y + h - 28, C_TEXT);
             if (!file_preview_length)
                 gfx_draw_string(x + 24, line_y, "This file is empty.", C_MUTED, FB_TRANSPARENT);
             gfx_draw_string(x + 24, y + h - 28, "Read-only preview, limited to 2 KiB.", C_MUTED, FB_TRANSPARENT);
