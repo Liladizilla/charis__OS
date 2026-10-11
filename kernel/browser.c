@@ -51,6 +51,9 @@ static bool remote_ready;
 static bool remote_in_tag;
 static bool remote_closing_tag;
 static bool remote_suppress_content;
+static bool remote_in_entity;
+static char remote_entity[12];
+static usize remote_entity_length;
 static char remote_tag_name[8];
 static usize remote_tag_length;
 static bool remote_last_space;
@@ -107,6 +110,37 @@ static void remote_append(char ch) {
     if (remote_text_length + 1u >= sizeof(remote_text)) return;
     remote_text[remote_text_length++] = ch;
     remote_text[remote_text_length] = 0;
+}
+
+static void remote_append_text_char(char ch) {
+    if (ch == '\r' || ch == '\n' || ch == '\t' || ch == ' ') {
+        if (remote_text_length && !remote_last_space &&
+            remote_text[remote_text_length - 1u] != '\n') {
+            remote_append(' ');
+            remote_last_space = true;
+        }
+    } else if ((u8)ch >= 0x20u) {
+        remote_append(ch);
+        remote_last_space = false;
+    }
+}
+
+static bool remote_decode_entity(const char* entity, usize length, char* out) {
+    if (!entity || !out) return false;
+    if (length == 3u && kstrncmp(entity, "amp", 3u) == 0) *out = '&';
+    else if (length == 2u && kstrncmp(entity, "lt", 2u) == 0) *out = '<';
+    else if (length == 2u && kstrncmp(entity, "gt", 2u) == 0) *out = '>';
+    else if (length == 4u && kstrncmp(entity, "quot", 4u) == 0) *out = '"';
+    else if (length == 4u && kstrncmp(entity, "apos", 4u) == 0) *out = '\'';
+    else if (length == 4u && kstrncmp(entity, "nbsp", 4u) == 0) *out = ' ';
+    else if (length == 4u && kstrncmp(entity, "#160", 4u) == 0) *out = ' ';
+    else if (length == 3u && kstrncmp(entity, "#38", 3u) == 0) *out = '&';
+    else if (length == 3u && kstrncmp(entity, "#60", 3u) == 0) *out = '<';
+    else if (length == 3u && kstrncmp(entity, "#62", 3u) == 0) *out = '>';
+    else if (length == 3u && kstrncmp(entity, "#39", 3u) == 0) *out = '\'';
+    else if (length == 3u && kstrncmp(entity, "#34", 3u) == 0) *out = '"';
+    else return false;
+    return true;
 }
 
 static bool remote_block_tag(void) {
@@ -171,16 +205,42 @@ static void remote_body(const u8* data, usize length, void* context) {
             continue;
         }
         if (remote_suppress_content) continue;
-        if (ch == '\r' || ch == '\n' || ch == '\t' || ch == ' ') {
-            if (remote_text_length && !remote_last_space &&
-                remote_text[remote_text_length - 1u] != '\n') {
-                remote_append(' ');
-                remote_last_space = true;
+        if (remote_in_entity) {
+            if (ch == ';') {
+                char decoded;
+                if (remote_decode_entity(remote_entity, remote_entity_length, &decoded)) {
+                    remote_append_text_char(decoded);
+                } else {
+                    remote_append_text_char('&');
+                    for (usize j = 0; j < remote_entity_length; j++)
+                        remote_append_text_char(remote_entity[j]);
+                    remote_append_text_char(';');
+                }
+                remote_in_entity = false;
+                remote_entity_length = 0;
+                continue;
             }
-        } else if ((u8)ch >= 0x20u) {
-            remote_append(ch);
-            remote_last_space = false;
+            bool entity_char = (ch >= 'a' && ch <= 'z') ||
+                               (ch >= 'A' && ch <= 'Z') ||
+                               (ch >= '0' && ch <= '9') || ch == '#';
+            if (entity_char && remote_entity_length + 1u < sizeof(remote_entity)) {
+                remote_entity[remote_entity_length++] = ch;
+                remote_entity[remote_entity_length] = 0;
+                continue;
+            }
+            remote_append_text_char('&');
+            for (usize j = 0; j < remote_entity_length; j++)
+                remote_append_text_char(remote_entity[j]);
+            remote_in_entity = false;
+            remote_entity_length = 0;
         }
+        if (ch == '&') {
+            remote_in_entity = true;
+            remote_entity_length = 0;
+            remote_entity[0] = 0;
+            continue;
+        }
+        remote_append_text_char(ch);
     }
 }
 
@@ -238,6 +298,9 @@ static bool remote_navigate(const char* url) {
     remote_in_tag = false;
     remote_closing_tag = false;
     remote_suppress_content = false;
+    remote_in_entity = false;
+    remote_entity_length = 0;
+    remote_entity[0] = 0;
     remote_tag_length = 0;
     remote_tag_name[0] = 0;
     remote_last_space = false;
