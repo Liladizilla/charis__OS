@@ -84,11 +84,17 @@ void keyboard_handler(reg_frame_t* frame) {
         const char* table = shift_held ? keyboard_scancode_set1_shift : keyboard_scancode_set1;
         char c = table[code];
         if (c) {
-            keyboard_buffer[keyboard_write_pos] = c;
-            keyboard_write_pos = (keyboard_write_pos + 1) % 256;
+            u32 next_write_pos = (keyboard_write_pos + 1) % 256;
+            /* Keep one slot empty to distinguish full from empty. Drop the
+             * newest key if the consumer has not caught up, rather than
+             * wrapping the indices and making queued input look empty. */
+            if (next_write_pos != keyboard_read_pos) {
+                keyboard_buffer[keyboard_write_pos] = c;
+                keyboard_write_pos = next_write_pos;
 
-            /* Wake up any task waiting for input */
-            wait_queue_wake();
+                /* Wake up any task waiting for input */
+                wait_queue_wake();
+            }
         }
     }
     extended = false;
@@ -96,6 +102,7 @@ void keyboard_handler(reg_frame_t* frame) {
 }
 
 bool keyboard_get_key(char* out) {
+    if (!out) return false;
     if (keyboard_read_pos != keyboard_write_pos) {
         *out = keyboard_buffer[keyboard_read_pos];
         keyboard_read_pos = (keyboard_read_pos + 1) % 256;
@@ -109,6 +116,7 @@ bool keyboard_has_input(void) {
 }
 
 void keyboard_read_line(char* buffer, usize max_len) {
+    if (!buffer || max_len == 0) return;
     usize i = 0;
     while (i < max_len - 1) {
         char c;

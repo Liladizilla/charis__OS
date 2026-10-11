@@ -30,8 +30,10 @@ jobs:
             mtools \
             dosfstools \
             ovmf \
-            qemu-system-x86 \
             libvirt-daemon-system
+
+      - name: Verify build toolchain
+        run: make check-tools
 
       - name: Build kernel and boot images
         run: make images

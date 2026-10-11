@@ -58,19 +58,14 @@ void graphics_line(u32 x0, u32 y0, u32 x1, u32 y1) {
     }
 }
 
-// Rectangle filling using horizontal lines
+// Rectangle drawing delegates to the framebuffer's clipped primitives.
+// This keeps huge or off-screen dimensions from overflowing the loop bounds.
 void graphics_rect(u32 x, u32 y, u32 w, u32 h, bool filled) {
+    if (!w || !h || !g_framebuffer.initialized) return;
     if (filled) {
-        for (u32 py = y; py < y + h; py++) {
-            for (u32 px = x; px < x + w; px++) {
-                fb_put_pixel(px, py, g_graphics.color);
-            }
-        }
+        fb_fill_rect(x, y, w, h, g_graphics.color);
     } else {
-        graphics_line(x, y, x + w - 1, y);
-        graphics_line(x, y, x, y + h - 1);
-        graphics_line(x + w - 1, y, x + w - 1, y + h - 1);
-        graphics_line(x, y + h - 1, x + w - 1, y + h - 1);
+        fb_draw_rect(x, y, w, h, g_graphics.color);
     }
 }
 
