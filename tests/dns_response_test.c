@@ -99,6 +99,16 @@ static void test_bad_compression_pointer_is_rejected(void) {
     handle_dns_response(53u, dns_server, packet, n);
     expect(callback_count == 1 && !callback_success, "compression pointer loop rejected");
 }
+static void test_unrelated_answer_owner_is_rejected(void) {
+    u8 packet[128];
+    reset_dns_test();
+    usize n = build_response(packet, "com", 1u, 1u);
+    /* The question is example.com, but the A record owner is only "com". */
+    packet[30] = 0x14;
+    handle_dns_response(53u, dns_server, packet, n);
+    expect(callback_count == 1 && !callback_success,
+           "A record for unrelated owner must not satisfy query");
+}
 static void test_wrong_source_is_ignored(void) {
     u8 packet[128];
     u8 wrong_source[4] = {8, 8, 8, 8};
@@ -113,6 +123,7 @@ int main(void) {
     test_wrong_question_type_is_rejected();
     test_multiple_questions_are_rejected();
     test_bad_compression_pointer_is_rejected();
+    test_unrelated_answer_owner_is_rejected();
     test_wrong_source_is_ignored();
     puts("DNS response validation tests passed");
     return 0;
