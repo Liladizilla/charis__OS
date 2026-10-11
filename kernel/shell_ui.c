@@ -134,6 +134,7 @@ static void draw_menu(void) {
     u32 y = h - TASKBAR_H - menu_h;
     u32 x = 0;
 
+    fb_fill_rect(x + 4, y + 4, MENU_W, menu_h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, MENU_W, menu_h, T_MENU);
     fb_draw_rect(x, y, MENU_W, menu_h, T_BORDER);
 
@@ -158,6 +159,7 @@ static void draw_notice(void) {
     u32 x = sw > cw ? (sw - cw) / 2 : 0;
     u32 y = sh > ch ? (sh - ch) / 2 : 0;
 
+    fb_fill_rect(x + 4, y + 4, cw, ch, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, cw, ch, T_MENU);
     fb_draw_rect(x, y, cw, ch, T_BORDER);
     fb_fill_rect(x, y, cw, 28, T_START_BTN);
