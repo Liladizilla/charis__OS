@@ -21,6 +21,7 @@ void task_init(void) {
         task_pool[i].stack_base = 0;
         task_pool[i].state = TASK_STATE_UNUSED;
         task_pool[i].pid = 0;
+        task_pool[i].exit_code = 0;
         task_pool[i].slot_index = i;
         task_pool[i].priority = 0;
         task_pool[i].next = NULL;
@@ -122,19 +123,22 @@ bool task_release_pending(void) {
 }
 
 void task_exit_handler(void) {
-    task_t* current = scheduler_current();
-    task_defer_release(current);
-    scheduler_yield();
+    task_exit_with_status(0);
     /* Unreachable: the task is a zombie and the scheduler only picks READY
      * tasks, so it is never scheduled again. Kept so that a scheduler bug
      * halts here rather than returning into freed memory. */
     while (1) asm volatile("hlt");
 }
 
-void task_exit(void) {
+void task_exit_with_status(u32 status) {
     task_t* current = scheduler_current();
+    if (current) current->exit_code = status;
     task_defer_release(current);
     scheduler_yield();
+}
+
+void task_exit(void) {
+    task_exit_with_status(0);
 }
 
 void task_block(task_t* task) {
@@ -160,6 +164,7 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->is_user = is_user;
     task->started = false;
     task->pid = next_pid++;
+    task->exit_code = 0;
     signal_reset_task(task);
     task->state = TASK_STATE_READY;
     task->priority = 0;

@@ -107,8 +107,8 @@ static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
 }
 
 static u64 syscall_exit_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
-    (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    task_exit();
+    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
+    task_exit_with_status((u32)a1);
     return 0;
 }
 

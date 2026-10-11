@@ -39,6 +39,7 @@ typedef struct task {
     u64 stack_base;
     u32 state;
     u32 pid;
+    u32 exit_code; /* Status supplied to SYS_EXIT; retained while zombie. */
     u32 slot_index; /* Stable array index; PID is monotonic and not bounded by TASK_MAX_TASKS. */
     u32 priority;
     char name[TASK_NAME_MAX];
@@ -79,6 +80,7 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
 task_t* task_allocate(void);
 u32 task_next_pid(void);
 void task_exit(void);
+void task_exit_with_status(u32 status);
 
 /* Park a task's stack for the scheduler to reclaim once it has switched away
  * from it. A task must not kfree() the stack it is running on. */
