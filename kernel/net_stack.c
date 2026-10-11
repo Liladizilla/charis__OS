@@ -76,6 +76,17 @@ static bool ip_is_configured(void) {
     return local_ip[0] || local_ip[1] || local_ip[2] || local_ip[3];
 }
 
+static bool valid_netmask(const u8 mask[4]) {
+    u32 value = ((u32)mask[0] << 24) | ((u32)mask[1] << 16) |
+                ((u32)mask[2] << 8) | mask[3];
+    bool saw_zero = false;
+    for (u32 bit = 0x80000000u; bit; bit >>= 1) {
+        if (!(value & bit)) saw_zero = true;
+        else if (saw_zero) return false;
+    }
+    return true;
+}
+
 /* Strict dotted-decimal parser; malformed values leave networking unconfigured. */
 static bool parse_ipv4(const char* s, u8 out[4]) {
     if (!s || !s[0]) return false;
@@ -118,8 +129,13 @@ void net_stack_init(void) {
     const char* configured = config_get_string("net_ip", "0.0.0.0");
     if (!parse_ipv4(configured, local_ip))
         kmemset(local_ip, 0, sizeof(local_ip));
-    if (!parse_ipv4(config_get_string("net_mask", "255.255.255.0"), local_mask))
-        kmemset(local_mask, 0, sizeof(local_mask));
+    if (!parse_ipv4(config_get_string("net_mask", "255.255.255.0"), local_mask) ||
+        !valid_netmask(local_mask)) {
+        local_mask[0] = 255;
+        local_mask[1] = 255;
+        local_mask[2] = 255;
+        local_mask[3] = 0;
+    }
     if (!parse_ipv4(config_get_string("net_gateway", "0.0.0.0"), default_gateway))
         kmemset(default_gateway, 0, sizeof(default_gateway));
 
