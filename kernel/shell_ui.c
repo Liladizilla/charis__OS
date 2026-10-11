@@ -11,6 +11,7 @@
  */
 
 #include <kernel/shell_ui.h>
+#include <kernel/browser.h>
 #include <kernel/fb.h>
 #include <kernel/gfx_text.h>
 #include <kernel/font.h>
@@ -51,6 +52,7 @@ typedef struct {
 } menu_entry_t;
 
 static const menu_entry_t MENU_ITEMS[] = {
+    { "Browser" },
     { "Terminal" },
     { "File Manager" },
     { "Text Editor" },
@@ -62,6 +64,7 @@ static bool notice_open = false;
 static int notice_item = -1;
 
 static const char* const NOTICE_LINE_1[] = {
+    "Local pages work; remote web transport is not ready.",
     "A graphical terminal is not wired up yet.",
     "The VFS exists, but the graphical browser is",
     "No graphical editor is implemented yet.",
@@ -69,6 +72,7 @@ static const char* const NOTICE_LINE_1[] = {
     "CharisOS is a from-scratch x86_64 kernel.",
 };
 static const char* const NOTICE_LINE_2[] = {
+    "TCP/IP, DNS, TLS/HTTP and HTML rendering remain future work.",
     "Kernel output remains on the text/serial console.",
     "not connected to file operations yet.",
     "This screen will not pretend to show source code.",
@@ -127,6 +131,42 @@ static void draw_taskbar(void) {
     gfx_draw_string(w - cw - 16, ty, clock, T_FG_DIM, FB_TRANSPARENT);
 }
 
+/* Every launcher entry gets a small, high-contrast icon drawn from
+ * primitives. This avoids a font/icon asset dependency in the kernel. */
+static void draw_app_icon(u32 app, u32 x, u32 y) {
+    u32 ink = app == 0 ? CHARIS_UI_ACCENT :
+              app == 1 ? 0xFF91D7A3u :
+              app == 2 ? 0xFFF0C674u :
+              app == 3 ? 0xFFB7A0F5u :
+              app == 4 ? 0xFF8FC7D8u : CHARIS_UI_TEXT;
+    fb_fill_rect(x, y, 20, 20, CHARIS_UI_PANEL_RAISED);
+    fb_draw_rect(x, y, 20, 20, CHARIS_UI_BORDER);
+    if (app == 0) {
+        fb_draw_rect(x + 3, y + 3, 14, 14, ink);
+        fb_fill_rect(x + 3, y + 7, 14, 2, ink);
+        fb_fill_rect(x + 9, y + 4, 2, 12, ink);
+    } else if (app == 1) {
+        gfx_draw_string(x + 2, y + 4, ">_", ink, FB_TRANSPARENT);
+    } else if (app == 2) {
+        fb_fill_rect(x + 3, y + 5, 7, 3, ink);
+        fb_fill_rect(x + 3, y + 7, 14, 10, ink);
+        fb_draw_rect(x + 3, y + 7, 14, 10, CHARIS_UI_BORDER);
+    } else if (app == 3) {
+        fb_fill_rect(x + 4, y + 2, 12, 16, ink);
+        fb_fill_rect(x + 6, y + 6, 8, 1, CHARIS_UI_PANEL);
+        fb_fill_rect(x + 6, y + 10, 8, 1, CHARIS_UI_PANEL);
+        fb_fill_rect(x + 6, y + 14, 6, 1, CHARIS_UI_PANEL);
+    } else if (app == 4) {
+        fb_draw_rect(x + 4, y + 4, 12, 12, ink);
+        fb_fill_rect(x + 8, y + 1, 4, 18, ink);
+        fb_fill_rect(x + 1, y + 8, 18, 4, ink);
+        fb_fill_rect(x + 7, y + 7, 6, 6, CHARIS_UI_PANEL_RAISED);
+    } else {
+        fb_draw_rect(x + 5, y + 2, 10, 16, ink);
+        gfx_draw_string(x + 9, y + 4, "i", ink, FB_TRANSPARENT);
+    }
+}
+
 static void draw_menu(void) {
     if (!ui.menu_open) return;
 
@@ -144,7 +184,8 @@ static void draw_menu(void) {
         bool hovered = (ui.hover_item == (int)i);
         fb_fill_rect(x + 2, iy, MENU_W - 4, MENU_ITEM_H,
                      hovered ? T_MENU_HOVER : T_MENU_ITEM);
-        gfx_draw_string(x + 14, iy + (MENU_ITEM_H - font_cell_h) / 2,
+        draw_app_icon(i, x + 12, iy + 7);
+        gfx_draw_string(x + 44, iy + (MENU_ITEM_H - font_cell_h) / 2,
                         MENU_ITEMS[i].label, T_FG, FB_TRANSPARENT);
     }
 }
@@ -221,6 +262,7 @@ void ui_draw_cursor(void) {
 
 static void redraw_all(void) {
     wallpaper_draw((u32)config_get_int("wallpaper", 0));
+    browser_render();
     draw_taskbar();
     draw_menu();
     draw_notice();
@@ -280,6 +322,12 @@ static void handle_event(const input_event_t* e) {
             return;
         }
 
+        if (browser_is_open()) {
+            browser_handle_key(base, e->type == INPUT_KEY_DOWN);
+            ui.needs_redraw = true;
+            return;
+        }
+
         /* Escape dismisses the topmost transient surface. */
         if (e->type == INPUT_KEY_DOWN && base == KEY_ESCAPE) {
             if (notice_open) {
@@ -307,6 +355,12 @@ static void handle_event(const input_event_t* e) {
     case INPUT_MOUSE_DOWN: {
         int mx = e->mouse.x, my = e->mouse.y;
 
+        if (browser_is_open()) {
+            browser_handle_mouse(mx, my);
+            ui.needs_redraw = true;
+            return;
+        }
+
         if (notice_open) {
             /* The notice is modal: clicking its Close button or outside it
              * dismisses it, and the same click cannot activate an item below. */
@@ -329,8 +383,13 @@ static void handle_event(const input_event_t* e) {
         if (hit >= 0) {
             ui.menu_open = false;
             ui.hover_item = -1;
-            notice_item = hit;
-            notice_open = true;
+            if (hit == 0) {
+                notice_open = false;
+                browser_open();
+            } else {
+                notice_item = hit;
+                notice_open = true;
+            }
             ui.needs_redraw = true;
         }
         return;
