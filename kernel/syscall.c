@@ -257,6 +257,9 @@ static u64 syscall_ipc_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 
         u8* bounce = (u8*)kmalloc((usize)a3);
         if (!bounce && a3) return (u64)-1;
         int result = ipc_recv((int)a1, bounce, a3);
+        /* A subsystem must never be trusted to report more bytes than the
+         * caller requested: that would read beyond the kernel bounce buffer. */
+        if (result > 0 && (u64)result > a3) result = (int)a3;
         if (result > 0 && !syscall_copy_to_user_data(task, a2, bounce, (usize)result)) result = -1;
         if (bounce) kfree(bounce);
         return (u64)(s64)result;
@@ -289,8 +292,9 @@ static bool syscall_copy_user_string(task_t* task, u64 user_address,
 
 static bool syscall_copy_user_data(task_t* task, u64 user_address,
                                    void* destination, usize size) {
-    if (!task || !task->mm.pml4 || !destination ||
-        user_address >= 0x0000800000000000ULL ||
+    if (!task || !task->mm.pml4) return false;
+    if (size == 0) return true;
+    if (!destination || user_address >= 0x0000800000000000ULL ||
         size > 0x0000800000000000ULL - user_address) return false;
 
     usize copied = 0;
@@ -309,8 +313,9 @@ static bool syscall_copy_user_data(task_t* task, u64 user_address,
 
 static bool syscall_copy_to_user_data(task_t* task, u64 user_address,
                                        const void* source, usize size) {
-    if (!task || !task->mm.pml4 || (!source && size) ||
-        user_address >= 0x0000800000000000ULL ||
+    if (!task || !task->mm.pml4) return false;
+    if (size == 0) return true;
+    if (!source || user_address >= 0x0000800000000000ULL ||
         size > 0x0000800000000000ULL - user_address) return false;
 
     usize copied = 0;
@@ -468,6 +473,9 @@ static u64 syscall_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
         u8* bounce = (u8*)kmalloc((usize)a3);
         if (!bounce && a3) return (u64)-1;
         int result = socket_recv((int)a1, bounce, (usize)a3);
+        /* Keep a buggy driver/protocol implementation from making the copy
+         * back to userspace run past the requested buffer length. */
+        if (result > 0 && (u64)result > a3) result = (int)a3;
         if (result > 0 && !syscall_copy_to_user_data(task, a2, bounce, (usize)result)) result = -1;
         if (bounce) kfree(bounce);
         return (u64)(s64)result;
