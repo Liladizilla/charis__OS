@@ -294,6 +294,7 @@ void browser_open(void) {
 }
 
 void browser_close(void) {
+    if (remote_loading) net_http_cancel();
     browser_visible = false;
 }
 
