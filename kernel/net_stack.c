@@ -21,6 +21,7 @@
 #define ARP_REQUEST    1u
 #define ARP_REPLY      2u
 #define ARP_CACHE_ENTRIES 16u
+#define ARP_RETRY_TICKS 4096u
 #define IPV4_MIN_LEN   20u
 #define IPV4_PROTO_ICMP 1u
 #define IPV4_PROTO_UDP 17u
@@ -53,8 +54,17 @@ typedef struct {
     u8 mac[6];
     bool valid;
 } arp_cache_entry_t;
+
+typedef struct {
+    u8 ip[4];
+    u32 requested_at;
+    bool valid;
+} arp_pending_entry_t;
 static arp_cache_entry_t arp_cache[ARP_CACHE_ENTRIES];
+static arp_pending_entry_t arp_pending[ARP_CACHE_ENTRIES];
 static u8 arp_cache_next;
+static u8 arp_pending_next;
+static u32 arp_clock;
 
 typedef struct {
     u16 port;
@@ -125,7 +135,10 @@ void net_stack_init(void) {
     kmemset(local_mask, 0, sizeof(local_mask));
     kmemset(default_gateway, 0, sizeof(default_gateway));
     kmemset(arp_cache, 0, sizeof(arp_cache));
+    kmemset(arp_pending, 0, sizeof(arp_pending));
     arp_cache_next = 0;
+    arp_pending_next = 0;
+    arp_clock = 0;
 
     const char* configured = config_get_string("net_ip", "0.0.0.0");
     if (!parse_ipv4(configured, local_ip))
@@ -154,19 +167,42 @@ static bool mac_is_zero(const u8 mac[6]) {
     return true;
 }
 
+static bool ip_is_multicast_or_broadcast(const u8 ip[4]) {
+    return ip[0] >= 224u;
+}
+
+static bool mac_is_valid_unicast(const u8 mac[6]) {
+    return !mac_is_zero(mac) && !(mac[0] & 1u);
+}
+
 static void arp_cache_learn(const u8 ip[4], const u8 mac[6]) {
-    if (ip_is_zero(ip) || mac_is_zero(mac) || (mac[0] & 1u)) return;
+    if (!ip || !mac || ip_is_zero(ip) || ip_is_multicast_or_broadcast(ip) ||
+        same_bytes(ip, local_ip, 4) || !mac_is_valid_unicast(mac))
+        return;
     for (usize i = 0; i < ARP_CACHE_ENTRIES; i++) {
         if (arp_cache[i].valid && same_bytes(arp_cache[i].ip, ip, 4)) {
             kmemcpy(arp_cache[i].mac, mac, 6);
-            return;
+            break;
         }
     }
-    arp_cache_entry_t* entry = &arp_cache[arp_cache_next];
-    kmemcpy(entry->ip, ip, 4);
-    kmemcpy(entry->mac, mac, 6);
-    entry->valid = true;
-    arp_cache_next = (u8)((arp_cache_next + 1u) % ARP_CACHE_ENTRIES);
+    bool found = false;
+    for (usize i = 0; i < ARP_CACHE_ENTRIES; i++) {
+        if (arp_cache[i].valid && same_bytes(arp_cache[i].ip, ip, 4)) {
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        arp_cache_entry_t* entry = &arp_cache[arp_cache_next];
+        kmemcpy(entry->ip, ip, 4);
+        kmemcpy(entry->mac, mac, 6);
+        entry->valid = true;
+        arp_cache_next = (u8)((arp_cache_next + 1u) % ARP_CACHE_ENTRIES);
+    }
+    for (usize i = 0; i < ARP_CACHE_ENTRIES; i++) {
+        if (arp_pending[i].valid && same_bytes(arp_pending[i].ip, ip, 4))
+            arp_pending[i].valid = false;
+    }
 }
 
 /* Resolve an on-link neighbour. A cache miss sends ARP and returns false;
@@ -183,6 +219,22 @@ bool net_stack_resolve_ipv4(const u8 ip[4], u8 mac_out[6]) {
 
     net_interface_t* iface = net_get_interface();
     if (!iface || !iface->initialized) return false;
+    arp_pending_entry_t* pending = 0;
+    for (usize i = 0; i < ARP_CACHE_ENTRIES; i++) {
+        if (arp_pending[i].valid && same_bytes(arp_pending[i].ip, ip, 4)) {
+            if ((u32)(arp_clock - arp_pending[i].requested_at) < ARP_RETRY_TICKS)
+                return false;
+            pending = &arp_pending[i];
+            break;
+        }
+    }
+    if (!pending) {
+        pending = &arp_pending[arp_pending_next];
+        arp_pending_next = (u8)((arp_pending_next + 1u) % ARP_CACHE_ENTRIES);
+        kmemcpy(pending->ip, ip, 4);
+        pending->valid = true;
+    }
+    pending->requested_at = arp_clock;
     kmemset(frame_out, 0, ETH_HEADER_LEN + sizeof(arp_packet_t));
     ethernet_header_t* eth = (ethernet_header_t*)frame_out;
     kmemset(eth->dest, 0xFF, 6);
@@ -394,6 +446,9 @@ static void handle_arp(const ethernet_header_t* eth, usize length) {
         (operation != ARP_REQUEST && operation != ARP_REPLY))
         return;
 
+    if (!mac_is_valid_unicast(req->sha) ||
+        !same_bytes(req->sha, eth->src, 6))
+        return;
     arp_cache_learn(req->spa, req->sha);
     if (operation != ARP_REQUEST || !ip_is_configured() ||
         !same_bytes(req->tpa, local_ip, 4))
@@ -477,6 +532,7 @@ static void handle_ipv4(const ethernet_header_t* eth, usize length) {
 
 void net_handle_tcpip(void) {
     if (!stack_ready) net_stack_init();
+    arp_clock++;
     int received = net_recv_packet(frame_in, sizeof(frame_in));
     if (received < (int)ETH_HEADER_LEN) return;
     ethernet_header_t* eth = (ethernet_header_t*)frame_in;
