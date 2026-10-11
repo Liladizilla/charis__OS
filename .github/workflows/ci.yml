@@ -38,6 +38,11 @@ jobs:
       - name: Build kernel and boot images
         run: make images
 
+      - name: Test calculator arithmetic
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/calculator_test.c -Wl,--gc-sections -o /tmp/calculator_test
+          /tmp/calculator_test
+
       - name: Build ELF smoke-test disk
         run: make elf-test
 
