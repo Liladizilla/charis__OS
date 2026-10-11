@@ -374,18 +374,18 @@ bool browser_handle_mouse(int mx, int my) {
     }
 
     u32 page_y = nav_y + 40;
-    if (my >= (int)(page_y + 120)) {
+    if (kstrcmp(tab->address, "charis://bookmarks") == 0 && browser_has_bookmark &&
+        my >= (int)(page_y + 48) && my < (int)(page_y + 112)) {
+        navigate(browser_bookmark, true);
+    } else if (my >= (int)(page_y + 120)) {
         u32 rel_y = (u32)my - page_y;
-        if (kstrcmp(tab->address, "charis://home") == 0) {
-            if (rel_y >= 126 && rel_y < 220) {
-                u32 card_w = (w - 72) / 3;
-                if (card_w > 300) card_w = 300;
-                if (mx < (int)(x + 24 + card_w + 12)) navigate("charis://about", true);
-                else if (mx < (int)(x + 48 + card_w * 2 + 12)) navigate("charis://help", true);
-                else navigate("charis://bookmarks", true);
-            }
-        } else if (kstrcmp(tab->address, "charis://bookmarks") == 0 && browser_has_bookmark) {
-            navigate(browser_bookmark, true);
+        if (kstrcmp(tab->address, "charis://home") == 0 &&
+            rel_y >= 126 && rel_y < 220) {
+            u32 card_w = (w > 760) ? (w - 72) / 3 : (w - 48) / 2;
+            if (card_w > 300) card_w = 300;
+            if (mx < (int)(x + 24 + card_w + 12)) navigate("charis://about", true);
+            else if (mx < (int)(x + 36 + card_w * 2 + 12)) navigate("charis://help", true);
+            else navigate("charis://bookmarks", true);
         }
     }
     return true;
