@@ -336,6 +336,7 @@ static void navigate(const char* raw, bool add_history) {
         target[sizeof(target) - 1] = 0;
     } else {
         /* Until TLS exists, a bare hostname must use the supported HTTP path. */
+        /* This is intentionally explicit in behavior, not a silent HTTPS retry. */
         target[0] = 'h'; target[1] = 't'; target[2] = 't'; target[3] = 'p';
         target[4] = ':'; target[5] = '/'; target[6] = '/';
         kstrncpy(target + 7, raw, sizeof(target) - 8);
