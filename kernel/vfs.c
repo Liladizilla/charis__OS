@@ -163,10 +163,42 @@ int fd_alloc(vfs_node_t* node, u32 flags) {
 void fd_close(int fd) {
     task_t* task = scheduler_current();
     if (!task || fd < 0 || fd >= MAX_FDS) return;
-    
-    task->fd_table[fd].node = NULL;
-    task->fd_table[fd].offset = 0;
-    task->fd_table[fd].flags = 0;
+
+    fd_entry_t* entry = &task->fd_table[fd];
+    vfs_node_t* node = entry->node;
+    entry->node = NULL;
+    entry->offset = 0;
+    entry->flags = 0;
+
+    /* Clear the slot before invoking filesystem code so a callback cannot
+     * observe this descriptor as still open or cause it to be closed twice. */
+    if (node && node->close) node->close(node);
+}
+
+void fd_table_close_all(fd_entry_t* table) {
+    if (!table) return;
+
+    /* Standard streams point at global device nodes. Keep them out of the
+     * close loop, then restore them in case this task-table slot is reused. */
+    for (int i = 3; i < MAX_FDS; i++) {
+        vfs_node_t* node = table[i].node;
+        table[i].node = NULL;
+        table[i].offset = 0;
+        table[i].flags = 0;
+        if (node && node->close) node->close(node);
+    }
+
+    extern vfs_node_t dev_kbd;
+    extern vfs_node_t dev_vga;
+    table[FD_STDIN].node = &dev_kbd;
+    table[FD_STDIN].offset = 0;
+    table[FD_STDIN].flags = 0;
+    table[FD_STDOUT].node = &dev_vga;
+    table[FD_STDOUT].offset = 0;
+    table[FD_STDOUT].flags = 0;
+    table[FD_STDERR].node = &dev_vga;
+    table[FD_STDERR].offset = 0;
+    table[FD_STDERR].flags = 0;
 }
 
 fd_entry_t* fd_get(int fd) {

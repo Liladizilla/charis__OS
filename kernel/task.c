@@ -145,7 +145,13 @@ void task_exit_handler(void) {
 
 void task_exit_with_status(u32 status) {
     task_t* current = scheduler_current();
-    if (current) current->exit_code = status;
+    if (current) {
+        current->exit_code = status;
+        /* Release per-task descriptor state before the task becomes a zombie.
+         * The table slot remains available for waitpid(), but open descriptors
+         * must not remain live for the lifetime of the zombie record. */
+        fd_table_close_all(current->fd_table);
+    }
     task_defer_release(current);
     scheduler_yield();
 }

@@ -211,7 +211,7 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 ## Recommended Next Steps
 
 1. **Implement TCP/IP stack** - ARP, ICMP, TCP state machine in net.c
-2. **Add wait()/waitpid()** - complete process lifecycle
+2. **Add wait()/waitpid()** - validate child ownership, copy status safely, and reap address spaces only after mapping ownership is tracked
 3. **Wire Settings app** - call config_set_* + config_save()
 4. **Add -Werror to Makefile** - prevent future compile regressions
 5. **Wire vmm_run_tests() at boot** - with RUN_VMM_TESTS=1 build target
