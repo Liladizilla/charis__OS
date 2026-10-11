@@ -30,6 +30,12 @@
 /* Keep polling finite: each port read can exit to the host under KVM. */
 #define ATA_TIMEOUT_MS 30
 
+static bool ata_present = false;
+
+bool ata_is_present(void) {
+    return ata_present;
+}
+
 static bool ata_status_is_absent(void) {
     u8 status = inb(ATA_STATUS);
     return status == 0 || status == 0xFF;
@@ -106,6 +112,7 @@ bool ata_write_sector(u32 lba, const void* buffer) {
 }
 
 void ata_init(void) {
+    ata_present = false;
     // Identify drive
     outb(ATA_DRIVE, 0xA0); // Master drive
     outb(ATA_SECTOR_COUNT, 0);
