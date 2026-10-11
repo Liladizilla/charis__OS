@@ -47,6 +47,11 @@ jobs:
           gcc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/browser_html_test.c -Wl,--gc-sections -o /tmp/browser_html_test
           /tmp/browser_html_test
 
+      - name: Test TCP SYN sequence accounting
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Iinclude tests/tcp_sequence_test.c -o /tmp/tcp_sequence_test
+          /tmp/tcp_sequence_test
+
       - name: Build ELF smoke-test disk
         run: make elf-test
 
