@@ -238,6 +238,9 @@ static bool remote_navigate(const char* url) {
     } else {
         kstrncpy(path_buffer, "/", sizeof(path_buffer));
     }
+    /* URL fragments are client-side only and must never be sent in HTTP. */
+    char* fragment = kstrchr(path_buffer, '#');
+    if (fragment) *fragment = 0;
 
     if (remote_loading) net_http_cancel();
     kstrncpy(remote_url, url, sizeof(remote_url) - 1u);
@@ -254,7 +257,7 @@ static bool remote_navigate(const char* url) {
     remote_last_space = false;
     remote_ready = false;
     remote_loading = true;
-    set_status("Resolving host and connecting over HTTP...");
+    set_status("Resolving host over plain HTTP (no TLS)...");
     if (!net_http_get(hostname, path_buffer, remote_headers, remote_body,
                       remote_complete, 0)) {
         remote_loading = false;
@@ -330,10 +333,10 @@ static void navigate(const char* raw, bool add_history) {
         kstrncpy(target, raw, sizeof(target) - 1);
         target[sizeof(target) - 1] = 0;
     } else {
-        /* Treat an unqualified address as a web URL, not a search query. */
+        /* Until TLS exists, a bare hostname must use the supported HTTP path. */
         target[0] = 'h'; target[1] = 't'; target[2] = 't'; target[3] = 'p';
-        target[4] = 's'; target[5] = ':'; target[6] = '/'; target[7] = '/';
-        kstrncpy(target + 8, raw, sizeof(target) - 9);
+        target[4] = ':'; target[5] = '/'; target[6] = '/';
+        kstrncpy(target + 7, raw, sizeof(target) - 8);
         target[sizeof(target) - 1] = 0;
     }
 
