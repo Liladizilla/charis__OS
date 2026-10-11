@@ -103,7 +103,8 @@ static void test_backspace_handles_negative_result(void) {
     enter_digits("8");
     calculator_press('=');
     expect(strcmp(calculator_display, "-5") == 0, "negative result prepared");
-    calculator_handle_key(KEY_BACKSPACE, true);
+    calculator_open = true;
+    expect(calculator_handle_key(KEY_BACKSPACE, true), "backspace key is handled");
     expect(strcmp(calculator_display, "0") == 0,
            "backspace clears a one-digit negative result safely");
 }
