@@ -40,4 +40,6 @@ int vfs_mount(const char* path, vfs_node_t* fs_root);
 int fd_table_init(void);
 int fd_alloc(vfs_node_t* node, u32 flags);
 void fd_close(int fd);
+/* Close non-standard descriptors owned by a task and restore standard streams. */
+void fd_table_close_all(fd_entry_t* table);
 fd_entry_t* fd_get(int fd); // Gets from current task's fd table
