@@ -7,7 +7,7 @@
 
 #include <kernel/wallpaper.h>
 #include <kernel/fb.h>
-#include <kernel/printf.h>
+#include <kernel/ui_theme.h>
 
 /* Solid desktop fields with restrained geometric planes. No gradient,
  * glow, blur or transparency is required from the kernel graphics path. */
@@ -15,7 +15,7 @@ void wallpaper_draw(u32 style) {
     if (!g_framebuffer.initialized) return;
     u32 w = g_framebuffer.width;
     u32 h = g_framebuffer.height;
-    u32 base = 0xFF0D1117u;
+    u32 base = CHARIS_UI_BACKGROUND;
     u32 plane = 0xFF121A26u;
     u32 edge = 0xFF1B2A40u;
 
