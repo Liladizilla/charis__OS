@@ -56,6 +56,7 @@ static const menu_entry_t MENU_ITEMS[] = {
     { "Terminal" },
     { "File Manager" },
     { "Text Editor" },
+    { "Calculator" },
     { "Settings" },
     { "About CharisOS" },
 };
@@ -68,6 +69,7 @@ static const char* const NOTICE_LINE_1[] = {
     "A graphical terminal is not wired up yet.",
     "The VFS exists, but the graphical browser is",
     "No graphical editor is implemented yet.",
+    "The calculator window is not connected to the launcher.",
     "A graphical settings panel is not wired up.",
     "CharisOS is a from-scratch x86_64 kernel.",
 };
@@ -76,6 +78,7 @@ static const char* const NOTICE_LINE_2[] = {
     "Kernel output remains on the text/serial console.",
     "not connected to file operations yet.",
     "This screen will not pretend to show source code.",
+    "Its arithmetic UI still needs implementation.",
     "Persistence needs an existing writable config file.",
     "The desktop and built-in apps are still partial.",
 };
@@ -138,7 +141,8 @@ static void draw_app_icon(u32 app, u32 x, u32 y) {
               app == 1 ? 0xFF91D7A3u :
               app == 2 ? 0xFFF0C674u :
               app == 3 ? 0xFFB7A0F5u :
-              app == 4 ? 0xFF8FC7D8u : CHARIS_UI_TEXT;
+              app == 4 ? 0xFF8FC7D8u :
+              app == 5 ? 0xFF7EB6FFu : CHARIS_UI_TEXT;
     fb_fill_rect(x, y, 20, 20, CHARIS_UI_PANEL_RAISED);
     fb_draw_rect(x, y, 20, 20, CHARIS_UI_BORDER);
     if (app == 0) {
@@ -157,6 +161,15 @@ static void draw_app_icon(u32 app, u32 x, u32 y) {
         fb_fill_rect(x + 6, y + 10, 8, 1, CHARIS_UI_PANEL);
         fb_fill_rect(x + 6, y + 14, 6, 1, CHARIS_UI_PANEL);
     } else if (app == 4) {
+        /* Calculator: display plus a 3x2 keypad, all inside its own silhouette. */
+        fb_draw_rect(x + 4, y + 2, 12, 16, ink);
+        fb_fill_rect(x + 6, y + 4, 8, 3, CHARIS_UI_PANEL);
+        fb_fill_rect(x + 6, y + 9, 3, 3, ink);
+        fb_fill_rect(x + 11, y + 9, 3, 3, ink);
+        fb_fill_rect(x + 6, y + 14, 3, 2, ink);
+        fb_fill_rect(x + 11, y + 14, 3, 2, ink);
+    } else if (app == 5) {
+        /* Settings: a compact cross/gear glyph. */
         fb_draw_rect(x + 4, y + 4, 12, 12, ink);
         fb_fill_rect(x + 8, y + 1, 4, 18, ink);
         fb_fill_rect(x + 1, y + 8, 18, 4, ink);
