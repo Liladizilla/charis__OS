@@ -1,5 +1,6 @@
 /* compositor.c - CharisOS compositor (Phase 6) */
 #include <kernel/compositor.h>
+#include <kernel/ui_theme.h>
 #include <kernel/fb.h>
 #include <kernel/memory.h>
 #include <kernel/vga.h>
@@ -81,10 +82,10 @@ surface_t* compositor_create_surface(int width, int height, int x, int y) {
     surf->height = height;
     surf->screen_x = x;
     surf->screen_y = y;
-    surf->material = MATERIAL_FROSTED;
+    surf->material = MATERIAL_SOLID;
     surf->opacity = 1.0f;
     surf->blur_radius = 0.0f;
-    surf->tint = 0xFF1A1A2E;
+    surf->tint = CHARIS_UI_PANEL;
     surf->tint_strength = 0.15f;
     surf->z_order = 0;
     surf->accepts_input = true;
