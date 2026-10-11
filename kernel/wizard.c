@@ -30,6 +30,7 @@
 #include <kernel/string.h>
 #include <kernel/printf.h>
 #include <kernel/ui_theme.h>
+#include <kernel/scheduler.h>
 
 /* ── Shared solid-morphism palette ────────────────────────────────────── */
 #define W_BG       CHARIS_UI_BACKGROUND
@@ -595,7 +596,7 @@ bool wizard_run(void) {
         last_h = g_framebuffer.height;
         first = false;
 
-        if (!dirty) { asm volatile("hlt"); continue; }
+        if (!dirty) { scheduler_yield(); asm volatile("hlt"); continue; }
 
         /* Repaint the full background before each dirty frame so old
          * cards never ghost through after moving between setup steps. The
@@ -620,6 +621,9 @@ bool wizard_run(void) {
         draw_footer();
         ui_draw_cursor();
 
+        /* This wizard runs inside a cooperative task. Yield so the shell and
+         * ring-3 test task can make progress while setup waits for input. */
+        scheduler_yield();
         asm volatile("hlt");
     }
 
