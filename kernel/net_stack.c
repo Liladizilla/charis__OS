@@ -6,6 +6,7 @@
  */
 #include <kernel/net_stack.h>
 #include <kernel/dns.h>
+#include <kernel/tcp.h>
 #include <kernel/net.h>
 #include <kernel/config.h>
 #include <kernel/string.h>
@@ -275,6 +276,44 @@ static bool udp_checksum_valid(const u8* src, const u8* dst,
     return udp_checksum_value(src, dst, udp, length) == 0;
 }
 
+int net_ipv4_send(const u8 destination_ip[4], u8 protocol,
+                  const void* payload, usize length) {
+    if (!stack_ready) net_stack_init();
+    if (!destination_ip || (!payload && length) ||
+        length > NET_FRAME_CAP - ETH_HEADER_LEN - IPV4_MIN_LEN ||
+        !ip_is_configured())
+        return -1;
+    net_interface_t* iface = net_get_interface();
+    if (!iface || !iface->initialized) return -1;
+
+    u8 next_hop[4], destination_mac[6];
+    if (!route_ipv4(destination_ip, next_hop)) return -1;
+    if (same_bytes(destination_ip, local_ip, 4)) {
+        kmemcpy(destination_mac, iface->mac_addr, 6);
+    } else if (!net_stack_resolve_ipv4(next_hop, destination_mac)) {
+        return -2;
+    }
+
+    usize ip_len = IPV4_MIN_LEN + length;
+    kmemset(frame_out, 0, ETH_HEADER_LEN + ip_len);
+    ethernet_header_t* eth = (ethernet_header_t*)frame_out;
+    kmemcpy(eth->dest, destination_mac, 6);
+    kmemcpy(eth->src, iface->mac_addr, 6);
+    write_be16(&eth->type_hi, ETH_TYPE_IPV4);
+    u8* ip = frame_out + ETH_HEADER_LEN;
+    ip[0] = 0x45;
+    write_be16(ip + 2u, (u16)ip_len);
+    write_be16(ip + 4u, 0);
+    write_be16(ip + 6u, 0x4000u);
+    ip[8] = 64;
+    ip[9] = protocol;
+    kmemcpy(ip + 12u, local_ip, 4);
+    kmemcpy(ip + 16u, destination_ip, 4);
+    write_be16(ip + 10u, checksum(ip, IPV4_MIN_LEN));
+    if (length) kmemcpy(ip + IPV4_MIN_LEN, payload, length);
+    return net_send_packet(frame_out, ETH_HEADER_LEN + ip_len);
+}
+
 int net_udp_send(const u8 destination_ip[4], u16 destination_port,
                  u16 source_port, const void* payload, usize length) {
     if (!stack_ready) net_stack_init();
@@ -432,6 +471,8 @@ static void handle_ipv4(const ethernet_header_t* eth, usize length) {
         handle_icmp(eth, ip, total);
     else if (ip[9] == IPV4_PROTO_UDP)
         handle_udp(ip, total, ihl);
+    else if (ip[9] == 6u)
+        net_tcp_input(ip + 12u, ip + 16u, ip + ihl, total - ihl);
 }
 
 void net_handle_tcpip(void) {
@@ -451,9 +492,11 @@ void net_poll_task(void* unused) {
     (void)unused;
     net_stack_init();
     (void)net_dns_init();
+    (void)net_tcp_init();
     for (;;) {
         net_handle_tcpip();
         net_dns_poll();
+        net_tcp_poll();
         scheduler_yield();
     }
 }
