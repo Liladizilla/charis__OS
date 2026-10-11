@@ -590,6 +590,14 @@ bool wizard_run(void) {
 
         if (!dirty) { asm volatile("hlt"); continue; }
 
+        /* Repaint the full background before each dirty frame so old
+         * cards never ghost through after moving between setup steps. The
+         * wallpaper step previews the currently selected solid style. */
+        u32 preview_style = w.step == STEP_WALLPAPER
+                          ? w.wallpaper
+                          : (u32)config_get_int("wallpaper", 0);
+        wallpaper_draw(preview_style);
+
         switch (w.step) {
         case STEP_WELCOME:  draw_welcome(); break;
         case STEP_MODE:     draw_mode(); break;
