@@ -49,6 +49,7 @@ static u16 remote_status_code;
 static bool remote_loading;
 static bool remote_ready;
 static bool remote_in_tag;
+static bool remote_tag_name_done;
 static bool remote_closing_tag;
 static bool remote_suppress_content;
 static bool remote_in_entity;
@@ -234,23 +235,29 @@ static void remote_body(const u8* data, usize length, void* context) {
                     remote_append('\n');
                 remote_tag_length = 0;
                 remote_tag_name[0] = 0;
+                remote_tag_name_done = false;
                 remote_closing_tag = false;
-            } else if (remote_tag_length + 1u < sizeof(remote_tag_name)) {
-                if (ch == '/' && remote_tag_length == 0) {
-                    remote_closing_tag = true;
-                } else if ((ch >= 'A' && ch <= 'Z') ||
-                           (ch >= 'a' && ch <= 'z') ||
-                           (ch >= '0' && ch <= '9')) {
-                    char lower = ch >= 'A' && ch <= 'Z' ? (char)(ch - 'A' + 'a') : ch;
-                    remote_tag_name[remote_tag_length++] = lower;
-                    remote_tag_name[remote_tag_length] = 0;
-                }
+            } else if (ch == '/' && remote_tag_length == 0 &&
+                       !remote_tag_name_done) {
+                remote_closing_tag = true;
+            } else if (ch == ' ' || ch == '\t' || ch == '\r' ||
+                       ch == '\n' || ch == '/') {
+                if (remote_tag_length) remote_tag_name_done = true;
+            } else if (!remote_tag_name_done &&
+                       remote_tag_length + 1u < sizeof(remote_tag_name) &&
+                       ((ch >= 'A' && ch <= 'Z') ||
+                        (ch >= 'a' && ch <= 'z') ||
+                        (ch >= '0' && ch <= '9'))) {
+                char lower = ch >= 'A' && ch <= 'Z' ? (char)(ch - 'A' + 'a') : ch;
+                remote_tag_name[remote_tag_length++] = lower;
+                remote_tag_name[remote_tag_length] = 0;
             }
             continue;
         }
         if (ch == '<') {
             remote_in_tag = true;
             remote_closing_tag = false;
+            remote_tag_name_done = false;
             remote_tag_length = 0;
             remote_tag_name[0] = 0;
             continue;
@@ -351,6 +358,7 @@ static bool remote_navigate(const char* url) {
     remote_text[0] = 0;
     remote_status_code = 0;
     remote_in_tag = false;
+    remote_tag_name_done = false;
     remote_closing_tag = false;
     remote_suppress_content = false;
     remote_in_entity = false;
