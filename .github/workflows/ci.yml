@@ -38,6 +38,11 @@ jobs:
       - name: Build kernel and boot images
         run: make images
 
+      - name: Test DNS response validation
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Iinclude tests/dns_response_test.c -o /tmp/dns_response_test
+          /tmp/dns_response_test
+
       - name: Build ELF smoke-test disk
         run: make elf-test
 

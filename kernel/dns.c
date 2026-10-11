@@ -83,6 +83,48 @@ static bool encode_hostname(const char* host, u8* out, usize cap,
     return true;
 }
 
+/* Compare the echoed DNS question against the requested hostname. Compression
+ * pointers are followed with a strict step limit to reject loops. */
+static bool question_matches_host(const u8* packet, usize length, usize* offset) {
+    usize pos = *offset;
+    usize consumed = 0;
+    usize host_pos = 0;
+    bool jumped = false;
+    for (usize steps = 0; steps < 128u; steps++) {
+        if (pos >= length) return false;
+        u8 label = packet[pos++];
+        if ((label & 0xC0u) == 0xC0u) {
+            if (pos >= length) return false;
+            usize pointer = ((usize)(label & 0x3Fu) << 8) | packet[pos++];
+            if (pointer >= length) return false;
+            if (!jumped) consumed = pos;
+            jumped = true;
+            pos = pointer;
+            continue;
+        }
+        if (label & 0xC0u) return false;
+        if (label == 0) {
+            if (pending_host[host_pos] != 0) return false;
+            *offset = jumped ? consumed : pos;
+            return true;
+        }
+        if (label > 63u || (usize)label > length - pos) return false;
+        for (u8 i = 0; i < label; i++) {
+            if (!pending_host[host_pos]) return false;
+            char expected = pending_host[host_pos++];
+            char actual = (char)packet[pos++];
+            if (expected >= 'A' && expected <= 'Z')
+                expected = (char)(expected - 'A' + 'a');
+            if (actual >= 'A' && actual <= 'Z')
+                actual = (char)(actual - 'A' + 'a');
+            if (expected != actual) return false;
+        }
+        if (pending_host[host_pos] == '.') host_pos++;
+        else if (pending_host[host_pos] != 0) return false;
+    }
+    return false;
+}
+
 /* Skip an encoded DNS name, including compressed names, without following
  * pointers. This is sufficient for locating the next fixed-size field. */
 static bool skip_name(const u8* packet, usize length, usize* offset) {
@@ -125,25 +167,34 @@ static void handle_dns_response(u16 source_port, const u8 source_ip[4],
     u16 flags = read_be16(payload + 2);
     u16 questions = read_be16(payload + 4);
     u16 answers = read_be16(payload + 6);
-    if (!(flags & 0x8000u) || (flags & 0x0200u) || (flags & 0x000Fu) != 0 ||
-        questions == 0) {
+    if (!(flags & 0x8000u) || (flags & 0x7800u) != 0 ||
+        (flags & 0x0200u) || (flags & 0x000Fu) != 0 || questions != 1u) {
         const u8 zero[4] = {0, 0, 0, 0};
         finish_query(false, zero);
         return;
     }
 
     usize offset = 12u;
-    for (u16 i = 0; i < questions; i++) {
-        if (!skip_name(payload, length, &offset) || offset + 4u > length) {
+    if (!question_matches_host(payload, length, &offset) ||
+        offset + 4u > length || read_be16(payload + offset) != 1u ||
+        read_be16(payload + offset + 2u) != 1u) {
+        const u8 zero[4] = {0, 0, 0, 0};
+        finish_query(false, zero);
+        return;
+    }
+    offset += 4u;
+
+    for (u16 i = 0; i < answers; i++) {
+        usize owner_end = offset;
+        bool owner_matches = question_matches_host(payload, length, &owner_end);
+        if (owner_matches) {
+            offset = owner_end;
+        } else if (!skip_name(payload, length, &offset)) {
             const u8 zero[4] = {0, 0, 0, 0};
             finish_query(false, zero);
             return;
         }
-        offset += 4u;
-    }
-
-    for (u16 i = 0; i < answers; i++) {
-        if (!skip_name(payload, length, &offset) || offset + 10u > length) {
+        if (offset + 10u > length) {
             const u8 zero[4] = {0, 0, 0, 0};
             finish_query(false, zero);
             return;
@@ -157,7 +208,7 @@ static void handle_dns_response(u16 source_port, const u8 source_ip[4],
             finish_query(false, zero);
             return;
         }
-        if (type == 1u && klass == 1u && rdlength == 4u) {
+        if (owner_matches && type == 1u && klass == 1u && rdlength == 4u) {
             u8 ip[4];
             kmemcpy(ip, payload + offset, 4);
             if (ip[0] || ip[1] || ip[2] || ip[3]) {
