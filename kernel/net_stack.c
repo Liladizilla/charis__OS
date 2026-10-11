@@ -5,6 +5,7 @@
  * ICMP echo replies. Routing, DHCP, UDP, TCP, DNS, TLS and HTTP are future work.
  */
 #include <kernel/net_stack.h>
+#include <kernel/dns.h>
 #include <kernel/net.h>
 #include <kernel/config.h>
 #include <kernel/string.h>
@@ -433,8 +434,10 @@ void net_handle_tcpip(void) {
 void net_poll_task(void* unused) {
     (void)unused;
     net_stack_init();
+    (void)net_dns_init();
     for (;;) {
         net_handle_tcpip();
+        net_dns_poll();
         scheduler_yield();
     }
 }
