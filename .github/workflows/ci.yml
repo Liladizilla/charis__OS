@@ -38,6 +38,11 @@ jobs:
       - name: Build kernel and boot images
         run: make images
 
+      - name: Test HTTP chunked parser
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -Iinclude tests/http_chunked_test.c -o /tmp/http_chunked_test
+          /tmp/http_chunked_test
+
       - name: Build ELF smoke-test disk
         run: make elf-test
 
