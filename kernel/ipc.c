@@ -115,6 +115,14 @@ int ipc_recv(int channel, void* buf, u64 max_size) {
         scheduler_block_task(current);
         scheduler_yield();
 
+        /* If the scheduler had no other runnable task, yield can return while
+         * this task is still marked BLOCKED. Do not spin forever on an empty
+         * queue: detach the waiter and unwind this receive attempt. */
+        if (current->state == TASK_STATE_BLOCKED) {
+            ipc_remove_waiter(ch, current);
+            current->state = TASK_STATE_RUNNING;
+            return -1;
+        }
         if (!ch->in_use || ch->generation != wait_generation) return -1;
     }
 
