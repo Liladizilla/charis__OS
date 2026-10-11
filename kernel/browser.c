@@ -49,6 +49,9 @@ static u16 remote_status_code;
 static bool remote_loading;
 static bool remote_ready;
 static bool remote_in_tag;
+static bool remote_closing_tag;
+static bool remote_tag_name_done;
+static bool remote_skip_content;
 static char remote_tag_name[8];
 static usize remote_tag_length;
 static bool remote_last_space;
@@ -135,19 +138,30 @@ static void remote_body(const u8* data, usize length, void* context) {
         if (remote_in_tag) {
             if (ch == '>') {
                 remote_in_tag = false;
-                if (remote_block_tag() && remote_text_length &&
+                bool hidden_tag = kstrcmp(remote_tag_name, "head") == 0 ||
+                                  kstrcmp(remote_tag_name, "script") == 0 ||
+                                  kstrcmp(remote_tag_name, "style") == 0;
+                if (hidden_tag) remote_skip_content = !remote_closing_tag;
+                if (!remote_skip_content && remote_block_tag() && remote_text_length &&
                     remote_text[remote_text_length - 1u] != '\n')
                     remote_append('\n');
                 remote_tag_length = 0;
                 remote_tag_name[0] = 0;
-            } else if (remote_tag_length + 1u < sizeof(remote_tag_name)) {
+                remote_tag_name_done = false;
+                remote_closing_tag = false;
+            } else if (!remote_tag_name_done) {
                 if (ch == '/' && remote_tag_length == 0) {
+                    remote_closing_tag = true;
                 } else if ((ch >= 'A' && ch <= 'Z') ||
                            (ch >= 'a' && ch <= 'z') ||
                            (ch >= '0' && ch <= '9')) {
-                    char lower = ch >= 'A' && ch <= 'Z' ? (char)(ch - 'A' + 'a') : ch;
-                    remote_tag_name[remote_tag_length++] = lower;
-                    remote_tag_name[remote_tag_length] = 0;
+                    if (remote_tag_length + 1u < sizeof(remote_tag_name)) {
+                        char lower = ch >= 'A' && ch <= 'Z' ? (char)(ch - 'A' + 'a') : ch;
+                        remote_tag_name[remote_tag_length++] = lower;
+                        remote_tag_name[remote_tag_length] = 0;
+                    }
+                } else {
+                    remote_tag_name_done = true;
                 }
             }
             continue;
@@ -156,6 +170,15 @@ static void remote_body(const u8* data, usize length, void* context) {
             remote_in_tag = true;
             remote_tag_length = 0;
             remote_tag_name[0] = 0;
+            remote_tag_name_done = false;
+            remote_closing_tag = false;
+            continue;
+        }
+        if (remote_skip_content) continue;
+        if (ch == '&') {
+            /* Entity decoding is intentionally conservative in this first renderer. */
+            remote_append(ch);
+            remote_last_space = false;
             continue;
         }
         if (ch == '\r' || ch == '\n' || ch == '\t' || ch == ' ') {
@@ -223,6 +246,9 @@ static bool remote_navigate(const char* url) {
     remote_text[0] = 0;
     remote_status_code = 0;
     remote_in_tag = false;
+    remote_closing_tag = false;
+    remote_tag_name_done = false;
+    remote_skip_content = false;
     remote_tag_length = 0;
     remote_tag_name[0] = 0;
     remote_last_space = false;
@@ -399,8 +425,8 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
         gfx_draw_string(x + 24, y + 22, "ABOUT CHARIS BROWSER", C_ACCENT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 62, "Built into CharisOS. No external browser runtime is required for local pages.", C_TEXT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 92, "This version includes tabs, address entry, local navigation, history and bookmarks.", C_MUTED, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 122, "Remote websites need a real TCP/IP, DNS, TLS/HTTP client and document renderer.", C_WARNING, FB_TRANSPARENT);
-        gfx_draw_string(x + 24, y + 152, "The current kernel network receive and TCP/IP functions are placeholders.", C_MUTED, FB_TRANSPARENT);
+        gfx_draw_string(x + 24, y + 122, "Remote pages use a basic HTTP text preview; HTTPS and full HTML/CSS are still unsupported.", C_WARNING, FB_TRANSPARENT);
+        gfx_draw_string(x + 24, y + 152, "Networking supports static IPv4, DNS, TCP and plain HTTP, with limited protocol coverage.", C_MUTED, FB_TRANSPARENT);
     } else if (kstrcmp(address, "charis://help") == 0) {
         gfx_draw_string(x + 24, y + 22, "BROWSER HELP", C_ACCENT, FB_TRANSPARENT);
         gfx_draw_string(x + 24, y + 58, "Click the address bar or press Ctrl+L, type a URL, then press Enter.", C_TEXT, FB_TRANSPARENT);
