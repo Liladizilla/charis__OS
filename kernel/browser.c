@@ -125,20 +125,71 @@ static void remote_append_text_char(char ch) {
     }
 }
 
+static char remote_lower(char ch) {
+    return ch >= 'A' && ch <= 'Z' ? (char)(ch - 'A' + 'a') : ch;
+}
+
+static bool remote_entity_equal(const char* entity, usize length,
+                               const char* expected) {
+    usize expected_length = kstrlen(expected);
+    if (length != expected_length) return false;
+    for (usize i = 0; i < length; i++)
+        if (remote_lower(entity[i]) != remote_lower(expected[i])) return false;
+    return true;
+}
+
 static bool remote_decode_entity(const char* entity, usize length, char* out) {
-    if (!entity || !out) return false;
-    if (length == 3u && kstrncmp(entity, "amp", 3u) == 0) *out = '&';
-    else if (length == 2u && kstrncmp(entity, "lt", 2u) == 0) *out = '<';
-    else if (length == 2u && kstrncmp(entity, "gt", 2u) == 0) *out = '>';
-    else if (length == 4u && kstrncmp(entity, "quot", 4u) == 0) *out = '"';
-    else if (length == 4u && kstrncmp(entity, "apos", 4u) == 0) *out = '\'';
-    else if (length == 4u && kstrncmp(entity, "nbsp", 4u) == 0) *out = ' ';
-    else if (length == 4u && kstrncmp(entity, "#160", 4u) == 0) *out = ' ';
-    else if (length == 3u && kstrncmp(entity, "#38", 3u) == 0) *out = '&';
-    else if (length == 3u && kstrncmp(entity, "#60", 3u) == 0) *out = '<';
-    else if (length == 3u && kstrncmp(entity, "#62", 3u) == 0) *out = '>';
-    else if (length == 3u && kstrncmp(entity, "#39", 3u) == 0) *out = '\'';
-    else if (length == 3u && kstrncmp(entity, "#34", 3u) == 0) *out = '"';
+    if (!entity || !out || !length) return false;
+    if (entity[0] == '#') {
+        usize i = 1;
+        u32 value = 0;
+        u32 base = 10u;
+        if (i < length && (entity[i] == 'x' || entity[i] == 'X')) {
+            base = 16u;
+            i++;
+        }
+        if (i == length) return false;
+        for (; i < length; i++) {
+            char ch = entity[i];
+            u32 digit;
+            if (ch >= '0' && ch <= '9') digit = (u32)(ch - '0');
+            else if (base == 16u && ch >= 'a' && ch <= 'f')
+                digit = (u32)(ch - 'a') + 10u;
+            else if (base == 16u && ch >= 'A' && ch <= 'F')
+                digit = (u32)(ch - 'A') + 10u;
+            else return false;
+            if (digit >= base || value > (0x10FFFFu - digit) / base)
+                return false;
+            value = value * base + digit;
+        }
+        if (value == 0u || value > 0x10FFFFu) return false;
+        if (value == 9u || value == 10u || value == 13u || value == 32u ||
+            value == 160u) *out = ' ';
+        else if (value >= 0x20u && value <= 0x7Eu) *out = (char)value;
+        else if (value == 0x2018u || value == 0x2019u) *out = '\'';
+        else if (value == 0x201Cu || value == 0x201Du) *out = '"';
+        else if (value == 0x2013u || value == 0x2014u) *out = '-';
+        else if (value == 0x2026u) *out = '.';
+        else if (value == 0x00A9u) *out = 'c';
+        else if (value == 0x00AEu) *out = 'R';
+        else *out = '?'; /* This text renderer is ASCII-only. */
+        return true;
+    }
+    if (remote_entity_equal(entity, length, "amp")) *out = '&';
+    else if (remote_entity_equal(entity, length, "lt")) *out = '<';
+    else if (remote_entity_equal(entity, length, "gt")) *out = '>';
+    else if (remote_entity_equal(entity, length, "quot")) *out = '"';
+    else if (remote_entity_equal(entity, length, "apos")) *out = '\'';
+    else if (remote_entity_equal(entity, length, "nbsp")) *out = ' ';
+    else if (remote_entity_equal(entity, length, "copy")) *out = 'c';
+    else if (remote_entity_equal(entity, length, "reg")) *out = 'R';
+    else if (remote_entity_equal(entity, length, "ndash") ||
+             remote_entity_equal(entity, length, "mdash")) *out = '-';
+    else if (remote_entity_equal(entity, length, "hellip")) *out = '.';
+    else if (remote_entity_equal(entity, length, "lsquo") ||
+             remote_entity_equal(entity, length, "rsquo")) *out = '\'';
+    else if (remote_entity_equal(entity, length, "ldquo") ||
+             remote_entity_equal(entity, length, "rdquo")) *out = '"';
     else return false;
     return true;
 }
