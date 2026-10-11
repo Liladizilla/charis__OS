@@ -6,7 +6,7 @@
  * general .rodata section. Keep syscall strings on that mapped stack instead
  * of passing pointers to kernel-linked string literals. Proper ELF-loaded
  * programs receive their own mapped read-only segments. */
-__attribute__((no_stack_protector, optimize("O0")))
+__attribute__((no_stack_protector, optimize("O0"), aligned(4096)))
 void user_main(void) {
     char greeting[23];
     greeting[0] = 'H'; greeting[1] = 'e'; greeting[2] = 'l';
