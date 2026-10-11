@@ -134,5 +134,6 @@ void ata_init(void) {
         for (int i = 0; i < ATA_SECTOR_SIZE / 2; i++) (void)inw(ATA_DATA);
     }
 
+    ata_present = true;
     vga_puts("ATA initialized\n");
 }
