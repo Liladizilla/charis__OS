@@ -74,7 +74,6 @@ static void history_push(browser_tab_t* tab, const char* address) {
         tab->history_count = BROWSER_HISTORY - 1;
     }
     address_set((browser_tab_t*)tab, address);
-    address_set((browser_tab_t*)tab, address);
     kstrncpy(tab->history[tab->history_index], address, BROWSER_URL_MAX - 1);
     tab->history[tab->history_index][BROWSER_URL_MAX - 1] = 0;
     tab->history_count = tab->history_index + 1;
@@ -229,7 +228,7 @@ void browser_render(void) {
         bool selected = i == active_tab;
         fb_fill_rect(tab_x, y + 5, tw, 28, selected ? C_PANEL : C_SURFACE);
         fb_draw_rect(tab_x, y + 5, tw, 28, C_BORDER);
-        gfx_draw_string(tab_x + 10, y + 13, "◉", C_ACCENT, FB_TRANSPARENT);
+        gfx_draw_string(tab_x + 10, y + 13, "B", C_ACCENT, FB_TRANSPARENT);
         gfx_draw_string(tab_x + 30, y + 13, "Charis Browser", selected ? C_TEXT : C_MUTED, FB_TRANSPARENT);
         tab_x += tw + 6;
     }
@@ -255,7 +254,7 @@ void browser_render(void) {
         shown = selected_hint;
     }
     gfx_draw_string(addr_x + 8, nav_y + 8, shown, tab->select_all ? C_MUTED : C_TEXT, FB_TRANSPARENT);
-    draw_button(star_x, nav_y, 72, 30, tab->bookmarked ? "★ Saved" : "☆ Save", tab->bookmarked);
+    draw_button(star_x, nav_y, 72, 30, tab->bookmarked ? "* Saved" : "* Save", tab->bookmarked);
 
     /* Main page area and status bar. */
     u32 page_y = nav_y + 40;
