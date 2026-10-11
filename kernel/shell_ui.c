@@ -64,6 +64,130 @@ static const menu_entry_t MENU_ITEMS[] = {
 static bool notice_open = false;
 static int notice_item = -1;
 
+static bool calculator_open = false;
+static char calculator_display[16] = "0";
+static s64 calculator_accumulator = 0;
+static char calculator_operator = 0;
+static bool calculator_new_entry = true;
+static bool calculator_error = false;
+static bool calculator_shift = false;
+
+static void calculator_set_value(s64 value) {
+    char reverse[16];
+    usize length = 0;
+    bool negative = value < 0;
+    u64 magnitude = negative ? (u64)(-(value + 1)) + 1u : (u64)value;
+    do {
+        reverse[length++] = (char)('0' + magnitude % 10u);
+        magnitude /= 10u;
+    } while (magnitude && length < sizeof(reverse) - 1u);
+    usize out = 0;
+    if (negative && out + 1u < sizeof(calculator_display))
+        calculator_display[out++] = '-';
+    while (length && out + 1u < sizeof(calculator_display))
+        calculator_display[out++] = reverse[--length];
+    calculator_display[out] = 0;
+}
+
+static bool calculator_parse(s64* value) {
+    if (!value || !calculator_display[0]) return false;
+    usize i = 0;
+    bool negative = false;
+    if (calculator_display[i] == '-') { negative = true; i++; }
+    if (!calculator_display[i]) return false;
+    s64 number = 0;
+    for (; calculator_display[i]; i++) {
+        char ch = calculator_display[i];
+        if (ch < '0' || ch > '9') return false;
+        number = number * 10 + (ch - '0');
+        if (number > 2147483648LL) return false;
+    }
+    *value = negative ? -number : number;
+    return *value >= (-2147483647LL - 1LL) && *value <= 2147483647LL;
+}
+
+static bool calculator_apply(s64 left, char op, s64 right, s64* result) {
+    if (!result) return false;
+    s64 value;
+    if (op == '+') value = left + right;
+    else if (op == '-') value = left - right;
+    else if (op == '*') value = left * right;
+    else if (op == '/') {
+        if (!right) return false;
+        value = left / right;
+    } else return false;
+    if (value < (-2147483647LL - 1LL) || value > 2147483647LL)
+        return false;
+    *result = value;
+    return true;
+}
+
+static void calculator_press(char key) {
+    if (key == 'C') {
+        calculator_accumulator = 0;
+        calculator_operator = 0;
+        calculator_new_entry = true;
+        calculator_error = false;
+        calculator_display[0] = '0';
+        calculator_display[1] = 0;
+        return;
+    }
+    if (key >= '0' && key <= '9') {
+        if (calculator_error || calculator_new_entry) {
+            calculator_display[0] = key;
+            calculator_display[1] = 0;
+            calculator_new_entry = false;
+            calculator_error = false;
+            return;
+        }
+        usize length = kstrlen(calculator_display);
+        if (length < 10u) {
+            if (length == 1u && calculator_display[0] == '0')
+                calculator_display[0] = key;
+            else {
+                calculator_display[length] = key;
+                calculator_display[length + 1u] = 0;
+            }
+        }
+        return;
+    }
+    s64 current = 0;
+    if (!calculator_parse(&current)) {
+        calculator_error = true;
+        kstrcpy(calculator_display, "Error");
+        calculator_new_entry = true;
+        return;
+    }
+    if (key == '+' || key == '-' || key == '*' || key == '/') {
+        if (calculator_operator && !calculator_new_entry) {
+            if (!calculator_apply(calculator_accumulator, calculator_operator,
+                                  current, &current)) {
+                calculator_error = true;
+                kstrcpy(calculator_display, "Error");
+                calculator_operator = 0;
+                calculator_new_entry = true;
+                return;
+            }
+            calculator_set_value(current);
+        }
+        calculator_accumulator = current;
+        calculator_operator = key;
+        calculator_new_entry = true;
+        return;
+    }
+    if (key == '=') {
+        if (calculator_operator) {
+            if (!calculator_apply(calculator_accumulator, calculator_operator,
+                                  current, &current)) {
+                calculator_error = true;
+                kstrcpy(calculator_display, "Error");
+            } else calculator_set_value(current);
+            calculator_operator = 0;
+        }
+        calculator_new_entry = true;
+    }
+}
+
 static const char* const NOTICE_LINE_1[] = {
     "Local pages work; remote web transport is not ready.",
     "A graphical terminal is not wired up yet.",
