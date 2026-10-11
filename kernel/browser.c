@@ -49,6 +49,9 @@ static u16 remote_status_code;
 static bool remote_loading;
 static bool remote_ready;
 static bool remote_in_tag;
+static bool remote_in_comment;
+static u8 remote_comment_dash_count;
+static u8 remote_comment_probe;
 static bool remote_tag_name_done;
 static bool remote_closing_tag;
 static bool remote_suppress_content;
@@ -220,7 +223,39 @@ static void remote_body(const u8* data, usize length, void* context) {
     if (!data) return;
     for (usize i = 0; i < length; i++) {
         char ch = (char)data[i];
+        if (remote_in_comment) {
+            if (ch == '-') {
+                if (remote_comment_dash_count < 2u) remote_comment_dash_count++;
+            } else if (ch == '>' && remote_comment_dash_count >= 2u) {
+                remote_in_comment = false;
+                remote_comment_dash_count = 0;
+            } else {
+                remote_comment_dash_count = 0;
+            }
+            continue;
+        }
         if (remote_in_tag) {
+            if (remote_comment_probe == 0u && ch == '!' &&
+                remote_tag_length == 0u && !remote_closing_tag) {
+                remote_comment_probe = 1u;
+                continue;
+            }
+            if (remote_comment_probe == 1u) {
+                if (ch == '-') {
+                    remote_comment_probe = 2u;
+                    continue;
+                }
+                remote_comment_probe = 0u;
+            } else if (remote_comment_probe == 2u) {
+                if (ch == '-') {
+                    remote_in_comment = true;
+                    remote_in_tag = false;
+                    remote_comment_dash_count = 0;
+                    remote_comment_probe = 0u;
+                    continue;
+                }
+                remote_comment_probe = 0u;
+            }
             if (ch == '>') {
                 remote_in_tag = false;
                 bool script_or_style = kstrcmp(remote_tag_name, "script") == 0 ||
@@ -237,6 +272,7 @@ static void remote_body(const u8* data, usize length, void* context) {
                 remote_tag_name[0] = 0;
                 remote_tag_name_done = false;
                 remote_closing_tag = false;
+                remote_comment_probe = 0u;
             } else if (ch == '/' && remote_tag_length == 0 &&
                        !remote_tag_name_done) {
                 remote_closing_tag = true;
@@ -258,6 +294,7 @@ static void remote_body(const u8* data, usize length, void* context) {
             remote_in_tag = true;
             remote_closing_tag = false;
             remote_tag_name_done = false;
+            remote_comment_probe = 0u;
             remote_tag_length = 0;
             remote_tag_name[0] = 0;
             continue;
@@ -315,6 +352,9 @@ static void remote_complete(bool success, void* context) {
 
 static void remote_reset_parser(void) {
     remote_in_tag = false;
+    remote_in_comment = false;
+    remote_comment_dash_count = 0;
+    remote_comment_probe = 0;
     remote_tag_name_done = false;
     remote_closing_tag = false;
     remote_suppress_content = false;
