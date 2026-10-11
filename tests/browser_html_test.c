@@ -141,6 +141,40 @@ static void test_preview_scroll_counts_soft_wrapped_rows(void) {
     expect(preview_skip_lines(text, 300, 3) == 285,
            "scroll offset follows the renderer's 95-character row width");
 }
+
+static void test_http_url_parser_normalizes_fragments_and_queries(void) {
+    char host[128], path[128];
+    expect(parse_http_url("http://example.com/path?q=1#section",
+                          host, sizeof(host), path, sizeof(path)),
+           "valid HTTP URL parses");
+    expect(strcmp(host, "example.com") == 0, "hostname extracted");
+    expect(strcmp(path, "/path?q=1") == 0,
+           "fragment is removed from request target");
+    expect(parse_http_url("http://example.com?search=hello#part",
+                          host, sizeof(host), path, sizeof(path)),
+           "query-only URL parses");
+    expect(strcmp(path, "/?search=hello") == 0,
+           "query-only URL receives a slash prefix");
+    expect(parse_http_url("http://example.com:80/", host, sizeof(host),
+                          path, sizeof(path)),
+           "default HTTP port is accepted");
+    expect(strcmp(host, "example.com") == 0, "default port is stripped");
+}
+static void test_http_url_parser_rejects_unsupported_or_malformed_urls(void) {
+    char host[128], path[128];
+    expect(!parse_http_url("https://example.com/", host, sizeof(host),
+                           path, sizeof(path)), "HTTPS is not misrouted as HTTP");
+    expect(!parse_http_url("http://bad host/", host, sizeof(host),
+                           path, sizeof(path)), "hostname spaces rejected");
+    expect(!parse_http_url("http://-bad.example/", host, sizeof(host),
+                           path, sizeof(path)), "leading hyphen rejected");
+    expect(!parse_http_url("http://example..com/", host, sizeof(host),
+                           path, sizeof(path)), "empty hostname label rejected");
+    expect(!parse_http_url("http://example.com:8080/", host, sizeof(host),
+                           path, sizeof(path)), "unsupported port rejected");
+    expect(!parse_http_url("http://example.com/a b", host, sizeof(host),
+                           path, sizeof(path)), "path control and spaces rejected");
+}
 int main(void) {
     test_tags_and_block_boundaries();
     test_scripts_and_styles_are_hidden();
@@ -153,6 +187,8 @@ int main(void) {
     test_title_state_resets_for_new_page();
     test_preview_keyboard_scroll_is_bounded();
     test_preview_scroll_counts_soft_wrapped_rows();
+    test_http_url_parser_normalizes_fragments_and_queries();
+    test_http_url_parser_rejects_unsupported_or_malformed_urls();
     puts("Browser HTML extraction tests passed");
     return 0;
 }
