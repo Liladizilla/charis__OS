@@ -49,6 +49,8 @@ static u16 remote_status_code;
 static bool remote_loading;
 static bool remote_ready;
 static bool remote_in_tag;
+static bool remote_closing_tag;
+static bool remote_suppress_content;
 static char remote_tag_name[8];
 static usize remote_tag_length;
 static bool remote_last_space;
@@ -223,6 +225,8 @@ static bool remote_navigate(const char* url) {
     remote_text[0] = 0;
     remote_status_code = 0;
     remote_in_tag = false;
+    remote_closing_tag = false;
+    remote_suppress_content = false;
     remote_tag_length = 0;
     remote_tag_name[0] = 0;
     remote_last_space = false;
