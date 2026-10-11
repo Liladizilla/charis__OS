@@ -199,10 +199,11 @@ static void draw_mode(void) {
     draw_list(cx + 40, cy + 110, cw - 80, items, 1, w.sel[STEP_MODE]);
 
     text(cx + 40, cy + 210,
-         "Changes are kept on this boot medium only. Nothing on any",
+         "There is no installer yet; this session runs from the boot medium.",
          W_HINT);
     text(cx + 40, cy + 230,
-         "attached drive is touched.", W_HINT);
+         "Setup persists only when an existing writable config file is present.",
+         W_HINT);
 }
 
 static void draw_language(void) {
@@ -330,10 +331,11 @@ static void draw_done(void) {
     text(cx + 40, cy + 172, w.install ? "install to disk" : "run from device", W_FG);
 
     text(cx + 40, cy + 200,
-         "These are kept in memory this boot: the VFS cannot create the",
+         "Config can update an existing writable file, but cannot create",
          W_HINT);
     text(cx + 40, cy + 220,
-         "config file yet, so they reset on restart.", W_HINT);
+         "a missing config file. Persistence depends on that file existing.",
+         W_HINT);
 }
 
 /* ── Footer ───────────────────────────────────────────────────────────── */
