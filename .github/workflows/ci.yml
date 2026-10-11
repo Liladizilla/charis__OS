@@ -4,8 +4,12 @@ on:
   push:
     branches: [main, master]
   pull_request:
-    branches: [main, master]
   workflow_dispatch:
+
+# Avoid wasting runners on superseded commits from the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-test:
@@ -37,6 +41,11 @@ jobs:
 
       - name: Build kernel and boot images
         run: make images
+
+      - name: Test browser HTML text extraction
+        run: |
+          gcc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/browser_html_test.c -Wl,--gc-sections -o /tmp/browser_html_test
+          /tmp/browser_html_test
 
       - name: Build ELF smoke-test disk
         run: make elf-test
