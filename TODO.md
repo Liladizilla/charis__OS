@@ -56,7 +56,8 @@
 - [x] Pipes - pipe.c implemented
 - [x] Shared memory (shm.c)
 - [ ] Unix domain sockets (socket.c is INET-only)
-- [ ] wait()/waitpid() syscall missing (no zombie reaping)
+- [x] Distinguish unused task slots from exited zombies; exited tasks are no longer silently reused
+- [ ] wait()/waitpid() syscall and safe resource reaping still missing
 
 ## Phase 8: Network Stack (PARTIAL - ENABLED BUT INCOMPLETE)
 - [x] Socket API (AF_INET, SOCK_STREAM/SOCK_DGRAM) - socket.c
