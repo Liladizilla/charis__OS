@@ -104,11 +104,11 @@ static void test_unsupported_transfer_encoding_is_rejected(void) {
 }
 static void test_invalid_and_overflow_chunk_sizes_are_rejected(void) {
     static const char invalid[] =
-        "HTTP/1.1 200 OK\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n"
-        "Z\\r\\nnope\\r\\n0\\r\\n\\r\\n";
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "Z\r\nnope\r\n0\r\n\r\n";
     static const char overflow[] =
-        "HTTP/1.1 200 OK\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n"
-        "100000000\\r\\n";
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "100000000\r\n";
     reset_parser();
     http_on_data((const u8*)invalid, sizeof(invalid) - 1u, 0);
     expect(!active && completion_calls == 1 && !completion_success,
