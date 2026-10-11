@@ -49,6 +49,7 @@ static usize remote_title_length;
 static bool remote_in_title;
 static bool remote_title_last_space;
 static usize remote_text_length;
+static usize remote_scroll_lines;
 static u16 remote_status_code;
 static bool remote_loading;
 static bool remote_ready;
@@ -68,6 +69,7 @@ static bool remote_last_space;
 static char file_preview_url[BROWSER_URL_MAX];
 static char file_preview[2048];
 static usize file_preview_length;
+static usize file_scroll_lines;
 static bool file_preview_ready;
 static const u32 C_BG = CHARIS_UI_BACKGROUND;
 static const u32 C_PANEL = CHARIS_UI_PANEL;
@@ -429,6 +431,7 @@ static bool remote_navigate(const char* url) {
     remote_url[sizeof(remote_url) - 1u] = 0;
     remote_text_length = 0;
     remote_text[0] = 0;
+    remote_scroll_lines = 0;
     remote_title_length = 0;
     remote_title[0] = 0;
     remote_title_last_space = false;
@@ -462,6 +465,7 @@ static bool file_path_has_parent(const char* path) {
 static bool load_local_file(const char* url) {
     file_preview_ready = false;
     file_preview_length = 0;
+    file_scroll_lines = 0;
     file_preview[0] = 0;
     if (!url || kstrncmp(url, "file://", 7u) != 0) return false;
     const char* path = url + 7u;
@@ -587,6 +591,37 @@ static void draw_card(u32 x, u32 y, u32 w, const char* eyebrow, const char* titl
     gfx_draw_string(x + 14, y + 56, detail, C_MUTED, FB_TRANSPARENT);
 }
 
+static usize preview_count_lines(const char* text, usize length) {
+    if (!text || !length) return 0;
+    usize lines = 1;
+    for (usize i = 0; i < length; i++)
+        if (text[i] == '\n') lines++;
+    return lines;
+}
+
+static void browser_scroll_preview(bool down) {
+    browser_tab_t* tab = current_tab();
+    if (!tab || !g_framebuffer.initialized) return;
+    bool remote = kstrncmp(tab->address, "http://", 7u) == 0 &&
+                  remote_ready && kstrcmp(tab->address, remote_url) == 0;
+    bool local_file = file_preview_ready &&
+                      kstrcmp(tab->address, file_preview_url) == 0;
+    if (!remote && !local_file) return;
+    usize total = remote
+        ? preview_count_lines(remote_text, remote_text_length)
+        : preview_count_lines(file_preview, file_preview_length);
+    usize visible = g_framebuffer.height > 200u
+        ? (g_framebuffer.height - 180u) / 20u : 1u;
+    if (!visible) visible = 1u;
+    usize maximum = total > visible ? total - visible : 0u;
+    usize* offset = remote ? &remote_scroll_lines : &file_scroll_lines;
+    if (down) {
+        *offset = *offset + 5u > maximum ? maximum : *offset + 5u;
+    } else {
+        *offset = *offset > 5u ? *offset - 5u : 0u;
+    }
+}
+
 static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
     fb_fill_rect(x, y, w, h, C_BG);
     fb_draw_rect(x, y, w, h, C_BORDER);
@@ -645,6 +680,12 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
             gfx_draw_string(x + 24, y + 64, status_line, C_TEXT, FB_TRANSPARENT);
             u32 line_y = y + 94;
             usize pos = 0;
+            usize skipped_lines = 0;
+            while (pos < remote_text_length && skipped_lines < remote_scroll_lines) {
+                while (pos < remote_text_length && remote_text[pos] != '\n') pos++;
+                if (pos < remote_text_length) pos++;
+                skipped_lines++;
+            }
             while (pos < remote_text_length && line_y + 18u < y + h) {
                 char line[96];
                 usize n = 0;
@@ -675,6 +716,12 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
             gfx_draw_string(x + 24, y + 48, address, C_MUTED, FB_TRANSPARENT);
             u32 line_y = y + 78;
             usize pos = 0;
+            usize skipped_lines = 0;
+            while (pos < file_preview_length && skipped_lines < file_scroll_lines) {
+                while (pos < file_preview_length && file_preview[pos] != '\n') pos++;
+                if (pos < file_preview_length) pos++;
+                skipped_lines++;
+            }
             while (pos < file_preview_length && line_y + 18u < y + h) {
                 char line[96];
                 usize n = 0;
@@ -900,6 +947,10 @@ bool browser_handle_key(u8 scancode, bool pressed) {
         tab->address_focus = true;
         tab->select_all = true;
         set_status("Address selected");
+        return true;
+    }
+    if (!tab->address_focus && (code == 0x49 || code == 0x51)) {
+        browser_scroll_preview(code == 0x51);
         return true;
     }
     if (!tab->address_focus) return true;
