@@ -12,6 +12,11 @@
 #define FD_STDOUT 1
 #define FD_STDERR 2
 
+/* SYS_OPEN access modes (Linux-compatible low two bits). */
+#define FD_ACCESS_READ  0x1U
+#define FD_ACCESS_WRITE 0x2U
+#define FD_ACCESS_MASK  (FD_ACCESS_READ | FD_ACCESS_WRITE)
+
 typedef struct vfs_node {
     char name[256];
     u32 flags;
