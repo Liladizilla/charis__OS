@@ -366,8 +366,7 @@ tss:
     dq 0                         ; IST7
     dq 0                         ; Reserved
     dw 0                         ; Reserved
-    dw 0                         ; I/O Map Base Address
-    db 0                         ; I/O Map Base Address high byte
+    dw 104                       ; I/O map starts beyond the 0x67 TSS limit: deny all user port I/O
 
 global tss
 
