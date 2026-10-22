@@ -28,7 +28,16 @@ void timer_handler(reg_frame_t* frame) {
     (void)frame;
     timer_ticks++;
     
-    // Preemption: decrement quantum and reschedule if expired
+    /*
+     * A context switch can suspend this handler on the interrupted task's
+     * stack. Acknowledge the PIC before scheduling so the in-service bit is
+     * cleared even if this task does not run again for a long time. Interrupt
+     * gates keep IF clear here, so acknowledging early does not allow nested
+     * maskable IRQs during the remainder of this handler.
+     */
+    pic_send_eoi(IRQ_TIMER);
+
+    // Preemption: decrement quantum and reschedule if expired.
     task_t* cur = scheduler_current();
     if (cur) {
         if (cur->remaining_quantum > 0) {
@@ -39,7 +48,6 @@ void timer_handler(reg_frame_t* frame) {
             scheduler_schedule();
         }
     }
-    pic_send_eoi(IRQ_TIMER);
 }
 
 u64 timer_get_ticks(void) {
