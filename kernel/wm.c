@@ -107,7 +107,14 @@ void wm_render(void) {
         }
         win = next;
     }
-    
+
+    /*
+     * Sorting rewires each window's next pointer. Publish the sorted head
+     * back to the manager; otherwise wm_windows can point into the middle of
+     * the reordered list and windows become unreachable or the list cycles.
+     */
+    wm_windows = sorted;
+
     // Draw each window
     for (window_t* win = sorted; win; win = win->next) {
         if (win->visible) {
