@@ -84,6 +84,9 @@ static vfs_node_t* fat32_vfs_finddir(vfs_node_t* node, const char* name) {
             child->data = (void*)(uintptr_t)file.cluster;
             child->read = fat32_vfs_read;
             child->write = fat32_vfs_write;
+            /* kmalloc is not guaranteed to return zero-filled memory. */
+            child->open = NULL;
+            child->close = NULL;
             child->readdir = NULL;
             child->finddir = NULL;
             return child;
