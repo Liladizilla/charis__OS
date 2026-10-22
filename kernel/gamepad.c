@@ -45,7 +45,8 @@ bool gamepad_is_connected(void) {
 
 /* Called by USB HID driver when gamepad is detected */
 void gamepad_handle_input(const u8* report, usize len) {
-    if (!report || len < 8) return;
+    /* The current parser reads report[8] for the high button byte. */
+    if (!report || len < 9) return;
     
     g_gamepad_connected = true;
     
@@ -55,7 +56,5 @@ void gamepad_handle_input(const u8* report, usize len) {
     g_gamepad_state.right_x = (s16)(report[4] | (report[5] << 8));
     g_gamepad_state.right_y = (s16)(report[6] | (report[7] << 8));
     
-    if (len >= 8) {
-        g_gamepad_state.buttons = report[7] | (report[8] << 8);
-    }
+    g_gamepad_state.buttons = (u16)report[7] | ((u16)report[8] << 8);
 }
