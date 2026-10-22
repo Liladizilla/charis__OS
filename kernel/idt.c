@@ -81,12 +81,27 @@ void idt_dispatch_handler(reg_frame_t* frame) {
                 frame->error_code & 2 ? "write" : "read",
                 frame->error_code & 4 ? "user" : "kernel");
 
-            // Handle page fault: if not present, allocate page
-            if (!(frame->error_code & 1)) {
+            /*
+             * Demand allocation is only valid for a not-present fault from a
+             * ring-3 task in the lower canonical user address range. Never
+             * turn an arbitrary kernel-mode fault into a new mapping: that can
+             * hide kernel bugs and expose physical memory at unintended VAs.
+             * Fresh pages are cleared before they become visible to userspace.
+             */
+            task_t* fault_task = scheduler_current();
+            if (!(frame->error_code & 1) &&
+                (frame->cs & 3) == 3 &&
+                cr2 < 0x0000800000000000ULL &&
+                fault_task && fault_task->is_user) {
                 u64 phys = pmm_alloc_page();
-                if (phys && vmm_map_page(cr2 & ~0xFFF, phys, 0x02 | (frame->error_code & 4 ? 0x04 : 0))) {
-                    kprintf("Allocated page for 0x%llx\n", cr2 & ~0xFFF);
-                    return; // Continue
+                if (phys) {
+                    kmemset((void*)(uintptr_t)phys, 0, PAGE_SIZE);
+                    if (vmm_map_page(cr2 & ~0xFFFULL, phys, 0x02 | 0x04)) {
+                        kprintf("Allocated zeroed user page for 0x%llx\n",
+                                cr2 & ~0xFFFULL);
+                        return; // Resume the faulting user instruction.
+                    }
+                    pmm_free_page(phys);
                 }
             }
             kprintf("Unhandled page fault\n");
