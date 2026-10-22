@@ -15,6 +15,7 @@
 #define TASK_STACK_SIZE         8192
 #define TASK_MAX_TASKS          32
 #define TASK_DEFAULT_QUANTUM    10
+#define TASK_WAITING_SLEEP       0x534C4550U /* 'SLEP': blocked until event_data deadline */
 
 /* VMA - Virtual Memory Area */
 typedef struct vma {
@@ -94,6 +95,7 @@ bool task_release_pending(void);
 void task_block(task_t* task);
 void task_unblock(task_t* task);
 void task_sleep_ms(u32 ms);
+void task_wake_sleepers(u64 now_ms);
 bool task_prepare_user_space(task_t* task, void* entry_point);
 
 /* Assembly context switch */
