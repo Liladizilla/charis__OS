@@ -64,7 +64,17 @@ void audio_close(audio_stream_t* stream) {
 
 void audio_beep(u32 freq, u32 duration_ms) {
     if (freq < AUDIO_FREQ_MIN || freq > AUDIO_FREQ_MAX) return;
-    
+
+    /*
+     * This API waits for the tone duration. It must not be called from an
+     * interrupt gate or another IF-disabled context: timer_sleep_ms() uses
+     * HLT, and the timer IRQ cannot run while interrupts are disabled.
+     * Callers in such a context must use a future nonblocking beep API.
+     */
+    u64 rflags;
+    asm volatile("pushfq; popq %0" : "=r"(rflags));
+    if (!(rflags & (1ULL << 9))) return;
+
     // PIT channel 2 for PC speaker
     u32 divisor = 1193180 / freq;
     
