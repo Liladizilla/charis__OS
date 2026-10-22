@@ -172,9 +172,9 @@ static u64 syscall_sleep_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
 
 static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a3; (void)a4; (void)a5; (void)a6;
-    if (!a1 || (a2 & ~((u64)FD_ACCESS_MASK)) || a2 == FD_ACCESS_MASK) return (u64)-1;
-    u32 access = (u32)a2;
-    if (access == 0) access = FD_ACCESS_READ;
+    if (!a1 || a2 > FD_OPEN_RDWR) return (u64)-1;
+    u32 access = (a2 == FD_OPEN_RDONLY) ? FD_ACCESS_READ :
+                  (a2 == FD_OPEN_WRONLY) ? FD_ACCESS_WRITE : FD_ACCESS_MASK;
     
     task_t* task = scheduler_current();
     if (!task) return -1;
@@ -205,7 +205,7 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     
     if ((access & FD_ACCESS_READ) && !node->read) return (u64)-1;
     if ((access & FD_ACCESS_WRITE) && !node->write) return (u64)-1;
-    if (node->open && node->open(node, access) != 0) return (u64)-1;
+    if (node->open && node->open(node, (u32)a2) != 0) return (u64)-1;
     return fd_alloc(node, access);
 }
 
