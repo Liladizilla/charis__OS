@@ -27,6 +27,7 @@ void timer_init(u32 frequency_hz) {
 void timer_handler(reg_frame_t* frame) {
     (void)frame;
     timer_ticks++;
+    task_wake_sleepers(timer_get_ms());
     
     /*
      * A context switch can suspend this handler on the interrupted task's
