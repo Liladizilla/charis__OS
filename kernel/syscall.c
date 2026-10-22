@@ -100,6 +100,15 @@ static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
         }
         result = count;
     } else if (f->node->write) {
+        /*
+         * Standard output/error are console devices, not filesystem writes.
+         * Every other writable node must require the explicit write capability;
+         * otherwise a task with CAP_FS_READ can modify files through SYS_WRITE.
+         */
+        if (!task || !security_check_capability(task, CAP_FS_WRITE)) {
+            if (bounce) kfree(bounce);
+            return (u64)-1;
+        }
         result = f->node->write(f->node, f->offset, count, buf);
     }
     if (bounce) kfree(bounce);
