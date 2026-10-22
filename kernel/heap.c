@@ -16,6 +16,23 @@ static heap_block_t* heap_head = NULL;
 static u64 heap_start = 0;
 static usize heap_size = 0;
 
+/* The allocator is shared with IRQ paths (for example, keyboard wakeups).
+ * On this single-CPU kernel, mask maskable interrupts while mutating the
+ * free list so an IRQ cannot re-enter kmalloc/kfree halfway through a split
+ * or merge. This is not an SMP lock; a multi-core port needs a real
+ * irq-saving spinlock. */
+static inline u64 heap_irq_save(void) {
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static inline void heap_irq_restore(u64 flags) {
+    if (flags & (1ULL << 9)) {
+        asm volatile("sti" : : : "memory");
+    }
+}
+
 void heap_init(void* start, usize size) {
     heap_start = (u64)start;
     heap_size = size;
@@ -29,6 +46,8 @@ void heap_init(void* start, usize size) {
 
 void* kmalloc(usize size) {
     if (!heap_head || size == 0) return 0;
+
+    u64 irq_flags = heap_irq_save();
 
     // Basic alignment to 16 bytes
     usize aligned = (size + 15) & ~((usize)15);
@@ -50,10 +69,13 @@ void* kmalloc(usize size) {
             curr->next = new_block;
             curr->free = false;
 
-            return (void*)((u8*)curr + sizeof(heap_block_t));
+            void* result = (void*)((u8*)curr + sizeof(heap_block_t));
+            heap_irq_restore(irq_flags);
+            return result;
         }
         curr = curr->next;
     }
+    heap_irq_restore(irq_flags);
     return NULL;
 }
 
@@ -61,6 +83,7 @@ void kfree(void* ptr) {
     if (!ptr) return;
     if (!heap_head) return;
 
+    u64 irq_flags = heap_irq_save();
     heap_block_t* block = (heap_block_t*)((u8*)ptr - sizeof(heap_block_t));
     block->free = true;
 
@@ -82,4 +105,5 @@ void kfree(void* ptr) {
             block->next->prev = prev;
         }
     }
+    heap_irq_restore(irq_flags);
 }
