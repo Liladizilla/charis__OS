@@ -47,8 +47,10 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
             if (keyboard_get_key(&ch)) { bounce[0] = (u8)ch; bytes = 1; }
         } else if (f->node->read) {
             s64 result = f->node->read(f->node, f->offset, count, bounce);
-            if (result > 0) bytes = (usize)result;
-            else if (result < 0) { kfree(bounce); return (u64)-1; }
+            if (result > 0) {
+                bytes = (usize)result;
+                f->offset += bytes;
+            } else if (result < 0) { kfree(bounce); return (u64)-1; }
             if (bytes > count) bytes = count;
         } else {
             kfree(bounce);
@@ -65,7 +67,11 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
         if (keyboard_get_key(&ch)) { *(char*)buf = ch; return 1; }
         return 0;
     }
-    if (f->node->read) return f->node->read(f->node, f->offset, count, (u8*)buf);
+    if (f->node->read) {
+        s64 result = f->node->read(f->node, f->offset, count, (u8*)buf);
+        if (result > 0) f->offset += (u64)result;
+        return (u64)result;
+    }
     return (u64)-1;
 }
 
@@ -101,6 +107,7 @@ static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
         result = count;
     } else if (f->node->write) {
         result = f->node->write(f->node, f->offset, count, buf);
+        if ((s64)result > 0) f->offset += result;
     }
     if (bounce) kfree(bounce);
     return result;
