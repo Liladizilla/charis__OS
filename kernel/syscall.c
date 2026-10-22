@@ -35,7 +35,8 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     task_t* task = scheduler_current();
 
     fd_entry_t* f = fd_get(fd);
-    if (!f || !f->node || count > SYSCALL_IO_MAX) return -1;
+    if (!f || !f->node || count > SYSCALL_IO_MAX) return (u64)-1;
+    if (fd > FD_STDERR && !(f->flags & FD_ACCESS_READ)) return (u64)-1;
     if (count == 0) return 0;
 
     if (task && task->is_user) {
@@ -78,6 +79,7 @@ static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
 
     fd_entry_t* f = fd_get(fd);
     if (!f || !f->node || count > SYSCALL_IO_MAX) return (u64)-1;
+    if (fd > FD_STDERR && !(f->flags & FD_ACCESS_WRITE)) return (u64)-1;
     if (count == 0) return 0;
 
     u8* bounce = NULL;
@@ -169,16 +171,18 @@ static u64 syscall_sleep_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
 }
 
 static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
-    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    if (!a1) return -1;
+    (void)a3; (void)a4; (void)a5; (void)a6;
+    if (!a1 || (a2 & ~((u64)FD_ACCESS_MASK)) || a2 == FD_ACCESS_MASK) return (u64)-1;
+    u32 access = (u32)a2;
+    if (access == 0) access = FD_ACCESS_READ;
     
     task_t* task = scheduler_current();
     if (!task) return -1;
     
-    // Capability check: need FS_READ to open files
-    if (!security_check_capability(task, CAP_FS_READ)) {
-        return -1; // EPERM
-    }
+    /* Enforce requested access, not just the fact that the caller can read.
+     * SYS_OPEN mode 0 remains the legacy read-only default. */
+    if ((access & FD_ACCESS_READ) && !security_check_capability(task, CAP_FS_READ)) return (u64)-1;
+    if ((access & FD_ACCESS_WRITE) && !security_check_capability(task, CAP_FS_WRITE)) return (u64)-1;
 
     char path[256];
     if (task->is_user) {
@@ -199,7 +203,10 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
         return -1; // EPERM
     }
     
-    return fd_alloc(node, 0);
+    if ((access & FD_ACCESS_READ) && !node->read) return (u64)-1;
+    if ((access & FD_ACCESS_WRITE) && !node->write) return (u64)-1;
+    if (node->open && node->open(node, access) != 0) return (u64)-1;
+    return fd_alloc(node, access);
 }
 
 static u64 syscall_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
