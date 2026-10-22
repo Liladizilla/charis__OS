@@ -48,14 +48,15 @@ void keyboard_handler(reg_frame_t* frame) {
     u8 scancode;
     asm volatile("inb %1, %0" : "=a"(scancode) : "Nd"((u16)KEYBOARD_DATA_PORT));
 
-    // Handle shift keys
-    if (scancode == 0x2A || scancode == 0x36) {
-        shift_held = true;
-        pic_send_eoi(IRQ_KEYBOARD);
-        return;
-    }
-    if (scancode == 0xAA || scancode == 0xB6) {
-        shift_held = false;
+    // Forward modifier transitions too; graphical consumers need them to
+    // maintain their own key state, even though Shift has no standalone ASCII.
+    if (scancode == 0x2A || scancode == 0x36 ||
+        scancode == 0xAA || scancode == 0xB6) {
+        bool pressed = (scancode & 0x80) == 0;
+        if (key_event_hook) {
+            key_event_hook((u8)(scancode & 0x7F), pressed);
+        }
+        shift_held = pressed;
         pic_send_eoi(IRQ_KEYBOARD);
         return;
     }
