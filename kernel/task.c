@@ -401,12 +401,43 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
 }
 
 void task_sleep_ms(u32 ms) {
+    if (ms == 0) return;
+
     task_t* current = scheduler_current();
-    if (current) {
-        current->state = TASK_STATE_BLOCKED;
-        u64 wake_tick = timer_get_ms() + ms;
-        current->event_data = wake_tick;
-        scheduler_yield();
+    if (!current) {
+        /* Early boot or a non-task caller: there is no task to park. */
+        timer_sleep_ms(ms);
+        return;
+    }
+
+    /*
+     * Mark this blocked reason explicitly. event_data is also used by other
+     * event paths, so the timer must not wake arbitrary blocked tasks just
+     * because their event_data happens to look like a deadline.
+     *
+     * The syscall/interrupt gate enters with maskable interrupts disabled;
+     * the task is marked blocked before yielding, so a timer tick cannot be
+     * lost between publishing the deadline and switching away.
+     */
+    current->event_data = timer_get_ms() + (u64)ms;
+    current->waiting_event = TASK_WAITING_SLEEP;
+    current->state = TASK_STATE_BLOCKED;
+    scheduler_yield();
+}
+
+void task_wake_sleepers(u64 now_ms) {
+    for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
+        task_t* task = &task_pool[i];
+        if (task->state != TASK_STATE_BLOCKED ||
+            task->waiting_event != TASK_WAITING_SLEEP) {
+            continue;
+        }
+
+        if (now_ms >= task->event_data) {
+            task->waiting_event = 0;
+            task->event_data = 0;
+            task->state = TASK_STATE_READY;
+        }
     }
 }
 
