@@ -59,17 +59,20 @@ bool vmm_map_page(u64 virt, u64 phys, u64 flags) {
     u64* pml4 = (u64*)get_cr3();
 
     u16 i1 = PML4_INDEX(virt);
-    if (!get_or_create_table(pml4, i1, 0)) return false;
+    if (!get_or_create_table(pml4, i1, flags & PTE_USER)) return false;
+    if (flags & PTE_USER) pml4[i1] |= PTE_USER;
     u64 pml4e = pml4[i1];
     u64* pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
 
     u16 i2 = PDPT_INDEX(virt);
-    if (!get_or_create_table(pdpt, i2, 0)) return false;
+    if (!get_or_create_table(pdpt, i2, flags & PTE_USER)) return false;
+    if (flags & PTE_USER) pdpt[i2] |= PTE_USER;
     u64 pdpte = pdpt[i2];
     u64* pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
 
     u16 i3 = PD_INDEX(virt);
-    if (!get_or_create_table(pd, i3, 0)) return false;
+    if (!get_or_create_table(pd, i3, flags & PTE_USER)) return false;
+    if (flags & PTE_USER) pd[i3] |= PTE_USER;
     u64 pde = pd[i3];
     u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
 
