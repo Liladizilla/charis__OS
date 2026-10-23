@@ -154,6 +154,18 @@ void task_exit_with_status(u32 status) {
     }
     task_defer_release(current);
     scheduler_yield();
+
+    /*
+     * If no runnable task exists, scheduler_yield() can return without a
+     * context switch. Returning from SYS_EXIT would then resume the exited
+     * task (possibly at ring 3) even though its state is ZOMBIE and its stack
+     * has been deferred for release. Exiting is terminal: if the scheduler
+     * cannot switch away, wait for interrupts forever rather than executing
+     * another instruction in the dead task.
+     */
+    for (;;) {
+        asm volatile("sti; hlt" : : : "memory");
+    }
 }
 
 void task_exit(void) {
