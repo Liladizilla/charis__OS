@@ -34,7 +34,6 @@ jobs:
             mtools \
             dosfstools \
             ovmf \
-            libvirt-daemon-system
 
       - name: Verify build toolchain
         run: make check-tools
