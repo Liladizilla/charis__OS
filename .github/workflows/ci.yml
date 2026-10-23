@@ -38,6 +38,7 @@ jobs:
             mtools \
             dosfstools \
             ovmf \
+            python3-pil \
 
       - name: Verify build toolchain
         run: make check-tools
@@ -119,6 +120,79 @@ jobs:
             ./tools/verify-boot.sh build/charisos-vm.iso --uefi --kvm \
               || echo "::warning::UEFI+KVM boot check did not pass on this runner (firmware-dependent) -- see local \`make verify-boot\`"
           fi
+
+      - name: Capture real graphical desktop screenshot
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -u
+          mkdir -p build
+          OVMF_CODE=""
+          for c in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/edk2-ovmf/OVMF_CODE.fd /usr/share/qemu/OVMF.fd; do
+            if [ -f "$c" ]; then OVMF_CODE="$c"; break; fi
+          done
+          if [ -z "$OVMF_CODE" ]; then echo "No OVMF CODE image; screenshot skipped"; exit 0; fi
+          OVMF_VARS=""
+          for c in "${OVMF_CODE%_CODE*}_VARS_4M.fd" "${OVMF_CODE%_CODE*}_VARS.fd" /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd /usr/share/edk2/ovmf/OVMF_VARS.fd /usr/share/edk2-ovmf/OVMF_VARS.fd; do
+            if [ -f "$c" ]; then OVMF_VARS="$c"; break; fi
+          done
+          if [ -z "$OVMF_VARS" ]; then echo "No OVMF VARS image; screenshot skipped"; exit 0; fi
+          cp "$OVMF_VARS" build/desktop-capture-vars.fd
+          qemu-system-x86_64 -machine q35 -m 512M -vga std -nic none -no-reboot \
+            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+            -drive if=pflash,format=raw,file=build/desktop-capture-vars.fd \
+            -cdrom build/charisos-vm.iso -boot menu=off \
+            -serial file:build/desktop-capture-serial.log \
+            -monitor unix:build/desktop-capture-monitor.sock,server,nowait -display none \
+            >build/desktop-capture-qemu.log 2>&1 &
+          QEMU_PID=$!
+          trap 'kill "$QEMU_PID" 2>/dev/null || true; wait "$QEMU_PID" 2>/dev/null || true' EXIT
+          python3 - <<'PY'
+          import os, socket, time
+          path = "build/desktop-capture-monitor.sock"
+          deadline = time.time() + 12
+          while not os.path.exists(path) and time.time() < deadline:
+              time.sleep(0.1)
+          if not os.path.exists(path):
+              raise SystemExit("QEMU monitor did not start")
+          s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          s.settimeout(10)
+          s.connect(path)
+          time.sleep(16)
+          try: s.recv(4096)
+          except socket.timeout: pass
+          s.sendall(b"screendump build/charisos-desktop-preview.ppm\n")
+          time.sleep(1)
+          try: s.recv(4096)
+          except socket.timeout: pass
+          s.sendall(b"quit\n")
+          s.close()
+          PY
+          if [ -s build/charisos-desktop-preview.ppm ]; then
+            python3 - <<'PY'
+          from PIL import Image
+          im = Image.open("build/charisos-desktop-preview.ppm").convert("RGB")
+          im.save("build/charisos-desktop-preview.png")
+          print("Actual QEMU guest screen captured:", im.size)
+          PY
+          else
+            echo "No screenshot file was produced"
+          fi
+
+      - name: Upload desktop preview
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: charisos-desktop-preview
+          path: |
+            build/charisos-desktop-preview.png
+            build/charisos-desktop-preview.ppm
+            build/desktop-capture-serial.log
+            build/desktop-capture-qemu.log
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload boot logs
         if: always()
