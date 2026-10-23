@@ -58,6 +58,8 @@ typedef struct task {
     bool started;
     u64 user_stack_base;
     u64 user_rsp;
+    /* Dedicated zeroed physical pages mapped only into this task as user stack. */
+    u64 user_stack_pages[2];
     process_mm_t mm;
     fd_entry_t fd_table[MAX_FDS];
     void* address_space;

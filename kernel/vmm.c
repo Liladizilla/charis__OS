@@ -126,7 +126,7 @@ u64 vmm_unmap_page_pml4(pml4_t* pml4, u64 virt) {
     u64* pte = &pt[PT_INDEX(virt)];
     if (!(*pte & PTE_PRESENT)) return 0;
 
-    u64 phys = *pte & ~0xFFFULL;
+    u64 phys = *pte & 0x000FFFFFFFFFF000ULL;
     *pte = 0;
     if ((get_cr3() & ~0xFFFULL) == ((u64)pml4 & ~0xFFFULL)) {
         asm volatile("invlpg (%0)" : : "r"(virt) : "memory");
@@ -155,7 +155,7 @@ u64 vmm_get_phys(u64 virt) {
     u64 pte = pt[PT_INDEX(virt)];
     if (!(pte & PTE_PRESENT)) return 0;
 
-    return (pte & ~0xFFFULL) | (virt & 0xFFFULL);
+    return (pte & 0x000FFFFFFFFFF000ULL) | (virt & 0xFFFULL);
 }
 
 void vmm_init(void) {

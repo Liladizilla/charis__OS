@@ -64,6 +64,13 @@ void idt_dispatch_handler(reg_frame_t* frame) {
         // Exception - full register dump
         kprintf("=== EXCEPTION #%d ===\n", frame->vector);
         kprintf("RIP=0x%llx  CS=0x%llx  RFLAGS=0x%llx\n", frame->rip, frame->cs, frame->rflags);
+        /* Preserve the faulting instruction bytes in serial logs so a ring-3
+         * transition failure can be diagnosed from CI without guessing at RIP. */
+        kprintf("RIP bytes:");
+        for (u32 byte_i = 0; byte_i < 16; byte_i++) {
+            kprintf(" %02x", ((const u8*)frame->rip)[byte_i]);
+        }
+        kprintf("\\n");
         kprintf("RSP=0x%llx  SS=0x%llx\n", frame->rsp, frame->ss);
         kprintf("RAX=0x%llx  RBX=0x%llx  RCX=0x%llx  RDX=0x%llx\n", frame->rax, frame->rbx, frame->rcx, frame->rdx);
         kprintf("RSI=0x%llx  RDI=0x%llx  RBP=0x%llx\n", frame->rsi, frame->rdi, frame->rbp);

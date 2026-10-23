@@ -338,7 +338,7 @@ gdt64:
 .data: equ $ - gdt64
     dq 0x0000920000000000        ; Data, ring 0 (present, ring0, writable)
 .user_code: equ $ - gdt64
-    dq 0x0020F80000000000        ; 64-bit code, ring 3 (present, ring3, exec/read, L=1)
+    dq 0x0020FA0000000000        ; 64-bit code, ring 3 (present, ring3, readable, L=1)
 .user_data: equ $ - gdt64
     dq 0x0000F20000000000        ; Data, ring 3 (present, ring3, writable)
 .tss: equ $ - gdt64

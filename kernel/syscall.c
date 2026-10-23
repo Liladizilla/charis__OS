@@ -318,7 +318,7 @@ static bool syscall_copy_user_string(task_t* task, u64 user_address,
         if (address < user_address || address >= 0x0000800000000000ULL) return false;
         pte_t* pte = vmm_walk(task->mm.pml4, address, false);
         if (!pte || !(*pte & VMM_FLAG_PRESENT) || !(*pte & VMM_FLAG_USER)) return false;
-        u64 phys = (*pte & ~0xFFFULL) | (address & 0xFFFULL);
+        u64 phys = (*pte & 0x000FFFFFFFFFF000ULL) | (address & 0xFFFULL);
         destination[i] = *(const char*)(uintptr_t)phys;
         if (!destination[i]) return true;
     }
@@ -338,7 +338,7 @@ static bool syscall_copy_user_data(task_t* task, u64 user_address,
         u64 address = user_address + copied;
         pte_t* pte = vmm_walk(task->mm.pml4, address, false);
         if (!pte || !(*pte & VMM_FLAG_PRESENT) || !(*pte & VMM_FLAG_USER)) return false;
-        u64 phys = (*pte & ~0xFFFULL) | (address & 0xFFFULL);
+        u64 phys = (*pte & 0x000FFFFFFFFFF000ULL) | (address & 0xFFFULL);
         usize chunk = PAGE_SIZE - (usize)(address & (PAGE_SIZE - 1));
         if (chunk > size - copied) chunk = size - copied;
         kmemcpy((u8*)destination + copied, (const void*)(uintptr_t)phys, chunk);
@@ -360,7 +360,7 @@ static bool syscall_copy_to_user_data(task_t* task, u64 user_address,
         pte_t* pte = vmm_walk(task->mm.pml4, address, false);
         if (!pte || !(*pte & VMM_FLAG_PRESENT) ||
             !(*pte & VMM_FLAG_USER) || !(*pte & VMM_FLAG_WRITABLE)) return false;
-        u64 phys = (*pte & ~0xFFFULL) | (address & 0xFFFULL);
+        u64 phys = (*pte & 0x000FFFFFFFFFF000ULL) | (address & 0xFFFULL);
         usize chunk = PAGE_SIZE - (usize)(address & (PAGE_SIZE - 1));
         if (chunk > size - copied) chunk = size - copied;
         kmemcpy((void*)(uintptr_t)phys, (const u8*)source + copied, chunk);
