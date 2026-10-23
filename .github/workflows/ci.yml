@@ -146,13 +146,13 @@ jobs:
             # welcome screen. Enter advances each step and applies defaults.
             sleep 8
             for step in {1..7}; do
-              printf 'sendkey ret\\n'
+              printf 'sendkey ret\n'
               sleep 1
             done
             sleep 4
-            printf 'screendump build/charisos-desktop-preview.ppm\\n'
+            printf 'screendump build/charisos-desktop-preview.ppm\n'
             sleep 2
-            printf 'quit\\n'
+            printf 'quit\n'
           } | timeout 35s qemu-system-x86_64 \\
             -machine q35 -m 512M -vga std -nic none -no-reboot \
             -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
