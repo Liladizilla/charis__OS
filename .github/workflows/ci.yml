@@ -37,8 +37,7 @@ jobs:
             xorriso \
             mtools \
             dosfstools \
-            ovmf \
-            python3-pil \
+            ovmf
 
       - name: Verify build toolchain
         run: make check-tools
