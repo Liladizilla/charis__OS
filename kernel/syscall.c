@@ -48,17 +48,18 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
         } else if (f->node->read) {
             s64 result = f->node->read(f->node, f->offset, count, bounce);
             if (result > 0) {
+                if ((u64)result > count) { kfree(bounce); return (u64)-1; }
                 bytes = (usize)result;
-                f->offset += bytes;
             } else if (result < 0) { kfree(bounce); return (u64)-1; }
-            if (bytes > count) bytes = count;
         } else {
             kfree(bounce);
             return (u64)-1;
         }
         bool copied = !bytes || syscall_copy_to_user_data(task, user_buf, bounce, bytes);
         kfree(bounce);
-        return copied ? bytes : (u64)-1;
+        if (!copied) return (u64)-1;
+        if (fd != FD_STDIN && bytes > 0) f->offset += bytes;
+        return bytes;
     }
 
     void* buf = (void*)user_buf;
@@ -69,6 +70,7 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     }
     if (f->node->read) {
         s64 result = f->node->read(f->node, f->offset, count, (u8*)buf);
+        if (result < 0 || (u64)result > count) return (u64)-1;
         if (result > 0) f->offset += (u64)result;
         return (u64)result;
     }
@@ -106,8 +108,13 @@ static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
         }
         result = count;
     } else if (f->node->write) {
-        result = f->node->write(f->node, f->offset, count, buf);
-        if ((s64)result > 0) f->offset += result;
+        s64 written = f->node->write(f->node, f->offset, count, buf);
+        if (written < 0 || (u64)written > count) {
+            result = (u64)-1;
+        } else {
+            result = (u64)written;
+            if (written > 0) f->offset += (u64)written;
+        }
     }
     if (bounce) kfree(bounce);
     return result;
