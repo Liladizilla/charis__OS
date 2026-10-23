@@ -124,7 +124,7 @@ jobs:
       - name: Capture real graphical desktop screenshot
         if: always()
         continue-on-error: true
-        timeout-minutes: 2
+        timeout-minutes: 1
         shell: bash
         run: |
           set -u
@@ -140,45 +140,28 @@ jobs:
           done
           if [ -z "$OVMF_VARS" ]; then echo "No OVMF VARS image; screenshot skipped"; exit 0; fi
           cp "$OVMF_VARS" build/desktop-capture-vars.fd
-          qemu-system-x86_64 -machine q35 -m 512M -vga std -nic none -no-reboot \
+
+          # Feed two QEMU monitor commands through a shell pipe. No helper
+          # language, generated code, or changes to the C/assembly OS sources.
+          {
+            sleep 20
+            printf 'screendump build/charisos-desktop-preview.ppm\n'
+            sleep 2
+            printf 'quit\n'
+          } | timeout 35s qemu-system-x86_64 \
+            -machine q35 -m 512M -vga std -nic none -no-reboot \
             -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
             -drive if=pflash,format=raw,file=build/desktop-capture-vars.fd \
             -cdrom build/charisos-vm.iso -boot menu=off \
             -serial file:build/desktop-capture-serial.log \
-            -monitor unix:build/desktop-capture-monitor.sock,server,nowait -display none \
-            >build/desktop-capture-qemu.log 2>&1 &
-          QEMU_PID=$!
-          trap 'kill "$QEMU_PID" 2>/dev/null || true; wait "$QEMU_PID" 2>/dev/null || true' EXIT
-          python3 - <<'PY'
-          import os, socket, time
-          path = "build/desktop-capture-monitor.sock"
-          deadline = time.time() + 12
-          while not os.path.exists(path) and time.time() < deadline:
-              time.sleep(0.1)
-          if not os.path.exists(path):
-              raise SystemExit("QEMU monitor did not start")
-          s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-          s.settimeout(10)
-          s.connect(path)
-          time.sleep(16)
-          try: s.recv(4096)
-          except socket.timeout: pass
-          s.sendall(b"screendump build/charisos-desktop-preview.ppm\n")
-          time.sleep(1)
-          try: s.recv(4096)
-          except socket.timeout: pass
-          s.sendall(b"quit\n")
-          s.close()
-          PY
+            -monitor stdio -display none \
+            >build/desktop-capture-qemu.log 2>&1 || true
+
           if [ -s build/charisos-desktop-preview.ppm ]; then
-            python3 - <<'PY'
-          from PIL import Image
-          im = Image.open("build/charisos-desktop-preview.ppm").convert("RGB")
-          im.save("build/charisos-desktop-preview.png")
-          print("Actual QEMU guest screen captured:", im.size)
-          PY
+            file build/charisos-desktop-preview.ppm
+            echo "Guest display dump captured as PPM."
           else
-            echo "No screenshot file was produced"
+            echo "QEMU did not produce a screenshot; inspect desktop-capture-qemu.log."
           fi
 
       - name: Upload desktop preview
@@ -187,7 +170,6 @@ jobs:
         with:
           name: charisos-desktop-preview
           path: |
-            build/charisos-desktop-preview.png
             build/charisos-desktop-preview.ppm
             build/desktop-capture-serial.log
             build/desktop-capture-qemu.log
