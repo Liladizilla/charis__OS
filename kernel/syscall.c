@@ -47,16 +47,20 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
             if (keyboard_get_key(&ch)) { bounce[0] = (u8)ch; bytes = 1; }
         } else if (f->node->read) {
             s64 result = f->node->read(f->node, f->offset, count, bounce);
+            if (result < 0 || (u64)result > count) {
+                kfree(bounce);
+                return (u64)-1;
+            }
             if (result > 0) bytes = (usize)result;
-            else if (result < 0) { kfree(bounce); return (u64)-1; }
-            if (bytes > count) bytes = count;
         } else {
             kfree(bounce);
             return (u64)-1;
         }
         bool copied = !bytes || syscall_copy_to_user_data(task, user_buf, bounce, bytes);
         kfree(bounce);
-        return copied ? bytes : (u64)-1;
+        if (!copied) return (u64)-1;
+        if (fd != FD_STDIN && bytes > 0) f->offset += bytes;
+        return bytes;
     }
 
     void* buf = (void*)user_buf;
@@ -65,7 +69,12 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
         if (keyboard_get_key(&ch)) { *(char*)buf = ch; return 1; }
         return 0;
     }
-    if (f->node->read) return f->node->read(f->node, f->offset, count, (u8*)buf);
+    if (f->node->read) {
+        s64 result = f->node->read(f->node, f->offset, count, (u8*)buf);
+        if (result < 0 || (u64)result > count) return (u64)-1;
+        if (result > 0) f->offset += (u64)result;
+        return (u64)result;
+    }
     return (u64)-1;
 }
 
@@ -109,7 +118,13 @@ static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
             if (bounce) kfree(bounce);
             return (u64)-1;
         }
-        result = f->node->write(f->node, f->offset, count, buf);
+        s64 written = f->node->write(f->node, f->offset, count, buf);
+        if (written < 0 || (u64)written > count) {
+            result = (u64)-1;
+        } else {
+            result = (u64)written;
+            if (written > 0) f->offset += (u64)written;
+        }
     }
     if (bounce) kfree(bounce);
     return result;
