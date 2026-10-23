@@ -41,6 +41,10 @@ void task_init(void) {
         task_pool[i].mm.heap_end = 0;
         task_pool[i].mm.stack_top = 0;
         task_pool[i].mm.vmas = NULL;
+        task_pool[i].user_stack_base = 0;
+        task_pool[i].user_rsp = 0;
+        task_pool[i].user_stack_pages[0] = 0;
+        task_pool[i].user_stack_pages[1] = 0;
         
         // Initialize fd table
         for (int j = 0; j < MAX_FDS; j++) {
@@ -227,6 +231,24 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     *(u64*)task->stack_canary_addr = 0xDEADC0DEDEADC0DEULL;
 }
 
+static void task_release_user_stack_pages(task_t* task, pml4_t* pml4) {
+    if (!task) return;
+    const u64 top = 0x00007FFFFFFFE000ULL;
+    const u64 start = top - (2 * PAGE_SIZE);
+
+    for (u32 i = 0; i < 2; i++) {
+        u64 phys = task->user_stack_pages[i];
+        if (!phys) continue;
+
+        /* Remove the user mapping before returning its owned frame to PMM. */
+        u64 mapped = pml4 ? vmm_unmap_page_pml4(pml4, start + (i * PAGE_SIZE)) : 0;
+        pmm_free_page(mapped ? mapped : phys);
+        task->user_stack_pages[i] = 0;
+    }
+    task->user_stack_base = 0;
+    task->user_rsp = 0;
+}
+
 bool task_prepare_user_space(task_t* task, void* entry_point) {
     if (!task || !task->address_space || !entry_point) {
         return false;
@@ -259,6 +281,7 @@ bool task_prepare_user_space(task_t* task, void* entry_point) {
     for (u32 i = 0; i < 2; i++) {
         u64 phys = pmm_alloc_page();
         if (!phys) {
+            task_release_user_stack_pages(task, pml4);
             return false;
         }
         task->user_stack_pages[i] = phys;
@@ -266,6 +289,7 @@ bool task_prepare_user_space(task_t* task, void* entry_point) {
 
         if (!vmm_map_page_pml4(pml4, user_stack_start + (i * PAGE_SIZE), phys,
                 VMM_FLAG_PRESENT | VMM_FLAG_USER | VMM_FLAG_WRITABLE | VMM_FLAG_NX)) {
+            task_release_user_stack_pages(task, pml4);
             return false;
         }
     }
