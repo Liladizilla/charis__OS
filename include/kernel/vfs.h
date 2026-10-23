@@ -12,6 +12,14 @@
 #define FD_STDOUT 1
 #define FD_STDERR 2
 
+/* Normalized descriptor rights, separate from SYS_OPEN's access-mode ABI. */
+#define FD_ACCESS_READ  0x1U
+#define FD_ACCESS_WRITE 0x2U
+#define FD_ACCESS_MASK  (FD_ACCESS_READ | FD_ACCESS_WRITE)
+#define FD_OPEN_RDONLY  0U
+#define FD_OPEN_WRONLY  1U
+#define FD_OPEN_RDWR    2U
+
 typedef struct vfs_node {
     char name[256];
     u32 flags;
