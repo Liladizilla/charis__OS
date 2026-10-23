@@ -215,6 +215,8 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->mm.heap_end = 0;
     task->mm.stack_top = 0;
     task->mm.vmas = NULL;
+    task->user_stack_base = 0;
+    task->user_rsp = 0;
     task->user_stack_pages[0] = 0;
     task->user_stack_pages[1] = 0;
     task->event_data = 0;
