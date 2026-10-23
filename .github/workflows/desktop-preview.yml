@@ -1,0 +1,129 @@
+name: Desktop Preview
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/desktop-preview.yml"
+      - "boot/**"
+      - "kernel/**"
+      - "include/**"
+      - "iso/**"
+      - "Makefile"
+      - "link.ld"
+      - "tools/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture-desktop:
+    name: Boot graphical desktop and capture screenshot
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install boot and screenshot dependencies
+        timeout-minutes: 10
+        run: |
+          sudo find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' {} +
+          timeout 180s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 update -qq
+          timeout 600s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 install -y -qq \
+            build-essential nasm qemu-system-x86 grub-pc-bin grub-common xorriso mtools dosfstools ovmf python3-pil
+
+      - name: Build boot images
+        run: |
+          make check-tools
+          make images
+
+      - name: Capture the graphical screen after boot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build
+          OVMF_CODE=""
+          for candidate in \
+            /usr/share/OVMF/OVMF_CODE_4M.fd \
+            /usr/share/OVMF/OVMF_CODE.fd \
+            /usr/share/edk2/ovmf/OVMF_CODE.fd \
+            /usr/share/edk2-ovmf/OVMF_CODE.fd \
+            /usr/share/qemu/OVMF.fd; do
+            if [ -f "$candidate" ]; then OVMF_CODE="$candidate"; break; fi
+          done
+          test -n "$OVMF_CODE" || { echo "No OVMF CODE image found"; exit 1; }
+
+          OVMF_VARS=""
+          for candidate in \
+            "${OVMF_CODE%_CODE*}_VARS_4M.fd" \
+            "${OVMF_CODE%_CODE*}_VARS.fd" \
+            /usr/share/OVMF/OVMF_VARS_4M.fd \
+            /usr/share/OVMF/OVMF_VARS.fd \
+            /usr/share/edk2/ovmf/OVMF_VARS.fd \
+            /usr/share/edk2-ovmf/OVMF_VARS.fd; do
+            if [ -f "$candidate" ]; then OVMF_VARS="$candidate"; break; fi
+          done
+          test -n "$OVMF_VARS" || { echo "No matching OVMF VARS image found"; exit 1; }
+          cp "$OVMF_VARS" build/desktop-preview-vars.fd
+
+          qemu-system-x86_64 \
+            -machine q35 -m 512M -vga std -nic none -no-reboot \
+            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
+            -drive if=pflash,format=raw,file=build/desktop-preview-vars.fd \
+            -cdrom build/charisos-vm.iso \
+            -boot menu=off \
+            -serial file:build/desktop-preview-serial.log \
+            -monitor unix:build/desktop-preview-monitor.sock,server,nowait \
+            -display none \
+            >build/desktop-preview-qemu.log 2>&1 &
+          QEMU_PID=$!
+          cleanup() { kill "$QEMU_PID" 2>/dev/null || true; wait "$QEMU_PID" 2>/dev/null || true; }
+          trap cleanup EXIT
+
+          # Connect to QEMU's human monitor, let firmware and the kernel run,
+          # then save the actual guest display. This is a real VM capture, not a mockup.
+          python3 - <<'PY'
+          import os, socket, time, sys
+          path = "build/desktop-preview-monitor.sock"
+          deadline = time.time() + 15
+          while not os.path.exists(path):
+              if time.time() > deadline:
+                  raise SystemExit("QEMU monitor socket did not appear")
+              time.sleep(0.1)
+          sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+          sock.settimeout(45)
+          sock.connect(path)
+          time.sleep(18)
+          sock.recv(4096)
+          sock.sendall(b"screendump build/charisos-desktop-preview.ppm\\n")
+          time.sleep(2)
+          sock.recv(4096)
+          sock.sendall(b"quit\\n")
+          sock.close()
+          PY
+
+          test -s build/charisos-desktop-preview.ppm
+          python3 - <<'PY'
+          from PIL import Image
+          image = Image.open("build/charisos-desktop-preview.ppm").convert("RGB")
+          image.save("build/charisos-desktop-preview.png")
+          print("Captured guest screen:", image.size)
+          PY
+
+      - name: Upload desktop screenshot and boot diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: charisos-desktop-preview
+          path: |
+            build/charisos-desktop-preview.png
+            build/charisos-desktop-preview.ppm
+            build/desktop-preview-serial.log
+            build/desktop-preview-qemu.log
+          if-no-files-found: warn
+          retention-days: 14
