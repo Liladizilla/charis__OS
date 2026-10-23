@@ -14,7 +14,7 @@ static bool elf_write_user(pml4_t* pml4, u64 address, const void* source, usize 
         u64 current = address + copied;
         pte_t* pte = vmm_walk(pml4, current, false);
         if (!pte || !(*pte & VMM_FLAG_PRESENT)) return false;
-        u64 phys = (*pte & ~0xFFFULL) | (current & (PAGE_SIZE - 1));
+        u64 phys = (*pte & 0x000FFFFFFFFFF000ULL) | (current & (PAGE_SIZE - 1));
         usize chunk = PAGE_SIZE - (usize)(current & (PAGE_SIZE - 1));
         if (chunk > size - copied) chunk = size - copied;
         kmemcpy((void*)(uintptr_t)phys, (const u8*)source + copied, chunk);
@@ -77,7 +77,7 @@ static bool elf_load_segment(pml4_t* pml4, int fd, const elf64_phdr_t* phdr) {
             u64 vaddr = phdr->p_vaddr + copied + written;
             pte_t* pte = vmm_walk(pml4, vaddr, false);
             if (!pte || !(*pte & VMM_FLAG_PRESENT)) return false;
-            u64 phys = (*pte & ~0xFFFULL) | (vaddr & (PAGE_SIZE - 1));
+            u64 phys = (*pte & 0x000FFFFFFFFFF000ULL) | (vaddr & (PAGE_SIZE - 1));
             usize page_bytes = PAGE_SIZE - (usize)(vaddr & (PAGE_SIZE - 1));
             usize bytes = chunk - written;
             if (bytes > page_bytes) bytes = page_bytes;
