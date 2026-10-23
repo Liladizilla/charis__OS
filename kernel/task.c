@@ -6,6 +6,8 @@
 #include <kernel/vmm.h>
 #include <kernel/security.h>
 #include <kernel/signal.h>
+#include <kernel/pmm.h>
+#include <kernel/string.h>
 
 static task_t task_pool[TASK_MAX_TASKS];
 static task_t* task_list = NULL;
@@ -209,6 +211,8 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->mm.heap_end = 0;
     task->mm.stack_top = 0;
     task->mm.vmas = NULL;
+    task->user_stack_pages[0] = 0;
+    task->user_stack_pages[1] = 0;
     task->event_data = 0;
     task->waiting_event = 0;
 
@@ -240,22 +244,35 @@ bool task_prepare_user_space(task_t* task, void* entry_point) {
         }
     }
 
-    u64 kernel_stack_start = task->stack_base & ~0xFFFULL;
-    u64 kernel_stack_end = ((task->stack_base + TASK_STACK_SIZE + 0xFFFULL) & ~0xFFFULL);
-    u64 user_stack_top = 0x00007FFFFFFFE000ULL;
-    u64 user_stack_start = user_stack_top - (kernel_stack_end - kernel_stack_start);
+    /*
+     * Never map the kmalloc-backed kernel stack into ring 3. kmalloc only
+     * guarantees 16-byte alignment, so rounding its bounds to pages can
+     * expose neighboring heap blocks and allocator headers to user code.
+     *
+     * Give user mode two dedicated physical pages instead. Physical memory
+     * is identity mapped during current boot, so clear each page before it
+     * becomes visible in the user address space.
+     */
+    const u64 user_stack_top = 0x00007FFFFFFFE000ULL;
+    const u64 user_stack_start = user_stack_top - (2 * PAGE_SIZE);
 
-    for (u64 addr = kernel_stack_start; addr < kernel_stack_end; addr += PAGE_SIZE) {
-        u64 phys = vmm_get_phys(addr);
-        u64 user_addr = user_stack_start + (addr - kernel_stack_start);
-        if (!phys || !vmm_map_page_pml4(pml4, user_addr, phys,
-                VMM_FLAG_PRESENT | VMM_FLAG_USER | VMM_FLAG_WRITABLE)) {
+    for (u32 i = 0; i < 2; i++) {
+        u64 phys = pmm_alloc_page();
+        if (!phys) {
+            return false;
+        }
+        task->user_stack_pages[i] = phys;
+        kmemset((void*)phys, 0, PAGE_SIZE);
+
+        if (!vmm_map_page_pml4(pml4, user_stack_start + (i * PAGE_SIZE), phys,
+                VMM_FLAG_PRESENT | VMM_FLAG_USER | VMM_FLAG_WRITABLE | VMM_FLAG_NX)) {
             return false;
         }
     }
 
     task->user_stack_base = user_stack_start;
     task->user_rsp = user_stack_top;
+    task->mm.stack_top = user_stack_top;
     ((u64*)task->rsp)[9] = user_stack_top;
     task->mm.pml4 = pml4;
     return true;
