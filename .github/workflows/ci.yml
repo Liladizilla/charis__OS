@@ -153,7 +153,7 @@ jobs:
             printf 'screendump build/charisos-desktop-preview.ppm\n'
             sleep 2
             printf 'quit\n'
-          } | timeout 35s qemu-system-x86_64 \\
+          } | timeout 35s qemu-system-x86_64 \
             -machine q35 -m 512M -vga std -nic none -no-reboot \
             -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
             -drive if=pflash,format=raw,file=build/desktop-capture-vars.fd \
