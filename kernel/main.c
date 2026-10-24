@@ -12,6 +12,7 @@
 #include <kernel/shell.h>
 #include <kernel/printf.h>
 #include <kernel/net.h>
+#include <kernel/socket.h>
 #include <kernel/net_stack.h>
 #include <kernel/ata.h>
 #include <kernel/fs.h>
@@ -114,6 +115,7 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('S');
     syscall_init();
     BOOT_MARK('C');
+    socket_init();
     graphics_init();
     BOOT_MARK('G');
 
