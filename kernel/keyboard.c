@@ -10,6 +10,21 @@ static u32 keyboard_read_pos = 0;
 static u32 keyboard_write_pos = 0;
 static bool shift_held = false;
 
+/* Single-CPU producer/consumer synchronization. The keyboard IRQ already
+ * runs with IF clear; readers briefly mask interrupts so the IRQ cannot move
+ * the write index between checking and consuming a queued character. */
+static inline u64 keyboard_irq_save(void) {
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static inline void keyboard_irq_restore(u64 flags) {
+    if (flags & (1ULL << 9)) {
+        asm volatile("sti" : : : "memory");
+    }
+}
+
 const char keyboard_scancode_set1[128] = {
     0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
     '\t', 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', '\n',
@@ -104,16 +119,23 @@ void keyboard_handler(reg_frame_t* frame) {
 
 bool keyboard_get_key(char* out) {
     if (!out) return false;
+
+    u64 irq_flags = keyboard_irq_save();
     if (keyboard_read_pos != keyboard_write_pos) {
         *out = keyboard_buffer[keyboard_read_pos];
         keyboard_read_pos = (keyboard_read_pos + 1) % 256;
+        keyboard_irq_restore(irq_flags);
         return true;
     }
+    keyboard_irq_restore(irq_flags);
     return false;
 }
 
 bool keyboard_has_input(void) {
-    return keyboard_read_pos != keyboard_write_pos;
+    u64 irq_flags = keyboard_irq_save();
+    bool has_input = keyboard_read_pos != keyboard_write_pos;
+    keyboard_irq_restore(irq_flags);
+    return has_input;
 }
 
 void keyboard_read_line(char* buffer, usize max_len) {
