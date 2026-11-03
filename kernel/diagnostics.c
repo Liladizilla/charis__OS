@@ -22,21 +22,10 @@ void diag_collect_stats(system_stats_t* stats) {
     if (!stats) return;
     stats->uptime_ms = timer_get_ms();
     
-    /* A partially initialized scheduler has no current task yet. Bound the
-     * walk so a damaged task ring cannot wedge the diagnostics screen. */
-    u32 active = 0, total = 0;
-    task_t* cur = scheduler_current();
-    task_t* t = cur;
-    for (u32 i = 0; t && i < TASK_MAX_TASKS; i++) {
-        total++;
-        if (t->state == TASK_STATE_RUNNING || t->state == TASK_STATE_READY)
-            active++;
-        t = t->next;
-        if (t == cur) break;
-    }
-    
-    stats->processes_active = active;
-    stats->processes_total = total;
+    /* Read the task table, not the ready-list tail: current_task can point
+     * in the middle of the list, and a forward walk would omit earlier tasks. */
+    task_get_counts(&stats->processes_active, &stats->processes_total,
+                    &stats->processes_blocked);
     
     // Memory stats from PMM
     stats->memory_used = pmm_used_pages() * 4; // KB
