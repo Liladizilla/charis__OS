@@ -93,7 +93,7 @@ void config_load(const char* path) {
         return;
     }
     int length = node->read(node, 0, sizeof(buffer) - 1, (u8*)buffer);
-    if (length <= 0 || (u64)length > node->size) {
+    if (length <= 0 || (u64)length != node->size) {
         vga_puts("Config: Settings file empty or unreadable\n");
         return;
     }
@@ -181,7 +181,7 @@ bool config_save(const char* path) {
     /* FAT32 fs_write() extends files but does not shrink them. When a new
      * settings snapshot is shorter than the old one, overwrite the remainder
      * with blank lines so old keys/text cannot survive beyond the new EOF. */
-    if (node->size > sizeof(output)) {
+    if (node->size >= sizeof(output)) {
         vga_puts("Config: Existing settings file exceeds the 4096-byte safety limit\n");
         return false;
     }
