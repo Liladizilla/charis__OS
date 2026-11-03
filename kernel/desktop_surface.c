@@ -104,3 +104,12 @@ void desktop_surface_render(void) {
     draw_status_widget();
     draw_notification_widget();
 }
+
+/* Return the shortcut under the pointer: 0 browser, 1 files, 2 terminal. */
+int desktop_surface_hit_test(int mx, int my) {
+    if (mx < 12 || mx >= 66 || my < 28 || my >= 274) return -1;
+    u32 slot = (u32)(my - 28) / 82;
+    if (slot >= 3) return -1;
+    if ((u32)(my - 28) % 82 >= 68) return -1;
+    return (int)slot;
+}
