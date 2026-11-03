@@ -33,3 +33,6 @@ void irq_init(void);
 void irq_register_handler(u8 irq, void (*handler)(reg_frame_t*));
 void irq_dispatch(u8 irq, reg_frame_t* frame);
 
+/* IRQ12 delivery count, separate from valid three-byte mouse packets. */
+u32 mouse_irq_count(void);
+
