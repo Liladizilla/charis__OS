@@ -39,6 +39,7 @@
 #include <kernel/logo.h>
 #include <kernel/fb.h>
 #include <kernel/mouse.h>
+#include <kernel/usb.h>
 #include <kernel/shell_ui.h>
 
 /* The multiboot2 info pointer arrives zero-extended in RDI, so it is a 64-bit
@@ -144,6 +145,7 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('d');
     pci_scan();
     BOOT_MARK('P');
+    usb_init();
     driver_scan_and_bind();
     BOOT_MARK('b');
     config_init();
