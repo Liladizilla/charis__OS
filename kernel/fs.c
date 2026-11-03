@@ -64,6 +64,11 @@ static u32 total_clusters;
  * which hangs the kernel during config_load() at boot. */
 static bool fs_mounted = false;
 
+bool fs_is_mounted(void) {
+    return fs_mounted;
+}
+
+
 static char fat_upper(char value) {
     if (value >= 'a' && value <= 'z') return (char)(value - 'a' + 'A');
     return value;

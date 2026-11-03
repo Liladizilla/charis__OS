@@ -1,10 +1,11 @@
-/* config.h - System configuration for CharisOS */
+/* config.h - Type-safe persistent system configuration */
 #pragma once
 #include <kernel/types.h>
 
 #define CONFIG_MAX_ENTRIES 64
 #define CONFIG_KEY_MAX     32
 #define CONFIG_VALUE_MAX   256
+#define CONFIG_FILE_PATH   "/CHARISOS.CFG"
 
 typedef enum {
     CONFIG_TYPE_INT,
@@ -14,13 +15,17 @@ typedef enum {
 
 typedef struct {
     char key[CONFIG_KEY_MAX];
-    char value[CONFIG_VALUE_MAX];
     config_type_t type;
+    union {
+        s32 integer;
+        bool boolean;
+        char string[CONFIG_VALUE_MAX];
+    } value;
 } config_entry_t;
 
 void config_init(void);
 void config_load(const char* path);
-void config_save(const char* path);
+bool config_save(const char* path);
 
 int config_get_int(const char* key, int default_value);
 const char* config_get_string(const char* key, const char* default_value);

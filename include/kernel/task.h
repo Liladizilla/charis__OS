@@ -69,6 +69,7 @@ typedef struct task {
 task_t* task_allocate(void);
 u32 task_next_pid(void);
 task_t* task_find_by_pid(u32 pid);
+void task_get_counts(u32* active, u32* total, u32* blocked);
 
 typedef void (*task_func_t)(void* arg);
 

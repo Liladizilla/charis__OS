@@ -77,6 +77,28 @@ u32 task_next_pid(void) {
     return next_pid++;
 }
 
+/* Read the fixed task table rather than walking the ready queue from the
+ * current task (which omits tasks linked before current_task). On this
+ * single-core kernel, preserve the caller's interrupt state during the scan. */
+void task_get_counts(u32* active, u32* total, u32* blocked) {
+    u64 flags;
+    __asm__ volatile("pushfq; popq %0; cli" : "=r"(flags) :: "memory");
+    u32 running_ready = 0, allocated = 0, waiting = 0;
+    for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
+        u32 state = task_pool[i].state;
+        if (state == TASK_STATE_UNUSED) continue;
+        allocated++;
+        if (state == TASK_STATE_RUNNING || state == TASK_STATE_READY)
+            running_ready++;
+        else if (state == TASK_STATE_BLOCKED)
+            waiting++;
+    }
+    __asm__ volatile("pushq %0; popfq" :: "r"(flags) : "memory", "cc");
+    if (active) *active = running_ready;
+    if (total) *total = allocated;
+    if (blocked) *blocked = waiting;
+}
+
 /* Search the fixed task table by PID. Zombie records remain discoverable until
  * a future wait/reap path explicitly releases them. */
 task_t* task_find_by_pid(u32 pid) {

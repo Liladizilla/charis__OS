@@ -4,14 +4,91 @@
 #include <kernel/scheduler.h>
 #include <kernel/task.h>
 #include <kernel/memory.h>
+#include <kernel/io.h>
 
 static char keyboard_buffer[256];
 static u32 keyboard_read_pos = 0;
 static u32 keyboard_write_pos = 0;
 static bool shift_held = false;
 volatile u32 g_keyboard_irqs = 0;
+static bool keyboard_ready = false;
 
 u32 keyboard_irq_count(void) { return g_keyboard_irqs; }
+bool keyboard_controller_ready(void) { return keyboard_ready; }
+
+static bool ps2_wait_write(void) {
+    for (volatile u32 i = 0; i < 4000; i++) {
+        if (!(inb(KEYBOARD_STATUS_PORT) & KEYBOARD_STATUS_INBUF)) return true;
+    }
+    return false;
+}
+
+static bool ps2_wait_read(u8* value) {
+    if (!value) return false;
+    for (volatile u32 i = 0; i < 4000; i++) {
+        u8 status = inb(KEYBOARD_STATUS_PORT);
+        if (status & KEYBOARD_STATUS_OUTBUF) {
+            u8 data = inb(KEYBOARD_DATA_PORT);
+            /* The auxiliary port can share the controller output queue. */
+            if (status & 0x20) continue;
+            *value = data;
+            return true;
+        }
+    }
+    return false;
+}
+
+static void ps2_drain_keyboard_output(void) {
+    for (volatile u32 i = 0; i < 32; i++) {
+        if (!(inb(KEYBOARD_STATUS_PORT) & KEYBOARD_STATUS_OUTBUF)) break;
+        (void)inb(KEYBOARD_DATA_PORT);
+    }
+}
+
+static bool ps2_controller_command(u8 command) {
+    if (!ps2_wait_write()) return false;
+    outb(KEYBOARD_COMMAND_PORT, command);
+    return true;
+}
+
+static bool ps2_keyboard_command(u8 command) {
+    if (!ps2_wait_write()) return false;
+    outb(KEYBOARD_DATA_PORT, command);
+    u8 response = 0;
+    if (!ps2_wait_read(&response)) return false;
+    if (response == 0xFA) return true;
+    if (response == 0xFE && ps2_wait_write()) {
+        outb(KEYBOARD_DATA_PORT, command);
+        return ps2_wait_read(&response) && response == 0xFA;
+    }
+    return false;
+}
+
+/* Configure the first 8042 port instead of merely unmasking IRQ1. Firmware
+ * settings are preserved where possible; translation and IRQ1 are explicitly
+ * enabled so the set-1 decoder receives the format it understands. */
+static bool keyboard_controller_init(void) {
+    ps2_drain_keyboard_output();
+    if (!ps2_controller_command(0xAD)) return false; /* disable port 1 */
+    ps2_drain_keyboard_output();
+
+    u8 config = 0;
+    bool config_ok = ps2_controller_command(0x20) && ps2_wait_read(&config);
+    if (config_ok) {
+        config &= (u8)~0x10; /* enable first-port clock */
+        config |= 0x41;      /* IRQ1 + set-1 translation */
+        if (!ps2_controller_command(0x60) || !ps2_wait_write()) return false;
+        outb(KEYBOARD_DATA_PORT, config);
+    }
+
+    if (!ps2_controller_command(0xAE)) return false; /* enable port 1 */
+
+    /* Stop any inherited key stream, then explicitly enable device scanning. */
+    bool scanning = ps2_keyboard_command(0xF5);
+    bool enabled = ps2_keyboard_command(0xF4);
+    ps2_drain_keyboard_output();
+    return config_ok && scanning && enabled;
+}
 
 const char keyboard_scancode_set1[128] = {
     0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
@@ -32,9 +109,12 @@ const char keyboard_scancode_set1_shift[128] = {
 };
 
 void keyboard_init(void) {
-    /* Register IRQ handler */
+    keyboard_ready = keyboard_controller_init();
+    /* Register the ISR even when the controller did not answer; the settings
+     * panel can then distinguish missing hardware from an unhandled IRQ. */
     irq_register_handler(IRQ_KEYBOARD, keyboard_handler);
-    vga_puts("Keyboard initialized\n");
+    if (keyboard_ready) vga_puts("Keyboard: PS/2 controller and scanning enabled\n");
+    else vga_puts_error("Keyboard: PS/2 initialization incomplete; input may be unavailable");
 }
 
 /* Optional sink for raw scancodes. The ASCII buffer cannot express keys that

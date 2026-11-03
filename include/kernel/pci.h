@@ -6,12 +6,20 @@
 #define PCI_MAX_DEV      32
 #define PCI_MAX_FUNC     8
 
+/* PCI configuration dword at offset 0x08:
+ * byte 0 revision, byte 1 programming interface,
+ * byte 2 subclass, byte 3 base class. */
+#define PCI_CLASS_CODE(value)    ((u8)(((u32)(value) >> 24) & 0xFFU))
+#define PCI_SUBCLASS_CODE(value) ((u8)(((u32)(value) >> 16) & 0xFFU))
+
 typedef struct {
     u16 vendor_id;
     u16 device_id;
     u8 bus, device, function;
-    u16 bar[6];
+    u32 bar[6];
     u8 irq;
+    u8 revision;
+    u8 prog_if;
     u8 pci_class;
     u8 pci_subclass;
     bool present;

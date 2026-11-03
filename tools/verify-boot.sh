@@ -285,8 +285,8 @@ grep -q 'Hello from user mode!' "$LOG" \
     || fail "ring-3 task did not complete its print syscall"
 
 if [ -n "$ELF_TEST_DISK" ]; then
-    grep -q 'ELF_EXEC_OK' "$LOG" \
-        || fail "ELF image did not execute its user-mode smoke test"
+    grep -q 'CEX_EXEC_OK' "$LOG" \
+        || fail "CEX-wrapped ELF did not execute its user-mode smoke test"
 else
     grep -q 'Back in user mode after yield.' "$LOG" \
         || fail "ring-3 task did not resume after yielding to the kernel task"
@@ -326,7 +326,7 @@ if command -v sha256sum >/dev/null 2>&1; then
 fi
 
 if [ -n "$ELF_TEST_DISK" ]; then
-    echo "PASS: kernel booted and executed the ELF smoke test  ($IMAGE with $ELF_TEST_DISK)"
+    echo "PASS: kernel booted and executed the CEX executable smoke test  ($IMAGE with $ELF_TEST_DISK)"
 else
     echo "PASS: kernel booted, ran ring 3, and stayed alive  ($IMAGE as $MODE${FIRMWARE:+, UEFI})"
 fi

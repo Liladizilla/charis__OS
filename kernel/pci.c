@@ -42,16 +42,15 @@ int pci_scan(void) {
                     outl(0xCF8, addr | 0x3C);
                     d->irq = (inl(0xCFC) >> 8) & 0xFF;
                     
-                    // Read class/subclass
+                    /* Base class and subclass are bytes 3 and 2 of
+                     * the single dword at config offset 0x08. The old code
+                     * read revision/prog-if and misclassified every device. */
                     outl(0xCF8, addr | 0x08);
-                    u32 header = inl(0xCFC);
-                    (void)header;
-                    
-                    outl(0xCF8, addr | 0x0A);
-                    d->pci_class = inl(0xCFC) & 0xFF;
-                    
-                    outl(0xCF8, addr | 0x0B);
-                    d->pci_subclass = (inl(0xCFC) >> 8) & 0xFF;
+                    u32 class_register = inl(0xCFC);
+                    d->revision = (u8)(class_register & 0xFFU);
+                    d->prog_if = (u8)((class_register >> 8) & 0xFFU);
+                    d->pci_class = PCI_CLASS_CODE(class_register);
+                    d->pci_subclass = PCI_SUBCLASS_CODE(class_register);
                     
                     pci_count++;
                 }

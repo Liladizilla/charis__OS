@@ -17,10 +17,9 @@
 #include <kernel/wizard.h>
 #include <kernel/fb.h>
 #include <kernel/gfx_text.h>
+#include <kernel/ui_geometry.h>
 #include <kernel/font.h>
 #include <kernel/input.h>
-#include <kernel/keyboard.h>
-#include <kernel/mouse.h>
 #include <kernel/keyboard.h>
 #include <kernel/mouse.h>
 #include <kernel/net.h>
@@ -31,6 +30,8 @@
 #include <kernel/timer.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
+#include <kernel/vga.h>
+#include <kernel/serial.h>
 #include <kernel/ui_theme.h>
 #include <kernel/scheduler.h>
 
@@ -86,6 +87,7 @@ typedef enum {
     STEP_TIMEZONE,
     STEP_DISK,
     STEP_NETWORK,
+    STEP_DISPLAY,
     STEP_WALLPAPER,
     STEP_DONE,
     STEP_COUNT
@@ -97,6 +99,10 @@ typedef struct {
     u32 language;
     u32 timezone;
     u32 wallpaper;
+    u32 font_style;
+    u32 font_scale;
+    u32 ui_scale;
+    bool persisted;
     bool install;            /* true = install to disk, false = run from device */
     bool network_static;
     u8  ip[4];
@@ -136,14 +142,8 @@ static u32 list_row_height(void) { return font_cell_h + 10; }
 
 /* Which row is under the pointer, or -1. Same geometry as draw_list(). */
 static int hit_list(u32 x, u32 y, u32 w, u32 count) {
-    int mx = input_get_mouse_x();
-    int my = input_get_mouse_y();
-    if (mx < (int)x || mx >= (int)(x + w)) return -1;
-    u32 row_h = list_row_height();
-    if (my < (int)y) return -1;
-    u32 rel = (u32)my - y;
-    if (rel >= row_h * count) return -1;
-    return (int)(rel / row_h);
+    return ui_hit_row(input_get_mouse_x(), input_get_mouse_y(),
+                      x, y, w, count, list_row_height(), list_row_height());
 }
 
 static void button(u32 x, u32 y, u32 w, u32 h, const char* label, bool primary) {
@@ -228,7 +228,7 @@ static void draw_mode(void) {
          "There is no installer yet; this session runs from the boot medium.",
          W_HINT);
     text(cx + 40, cy + 230,
-         "Setup persists only when an existing writable config file is present.",
+         "Preferences save when a writable FAT32 volume is available.",
          W_HINT);
 }
 
@@ -329,6 +329,48 @@ static void draw_network(void) {
 /* The wallpaper step previews full-screen: the chosen style is drawn behind
  * everything, and the card sits on top with its name. Seeing the whole desktop
  * is the point, so there is nothing to clip. */
+static void draw_display(void) {
+    static const char* const styles[] = { "Sans", "Monospace", "Serif" };
+    static const char* const sizes[] = { "1x", "2x", "3x" };
+    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
+    u32 cw = 640, ch = 390;
+    u32 cx = sw > cw ? (sw - cw) / 2 : 0;
+    u32 cy = sh > ch ? (sh - ch) / 2 : 0;
+    card(cx, cy, cw, ch);
+    draw_step_header("Display preferences",
+                     "Choose your font style, letter size and desktop scale.", cx, cy);
+
+    const char* values[3];
+    values[0] = styles[w.font_style % 3];
+    values[1] = sizes[(w.font_scale >= 1 && w.font_scale <= 3) ? w.font_scale - 1 : 0];
+    values[2] = w.ui_scale == 80 ? "80%" : w.ui_scale == 120 ? "120%" : "100%";
+    static const char* const labels[] = { "Font style", "Letter size", "Interface scale" };
+
+    for (u32 i = 0; i < 3; i++) {
+        u32 ry = cy + 108 + i * 48;
+        bool selected = w.sel[STEP_DISPLAY] == i;
+        fb_fill_rect(cx + 32, ry, cw - 64, 38, selected ? W_SEL : W_CARD);
+        text(cx + 48, ry + 11, labels[i], selected ? W_ACCENT : W_FG);
+        text(cx + 340, ry + 11, values[i], W_FG);
+        text(cx + 548, ry + 11, "<  >", W_ACCENT);
+    }
+
+    text(cx + 40, cy + 278, "Preview", W_DIM);
+    u32 old_style = (u32)config_get_int("font_style", 0);
+    u32 old_scale = (u32)config_get_int("font_scale", 1);
+    config_set_int("font_style", (int)w.font_style);
+    config_set_int("font_scale", (int)w.font_scale);
+    gfx_text_apply_preferences();
+    gfx_draw_string(cx + 40, cy + 310, "CharisOS Desktop", W_FG, FB_TRANSPARENT);
+    config_set_int("font_style", (int)old_style);
+    config_set_int("font_scale", (int)old_scale);
+    gfx_text_apply_preferences();
+    text(cx + 40, cy + 356, "Up/Down selects a row. Left/Right changes its value.", W_HINT);
+}
+
+/* The wallpaper step previews full-screen: the chosen style is drawn behind
+ * everything, and the card sits on top with its name. Seeing the whole desktop
+ * is the point, so there is nothing to clip. */
 static void draw_wallpaper(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
     u32 cw = 420, ch = 96;
@@ -343,7 +385,7 @@ static void draw_wallpaper(void) {
 
 static void draw_done(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    u32 cw = 640, ch = 300;
+    u32 cw = 640, ch = 340;
     u32 cx = (sw > cw) ? (sw - cw) / 2 : 0;
     u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
     card(cx, cy, cw, ch);
@@ -355,12 +397,20 @@ static void draw_done(void) {
     text(cx + 40, cy + 128, TIMEZONES[w.timezone], W_FG);
     text(cx + 40, cy + 150, wallpaper_name(w.wallpaper), W_FG);
     text(cx + 40, cy + 172, w.install ? "install to disk" : "run from device", W_FG);
+    text(cx + 40, cy + 194,
+         w.font_style == 1 ? "Monospace family" :
+         w.font_style == 2 ? "Serif family" : "Sans family", W_FG);
+    text(cx + 40, cy + 216,
+         w.font_scale == 3 ? "Text size: 3x" :
+         w.font_scale == 2 ? "Text size: 2x" : "Text size: 1x", W_FG);
 
-    text(cx + 40, cy + 200,
-         "Config can update an existing writable file, but cannot create",
+    text(cx + 40, cy + 244,
+         w.persisted ? "Preferences saved to the system settings file." :
+                       "Settings are active for this session only.",
          W_HINT);
-    text(cx + 40, cy + 220,
-         "a missing config file. Persistence depends on that file existing.",
+    text(cx + 40, cy + 264,
+         w.persisted ? "You can change them later in Settings." :
+                       "A writable FAT volume is required to save preferences.",
          W_HINT);
 }
 
@@ -387,11 +437,15 @@ static void apply_and_save(void) {
     config_set_string("timezone_name", TIMEZONES[w.timezone]);
     config_set_int("wallpaper", (int)w.wallpaper);
     config_set_string("wallpaper_name", wallpaper_name(w.wallpaper));
+    config_set_int("font_style", (int)w.font_style);
+    config_set_int("font_scale", (int)w.font_scale);
+    config_set_int("ui_scale", (int)w.ui_scale);
     config_set_bool("install_to_disk", w.install);
     config_set_bool("net_dhcp", !w.network_static);
     config_set_bool("net_enabled", true);
     config_set_bool("setup_complete", true);
-    config_save("/etc/charisos.conf");
+    w.persisted = config_save(CONFIG_FILE_PATH);
+    gfx_text_apply_preferences();
 }
 
 static void step_leave(wizard_step_t from) {
@@ -402,8 +456,13 @@ static void step_leave(wizard_step_t from) {
     case STEP_TIMEZONE:  w.timezone = w.sel[STEP_TIMEZONE]; break;
     case STEP_DISK:      break;               /* informational */
     case STEP_NETWORK:   w.network_static = (w.sel[STEP_NETWORK] == 1); break;
+    case STEP_DISPLAY:   break;
     case STEP_WALLPAPER: w.wallpaper = w.sel[STEP_WALLPAPER]; break;
-    case STEP_DONE:      apply_and_save(); w.finished = true; break;
+    case STEP_DONE:
+        apply_and_save();
+        w.finished = true;
+        serial_puts("[WIZ] setup finished");
+        break;
     default: break;
     }
 }
@@ -443,6 +502,7 @@ static void adjust(int delta) {
     case STEP_TIMEZONE:  count = TIMEZONE_COUNT; break;
     case STEP_DISK:      return;
     case STEP_NETWORK:   count = 2; break;
+    case STEP_DISPLAY:   count = 3; break;
     case STEP_WALLPAPER: count = wallpaper_count(); break;
     case STEP_WELCOME:
     case STEP_DONE:
@@ -468,6 +528,23 @@ static bool handle_event(const input_event_t* e) {
             switch (base) {
             case KEY_UP:   adjust(-1); return true;
             case KEY_DOWN: adjust(1);  return true;
+            case KEY_LEFT:
+            case KEY_RIGHT:
+                if (w.step == STEP_DISPLAY) {
+                    int delta = base == KEY_RIGHT ? 1 : -1;
+                    if (w.sel[STEP_DISPLAY] == 0)
+                        w.font_style = (w.font_style + 3 + delta) % 3;
+                    else if (w.sel[STEP_DISPLAY] == 1)
+                        w.font_scale = w.font_scale == 1 && delta < 0 ? 3 :
+                                       w.font_scale == 3 && delta > 0 ? 1 :
+                                       (u32)((int)w.font_scale + delta);
+                    else
+                        w.ui_scale = w.ui_scale == 80 && delta < 0 ? 120 :
+                                     w.ui_scale == 120 && delta > 0 ? 80 :
+                                     (u32)((int)w.ui_scale + delta * 20);
+                    return true;
+                }
+                return false;
             default: return false; /* Super and other extended keys */
             }
         }
@@ -489,6 +566,7 @@ static bool handle_event(const input_event_t* e) {
         case STEP_LANGUAGE: x = 40; y = 100; cw = 560; break;
         case STEP_TIMEZONE: x = 40; y = 100; cw = 560; break;
         case STEP_NETWORK:  x = 40; y = 150; cw = 560; break;
+        case STEP_DISPLAY:  x = 40; y = 108; cw = 560; break;
         case STEP_WALLPAPER:x = 24; y = 60;  cw = 672; break;
         default: return false;
         }
@@ -496,6 +574,7 @@ static bool handle_event(const input_event_t* e) {
         u32 card_w = (w.step == STEP_WALLPAPER) ? 720 : 640;
         u32 card_h = (w.step == STEP_MODE) ? 340 :
                      (w.step == STEP_NETWORK) ? 400 :
+                     (w.step == STEP_DISPLAY) ? 390 :
                      (w.step == STEP_LANGUAGE) ? 460 :
                      (w.step == STEP_TIMEZONE) ? 470 : 300;
         u32 cx = (sw > card_w) ? (sw - card_w) / 2 : 0;
@@ -508,10 +587,17 @@ static bool handle_event(const input_event_t* e) {
 
         u32 count = (w.step == STEP_MODE) ? 1
                   : (w.step == STEP_NETWORK) ? 2
+                  : (w.step == STEP_DISPLAY) ? 3
                   : (w.step == STEP_LANGUAGE) ? LANGUAGE_COUNT
                   : (w.step == STEP_TIMEZONE) ? TIMEZONE_COUNT : 0;
         if (!count) return false;
-        int r = hit_list(cx + x, cy + y, cw, count);
+        int r;
+        if (w.step == STEP_DISPLAY) {
+            r = ui_hit_row(input_get_mouse_x(), input_get_mouse_y(),
+                           cx + 32, cy + 108, 576, 3, 48, 38);
+        } else {
+            r = hit_list(cx + x, cy + y, cw, count);
+        }
         if (r >= 0) w.sel[w.step] = (u32)r;
         return true;
     }
@@ -552,6 +638,7 @@ static bool handle_event(const input_event_t* e) {
         case STEP_LANGUAGE:  card_h = 460; row_y = 100; row_count = LANGUAGE_COUNT; break;
         case STEP_TIMEZONE:  card_h = 470; row_y = 100; row_count = TIMEZONE_COUNT; break;
         case STEP_NETWORK:   card_h = 400; row_y = 150; row_count = 2; break;
+        case STEP_DISPLAY:   card_h = 390; row_y = 108; row_count = 3; break;
         case STEP_WALLPAPER: {
             u32 cw = 420, ch = 96;
             u32 cx = sw > cw ? (sw - cw) / 2 : 0;
@@ -564,8 +651,18 @@ static bool handle_event(const input_event_t* e) {
 
         u32 cx = sw > card_w ? (sw - card_w) / 2 : 0;
         u32 cy = sh > card_h ? (sh - card_h) / 2 : 0;
-        int row = hit_list(cx + row_x, cy + row_y, row_w, row_count);
-        if (row >= 0) w.sel[w.step] = (u32)row;
+        int row = (w.step == STEP_DISPLAY)
+            ? ui_hit_row(input_get_mouse_x(), input_get_mouse_y(),
+                         cx + 32, cy + 108, 576, 3, 48, 38)
+            : hit_list(cx + row_x, cy + row_y, row_w, row_count);
+        if (row >= 0) {
+            if (w.step == STEP_DISPLAY && w.sel[STEP_DISPLAY] == (u32)row) {
+                if (row == 0) w.font_style = (w.font_style + 1) % 3;
+                else if (row == 1) w.font_scale = (w.font_scale % 3) + 1;
+                else w.ui_scale = w.ui_scale == 80 ? 100 : w.ui_scale == 100 ? 120 : 80;
+            }
+            w.sel[w.step] = (u32)row;
+        }
         return true;
     }
 
@@ -589,10 +686,18 @@ bool wizard_run(void) {
     w.sel[STEP_LANGUAGE] = 0;
     w.sel[STEP_TIMEZONE] = 6;        /* UTC+03:00, East Africa */
     w.sel[STEP_NETWORK] = 0;
+    w.sel[STEP_DISPLAY] = 0;
     w.sel[STEP_WALLPAPER] = 0;
     w.language = 0;
     w.timezone = 6;
-    w.wallpaper = 0;
+    w.wallpaper = (u32)config_get_int("wallpaper", 0);
+    w.font_style = (u32)config_get_int("font_style", 0);
+    if (w.font_style > 2) w.font_style = 0;
+    w.font_scale = (u32)config_get_int("font_scale", 1);
+    if (w.font_scale < 1 || w.font_scale > 3) w.font_scale = 1;
+    w.ui_scale = (u32)config_get_int("ui_scale", 100);
+    if (w.ui_scale != 80 && w.ui_scale != 100 && w.ui_scale != 120) w.ui_scale = 100;
+    w.persisted = false;
     w.install = false;
     w.network_static = false;
     w.finished = false;
@@ -600,6 +705,7 @@ bool wizard_run(void) {
     kprintf("[WIZ] first run: starting setup\n");
 
     u32 last_w = 0, last_h = 0;
+    u64 last_diag_ms = 0;
     wizard_step_t last_step = (wizard_step_t)-1;
     u32 last_sel = 0;
     int last_mx = -1, last_my = -1;
@@ -620,6 +726,7 @@ bool wizard_run(void) {
                   || w.step != last_step
                   || sel_now != last_sel
                   || mx != last_mx || my != last_my
+                  || timer_get_ms() - last_diag_ms >= 500
                   || g_framebuffer.width  != last_w
                   || g_framebuffer.height != last_h;
 
@@ -628,6 +735,7 @@ bool wizard_run(void) {
         last_mx = mx; last_my = my;
         last_w = g_framebuffer.width;
         last_h = g_framebuffer.height;
+        last_diag_ms = timer_get_ms();
         first = false;
 
         if (!dirty) { scheduler_yield(); asm volatile("hlt"); continue; }
@@ -647,6 +755,7 @@ bool wizard_run(void) {
         case STEP_TIMEZONE: draw_timezone(); break;
         case STEP_DISK:     draw_disk(); break;
         case STEP_NETWORK:  draw_network(); break;
+        case STEP_DISPLAY:  draw_display(); break;
         case STEP_WALLPAPER:draw_wallpaper(); break;
         case STEP_DONE:     draw_done(); break;
         default: break;

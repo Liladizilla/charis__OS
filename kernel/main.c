@@ -30,6 +30,7 @@
 #include <kernel/diagnostics.h>
 #include <kernel/display.h>
 #include <kernel/config.h>
+#include <kernel/gfx_text.h>
 #include <kernel/power.h>
 #include <kernel/security.h>
 #include <kernel/signal.h>
@@ -38,6 +39,7 @@
 #include <kernel/logo.h>
 #include <kernel/fb.h>
 #include <kernel/mouse.h>
+#include <kernel/usb.h>
 #include <kernel/shell_ui.h>
 
 /* The multiboot2 info pointer arrives zero-extended in RDI, so it is a 64-bit
@@ -143,11 +145,13 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('d');
     pci_scan();
     BOOT_MARK('P');
+    usb_init();
     driver_scan_and_bind();
     BOOT_MARK('b');
     config_init();
     BOOT_MARK('c');
-    config_load("/etc/charisos.conf");
+    config_load(CONFIG_FILE_PATH);
+    gfx_text_apply_preferences();
     BOOT_MARK('L');
     display_init();
     BOOT_MARK('D');

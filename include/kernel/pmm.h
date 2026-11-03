@@ -14,6 +14,9 @@ void pmm_free_page(u64 addr);
 void pmm_reserve_range(u64 addr, u64 len);
 
 u32 pmm_used_pages(void);
+u32 pmm_allocated_pages(void);
+u32 pmm_reserved_pages(void);
 u32 pmm_free_pages(void);
+u64 pmm_detected_ram_bytes(void);
 
 #endif
