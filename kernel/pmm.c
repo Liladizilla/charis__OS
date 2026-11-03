@@ -58,7 +58,7 @@ void pmm_init(multiboot_info_t* info) {
     }
 
     /* Kernel image and early boot structures must never be handed to callers. */
-    pmm_mark_range(0x00100000ULL, (u64)_kernel_end, true);
+    pmm_mark_range(0x00100000ULL, ALIGN_UP((u64)_kernel_end, 4096ULL), true);
 
     vga_printf("PMM: %u regions, managed below 1 GiB, %u pages used, %u free\n",
                memory_map_count, pmm_used_pages(), pmm_free_pages());
@@ -67,6 +67,7 @@ void pmm_init(multiboot_info_t* info) {
 void pmm_reserve_range(u64 addr, u64 len) {
     if (!len || addr >= PMM_LIMIT) return;
     u64 end = (len > PMM_LIMIT - addr) ? PMM_LIMIT : addr + len;
+    if (end < PMM_LIMIT) end = ALIGN_UP(end, 4096ULL);
     pmm_mark_range(ALIGN_DOWN(addr, 4096ULL), end, true);
 }
 
