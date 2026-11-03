@@ -86,6 +86,7 @@ typedef enum {
     STEP_TIMEZONE,
     STEP_DISK,
     STEP_NETWORK,
+    STEP_DISPLAY,
     STEP_WALLPAPER,
     STEP_DONE,
     STEP_COUNT
