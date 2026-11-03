@@ -147,3 +147,17 @@ u32 pmm_used_pages(void) {
 u32 pmm_free_pages(void) {
     return (u32)PMM_PAGE_COUNT - pmm_used_pages();
 }
+
+/* Total firmware-declared usable memory, including ranges outside the current
+ * direct-map allocator window. This is inventory only: the PMM still manages
+ * only the first 1 GiB until a safe higher-memory mapping exists. */
+u64 pmm_detected_ram_bytes(void) {
+    u64 total = 0;
+    for (u32 i = 0; i < memory_map_count; i++) {
+        if (memory_map[i].type != MULTIBOOT_MEMORY_AVAILABLE) continue;
+        u64 length = memory_map[i].length;
+        if (length > (~0ULL - total)) return ~0ULL;
+        total += length;
+    }
+    return total;
+}
