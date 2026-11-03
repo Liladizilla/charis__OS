@@ -103,6 +103,8 @@ typedef struct {
 } wizard_state_t;
 
 static wizard_state_t w;
+static u32 wizard_key_events = 0;
+static u32 wizard_mouse_clicks = 0;
 
 /* ── Chrome ───────────────────────────────────────────────────────────── */
 
@@ -171,7 +173,7 @@ static void draw_input_diagnostics(void) {
     /* Keep the panel self-contained: periodic updates must erase old digits
      * when a counter changes from (for example) 100 to 99. */
     const u32 panel_w = 160;
-    const u32 panel_h = 12 + 8 * (font_cell_h + 2);
+    const u32 panel_h = 12 + 11 * (font_cell_h + 2);
     u32 x = g_framebuffer.width > panel_w + 8
           ? g_framebuffer.width - panel_w - 8 : 4;
     u32 y = 8;
@@ -181,17 +183,17 @@ static void draw_input_diagnostics(void) {
     mouse_state_t mouse;
     mouse_get_snapshot(&mouse);
     const char *labels[] = {
-        "KIRQ ", "MIRQ ", "PKT ", "QDEP ",
-        "DROP ", "MX   ", "MY   ", "BTN  "
+        "KIRQ ", "KHOOK", "MIRQ ", "PKT ", "QDEP ",
+        "DROP ", "MX   ", "MY   ", "BTN  ", "WKEY ", "WCLK "
     };
     u32 values[] = {
-        keyboard_irq_count(), mouse_irq_count(),
-        mouse_packet_count(), input_queue_depth(),
+        keyboard_irq_count(), ui_keyboard_hook_event_count(),
+        mouse_irq_count(), mouse_packet_count(), input_queue_depth(),
         input_queue_dropped(), (u32)mouse.x, (u32)mouse.y,
-        (u32)mouse.buttons
+        (u32)mouse.buttons, wizard_key_events, wizard_mouse_clicks
     };
     char line[32];
-    for (u32 row = 0; row < 8; row++) {
+    for (u32 row = 0; row < 11; row++) {
         u32 n = 0;
         while (labels[row][n] && n < sizeof(line) - 1)
             line[n] = labels[row][n], n++;
@@ -476,6 +478,7 @@ static void adjust(int delta) {
 static bool handle_event(const input_event_t* e) {
     switch (e->type) {
     case INPUT_KEY_DOWN: {
+        wizard_key_events++;
         u8 code = e->key.scancode;
         bool ext = (code & 0x80) != 0;
         u8 base = code & 0x7F;
@@ -536,6 +539,7 @@ static bool handle_event(const input_event_t* e) {
     }
 
     case INPUT_MOUSE_DOWN: {
+        wizard_mouse_clicks++;
         u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
 
         if (w.step == STEP_WELCOME) {
@@ -604,6 +608,8 @@ bool wizard_run(void) {
     if (!wizard_is_first_boot()) return false;
 
     w.step = STEP_WELCOME;
+    wizard_key_events = 0;
+    wizard_mouse_clicks = 0;
     w.sel[STEP_MODE] = 0;
     w.sel[STEP_LANGUAGE] = 0;
     w.sel[STEP_TIMEZONE] = 6;        /* UTC+03:00, East Africa */
