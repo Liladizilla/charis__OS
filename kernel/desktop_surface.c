@@ -184,7 +184,8 @@ int desktop_surface_hit_test(int mx, int my) {
         my >= (int)(top + stride * 3)) return -1;
     u32 relative = (u32)(my - (int)top);
     u32 slot = relative / stride;
-    if (slot >= 3 || relative % stride >= stride) return -1;
+    u32 clickable_height = u(40) + text_h();
+    if (slot >= 3 || relative % stride >= clickable_height) return -1;
     return (int)slot;
 }
 
