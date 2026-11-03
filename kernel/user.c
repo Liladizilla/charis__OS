@@ -22,7 +22,7 @@ void user_main(void) {
     char elf_path[10];
     elf_path[0] = '/'; elf_path[1] = 'T'; elf_path[2] = 'E';
     elf_path[3] = 'S'; elf_path[4] = 'T'; elf_path[5] = '.';
-    elf_path[6] = 'E'; elf_path[7] = 'L'; elf_path[8] = 'F';
+    elf_path[6] = 'C'; elf_path[7] = 'E'; elf_path[8] = 'X';
     elf_path[9] = '\0';
 
     char program_name[9];
