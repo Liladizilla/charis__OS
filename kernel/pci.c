@@ -47,6 +47,8 @@ int pci_scan(void) {
                      * read revision/prog-if and misclassified every device. */
                     outl(0xCF8, addr | 0x08);
                     u32 class_register = inl(0xCFC);
+                    d->revision = (u8)(class_register & 0xFFU);
+                    d->prog_if = (u8)((class_register >> 8) & 0xFFU);
                     d->pci_class = PCI_CLASS_CODE(class_register);
                     d->pci_subclass = PCI_SUBCLASS_CODE(class_register);
                     
