@@ -49,3 +49,4 @@ extern const char keyboard_scancode_set1_shift[128];
 /* Number of IRQ1 deliveries since keyboard_init(). */
 extern volatile u32 g_keyboard_irqs;
 u32 keyboard_irq_count(void);
+bool keyboard_controller_ready(void);
