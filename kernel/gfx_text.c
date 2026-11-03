@@ -1,7 +1,7 @@
 /* gfx_text.c - Configurable native bitmap typography.
  *
  * Family 0 uses measured proportional advances, family 1 is fixed-cell
- * monospace, and family 2 adds serif terminals to the bundled bitmap glyphs.
+ * monospace, and family 2 draws serif terminals on qualifying vertical stems.
  * Every mode is generated from the built-in 8x16 font, so boot rendering has
  * no external filesystem or runtime font dependency.
  */
@@ -93,17 +93,34 @@ static void draw_glyph(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale) {
         }
     }
 
-    /* Bold Sans expands each lit bitmap pixel by one cell-scale pixel.
-     * The advance width reserves space so adjacent glyphs never collide. */
+    /* Bitmap-serif treatment. Add short cap/baseline terminals only where
+     * the outer glyph columns form a real vertical stem. The advance leaves
+     * two spare pixels so the new terminals do not collide with the next glyph. */
     if (text_style == 2) {
-        for (u32 row = 0; row < font_cell_h; row++) {
-            u8 bits = rows[row];
-            for (u32 col = source_left; col <= source_right; col++) {
-                if (!(bits & (1U << col))) continue;
-                u32 dx = proportional ? col - source_left : col;
-                fb_fill_rect(x + (dx + 1) * scale, y + row * scale,
-                             scale, scale, fg);
+        u32 glyph_width = source_right >= source_left ?
+                          source_right - source_left + 1 : 1;
+        for (u32 side = 0; side < 2; side++) {
+            u32 col = side ? source_right : source_left;
+            if (side && source_right == source_left) continue;
+            u32 ink_rows = 0, first_row = font_cell_h, last_row = 0;
+            for (u32 row = 0; row < font_cell_h; row++) {
+                if (!(rows[row] & (1U << col))) continue;
+                if (row < first_row) first_row = row;
+                last_row = row;
+                ink_rows++;
             }
+            if (ink_rows < font_cell_h / 3) continue;
+
+            u32 dx = col - source_left;
+            u32 bar_width = glyph_width < 3 ? glyph_width : 3;
+            u32 bar_start = side ? (dx >= bar_width - 1 ? dx - (bar_width - 1) : 0) : dx;
+            if (bar_start + bar_width > glyph_width)
+                bar_start = glyph_width - bar_width;
+
+            fb_fill_rect(x + bar_start * scale, y + first_row * scale,
+                         bar_width * scale, scale, fg);
+            fb_fill_rect(x + bar_start * scale, y + last_row * scale,
+                         bar_width * scale, scale, fg);
         }
     }
 }
