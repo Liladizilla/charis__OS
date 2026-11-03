@@ -29,6 +29,7 @@
 
 /* Native desktop widgets and shortcut surface. */
 extern void desktop_surface_render(void);
+extern int desktop_surface_hit_test(int mx, int my);
 
 /* ── Shared solid-morphism theme ─────────────────────────────────── */
 #define T_BG          CHARIS_UI_BACKGROUND
@@ -370,6 +371,18 @@ static void handle_event(const input_event_t* e) {
              * dismisses it, and the same click cannot activate an item below. */
             notice_open = false;
             notice_item = -1;
+            ui.needs_redraw = true;
+            return;
+        }
+
+        int desktop_app = desktop_surface_hit_test(mx, my);
+        if (desktop_app >= 0) {
+            if (desktop_app == 0) {
+                browser_open();
+            } else {
+                notice_item = desktop_app == 1 ? 2 : 1;
+                notice_open = true;
+            }
             ui.needs_redraw = true;
             return;
         }
