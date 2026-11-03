@@ -107,7 +107,6 @@ static void draw_glyph(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale) {
         }
     }
 }
-}
 
 void gfx_draw_char(u32 x, u32 y, char ch, u32 fg, u32 bg) {
     draw_glyph(x, y, ch, fg, bg, text_scale);
