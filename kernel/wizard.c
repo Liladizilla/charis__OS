@@ -390,7 +390,7 @@ static void draw_wallpaper(void) {
 
 static void draw_done(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    u32 cw = 640, ch = 300;
+    u32 cw = 640, ch = 340;
     u32 cx = (sw > cw) ? (sw - cw) / 2 : 0;
     u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
     card(cx, cy, cw, ch);
@@ -402,12 +402,18 @@ static void draw_done(void) {
     text(cx + 40, cy + 128, TIMEZONES[w.timezone], W_FG);
     text(cx + 40, cy + 150, wallpaper_name(w.wallpaper), W_FG);
     text(cx + 40, cy + 172, w.install ? "install to disk" : "run from device", W_FG);
+    text(cx + 40, cy + 194,
+         w.font_style == 1 ? "Bold bitmap font" :
+         w.font_style == 2 ? "Compact bitmap font" : "Standard bitmap font", W_FG);
+    text(cx + 40, cy + 216,
+         w.font_scale == 3 ? "Text size: 3x" :
+         w.font_scale == 2 ? "Text size: 2x" : "Text size: 1x", W_FG);
 
-    text(cx + 40, cy + 200,
+    text(cx + 40, cy + 244,
          w.persisted ? "Preferences saved to the system settings file." :
                        "Settings are active for this session only.",
          W_HINT);
-    text(cx + 40, cy + 220,
+    text(cx + 40, cy + 264,
          w.persisted ? "You can change them later in Settings." :
                        "A writable FAT volume is required to save preferences.",
          W_HINT);
