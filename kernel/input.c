@@ -31,25 +31,32 @@ void input_init(void) {
 
 bool input_push_event(input_event_t* evt) {
     if (!evt) return false;
-    
+
+    u64 flags = input_irq_save();
     u32 next_head = (input_head + 1) % INPUT_QUEUE_SIZE;
     if (next_head == input_tail) {
+        input_irq_restore(flags);
         return false; /* Queue full */
     }
-    
+
     input_queue[input_head] = *evt;
     input_head = next_head;
+    input_irq_restore(flags);
     return true;
 }
 
 bool input_pop_event(input_event_t* evt) {
     if (!evt) return false;
+
+    u64 flags = input_irq_save();
     if (input_tail == input_head) {
+        input_irq_restore(flags);
         return false; /* Queue empty */
     }
-    
+
     *evt = input_queue[input_tail];
     input_tail = (input_tail + 1) % INPUT_QUEUE_SIZE;
+    input_irq_restore(flags);
     return true;
 }
 
