@@ -172,8 +172,8 @@ static bool hit(u32 x, u32 y, u32 w, u32 h) {
 static void draw_input_diagnostics(void) {
     /* Keep the panel self-contained: periodic updates must erase old digits
      * when a counter changes from (for example) 100 to 99. */
-    const u32 panel_w = 160;
-    const u32 panel_h = 12 + 11 * (font_cell_h + 2);
+    const u32 panel_w = 280;
+    const u32 panel_h = 12 + 6 * (font_cell_h + 2);
     u32 x = g_framebuffer.width > panel_w + 8
           ? g_framebuffer.width - panel_w - 8 : 4;
     u32 y = 8;
@@ -193,12 +193,12 @@ static void draw_input_diagnostics(void) {
         (u32)mouse.buttons, wizard_key_events, wizard_mouse_clicks
     };
     char line[32];
-    for (u32 row = 0; row < 11; row++) {
+    for (u32 item = 0; item < 11; item++) {
         u32 n = 0;
-        while (labels[row][n] && n < sizeof(line) - 1)
-            line[n] = labels[row][n], n++;
+        while (labels[item][n] && n < sizeof(line) - 1)
+            line[n] = labels[item][n], n++;
         char digits[11];
-        u32 count = 0, value = values[row];
+        u32 count = 0, value = values[item];
         do {
             digits[count++] = (char)('0' + value % 10);
             value /= 10;
@@ -206,7 +206,10 @@ static void draw_input_diagnostics(void) {
         while (count && n < sizeof(line) - 1)
             line[n++] = digits[--count];
         line[n] = 0;
-        text(x + 8, y + 6 + row * (font_cell_h + 2), line, W_HINT);
+        u32 column = item & 1;
+        u32 row = item >> 1;
+        text(x + 8 + column * 136, y + 6 + row * (font_cell_h + 2),
+             line, W_HINT);
     }
 }
 
