@@ -34,7 +34,7 @@ int cex_probe(vfs_node_t* node, u64* payload_offset, u64* payload_size) {
 
     if (header.version != CEX_VERSION_X86_64 ||
         header.machine != CEX_MACHINE_X86_64 ||
-        header.header_size < sizeof(header) ||
+        header.header_size != sizeof(header) ||
         header.header_size > node->size ||
         header.flags != 0 || header.reserved != 0 ||
         header.payload_size < 64 ||
