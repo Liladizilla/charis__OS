@@ -17,6 +17,7 @@
 #include <kernel/pmm.h>
 #include <kernel/timer.h>
 #include <kernel/keyboard.h>
+#include <kernel/input.h>
 #include <kernel/mouse.h>
 #include <kernel/net.h>
 #include <kernel/usb.h>
@@ -374,13 +375,13 @@ static void draw_hardware(u32 x, u32 y) {
 
     format_pair(line, sizeof(line), "PS/2 mouse packets: ", mouse_packet_count(), "");
     draw_text(x, y + step * 5, line, S_TEXT);
-    draw_text(x, y + step * 6, ata_is_present() ? "Primary ATA device: detected" :
-                                               "Primary ATA device: unavailable", S_TEXT);
-    format_pair(line, sizeof(line), "Boot memory-map regions: ", boot_info.region_count, "");
-    draw_text(x, y + step * 7, line, S_TEXT);
+    format_pair(line, sizeof(line), "Input queue dropped: ", input_queue_dropped(), "");
+    draw_text(x, y + step * 6, line, S_TEXT);
     format_pair(line, sizeof(line), "USB host controllers: ", (u32)usb_get_controller_count(), "");
+    draw_text(x, y + step * 7, line, S_TEXT);
+    format_pair(line, sizeof(line), "Boot memory-map regions: ", boot_info.region_count, "");
     draw_text(x, y + step * 8, line, S_TEXT);
-    draw_text(x, y + step * 9, "USB enumeration/HID, AHCI, NVMe and GPU drivers are pending.", S_MUTED);
+    draw_text(x, y + step * 9, "Pending drivers: USB HID, AHCI, NVMe, GPU.", S_MUTED);
 }
 static void format_mac(char out[18], const u8 mac[6]) {
     static const char hex[] = "0123456789ABCDEF";
