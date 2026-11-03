@@ -9,6 +9,7 @@ import argparse
 import json
 import os
 import socket
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -89,8 +90,13 @@ def main() -> int:
     fd, qmp_path = tempfile.mkstemp(prefix="charisos-", suffix=".qmp")
     os.close(fd)
     os.unlink(qmp_path)
-    args.ovmf_vars_out = args.ovmf_vars.with_name("desktop-capture-vars.fd")
-    args.ovmf_vars_out.write_bytes(args.ovmf_vars.read_bytes())
+    # OVMF's packaged VARS image lives under /usr/share and is read-only.
+    # Copy it into the writable artifact directory, never beside the firmware.
+    vars_fd, vars_path = tempfile.mkstemp(
+        prefix="charisos-ovmf-vars-", suffix=".fd", dir=args.output.parent
+    )
+    os.close(vars_fd)
+    shutil.copyfile(args.ovmf_vars, vars_path)
 
     command = [
         "qemu-system-x86_64",
@@ -100,7 +106,7 @@ def main() -> int:
         "-nic", "none",
         "-no-reboot",
         "-drive", f"if=pflash,format=raw,readonly=on,file={args.ovmf_code}",
-        "-drive", f"if=pflash,format=raw,file={args.ovmf_vars_out}",
+        "-drive", f"if=pflash,format=raw,file={vars_path}",
         "-cdrom", str(args.iso),
         "-boot", "menu=off",
         "-serial", f"file:{args.serial_log}",
@@ -147,10 +153,11 @@ def main() -> int:
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait(timeout=5)
-            try:
-                os.unlink(qmp_path)
-            except FileNotFoundError:
-                pass
+            for temporary_path in (qmp_path, vars_path):
+                try:
+                    os.unlink(temporary_path)
+                except FileNotFoundError:
+                    pass
 
     serial = args.serial_log.read_text(errors="replace") if args.serial_log.exists() else ""
     marker = "[WIZ] setup finished"
