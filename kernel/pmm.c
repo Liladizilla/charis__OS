@@ -39,7 +39,6 @@ static void pmm_mark_range(u64 start, u64 end, bool used) {
 }
 
 void pmm_init(multiboot_info_t* info) {
-    (void)info;
     u32 count = 0;
     const mem_map_entry_t* regions = bootmem_regions(&count);
     memory_map = regions;
@@ -59,6 +58,12 @@ void pmm_init(multiboot_info_t* info) {
 
     /* Kernel image and early boot structures must never be handed to callers. */
     pmm_mark_range(0x00100000ULL, ALIGN_UP((u64)_kernel_end, 4096ULL), true);
+
+    /* GRUB's Multiboot2 tag block contains the command line, framebuffer
+     * metadata and memory map. Keep those pages reserved for the whole boot. */
+    if (info && info->total_size >= 16 && info->total_size <= 16U * 1024U * 1024U) {
+        pmm_reserve_range((u64)(uintptr_t)info, info->total_size);
+    }
 
     vga_printf("PMM: %u regions, managed below 1 GiB, %u pages used, %u free\n",
                memory_map_count, pmm_used_pages(), pmm_free_pages());
