@@ -30,6 +30,7 @@
 #include <kernel/string.h>
 #include <kernel/printf.h>
 #include <kernel/vga.h>
+#include <kernel/serial.h>
 #include <kernel/ui_theme.h>
 #include <kernel/scheduler.h>
 
@@ -465,7 +466,7 @@ static void step_leave(wizard_step_t from) {
     case STEP_DONE:
         apply_and_save();
         w.finished = true;
-        vga_puts("[WIZ] setup finished\n");
+        serial_puts("[WIZ] setup finished");
         break;
     default: break;
     }
