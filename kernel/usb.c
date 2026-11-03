@@ -74,7 +74,7 @@ usb_controller_t* usb_get_controller(int index) {
 }
 
 usb_device_t* usb_get_device(int index) {
-    if (index < 0 || index >= USB_MAX_DEVICES) return NULL;
+    if (index < 0 || index >= usb_device_count) return NULL;
     return &usb_devices[index];
 }
 
