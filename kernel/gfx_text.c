@@ -12,18 +12,28 @@
 
 static u32 text_scale = 1;
 static u32 text_style = 0;
+static u32 ui_scale_percent = 100;
 
 void gfx_text_apply_preferences(void) {
     int style = config_get_int("font_style", 0);
     int scale = config_get_int("font_scale", 1);
+    int ui = config_get_int("ui_scale", 100);
     if (style < 0 || style > 2) style = 0;
     if (scale < 1 || scale > 3) scale = 1;
+    if (ui != 80 && ui != 100 && ui != 120) ui = 100;
     text_style = (u32)style;
     text_scale = (u32)scale;
+    ui_scale_percent = (u32)ui;
 }
 
 u32 gfx_text_get_scale(void) { return text_scale; }
 u32 gfx_text_get_style(void) { return text_style; }
+
+u32 gfx_ui_scale(u32 logical_pixels) {
+    u64 scaled = ((u64)logical_pixels * ui_scale_percent + 50) / 100;
+    if (logical_pixels && !scaled) scaled = 1;
+    return scaled > 0xFFFFFFFFULL ? 0xFFFFFFFFU : (u32)scaled;
+}
 
 static u32 glyph_width(u32 scale) {
     if (text_style == 2) return ((u32)font_cell_w * scale * 7U) / 8U;
