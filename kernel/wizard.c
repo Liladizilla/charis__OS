@@ -436,7 +436,16 @@ static bool handle_event(const input_event_t* e) {
         bool ext = (code & 0x80) != 0;
         u8 base = code & 0x7F;
 
-        if (ext) return false;               /* Super and friends: not ours */
+        /* The keyboard hook encodes the E0 prefix in the high bit. Handle
+         * extended navigation keys before filtering unrelated extended keys:
+         * the old early return silently discarded both arrow keys. */
+        if (ext) {
+            switch (base) {
+            case KEY_UP:   adjust(-1); return true;
+            case KEY_DOWN: adjust(1);  return true;
+            default: return false; /* Super and other extended keys */
+            }
+        }
 
         switch (base) {
         case KEY_UP:    adjust(-1); return true;
