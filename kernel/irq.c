@@ -3,6 +3,7 @@
 #include <kernel/vga.h>
 #include <kernel/mouse.h>
 #include <kernel/input.h>
+#include <kernel/diagnostics.h>
 
 static void (*irq_handlers[16])(reg_frame_t*) = {0};
 
@@ -83,7 +84,8 @@ void irq_register_handler(u8 irq, void (*handler)(reg_frame_t*)) {
 
 // Called from idt_dispatch_handler
 void irq_dispatch(u8 irq, reg_frame_t* frame) {
-    if (irq_handlers[irq]) {
+    diag_note_interrupt();
+    if (irq < 16 && irq_handlers[irq]) {
         irq_handlers[irq](frame);
     }
 }
