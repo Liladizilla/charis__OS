@@ -20,3 +20,6 @@ void diag_init(void);
 void diag_collect_stats(system_stats_t* stats);
 void diag_print_status(void);
 void diag_dump_tasks(void);
+void diag_note_context_switch(void);
+void diag_note_interrupt(void);
+void diag_note_syscall(void);
