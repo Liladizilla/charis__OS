@@ -25,19 +25,12 @@ void mouse_set_bounds(uint32_t width, uint32_t height) {
 /*
  * PS/2 controller handshake helpers.
  *
- * Every command the controller accepts is answered with an acknowledge byte
- * on the data port. Those bytes have to be consumed, and the original code
- * consumed none of them, so the sequence was:
- *
- *   outb(0x64, 0x20)     ; ask for the config byte
- *   config = inb(0x60)   ; ...this reads the ACK (0xFA), not the config
- *   config |= 0x02
- *   outb(0x64, 0x60)
- *   outb(0x60, config)   ; writes 0xFA|0x02 back as the configuration
- *
- * which clobbered the aux-port bits and left IRQ 12 disabled -- the pointer
- * never moved. The two bytes left over from the 0xF6 and 0xF4 commands also
- * arrive as IRQ 12 data and get parsed as motion packets.
+ * Controller commands are not all acknowledged like mouse-device commands.
+ * In particular, writing 0x20 to port 0x64 returns the controller
+ * configuration byte directly through port 0x60. The previous helper drained
+ * the output buffer after every command, consuming that response before
+ * mouse_init() could read it. Mouse-device commands sent through 0xD4 do
+ * return ACK bytes, which ps2_write_aux_data() consumes separately.
  */
 static void ps2_wait_write(void) {
     /* Wait for the input buffer to drain (IBF clear).
@@ -59,9 +52,19 @@ static void ps2_drain_output(void) {
 }
 
 static void ps2_write_command(u8 cmd) {
+    /* Do not drain after issuing a controller command: command 0x20 returns
+     * the configuration byte on the output buffer. Draining here consumed
+     * that response before mouse_init() could read it. Drain stale data before
+     * starting initialization instead. */
     ps2_wait_write();
     outb(0x64, cmd);
-    ps2_drain_output();
+}
+
+static bool ps2_wait_read(void) {
+    for (volatile int i = 0; i < 2000; i++) {
+        if (inb(0x64) & 0x01) return true;
+    }
+    return false;
 }
 
 static u8 ps2_write_data(u8 value) {
@@ -79,6 +82,9 @@ static u8 ps2_write_aux_data(u8 value) {
 }
 
 void mouse_init(void) {
+    /* Discard stale controller/device bytes before changing its state. */
+    ps2_drain_output();
+
     /* Disable the aux port while it is reconfigured, or stray bytes arrive
      * mid-sequence and desynchronise the packet stream. */
     ps2_write_command(0xA7);
@@ -89,15 +95,24 @@ void mouse_init(void) {
     /* Enable the aux port. */
     ps2_write_command(0xA8);
 
-    /* Read the configuration byte, skipping the ACK that answers 0x20. */
-    u8 config;
+    /* Command 0x20 returns one configuration byte; it has no ACK byte. */
+    u8 config = 0;
+    bool config_valid = false;
     ps2_write_command(0x20);
-    config = inb(0x60);
-    config |= 0x02;        /* enable the aux interrupt (IRQ 12) */
+    if (ps2_wait_read()) {
+        config = inb(0x60);
+        config_valid = true;
+    } else {
+        kprintf("Mouse: controller config read timed out\n");
+    }
 
-    /* Write it back, skipping the ACK that answers 0x60. */
-    ps2_write_command(0x60);
-    (void)ps2_write_data(config);
+    /* Only write the configuration back when the read succeeded. Writing a
+     * fabricated zero would silently clear unrelated controller settings. */
+    if (config_valid) {
+        config |= 0x02;    /* enable the aux interrupt (IRQ 12) */
+        ps2_write_command(0x60);
+        (void)ps2_write_data(config);
+    }
 
     /* Defaults, then enable reporting on the auxiliary mouse device. */
     u8 defaults_ack = ps2_write_aux_data(0xF6);
