@@ -41,7 +41,7 @@ static u32 active_row;
 static bool save_ok;
 
 static const char* const tab_names[SETTINGS_TABS] = {
-    "Look", "System", "Devices", "Secure", "About"
+    "Look", "Sys", "HW", "Safe", "Info"
 };
 
 void settings_ui_open(void) {
@@ -68,6 +68,24 @@ static u32 panel_height(void) {
     u32 available = g_framebuffer.height > 16 ? g_framebuffer.height - 16 : g_framebuffer.height;
     u32 desired = sp(560);
     return desired < available ? desired : available;
+}
+
+static u32 settings_text_height(void) {
+    return (u32)font_cell_h * gfx_text_get_scale();
+}
+
+static u32 tab_height(void) {
+    u32 base = sp(34), needed = settings_text_height() + sp(10);
+    return base > needed ? base : needed;
+}
+
+static u32 content_top(u32 y) {
+    return y + sp(56) + tab_height() + sp(22);
+}
+
+static u32 footer_height(void) {
+    u32 base = sp(48), needed = settings_text_height() + sp(16);
+    return base > needed ? base : needed;
 }
 
 static u32 panel_x(void) {
@@ -156,6 +174,8 @@ static void draw_row(u32 x, u32 y, u32 w, const char* name, const char* value,
 }
 
 static void draw_appearance(u32 x, u32 y, u32 w) {
+    draw_text(x, y, "Appearance", S_ACCENT);
+    y += sp(36);
     static const char* const fonts[] = { "Sans", "Monospace", "Serif" };
     static const char* const scales[] = { "80%", "100%", "120%" };
     static const char* const sizes[] = { "1x", "2x", "3x" };
@@ -185,6 +205,8 @@ static void draw_appearance(u32 x, u32 y, u32 w) {
 }
 
 static void draw_system(u32 x, u32 y) {
+    draw_text(x, y, "System diagnostics", S_ACCENT);
+    y += sp(36);
     system_stats_t stats;
     diag_collect_stats(&stats);
     char line[96];
@@ -213,6 +235,8 @@ static void draw_system(u32 x, u32 y) {
 }
 
 static void draw_hardware(u32 x, u32 y) {
+    draw_text(x, y, "Hardware inventory", S_ACCENT);
+    y += sp(36);
     char vendor[13], model[49], line[96];
     cpu_vendor(vendor);
     cpu_brand(model);
@@ -255,6 +279,8 @@ static void draw_hardware(u32 x, u32 y) {
 }
 
 static void draw_security(u32 x, u32 y) {
+    draw_text(x, y, "Security status", S_ACCENT);
+    y += sp(36);
     draw_text(x, y, "Kernel stack protector: enabled at compile time", S_TEXT);
     draw_text(x, y + sp(36), "Process isolation: ring-3 address spaces and page permissions", S_TEXT);
     draw_text(x, y + sp(72), "Permissions: task capability bitmasks", S_TEXT);
@@ -266,6 +292,8 @@ static void draw_security(u32 x, u32 y) {
 }
 
 static void draw_about(u32 x, u32 y) {
+    draw_text(x, y, "About CharisOS", S_ACCENT);
+    y += sp(36);
     draw_text(x, y, "CharisOS", S_ACCENT);
     draw_text(x, y + sp(36), "64-bit x86 operating system written in C and Assembly.", S_TEXT);
     draw_text(x, y + sp(72), "Current executable support: validated ELF64 ET_EXEC loading.", S_TEXT);
@@ -284,15 +312,19 @@ void settings_ui_render(void) {
     draw_text(x + sp(20), y + sp(14), "System Settings", S_TEXT);
 
     u32 tab_w = (w - sp(32)) / SETTINGS_TABS;
+    u32 tabs_y = y + sp(56);
+    u32 tabs_h = tab_height();
     for (u32 i = 0; i < SETTINGS_TABS; i++) {
         u32 tx = x + sp(16) + i * tab_w;
-        fb_fill_rect(tx, y + sp(56), tab_w - sp(4), sp(34), i == active_tab ? S_SELECTED : S_RAISED);
-        fb_draw_rect(tx, y + sp(56), tab_w - sp(4), sp(34), S_BORDER);
-        draw_text(tx + sp(8), y + sp(67), tab_names[i], i == active_tab ? S_ACCENT : S_TEXT);
+        fb_fill_rect(tx, tabs_y, tab_w - sp(4), tabs_h, i == active_tab ? S_SELECTED : S_RAISED);
+        fb_draw_rect(tx, tabs_y, tab_w - sp(4), tabs_h, S_BORDER);
+        u32 label_y = tabs_y + (tabs_h > settings_text_height() ?
+                                (tabs_h - settings_text_height()) / 2 : 0);
+        draw_text(tx + sp(8), label_y, tab_names[i], i == active_tab ? S_ACCENT : S_TEXT);
     }
 
     u32 content_x = x + sp(28);
-    u32 content_y = y + sp(112);
+    u32 content_y = content_top(y);
     u32 content_w = w - sp(56);
     switch (active_tab) {
     case 0: draw_appearance(content_x, content_y, content_w); break;
@@ -303,15 +335,21 @@ void settings_ui_render(void) {
     default: break;
     }
 
-    u32 by = y + h - sp(48);
-    draw_text(x + sp(20), by + sp(12), save_ok ? "Saved to CHARISOS.CFG" : "Changes are pending until saved", S_MUTED);
+    u32 foot_h = footer_height();
+    u32 by = y + h - foot_h;
+    u32 button_h = settings_text_height() + sp(8);
+    if (button_h > foot_h - sp(8)) button_h = foot_h - sp(8);
+    u32 button_y = by + (foot_h - button_h) / 2;
+    draw_text(x + sp(20), by + (foot_h > settings_text_height() ?
+              (foot_h - settings_text_height()) / 2 : 0),
+              save_ok ? "Saved to CHARISOS.CFG" : "Changes are pending until saved", S_MUTED);
     u32 save_x = x + w - sp(206);
-    fb_fill_rect(save_x, by + sp(4), sp(88), sp(32), S_SELECTED);
-    fb_draw_rect(save_x, by + sp(4), sp(88), sp(32), S_BORDER);
-    draw_text(save_x + sp(24), by + sp(15), "Save", S_ACCENT);
-    fb_fill_rect(save_x + sp(100), by + sp(4), sp(88), sp(32), S_RAISED);
-    fb_draw_rect(save_x + sp(100), by + sp(4), sp(88), sp(32), S_BORDER);
-    draw_text(save_x + sp(120), by + sp(15), "Close", S_TEXT);
+    fb_fill_rect(save_x, button_y, sp(88), button_h, S_SELECTED);
+    fb_draw_rect(save_x, button_y, sp(88), button_h, S_BORDER);
+    draw_text(save_x + sp(24), button_y + (button_h - settings_text_height()) / 2, "Save", S_ACCENT);
+    fb_fill_rect(save_x + sp(100), button_y, sp(88), button_h, S_RAISED);
+    fb_draw_rect(save_x + sp(100), button_y, sp(88), button_h, S_BORDER);
+    draw_text(save_x + sp(120), button_y + (button_h - settings_text_height()) / 2, "Close", S_TEXT);
 }
 
 static void adjust_appearance(int direction) {
@@ -363,16 +401,21 @@ bool settings_ui_handle_event(const input_event_t* event) {
         return true;
     }
 
-    u32 tab_w = (w - 32) / SETTINGS_TABS;
-    if (my >= (int)(y + sp(56)) && my < (int)(y + sp(90)) && mx >= (int)(x + sp(16))) {
+    u32 tab_w = (w - sp(32)) / SETTINGS_TABS;
+    u32 tabs_y = y + sp(56);
+    if (my >= (int)tabs_y && my < (int)(tabs_y + tab_height()) && mx >= (int)(x + sp(16))) {
         u32 tab = (u32)(mx - (int)x - (int)sp(16)) / tab_w;
         if (tab < SETTINGS_TABS) active_tab = tab;
         return true;
     }
 
-    u32 by = y + h - sp(48);
+    u32 foot_h = footer_height();
+    u32 by = y + h - foot_h;
+    u32 button_h = settings_text_height() + sp(8);
+    if (button_h > foot_h - sp(8)) button_h = foot_h - sp(8);
+    u32 button_y = by + (foot_h - button_h) / 2;
     u32 save_x = x + w - sp(206);
-    if (my >= (int)(by + sp(4)) && my < (int)(by + sp(36))) {
+    if (my >= (int)button_y && my < (int)(button_y + button_h)) {
         if (mx >= (int)save_x && mx < (int)(save_x + sp(88))) {
             save_ok = config_save(CONFIG_FILE_PATH);
             return true;
@@ -384,11 +427,11 @@ bool settings_ui_handle_event(const input_event_t* event) {
     }
 
     if (active_tab == 0 && mx >= (int)(x + sp(28)) && mx < (int)(x + w - sp(28))) {
-        u32 content_y = y + sp(112);
+        u32 content_y = content_top(y) + sp(36);
         if (my >= (int)content_y && my < (int)(content_y + sp(184))) {
             active_row = (u32)(my - (int)content_y) / sp(66);
             if (active_row > 2) active_row = 2;
-            int delta = (mx > (int)(x + w - 150)) ? 1 : -1;
+            int delta = (mx > (int)(x + w - sp(150))) ? 1 : -1;
             adjust_appearance(delta);
             return true;
         }
