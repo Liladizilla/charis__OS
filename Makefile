@@ -75,10 +75,16 @@ images: $(VM_ISO) $(USB_IMG)
 ELF_SMOKE_IMAGE = $(BUILD_DIR)/elf-smoke-disk.img
 CEX_SMOKE = $(BUILD_DIR)/elf-smoke.cex
 
-elf-test: $(ELF_SMOKE_IMAGE) cex-format-test ui-geometry-test pci-config-test
+elf-test: $(ELF_SMOKE_IMAGE) cex-format-test cex-probe-test ui-geometry-test pci-config-test
 
 cex-format-test:
 	python3 tools/test_mkcex.py
+
+cex-probe-test:
+	mkdir -p $(BUILD_DIR)
+	$(HOST_CC) -std=c11 -Wall -Wextra -Werror -I$(INCLUDE_DIR) \
+		-o $(BUILD_DIR)/cex_probe_test tests/cex_probe_test.c kernel/cex.c
+	$(BUILD_DIR)/cex_probe_test
 
 HOST_CC ?= gcc
 ui-geometry-test:
@@ -247,4 +253,4 @@ clean:
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-.PHONY: all check-tools images elf-test cex-format-test ui-geometry-test pci-config-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
+.PHONY: all check-tools images elf-test cex-format-test cex-probe-test ui-geometry-test pci-config-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
