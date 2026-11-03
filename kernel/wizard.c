@@ -463,7 +463,11 @@ static void step_leave(wizard_step_t from) {
     case STEP_NETWORK:   w.network_static = (w.sel[STEP_NETWORK] == 1); break;
     case STEP_DISPLAY:   break;
     case STEP_WALLPAPER: w.wallpaper = w.sel[STEP_WALLPAPER]; break;
-    case STEP_DONE:      apply_and_save(); w.finished = true; break;
+    case STEP_DONE:
+        apply_and_save();
+        w.finished = true;
+        vga_puts("[WIZ] setup finished\\n");
+        break;
     default: break;
     }
 }
