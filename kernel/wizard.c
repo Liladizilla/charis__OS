@@ -466,7 +466,7 @@ static void step_leave(wizard_step_t from) {
     case STEP_DONE:
         apply_and_save();
         w.finished = true;
-        vga_puts("[WIZ] setup finished\\n");
+        vga_puts("[WIZ] setup finished\n");
         break;
     default: break;
     }
