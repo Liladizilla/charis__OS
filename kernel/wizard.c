@@ -404,10 +404,12 @@ static void draw_done(void) {
     text(cx + 40, cy + 172, w.install ? "install to disk" : "run from device", W_FG);
 
     text(cx + 40, cy + 200,
-         "Config can update an existing writable file, but cannot create",
+         w.persisted ? "Preferences saved to the system settings file." :
+                       "Settings are active for this session only.",
          W_HINT);
     text(cx + 40, cy + 220,
-         "a missing config file. Persistence depends on that file existing.",
+         w.persisted ? "You can change them later in Settings." :
+                       "A writable FAT volume is required to save preferences.",
          W_HINT);
 }
 
@@ -434,11 +436,15 @@ static void apply_and_save(void) {
     config_set_string("timezone_name", TIMEZONES[w.timezone]);
     config_set_int("wallpaper", (int)w.wallpaper);
     config_set_string("wallpaper_name", wallpaper_name(w.wallpaper));
+    config_set_int("font_style", (int)w.font_style);
+    config_set_int("font_scale", (int)w.font_scale);
+    config_set_int("ui_scale", (int)w.ui_scale);
     config_set_bool("install_to_disk", w.install);
     config_set_bool("net_dhcp", !w.network_static);
     config_set_bool("net_enabled", true);
     config_set_bool("setup_complete", true);
-    config_save("/etc/charisos.conf");
+    w.persisted = config_save(CONFIG_FILE_PATH);
+    gfx_text_apply_preferences();
 }
 
 static void step_leave(wizard_step_t from) {
@@ -449,6 +455,7 @@ static void step_leave(wizard_step_t from) {
     case STEP_TIMEZONE:  w.timezone = w.sel[STEP_TIMEZONE]; break;
     case STEP_DISK:      break;               /* informational */
     case STEP_NETWORK:   w.network_static = (w.sel[STEP_NETWORK] == 1); break;
+    case STEP_DISPLAY:   break;
     case STEP_WALLPAPER: w.wallpaper = w.sel[STEP_WALLPAPER]; break;
     case STEP_DONE:      apply_and_save(); w.finished = true; break;
     default: break;
@@ -490,6 +497,7 @@ static void adjust(int delta) {
     case STEP_TIMEZONE:  count = TIMEZONE_COUNT; break;
     case STEP_DISK:      return;
     case STEP_NETWORK:   count = 2; break;
+    case STEP_DISPLAY:   count = 3; break;
     case STEP_WALLPAPER: count = wallpaper_count(); break;
     case STEP_WELCOME:
     case STEP_DONE:
@@ -536,6 +544,7 @@ static bool handle_event(const input_event_t* e) {
         case STEP_LANGUAGE: x = 40; y = 100; cw = 560; break;
         case STEP_TIMEZONE: x = 40; y = 100; cw = 560; break;
         case STEP_NETWORK:  x = 40; y = 150; cw = 560; break;
+        case STEP_DISPLAY:  x = 40; y = 108; cw = 560; break;
         case STEP_WALLPAPER:x = 24; y = 60;  cw = 672; break;
         default: return false;
         }
@@ -555,6 +564,7 @@ static bool handle_event(const input_event_t* e) {
 
         u32 count = (w.step == STEP_MODE) ? 1
                   : (w.step == STEP_NETWORK) ? 2
+                  : (w.step == STEP_DISPLAY) ? 3
                   : (w.step == STEP_LANGUAGE) ? LANGUAGE_COUNT
                   : (w.step == STEP_TIMEZONE) ? TIMEZONE_COUNT : 0;
         if (!count) return false;
@@ -599,6 +609,7 @@ static bool handle_event(const input_event_t* e) {
         case STEP_LANGUAGE:  card_h = 460; row_y = 100; row_count = LANGUAGE_COUNT; break;
         case STEP_TIMEZONE:  card_h = 470; row_y = 100; row_count = TIMEZONE_COUNT; break;
         case STEP_NETWORK:   card_h = 400; row_y = 150; row_count = 2; break;
+        case STEP_DISPLAY:   card_h = 390; row_y = 108; row_count = 3; break;
         case STEP_WALLPAPER: {
             u32 cw = 420, ch = 96;
             u32 cx = sw > cw ? (sw - cw) / 2 : 0;
@@ -636,10 +647,18 @@ bool wizard_run(void) {
     w.sel[STEP_LANGUAGE] = 0;
     w.sel[STEP_TIMEZONE] = 6;        /* UTC+03:00, East Africa */
     w.sel[STEP_NETWORK] = 0;
+    w.sel[STEP_DISPLAY] = 0;
     w.sel[STEP_WALLPAPER] = 0;
     w.language = 0;
     w.timezone = 6;
-    w.wallpaper = 0;
+    w.wallpaper = (u32)config_get_int("wallpaper", 0);
+    w.font_style = (u32)config_get_int("font_style", 0);
+    if (w.font_style > 2) w.font_style = 0;
+    w.font_scale = (u32)config_get_int("font_scale", 1);
+    if (w.font_scale < 1 || w.font_scale > 3) w.font_scale = 1;
+    w.ui_scale = (u32)config_get_int("ui_scale", 100);
+    if (w.ui_scale != 80 && w.ui_scale != 100 && w.ui_scale != 120) w.ui_scale = 100;
+    w.persisted = false;
     w.install = false;
     w.network_static = false;
     w.finished = false;
@@ -694,6 +713,7 @@ bool wizard_run(void) {
         case STEP_TIMEZONE: draw_timezone(); break;
         case STEP_DISK:     draw_disk(); break;
         case STEP_NETWORK:  draw_network(); break;
+        case STEP_DISPLAY:  draw_display(); break;
         case STEP_WALLPAPER:draw_wallpaper(); break;
         case STEP_DONE:     draw_done(); break;
         default: break;
