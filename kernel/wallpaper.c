@@ -40,12 +40,30 @@ void wallpaper_draw(u32 style) {
 
     fb_clear(base);
     if (w >= 8 && h >= 8) {
-        /* A quiet, right-aligned plane gives the desktop depth without
-         * competing with text or pretending to be a photographed wallpaper. */
+        /* Layered planes keep the wallpaper cheap while giving the shell a
+         * little depth. The restrained star field adds texture without
+         * requiring a large embedded bitmap or expensive per-pixel effects. */
         u32 plane_x = (w * 2) / 3;
         fb_fill_rect(plane_x, h / 8, w - plane_x, (h * 3) / 4, plane);
         fb_fill_rect(0, h - 6, w, 6, edge);
         fb_fill_rect(plane_x, h / 8, 2, (h * 3) / 4, edge);
+
+        u32 seed = 0xC4A2157Bu;
+        for (u32 i = 0; i < 96; ++i) {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            u32 sx = seed % w;
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            u32 sy = seed % ((h * 3) / 4 ? (h * 3) / 4 : 1);
+            u32 shade = (i % 7 == 0) ? 0xFF8CB9E8u
+                       : (i % 3 == 0) ? 0xFF526B8Au : 0xFF34445Eu;
+            fb_put_pixel(sx, sy, shade);
+            if (i % 11 == 0 && sx + 1 < w && sy + 1 < h)
+                fb_fill_rect(sx, sy, 2, 2, 0xFF526B8Au);
+        }
     }
 }
 
