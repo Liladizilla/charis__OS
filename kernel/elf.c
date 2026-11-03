@@ -160,6 +160,10 @@ int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
     for (u32 i = 0; i < ehdr.e_phnum; i++) {
         elf64_phdr_t* phdr = &phdrs[i];
         if (phdr->p_type != PT_LOAD) continue;
+        if (!phdr->p_memsz) {
+            if (phdr->p_filesz) goto done;
+            continue;
+        }
         if (phdr->p_offset > executable_size ||
             phdr->p_filesz > executable_size - phdr->p_offset) goto done;
         if (phdr->p_align > 1 &&
