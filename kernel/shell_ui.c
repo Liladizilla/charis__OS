@@ -49,10 +49,29 @@ extern int desktop_surface_taskbar_hit_test(int mx, int my, u32 taskbar_y);
 
 /* Layout. */
 static u32 ui_px(u32 logical) { return gfx_ui_scale(logical); }
-static u32 taskbar_height(void) { return ui_px(44); }
-static u32 start_button_width(void) { return ui_px(96); }
-static u32 menu_width(void) { return ui_px(260); }
-static u32 menu_item_height(void) { return ui_px(34); }
+static u32 text_height(void) { return font_cell_h * gfx_text_get_scale(); }
+static u32 taskbar_height(void) {
+    u32 base = ui_px(44), needed = text_height() + ui_px(12);
+    return base > needed ? base : needed;
+}
+static u32 start_button_width(void) {
+    u32 width = 0;
+    gfx_text_size("Charis", &width, NULL);
+    u32 needed = width + ui_px(28);
+    u32 base = ui_px(96);
+    return base > needed ? base : needed;
+}
+static u32 menu_width(void) {
+    u32 width = 0;
+    gfx_text_size("About CharisOS", &width, NULL);
+    u32 needed = width + ui_px(64);
+    u32 base = ui_px(260);
+    return base > needed ? base : needed;
+}
+static u32 menu_item_height(void) {
+    u32 base = ui_px(34), needed = text_height() + ui_px(12);
+    return base > needed ? base : needed;
+}
 #define CURSOR_BLINK  400   /* ms */
 
 typedef struct {
@@ -150,31 +169,31 @@ static void draw_app_icon(u32 app, u32 x, u32 y) {
               app == 2 ? 0xFFF0C674u :
               app == 3 ? 0xFFB7A0F5u :
               app == 4 ? 0xFF8FC7D8u : CHARIS_UI_TEXT;
-    fb_fill_rect(x, y, 20, 20, CHARIS_UI_PANEL_RAISED);
-    fb_draw_rect(x, y, 20, 20, CHARIS_UI_BORDER);
+    fb_fill_rect(x, y, ui_px(20), ui_px(20), CHARIS_UI_PANEL_RAISED);
+    fb_draw_rect(x, y, ui_px(20), ui_px(20), CHARIS_UI_BORDER);
     if (app == 0) {
-        fb_draw_rect(x + 3, y + 3, 14, 14, ink);
-        fb_fill_rect(x + 3, y + 7, 14, 2, ink);
-        fb_fill_rect(x + 9, y + 4, 2, 12, ink);
+        fb_draw_rect(x + ui_px(3), y + ui_px(3), ui_px(14), ui_px(14), ink);
+        fb_fill_rect(x + ui_px(3), y + ui_px(7), ui_px(14), ui_px(2), ink);
+        fb_fill_rect(x + ui_px(9), y + ui_px(4), ui_px(2), ui_px(12), ink);
     } else if (app == 1) {
-        gfx_draw_string(x + 2, y + 4, ">_", ink, FB_TRANSPARENT);
+        gfx_draw_string(x + ui_px(2), y + ui_px(4), ">_", ink, FB_TRANSPARENT);
     } else if (app == 2) {
-        fb_fill_rect(x + 3, y + 5, 7, 3, ink);
-        fb_fill_rect(x + 3, y + 7, 14, 10, ink);
-        fb_draw_rect(x + 3, y + 7, 14, 10, CHARIS_UI_BORDER);
+        fb_fill_rect(x + ui_px(3), y + ui_px(5), ui_px(7), ui_px(3), ink);
+        fb_fill_rect(x + ui_px(3), y + ui_px(7), ui_px(14), ui_px(10), ink);
+        fb_draw_rect(x + ui_px(3), y + ui_px(7), ui_px(14), ui_px(10), CHARIS_UI_BORDER);
     } else if (app == 3) {
-        fb_fill_rect(x + 4, y + 2, 12, 16, ink);
-        fb_fill_rect(x + 6, y + 6, 8, 1, CHARIS_UI_PANEL);
-        fb_fill_rect(x + 6, y + 10, 8, 1, CHARIS_UI_PANEL);
-        fb_fill_rect(x + 6, y + 14, 6, 1, CHARIS_UI_PANEL);
+        fb_fill_rect(x + ui_px(4), y + ui_px(2), ui_px(12), ui_px(16), ink);
+        fb_fill_rect(x + ui_px(6), y + ui_px(6), ui_px(8), ui_px(1), CHARIS_UI_PANEL);
+        fb_fill_rect(x + ui_px(6), y + ui_px(10), ui_px(8), ui_px(1), CHARIS_UI_PANEL);
+        fb_fill_rect(x + ui_px(6), y + ui_px(14), ui_px(6), ui_px(1), CHARIS_UI_PANEL);
     } else if (app == 4) {
-        fb_draw_rect(x + 4, y + 4, 12, 12, ink);
-        fb_fill_rect(x + 8, y + 1, 4, 18, ink);
-        fb_fill_rect(x + 1, y + 8, 18, 4, ink);
-        fb_fill_rect(x + 7, y + 7, 6, 6, CHARIS_UI_PANEL_RAISED);
+        fb_draw_rect(x + ui_px(4), y + ui_px(4), ui_px(12), ui_px(12), ink);
+        fb_fill_rect(x + ui_px(8), y + ui_px(1), ui_px(4), ui_px(18), ink);
+        fb_fill_rect(x + ui_px(1), y + ui_px(8), ui_px(18), ui_px(4), ink);
+        fb_fill_rect(x + ui_px(7), y + ui_px(7), ui_px(6), ui_px(6), CHARIS_UI_PANEL_RAISED);
     } else {
-        fb_draw_rect(x + 5, y + 2, 10, 16, ink);
-        gfx_draw_string(x + 9, y + 4, "i", ink, FB_TRANSPARENT);
+        fb_draw_rect(x + ui_px(5), y + ui_px(2), ui_px(10), ui_px(16), ink);
+        gfx_draw_string(x + ui_px(9), y + ui_px(4), "i", ink, FB_TRANSPARENT);
     }
 }
 
@@ -197,8 +216,10 @@ static void draw_menu(void) {
         fb_fill_rect(x + ui_px(2), iy, menu_width() - ui_px(4), menu_item_height(),
                      hovered ? T_MENU_HOVER : T_MENU_ITEM);
         draw_app_icon(i, x + ui_px(12), iy + ui_px(7));
-        gfx_draw_string(x + ui_px(44), iy + (menu_item_height() - font_cell_h * gfx_text_get_scale()) / 2,
-                        MENU_ITEMS[i].label, T_FG, FB_TRANSPARENT);
+        u32 line_h = text_height();
+        u32 text_y = iy + (menu_item_height() > line_h ?
+                           (menu_item_height() - line_h) / 2 : 0);
+        gfx_draw_string(x + ui_px(44), text_y, MENU_ITEMS[i].label, T_FG, FB_TRANSPARENT);
     }
 }
 
