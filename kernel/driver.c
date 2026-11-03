@@ -28,7 +28,7 @@ static driver_t hda_driver = {
     .remove = NULL,
     .vendor_id = 0x8086,   /* Intel */
     .device_id = 0x2668,   /* Intel ICH HDA */
-    .pci_class = PCI_CLASS_SERIAL, /* Audio controller class */
+    .pci_class = PCI_CLASS_MULTIMEDIA, /* HDA multimedia controller */
     .pci_subclass = 0x03   /* HDA subclass */
 };
 
