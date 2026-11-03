@@ -60,6 +60,7 @@ static const u8* glyph_data(char ch, u32* left, u32* right) {
 }
 
 static u32 glyph_advance(char ch, u32 scale) {
+    if (ch == ' ') return (u32)(font_cell_w / 2) * scale;
     u32 left = 0, right = font_cell_w - 1;
     (void)glyph_data(ch, &left, &right);
     if (text_style == 0) {
