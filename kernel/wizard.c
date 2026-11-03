@@ -233,7 +233,7 @@ static void draw_mode(void) {
          "There is no installer yet; this session runs from the boot medium.",
          W_HINT);
     text(cx + 40, cy + 230,
-         "Setup persists only when an existing writable config file is present.",
+         "Preferences save when a writable FAT32 volume is available.",
          W_HINT);
 }
 
@@ -575,6 +575,7 @@ static bool handle_event(const input_event_t* e) {
         u32 card_w = (w.step == STEP_WALLPAPER) ? 720 : 640;
         u32 card_h = (w.step == STEP_MODE) ? 340 :
                      (w.step == STEP_NETWORK) ? 400 :
+                     (w.step == STEP_DISPLAY) ? 390 :
                      (w.step == STEP_LANGUAGE) ? 460 :
                      (w.step == STEP_TIMEZONE) ? 470 : 300;
         u32 cx = (sw > card_w) ? (sw - card_w) / 2 : 0;
