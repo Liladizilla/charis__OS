@@ -27,6 +27,7 @@
 #include <kernel/config.h>
 #include <kernel/wizard.h>
 #include <kernel/settings_ui.h>
+#include <kernel/calculator_ui.h>
 
 /* Native desktop widgets and shortcut surface. */
 extern void desktop_surface_render(void);
@@ -83,6 +84,7 @@ static const menu_entry_t MENU_ITEMS[] = {
     { "Terminal" },
     { "File Manager" },
     { "Text Editor" },
+    { "Calculator" },
     { "Settings" },
     { "About CharisOS" },
 };
@@ -95,6 +97,7 @@ static const char* const NOTICE_LINE_1[] = {
     "A graphical terminal is not wired up yet.",
     "The VFS exists, but the graphical browser is",
     "No graphical editor is implemented yet.",
+    "The built-in integer calculator is ready.",
     "System preferences and hardware diagnostics are available.",
     "CharisOS is a from-scratch x86_64 kernel.",
 };
@@ -103,6 +106,7 @@ static const char* const NOTICE_LINE_2[] = {
     "Kernel output remains on the text/serial console.",
     "not connected to file operations yet.",
     "This screen will not pretend to show source code.",
+    "Supports signed 32-bit integer arithmetic.",
     "Preferences save to CHARISOS.CFG on writable FAT32 media.",
     "The desktop and built-in apps are still partial.",
 };
@@ -187,6 +191,14 @@ static void draw_app_icon(u32 app, u32 x, u32 y) {
         fb_fill_rect(x + ui_px(6), y + ui_px(10), ui_px(8), ui_px(1), CHARIS_UI_PANEL);
         fb_fill_rect(x + ui_px(6), y + ui_px(14), ui_px(6), ui_px(1), CHARIS_UI_PANEL);
     } else if (app == 4) {
+        /* Calculator: four operator keys and a display line. */
+        fb_fill_rect(x + ui_px(3), y + ui_px(3), ui_px(14), ui_px(14), ink);
+        for (u32 row = 0; row < 2; row++)
+            for (u32 col = 0; col < 2; col++)
+                fb_fill_rect(x + ui_px(5 + col * 6), y + ui_px(8 + row * 5),
+                             ui_px(3), ui_px(3), CHARIS_UI_PANEL);
+        fb_fill_rect(x + ui_px(5), y + ui_px(5), ui_px(10), ui_px(2), CHARIS_UI_PANEL);
+    } else if (app == 5) {
         fb_draw_rect(x + ui_px(4), y + ui_px(4), ui_px(12), ui_px(12), ink);
         fb_fill_rect(x + ui_px(8), y + ui_px(1), ui_px(4), ui_px(18), ink);
         fb_fill_rect(x + ui_px(1), y + ui_px(8), ui_px(18), ui_px(4), ink);
@@ -301,6 +313,7 @@ static void redraw_all(void) {
     draw_menu();
     draw_notice();
     settings_ui_render();
+    calculator_ui_render();
     ui_draw_cursor();
 }
 
@@ -340,6 +353,11 @@ void ui_install_input_hooks(void) {
 static bool super_held = false;
 
 static void handle_event(const input_event_t* e) {
+    if (calculator_ui_is_open()) {
+        calculator_ui_handle_event(e);
+        ui.needs_redraw = true;
+        return;
+    }
     if (settings_ui_is_open()) {
         settings_ui_handle_event(e);
         ui.needs_redraw = true;
@@ -458,6 +476,9 @@ static void handle_event(const input_event_t* e) {
                 notice_open = false;
                 browser_open();
             } else if (hit == 4) {
+                notice_open = false;
+                calculator_ui_open();
+            } else if (hit == 5) {
                 notice_open = false;
                 settings_ui_open();
             } else {
