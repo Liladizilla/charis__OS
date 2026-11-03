@@ -19,6 +19,7 @@ void task_init(void) {
         task_pool[i].rsp = 0;
         task_pool[i].stack_base = 0;
         task_pool[i].state = TASK_STATE_UNUSED;
+        task_pool[i].scheduler_queued = false;
         task_pool[i].pid = 0;
         task_pool[i].exit_code = 0;
         task_pool[i].parent_pid = 0;
@@ -197,6 +198,7 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->guard_page_addr = (u64)stack;
     task->is_user = is_user;
     task->started = false;
+    task->scheduler_queued = false;
     task->pid = next_pid++;
     task->exit_code = 0;
     task_t* parent = scheduler_current();
