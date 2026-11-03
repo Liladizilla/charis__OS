@@ -171,20 +171,27 @@ static void draw_input_diagnostics(void) {
     /* Keep the panel self-contained: periodic updates must erase old digits
      * when a counter changes from (for example) 100 to 99. */
     const u32 panel_w = 160;
-    const u32 panel_h = 12 + 4 * (font_cell_h + 2);
+    const u32 panel_h = 12 + 8 * (font_cell_h + 2);
     u32 x = g_framebuffer.width > panel_w + 8
           ? g_framebuffer.width - panel_w - 8 : 4;
     u32 y = 8;
     fb_fill_rect(x, y, panel_w, panel_h, W_CARD);
     fb_draw_rect(x, y, panel_w, panel_h, W_BORDER);
 
-    const char *labels[] = { "KIRQ ", "MIRQ ", "PKT ", "DROP " };
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    const char *labels[] = {
+        "KIRQ ", "MIRQ ", "PKT ", "QDEP ",
+        "DROP ", "MX   ", "MY   ", "BTN  "
+    };
     u32 values[] = {
         keyboard_irq_count(), mouse_irq_count(),
-        mouse_packet_count(), input_queue_dropped()
+        mouse_packet_count(), input_queue_depth(),
+        input_queue_dropped(), (u32)mouse.x, (u32)mouse.y,
+        (u32)mouse.buttons
     };
     char line[32];
-    for (u32 row = 0; row < 4; row++) {
+    for (u32 row = 0; row < 8; row++) {
         u32 n = 0;
         while (labels[row][n] && n < sizeof(line) - 1)
             line[n] = labels[row][n], n++;
