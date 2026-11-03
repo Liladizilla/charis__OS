@@ -8,6 +8,8 @@ typedef struct {
     u32 processes_total;
     u32 processes_blocked;
     u32 memory_used;
+    u32 memory_allocated;
+    u32 memory_reserved;
     u32 memory_free;
     u32 context_switches;
     u32 interrupts;
