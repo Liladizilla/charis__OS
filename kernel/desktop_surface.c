@@ -100,6 +100,8 @@ static void draw_notification_widget(void) {
 
 void desktop_surface_render(void) {
     if (!g_framebuffer.initialized) return;
+    gfx_draw_string_scaled(82, 34, "CHARIS OS", DS_WHITE, FB_TRANSPARENT, 2);
+    label(84, 70, "A native desktop environment", DS_MUTED);
     draw_shortcuts();
     draw_status_widget();
     draw_notification_widget();
