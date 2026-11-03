@@ -115,3 +115,18 @@ int desktop_surface_hit_test(int mx, int my) {
     if ((u32)(my - 28) % 82 >= 68) return -1;
     return (int)slot;
 }
+
+/* Three compact pinned launchers beside the Start button. */
+void desktop_surface_draw_taskbar_icons(u32 y) {
+    draw_app_icon(116, y + 5, 0);
+    draw_app_icon(160, y + 5, 1);
+    draw_app_icon(204, y + 5, 2);
+}
+
+int desktop_surface_taskbar_hit_test(int mx, int my, u32 taskbar_y) {
+    if (my < (int)taskbar_y) return -1;
+    if (mx >= 112 && mx < 154) return 0;
+    if (mx >= 156 && mx < 198) return 1;
+    if (mx >= 200 && mx < 242) return 2;
+    return -1;
+}
