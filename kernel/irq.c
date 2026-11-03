@@ -5,6 +5,9 @@
 #include <kernel/input.h>
 
 static void (*irq_handlers[16])(reg_frame_t*) = {0};
+static volatile u32 g_mouse_irq_count = 0;
+
+u32 mouse_irq_count(void) { return g_mouse_irq_count; }
 
 // PIC Initialization
 void pic_init(void) {
@@ -66,6 +69,7 @@ void pic_unmask_irq(u8 irq) {
 // Mouse IRQ handler (IRQ 12)
 static void mouse_irq_handler(reg_frame_t* frame) {
     (void)frame;
+    g_mouse_irq_count++;
     mouse_handler();
     pic_send_eoi(12);
 }
