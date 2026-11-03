@@ -1,4 +1,5 @@
 #include <kernel/elf.h>
+#include <kernel/cex.h>
 #include <kernel/vfs.h>
 #include <kernel/memory.h>
 #include <kernel/pmm.h>
@@ -36,7 +37,8 @@ static int fd_read_all(int fd, u64 offset, void* buf, usize count) {
     return (int)total;
 }
 
-static bool elf_load_segment(pml4_t* pml4, int fd, const elf64_phdr_t* phdr) {
+static bool elf_load_segment(pml4_t* pml4, int fd, u64 file_base,
+                             const elf64_phdr_t* phdr) {
     if (!phdr->p_memsz) return phdr->p_filesz == 0;
     if (phdr->p_memsz > 0x0000800000000000ULL || phdr->p_vaddr < PAGE_SIZE ||
         phdr->p_filesz > phdr->p_memsz ||
@@ -68,7 +70,7 @@ static bool elf_load_segment(pml4_t* pml4, int fd, const elf64_phdr_t* phdr) {
     while (copied < phdr->p_filesz) {
         usize chunk = (usize)(phdr->p_filesz - copied);
         if (chunk > sizeof(buffer)) chunk = sizeof(buffer);
-        if (fd_read_all(fd, phdr->p_offset + copied, buffer, chunk) != (int)chunk) {
+        if (fd_read_all(fd, file_base + phdr->p_offset + copied, buffer, chunk) != (int)chunk) {
             return false;
         }
 
@@ -96,13 +98,21 @@ int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
     vfs_node_t* node = vfs_resolve(path);
     if (!node || !(node->flags & VFS_FILE) || !node->read) return -1;
 
+    u64 file_base = 0;
+    u64 executable_size = node->size;
+    int container = cex_probe(node, &file_base, &executable_size);
+    if (container < 0) {
+        vga_puts("CEX: invalid container or payload checksum\\n");
+        return -1;
+    }
+
     int fd = fd_alloc(node, 0);
     if (fd < 0) return -1;
 
     int result = -1;
     elf64_phdr_t* phdrs = NULL;
     elf64_ehdr_t ehdr;
-    if (fd_read_all(fd, 0, &ehdr, sizeof(ehdr)) != (int)sizeof(ehdr)) goto done;
+    if (fd_read_all(fd, file_base, &ehdr, sizeof(ehdr)) != (int)sizeof(ehdr)) goto done;
 
     if (ehdr.e_ident[0] != 0x7F || ehdr.e_ident[1] != 'E' ||
         ehdr.e_ident[2] != 'L' || ehdr.e_ident[3] != 'F' ||
@@ -113,7 +123,8 @@ int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
         ehdr.e_phnum > 128 || !ehdr.e_phoff) goto done;
 
     u64 phdr_bytes = (u64)ehdr.e_phnum * sizeof(elf64_phdr_t);
-    if (ehdr.e_phoff > node->size || phdr_bytes > node->size - ehdr.e_phoff) goto done;
+    if (ehdr.e_phoff > executable_size ||
+        phdr_bytes > executable_size - ehdr.e_phoff) goto done;
 
     phdrs = (elf64_phdr_t*)kmalloc((usize)phdr_bytes);
     if (!phdrs || fd_read_all(fd, ehdr.e_phoff, phdrs, (usize)phdr_bytes) !=
@@ -124,11 +135,12 @@ int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
     for (u32 i = 0; i < ehdr.e_phnum; i++) {
         elf64_phdr_t* phdr = &phdrs[i];
         if (phdr->p_type != PT_LOAD) continue;
-        if (phdr->p_offset > node->size || phdr->p_filesz > node->size - phdr->p_offset) goto done;
+        if (phdr->p_offset > executable_size ||
+            phdr->p_filesz > executable_size - phdr->p_offset) goto done;
         if (phdr->p_align > 1 &&
             ((phdr->p_align & (phdr->p_align - 1)) ||
              (phdr->p_vaddr & (phdr->p_align - 1)) != (phdr->p_offset & (phdr->p_align - 1)))) goto done;
-        if (!elf_load_segment(mm->pml4, fd, phdr)) goto done;
+        if (!elf_load_segment(mm->pml4, fd, file_base, phdr)) goto done;
         loaded_segment = true;
         if ((phdr->p_flags & PF_X) && ehdr.e_entry >= phdr->p_vaddr &&
             ehdr.e_entry - phdr->p_vaddr < phdr->p_memsz) {
