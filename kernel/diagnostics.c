@@ -5,6 +5,7 @@
 #include <kernel/pmm.h>
 #include <kernel/vga.h>
 #include <kernel/printf.h>
+#include <kernel/string.h>
 
 static u32 diag_context_switches = 0;
 static u32 diag_interrupts = 0;
@@ -20,17 +21,18 @@ void diag_init(void) {
 void diag_collect_stats(system_stats_t* stats) {
     stats->uptime_ms = timer_get_ms();
     
-    // Count active tasks
+    /* A partially initialized scheduler has no current task yet. Bound the
+     * walk so a damaged task ring cannot wedge the diagnostics screen. */
     u32 active = 0, total = 0;
     task_t* cur = scheduler_current();
     task_t* t = cur;
-    do {
+    for (u32 i = 0; t && i < TASK_MAX_TASKS; i++) {
         total++;
-        if (t->state == TASK_STATE_RUNNING || t->state == TASK_STATE_READY) {
+        if (t->state == TASK_STATE_RUNNING || t->state == TASK_STATE_READY)
             active++;
-        }
         t = t->next;
-    } while (t && t != cur);
+        if (t == cur) break;
+    }
     
     stats->processes_active = active;
     stats->processes_total = total;
@@ -72,7 +74,8 @@ void diag_dump_tasks(void) {
         }
         kprintf("  [%u] %s: %s (quantum=%u)\n", t->pid, t->name, state_str, t->remaining_quantum);
         t = t->next;
-    } while (t && t != cur);
+        if (t == cur) break;
+    }
 }
 
 // Called from scheduler for context switch counting
