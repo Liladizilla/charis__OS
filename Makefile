@@ -94,7 +94,7 @@ $(ELF_SMOKE_IMAGE): $(BUILD_DIR)/elf-smoke.elf
 # framebuffer. The difference is a build flag, not a separate tree, so the two
 # cannot drift apart.
 TEXT_ELIG  = $(filter-out $(BUILD_DIR)/fb.o $(BUILD_DIR)/font_data.o \
-                          $(BUILD_DIR)/gfx_text.o $(BUILD_DIR)/shell_ui.o, $(ALL_OBJS))
+                          $(BUILD_DIR)/gfx_text.o $(BUILD_DIR)/shell_ui.o $(BUILD_DIR)/settings_ui.o, $(ALL_OBJS))
 TEXT_ISO   = $(BUILD_DIR)/charisos-text.iso
 TEXT_FLAGS = -DCHARIS_TEXT_ONLY
 
