@@ -487,6 +487,7 @@ void shell_ui_main(void* arg) {
     }
 
     u32 last_w = 0, last_h = 0;
+    u64 last_live_refresh = 0;
 
     for (;;) {
         /* Feed the queue: keyboard scancodes arrive via the IRQ hook, mouse
@@ -506,6 +507,14 @@ void shell_ui_main(void* arg) {
         if (now >= ui.next_blink_ms) {
             ui.cursor_blink = !ui.cursor_blink;
             ui.next_blink_ms = now + CURSOR_BLINK;
+        }
+
+        /* Refresh uptime, RAM, task and counter widgets periodically even
+         * when the user is not moving the mouse. The compositor is still a
+         * full-frame renderer, so keep this to one refresh per second. */
+        if (now - last_live_refresh >= 1000) {
+            last_live_refresh = now;
+            ui.needs_redraw = true;
         }
 
         /* Redraw on a change, or when the mode geometry moved underneath us. */
