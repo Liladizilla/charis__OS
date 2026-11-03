@@ -102,7 +102,7 @@ int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
     u64 executable_size = node->size;
     int container = cex_probe(node, &file_base, &executable_size);
     if (container < 0) {
-        vga_puts("CEX: invalid container or payload checksum\\n");
+        vga_puts("CEX: invalid container or payload checksum\n");
         return -1;
     }
 
@@ -127,7 +127,7 @@ int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
         phdr_bytes > executable_size - ehdr.e_phoff) goto done;
 
     phdrs = (elf64_phdr_t*)kmalloc((usize)phdr_bytes);
-    if (!phdrs || fd_read_all(fd, ehdr.e_phoff, phdrs, (usize)phdr_bytes) !=
+    if (!phdrs || fd_read_all(fd, file_base + ehdr.e_phoff, phdrs, (usize)phdr_bytes) !=
                   (int)phdr_bytes) goto done;
 
     bool entry_is_executable = false;
