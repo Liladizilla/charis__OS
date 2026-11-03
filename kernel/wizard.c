@@ -330,7 +330,7 @@ static void draw_network(void) {
  * everything, and the card sits on top with its name. Seeing the whole desktop
  * is the point, so there is nothing to clip. */
 static void draw_display(void) {
-    static const char* const styles[] = { "Sans", "Monospace", "Serif" };
+    static const char* const styles[] = { "Sans", "Monospace", "Bold Sans" };
     static const char* const sizes[] = { "1x", "2x", "3x" };
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
     u32 cw = 640, ch = 390;
@@ -399,7 +399,7 @@ static void draw_done(void) {
     text(cx + 40, cy + 172, w.install ? "install to disk" : "run from device", W_FG);
     text(cx + 40, cy + 194,
          w.font_style == 1 ? "Monospace family" :
-         w.font_style == 2 ? "Serif family" : "Sans family", W_FG);
+         w.font_style == 2 ? "Bold Sans family" : "Sans family", W_FG);
     text(cx + 40, cy + 216,
          w.font_scale == 3 ? "Text size: 3x" :
          w.font_scale == 2 ? "Text size: 2x" : "Text size: 1x", W_FG);
