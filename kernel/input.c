@@ -7,6 +7,7 @@
 static input_event_t input_queue[INPUT_QUEUE_SIZE];
 static u32 input_head = 0;
 static u32 input_tail = 0;
+static volatile u32 input_dropped = 0;
 
 /*
  * Keyboard events are produced from IRQ1, while mouse events are produced
@@ -35,6 +36,7 @@ bool input_push_event(input_event_t* evt) {
     u64 flags = input_irq_save();
     u32 next_head = (input_head + 1) % INPUT_QUEUE_SIZE;
     if (next_head == input_tail) {
+        input_dropped++;
         input_irq_restore(flags);
         return false; /* Queue full */
     }
@@ -140,3 +142,5 @@ u32 input_queue_depth(void) {
     input_irq_restore(flags);
     return depth;
 }
+
+u32 input_queue_dropped(void) { return input_dropped; }

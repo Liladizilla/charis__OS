@@ -21,6 +21,8 @@
 #include <kernel/input.h>
 #include <kernel/keyboard.h>
 #include <kernel/mouse.h>
+#include <kernel/keyboard.h>
+#include <kernel/mouse.h>
 #include <kernel/net.h>
 #include <kernel/config.h>
 #include <kernel/ata.h>
@@ -163,6 +165,29 @@ static bool hit(u32 x, u32 y, u32 w, u32 h) {
 }
 
 /* ── Per-step drawing ─────────────────────────────────────────────────── */
+
+/* Live counters make a frozen first-run screen diagnosable from a
+ * screenshot: IRQ delivery, complete PS/2 packets, and queue pressure. */
+static void draw_input_diagnostics(void) {
+    char line[64];
+    const char *labels[] = { "K IRQ ", "M packets ", "Q dropped " };
+    u32 values[] = { keyboard_irq_count(), mouse_packet_count(), input_queue_dropped() };
+    u32 y = 12;
+    for (u32 row = 0; row < 3; row++) {
+        u32 n = 0;
+        while (labels[row][n] && n < sizeof(line) - 1) {
+            line[n] = labels[row][n];
+            n++;
+        }
+        char digits[11];
+        u32 count = 0, value = values[row];
+        do { digits[count++] = (char)('0' + value % 10); value /= 10; } while (value && count < sizeof(digits));
+        while (count && n < sizeof(line) - 1) line[n++] = digits[--count];
+        line[n] = 0;
+        text(12, y, line, W_HINT);
+        y += font_cell_h + 2;
+    }
+}
 
 static void draw_welcome(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
@@ -628,6 +653,7 @@ bool wizard_run(void) {
         }
 
         draw_footer();
+        draw_input_diagnostics();
         ui_draw_cursor();
 
         /* This wizard runs inside a cooperative task. Yield so the shell and
