@@ -98,6 +98,10 @@ typedef struct {
     u32 language;
     u32 timezone;
     u32 wallpaper;
+    u32 font_style;
+    u32 font_scale;
+    u32 ui_scale;
+    bool persisted;
     bool install;            /* true = install to disk, false = run from device */
     bool network_static;
     u8  ip[4];
