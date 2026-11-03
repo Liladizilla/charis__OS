@@ -18,6 +18,7 @@
 static const mem_map_entry_t* memory_map;
 static u32 memory_map_count;
 static u8 bitmap[BITMAP_SIZE];
+static u8 allocated_bitmap[BITMAP_SIZE];
 static u32 last_free = 0;
 
 extern char _kernel_end[];
@@ -42,6 +43,7 @@ static void pmm_mark_range(u64 start, u64 end, bool used) {
         u8 mask = (u8)(1U << (page & 7U));
         if (used) bitmap[page >> 3] |= mask;
         else bitmap[page >> 3] &= (u8)~mask;
+        allocated_bitmap[page >> 3] &= (u8)~mask;
     }
 }
 
@@ -92,6 +94,7 @@ u64 pmm_alloc_page(void) {
             u8 mask = (u8)(1U << bit);
             if (!(bitmap[i] & mask)) {
                 bitmap[i] |= mask;
+                allocated_bitmap[i] |= mask;
                 last_free = i;
                 u64 address = PMM_BASE + (u64)page * 4096ULL;
                 /* Zero-on-allocation prevents stale data crossing process boundaries. */
@@ -109,6 +112,7 @@ u64 pmm_alloc_page(void) {
             u8 mask = (u8)(1U << bit);
             if (!(bitmap[i] & mask)) {
                 bitmap[i] |= mask;
+                allocated_bitmap[i] |= mask;
                 last_free = i;
                 u64 address = PMM_BASE + (u64)page * 4096ULL;
                 kmemset((void*)(uintptr_t)address, 0, 4096);
@@ -126,9 +130,10 @@ void pmm_free_page(u64 addr) {
     u32 byte = (u32)(page >> 3);
     u8 bit = (u8)(page & 7U);
     u8 mask = (u8)(1U << bit);
-    /* A set bit means allocated. Clear it exactly once; a clear bit is
-     * already free and is ignored to prevent double-free accounting. */
-    if (!(bitmap[byte] & mask)) return;
+    /* Only pages returned by pmm_alloc_page() may be freed. A used bit alone
+     * can represent the kernel image, boot metadata or a device reservation. */
+    if (!(allocated_bitmap[byte] & mask)) return;
+    allocated_bitmap[byte] &= (u8)~mask;
     bitmap[byte] &= (u8)~mask;
     if (byte < last_free) last_free = byte;
 }
@@ -146,6 +151,22 @@ u32 pmm_used_pages(void) {
 
 u32 pmm_free_pages(void) {
     return (u32)PMM_PAGE_COUNT - pmm_used_pages();
+}
+
+u32 pmm_allocated_pages(void) {
+    u32 count = 0;
+    for (u32 i = 0; i < BITMAP_SIZE; i++) {
+        u8 value = allocated_bitmap[i];
+        for (u8 bit = 0; bit < 8; bit++)
+            if (value & (1U << bit)) count++;
+    }
+    return count;
+}
+
+u32 pmm_reserved_pages(void) {
+    u32 used = pmm_used_pages();
+    u32 allocated = pmm_allocated_pages();
+    return used >= allocated ? used - allocated : 0;
 }
 
 /* Total firmware-declared usable memory, including ranges outside the current
