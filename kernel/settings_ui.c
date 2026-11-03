@@ -206,6 +206,51 @@ static void cpu_brand(char out[49]) {
     }
 }
 
+static void cpu_capabilities(char out[96]) {
+    u32 max_basic = 0, eax = 0, ebx = 0, ecx = 0, edx = 0;
+    cpuid(0, 0, &max_basic, NULL, NULL, NULL);
+    u32 logical = 1;
+    bool apic = false, sse2 = false, nx = false, long_mode = false, syscall = false;
+    if (max_basic >= 1) {
+        cpuid(1, 0, &eax, &ebx, &ecx, &edx);
+        logical = (ebx >> 16) & 0xFFU;
+        if (!logical) logical = 1;
+        apic = (edx & (1U << 9)) != 0;
+        sse2 = (edx & (1U << 26)) != 0;
+    }
+
+    u32 max_extended = 0;
+    cpuid(0x80000000U, 0, &max_extended, NULL, NULL, NULL);
+    if (max_extended >= 0x80000001U) {
+        cpuid(0x80000001U, 0, NULL, NULL, NULL, &edx);
+        syscall = (edx & (1U << 11)) != 0;
+        nx = (edx & (1U << 20)) != 0;
+        long_mode = (edx & (1U << 29)) != 0;
+    }
+
+    u32 physical_bits = 0;
+    if (max_extended >= 0x80000008U) {
+        cpuid(0x80000008U, 0, &eax, NULL, NULL, NULL);
+        physical_bits = eax & 0xFFU;
+    }
+
+    u32 pos = 0;
+    out[0] = 0;
+    append_text(out, 96, &pos, "Logical CPUs: ");
+    append_u32(out, 96, &pos, logical);
+    append_text(out, 96, &pos, " | ");
+    append_text(out, 96, &pos, apic ? "APIC " : "");
+    append_text(out, 96, &pos, sse2 ? "SSE2 " : "");
+    append_text(out, 96, &pos, nx ? "NX " : "");
+    append_text(out, 96, &pos, long_mode ? "LongMode " : "");
+    append_text(out, 96, &pos, syscall ? "SYSCALL" : "NoSYSCALL");
+    if (physical_bits) {
+        append_text(out, 96, &pos, " | phys ");
+        append_u32(out, 96, &pos, physical_bits);
+        append_text(out, 96, &pos, "b");
+    }
+}
+
 static void draw_row(u32 x, u32 y, u32 w, const char* name, const char* value,
                      bool selected) {
     u32 h = row_height();
@@ -288,51 +333,50 @@ static void draw_system(u32 x, u32 y) {
 static void draw_hardware(u32 x, u32 y) {
     draw_text(x, y, "Hardware inventory", S_ACCENT);
     y += title_step();
-    char vendor[13], model[49], line[96];
-    u32 step = line_step();
-    u32 pos;
-    cpu_vendor(vendor);
+
+    char model[49], features[96], line[96];
+    u32 step = line_step(), pos = 0;
     cpu_brand(model);
     model[32] = 0;
-    draw_text(x, y, "CPU model", S_MUTED);
-    draw_text(x, y + step, model, S_TEXT);
-    draw_text(x, y + step * 2, "CPU vendor", S_MUTED);
-    draw_text(x + sp(220), y + step * 2, vendor, S_TEXT);
+    cpu_capabilities(features);
 
+    draw_text(x, y, "CPU", S_MUTED);
+    draw_text(x + sp(64), y, model, S_TEXT);
+    draw_text(x, y + step, features, S_TEXT);
+
+    pos = 0; line[0] = 0;
+    append_text(line, sizeof(line), &pos, "Display: ");
     if (g_framebuffer.initialized) {
-        pos = 0;
-        line[0] = 0;
         append_u32(line, sizeof(line), &pos, g_framebuffer.width);
-        append_text(line, sizeof(line), &pos, " x ");
+        append_text(line, sizeof(line), &pos, "x");
         append_u32(line, sizeof(line), &pos, g_framebuffer.height);
         append_text(line, sizeof(line), &pos, " @ ");
         append_u32(line, sizeof(line), &pos, g_framebuffer.bpp);
-        append_text(line, sizeof(line), &pos, " bpp");
+        append_text(line, sizeof(line), &pos, "bpp");
     } else {
-        kstrncpy(line, "Framebuffer unavailable", sizeof(line) - 1);
-        line[sizeof(line) - 1] = 0;
+        append_text(line, sizeof(line), &pos, "framebuffer unavailable");
     }
-    draw_text(x, y + step * 3, "Display mode", S_MUTED);
-    draw_text(x + sp(220), y + step * 3, line, S_TEXT);
+    draw_text(x, y + step * 2, line, S_TEXT);
+
     format_pair(line, sizeof(line), "PCI devices: ", (u32)pci_count, "");
-    draw_text(x, y + step * 4, line, S_TEXT);
+    draw_text(x, y + step * 3, line, S_TEXT);
 
     pos = 0; line[0] = 0;
     append_text(line, sizeof(line), &pos, "PS/2 keyboard: ");
     append_text(line, sizeof(line), &pos,
                 keyboard_controller_ready() ? "initialized" : "init failed");
-    append_text(line, sizeof(line), &pos, "   IRQ1: ");
+    append_text(line, sizeof(line), &pos, " | IRQ1 ");
     append_u32(line, sizeof(line), &pos, keyboard_irq_count());
-    draw_text(x, y + step * 5, line, S_TEXT);
+    draw_text(x, y + step * 4, line, S_TEXT);
+
     format_pair(line, sizeof(line), "PS/2 mouse packets: ", mouse_packet_count(), "");
-    draw_text(x, y + step * 6, line, S_TEXT);
-    draw_text(x, y + step * 7, ata_is_present() ? "Primary ATA device: detected" :
+    draw_text(x, y + step * 5, line, S_TEXT);
+    draw_text(x, y + step * 6, ata_is_present() ? "Primary ATA device: detected" :
                                                "Primary ATA device: unavailable", S_TEXT);
     format_pair(line, sizeof(line), "Boot memory-map regions: ", boot_info.region_count, "");
-    draw_text(x, y + step * 8, line, S_TEXT);
-    draw_text(x, y + step * 9, "Drivers pending: AHCI, NVMe, USB HID, GPU support.", S_MUTED);
+    draw_text(x, y + step * 7, line, S_TEXT);
+    draw_text(x, y + step * 8, "Drivers pending: AHCI, NVMe, USB HID, GPU support.", S_MUTED);
 }
-
 static void draw_security(u32 x, u32 y) {
     draw_text(x, y, "Security status", S_ACCENT);
     y += title_step();
