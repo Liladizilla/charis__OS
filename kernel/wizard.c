@@ -523,6 +523,23 @@ static bool handle_event(const input_event_t* e) {
             switch (base) {
             case KEY_UP:   adjust(-1); return true;
             case KEY_DOWN: adjust(1);  return true;
+            case KEY_LEFT:
+            case KEY_RIGHT:
+                if (w.step == STEP_DISPLAY) {
+                    int delta = base == KEY_RIGHT ? 1 : -1;
+                    if (w.sel[STEP_DISPLAY] == 0)
+                        w.font_style = (w.font_style + 3 + delta) % 3;
+                    else if (w.sel[STEP_DISPLAY] == 1)
+                        w.font_scale = w.font_scale == 1 && delta < 0 ? 3 :
+                                       w.font_scale == 3 && delta > 0 ? 1 :
+                                       (u32)((int)w.font_scale + delta);
+                    else
+                        w.ui_scale = w.ui_scale == 80 && delta < 0 ? 120 :
+                                     w.ui_scale == 120 && delta > 0 ? 80 :
+                                     (u32)((int)w.ui_scale + delta * 20);
+                    return true;
+                }
+                return false;
             default: return false; /* Super and other extended keys */
             }
         }
@@ -623,7 +640,14 @@ static bool handle_event(const input_event_t* e) {
         u32 cx = sw > card_w ? (sw - card_w) / 2 : 0;
         u32 cy = sh > card_h ? (sh - card_h) / 2 : 0;
         int row = hit_list(cx + row_x, cy + row_y, row_w, row_count);
-        if (row >= 0) w.sel[w.step] = (u32)row;
+        if (row >= 0) {
+            if (w.step == STEP_DISPLAY && w.sel[STEP_DISPLAY] == (u32)row) {
+                if (row == 0) w.font_style = (w.font_style + 1) % 3;
+                else if (row == 1) w.font_scale = (w.font_scale % 3) + 1;
+                else w.ui_scale = w.ui_scale == 80 ? 100 : w.ui_scale == 100 ? 120 : 80;
+            }
+            w.sel[w.step] = (u32)row;
+        }
         return true;
     }
 
@@ -666,6 +690,7 @@ bool wizard_run(void) {
     kprintf("[WIZ] first run: starting setup\n");
 
     u32 last_w = 0, last_h = 0;
+    u64 last_diag_ms = 0;
     wizard_step_t last_step = (wizard_step_t)-1;
     u32 last_sel = 0;
     int last_mx = -1, last_my = -1;
@@ -686,6 +711,7 @@ bool wizard_run(void) {
                   || w.step != last_step
                   || sel_now != last_sel
                   || mx != last_mx || my != last_my
+                  || timer_get_ms() - last_diag_ms >= 500
                   || g_framebuffer.width  != last_w
                   || g_framebuffer.height != last_h;
 
@@ -694,6 +720,7 @@ bool wizard_run(void) {
         last_mx = mx; last_my = my;
         last_w = g_framebuffer.width;
         last_h = g_framebuffer.height;
+        last_diag_ms = timer_get_ms();
         first = false;
 
         if (!dirty) { scheduler_yield(); asm volatile("hlt"); continue; }
