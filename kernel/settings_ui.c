@@ -18,6 +18,7 @@
 #include <kernel/keyboard.h>
 #include <kernel/mouse.h>
 #include <kernel/net.h>
+#include <kernel/usb.h>
 #include <kernel/bootmem.h>
 #include <kernel/ui_theme.h>
 #include <kernel/security.h>
@@ -376,7 +377,9 @@ static void draw_hardware(u32 x, u32 y) {
                                                "Primary ATA device: unavailable", S_TEXT);
     format_pair(line, sizeof(line), "Boot memory-map regions: ", boot_info.region_count, "");
     draw_text(x, y + step * 7, line, S_TEXT);
-    draw_text(x, y + step * 8, "Drivers pending: AHCI, NVMe, USB HID, GPU support.", S_MUTED);
+    format_pair(line, sizeof(line), "USB host controllers: ", (u32)usb_get_controller_count(), "");
+    draw_text(x, y + step * 8, line, S_TEXT);
+    draw_text(x, y + step * 9, "USB enumeration/HID, AHCI, NVMe and GPU drivers are pending.", S_MUTED);
 }
 static void format_mac(char out[18], const u8 mac[6]) {
     static const char hex[] = "0123456789ABCDEF";
