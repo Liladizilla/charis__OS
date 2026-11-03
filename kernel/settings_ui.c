@@ -31,6 +31,8 @@
 
 #define SETTINGS_TABS 5
 
+static u32 sp(u32 logical) { return gfx_ui_scale(logical); }
+
 static bool opened;
 static u32 active_tab;
 static u32 active_row;
@@ -54,22 +56,26 @@ static void draw_text(u32 x, u32 y, const char* value, u32 color) {
     gfx_draw_string(x, y, value, color, FB_TRANSPARENT);
 }
 
+static u32 panel_width(void) {
+    u32 available = g_framebuffer.width > 16 ? g_framebuffer.width - 16 : g_framebuffer.width;
+    u32 desired = sp(760);
+    return desired < available ? desired : available;
+}
+
+static u32 panel_height(void) {
+    u32 available = g_framebuffer.height > 16 ? g_framebuffer.height - 16 : g_framebuffer.height;
+    u32 desired = sp(560);
+    return desired < available ? desired : available;
+}
+
 static u32 panel_x(void) {
-    u32 width = g_framebuffer.width > 760 ? 760 : g_framebuffer.width - 16;
+    u32 width = panel_width();
     return (g_framebuffer.width - width) / 2;
 }
 
 static u32 panel_y(void) {
-    u32 height = g_framebuffer.height > 560 ? 560 : g_framebuffer.height - 16;
+    u32 height = panel_height();
     return (g_framebuffer.height - height) / 2;
-}
-
-static u32 panel_width(void) {
-    return g_framebuffer.width > 760 ? 760 : g_framebuffer.width - 16;
-}
-
-static u32 panel_height(void) {
-    return g_framebuffer.height > 560 ? 560 : g_framebuffer.height - 16;
 }
 
 static void append_u32(char* out, u32 capacity, u32* pos, u32 value) {
@@ -108,10 +114,10 @@ static void cpu_vendor(char out[13]) {
 
 static void draw_row(u32 x, u32 y, u32 w, const char* name, const char* value,
                      bool selected) {
-    fb_fill_rect(x, y, w, 52, selected ? S_SELECTED : S_RAISED);
-    fb_draw_rect(x, y, w, 52, S_BORDER);
-    draw_text(x + 16, y + 7, name, selected ? S_ACCENT : S_TEXT);
-    draw_text(x + 16, y + 29, value, S_MUTED);
+    fb_fill_rect(x, y, w, sp(52), selected ? S_SELECTED : S_RAISED);
+    fb_draw_rect(x, y, w, sp(52), S_BORDER);
+    draw_text(x + sp(16), y + sp(7), name, selected ? S_ACCENT : S_TEXT);
+    draw_text(x + sp(16), y + sp(29), value, S_MUTED);
 }
 
 static void draw_appearance(u32 x, u32 y, u32 w) {
@@ -126,21 +132,21 @@ static void draw_appearance(u32 x, u32 y, u32 w) {
     if (ui != 80 && ui != 100 && ui != 120) ui = 100;
 
     draw_row(x, y, w, "Font family", fonts[style], active_row == 0);
-    draw_row(x, y + 66, w, "Letter size", sizes[size - 1], active_row == 1);
-    draw_row(x, y + 132, w, "Interface scale", ui == 80 ? scales[0] : ui == 120 ? scales[2] : scales[1],
+    draw_row(x, y + sp(66), w, "Letter size", sizes[size - 1], active_row == 1);
+    draw_row(x, y + sp(132), w, "Interface scale", ui == 80 ? scales[0] : ui == 120 ? scales[2] : scales[1],
              active_row == 2);
 
     u32 old_style = style, old_size = size;
     config_set_int("font_style", (int)style);
     config_set_int("font_scale", (int)size);
     gfx_text_apply_preferences();
-    draw_text(x, y + 222, "Live typography preview", S_MUTED);
-    gfx_draw_string_scaled(x, y + 250, "CharisOS Settings", S_TEXT, FB_TRANSPARENT, 1);
+    draw_text(x, y + sp(222), "Live typography preview", S_MUTED);
+    gfx_draw_string_scaled(x, y + sp(250), "CharisOS Settings", S_TEXT, FB_TRANSPARENT, 1);
     config_set_int("font_style", (int)old_style);
     config_set_int("font_scale", (int)old_size);
     gfx_text_apply_preferences();
-    draw_text(x, y + 300, "Arrow keys or row clicks change the selected setting.", S_MUTED);
-    draw_text(x, y + 324, "Appearance changes preview immediately; Save keeps them.", S_MUTED);
+    draw_text(x, y + sp(300), "Arrow keys or row clicks change the selected setting.", S_MUTED);
+    draw_text(x, y + sp(324), "Appearance changes preview immediately; Save keeps them.", S_MUTED);
 }
 
 static void draw_system(u32 x, u32 y) {
@@ -154,21 +160,21 @@ static void draw_system(u32 x, u32 y) {
     format_pair(line, sizeof(line), "Tasks active: ", stats.processes_active, "");
     pos = (u32)kstrlen(line); append_text(line, sizeof(line), &pos, " / ");
     append_u32(line, sizeof(line), stats.processes_total);
-    draw_text(x, y + 32, line, S_TEXT);
+    draw_text(x, y + sp(32), line, S_TEXT);
     format_pair(line, sizeof(line), "Tasks blocked: ", stats.processes_blocked, "");
-    draw_text(x, y + 52, line, S_TEXT);
+    draw_text(x, y + sp(52), line, S_TEXT);
     format_pair(line, sizeof(line), "Physical pages used: ", stats.memory_used / 4, "");
-    draw_text(x, y + 64, line, S_TEXT);
+    draw_text(x, y + sp(64), line, S_TEXT);
     format_pair(line, sizeof(line), "Physical pages free: ", stats.memory_free / 4, "");
-    draw_text(x, y + 96, line, S_TEXT);
+    draw_text(x, y + sp(96), line, S_TEXT);
     format_pair(line, sizeof(line), "Context switches: ", stats.context_switches, "");
-    draw_text(x, y + 128, line, S_TEXT);
+    draw_text(x, y + sp(128), line, S_TEXT);
     format_pair(line, sizeof(line), "Interrupts: ", stats.interrupts, "");
-    draw_text(x, y + 160, line, S_TEXT);
+    draw_text(x, y + sp(160), line, S_TEXT);
     format_pair(line, sizeof(line), "System calls: ", stats.syscalls, "");
-    draw_text(x, y + 192, line, S_TEXT);
-    draw_text(x, y + 244, "Memory figures cover the currently managed 1 GiB physical window.", S_MUTED);
-    draw_text(x, y + 268, "CPU utilization is not reported until idle accounting is trustworthy.", S_MUTED);
+    draw_text(x, y + sp(192), line, S_TEXT);
+    draw_text(x, y + sp(244), "Memory figures cover the currently managed 1 GiB physical window.", S_MUTED);
+    draw_text(x, y + sp(268), "CPU utilization is not reported until idle accounting is trustworthy.", S_MUTED);
 }
 
 static void draw_hardware(u32 x, u32 y) {
@@ -176,7 +182,7 @@ static void draw_hardware(u32 x, u32 y) {
     char line[96];
     cpu_vendor(vendor);
     draw_text(x, y, "Processor vendor", S_MUTED);
-    draw_text(x + 220, y, vendor, S_TEXT);
+    draw_text(x + sp(220), y, vendor, S_TEXT);
 
     if (g_framebuffer.initialized) {
         u32 pos = 0;
@@ -191,57 +197,57 @@ static void draw_hardware(u32 x, u32 y) {
         kstrncpy(line, "Framebuffer unavailable", sizeof(line) - 1);
         line[sizeof(line) - 1] = 0;
     }
-    draw_text(x, y + 44, "Display mode", S_MUTED);
-    draw_text(x + 220, y + 44, line, S_TEXT);
+    draw_text(x, y + sp(44), "Display mode", S_MUTED);
+    draw_text(x + sp(220), y + sp(44), line, S_TEXT);
 
     format_pair(line, sizeof(line), "PCI devices enumerated: ", (u32)pci_count, "");
-    draw_text(x, y + 88, line, S_TEXT);
-    draw_text(x, y + 132, ata_is_present() ? "Primary ATA device: detected" :
+    draw_text(x, y + sp(88), line, S_TEXT);
+    draw_text(x, y + sp(132), ata_is_present() ? "Primary ATA device: detected" :
                                              "Primary ATA device: unavailable", S_TEXT);
-    draw_text(x, y + 188, "Current storage driver: legacy ATA PIO only.", S_MUTED);
-    draw_text(x, y + 212, "SATA/AHCI, NVMe, USB HID and broad GPU support are not yet complete.", S_MUTED);
+    draw_text(x, y + sp(188), "Current storage driver: legacy ATA PIO only.", S_MUTED);
+    draw_text(x, y + sp(212), "SATA/AHCI, NVMe, USB HID and broad GPU support are not yet complete.", S_MUTED);
 }
 
 static void draw_security(u32 x, u32 y) {
     draw_text(x, y, "Kernel stack protector: enabled at compile time", S_TEXT);
-    draw_text(x, y + 36, "Process isolation: ring-3 address spaces and page permissions", S_TEXT);
-    draw_text(x, y + 72, "Permissions: task capability bitmasks", S_TEXT);
-    draw_text(x, y + 108, "Filesystem paths: traversal checks in security layer", S_TEXT);
-    draw_text(x, y + 160, "Not yet implemented or verified:", S_ACCENT);
-    draw_text(x, y + 192, "Secure Boot chain, cryptographic random source, signed packages,", S_MUTED);
+    draw_text(x, y + sp(36), "Process isolation: ring-3 address spaces and page permissions", S_TEXT);
+    draw_text(x, y + sp(72), "Permissions: task capability bitmasks", S_TEXT);
+    draw_text(x, y + sp(108), "Filesystem paths: traversal checks in security layer", S_TEXT);
+    draw_text(x, y + sp(160), "Not yet implemented or verified:", S_ACCENT);
+    draw_text(x, y + sp(192), "Secure Boot chain, cryptographic random source, signed packages,", S_MUTED);
     draw_text(x, y + 216, "full syscall audit coverage, memory-safe drivers and USB isolation.", S_MUTED);
     draw_text(x, y + 272, "Do not treat this development build as safe for sensitive workloads.", S_ACCENT);
 }
 
 static void draw_about(u32 x, u32 y) {
     draw_text(x, y, "CharisOS", S_ACCENT);
-    draw_text(x, y + 36, "64-bit x86 operating system written in C and Assembly.", S_TEXT);
-    draw_text(x, y + 72, "Current executable support: validated ELF64 ET_EXEC loading.", S_TEXT);
-    draw_text(x, y + 108, "CEX v1 wraps ELF64 with architecture metadata and a checksum.", S_MUTED);
-    draw_text(x, y + 160, "Build target: freestanding x86_64, BIOS boot path under active testing.", S_TEXT);
-    draw_text(x, y + 196, "Hardware support is driver-specific and is not universal yet.", S_MUTED);
+    draw_text(x, y + sp(36), "64-bit x86 operating system written in C and Assembly.", S_TEXT);
+    draw_text(x, y + sp(72), "Current executable support: validated ELF64 ET_EXEC loading.", S_TEXT);
+    draw_text(x, y + sp(108), "CEX v1 wraps ELF64 with architecture metadata and a checksum.", S_MUTED);
+    draw_text(x, y + sp(160), "Build target: freestanding x86_64, BIOS boot path under active testing.", S_TEXT);
+    draw_text(x, y + sp(196), "Hardware support is driver-specific and is not universal yet.", S_MUTED);
 }
 
 void settings_ui_render(void) {
     if (!opened || !g_framebuffer.initialized) return;
     u32 x = panel_x(), y = panel_y(), w = panel_width(), h = panel_height();
-    fb_fill_rect(x + 5, y + 5, w, h, CHARIS_UI_SHADOW);
+    fb_fill_rect(x + sp(5), y + sp(5), w, h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, w, h, S_PANEL);
     fb_draw_rect(x, y, w, h, S_BORDER);
-    fb_fill_rect(x, y, w, 44, S_RAISED);
-    draw_text(x + 20, y + 14, "System Settings", S_TEXT);
+    fb_fill_rect(x, y, w, sp(44), S_RAISED);
+    draw_text(x + sp(20), y + sp(14), "System Settings", S_TEXT);
 
-    u32 tab_w = (w - 32) / SETTINGS_TABS;
+    u32 tab_w = (w - sp(32)) / SETTINGS_TABS;
     for (u32 i = 0; i < SETTINGS_TABS; i++) {
-        u32 tx = x + 16 + i * tab_w;
-        fb_fill_rect(tx, y + 56, tab_w - 4, 34, i == active_tab ? S_SELECTED : S_RAISED);
-        fb_draw_rect(tx, y + 56, tab_w - 4, 34, S_BORDER);
-        draw_text(tx + 8, y + 67, tab_names[i], i == active_tab ? S_ACCENT : S_TEXT);
+        u32 tx = x + sp(16) + i * tab_w;
+        fb_fill_rect(tx, y + sp(56), tab_w - sp(4), sp(34), i == active_tab ? S_SELECTED : S_RAISED);
+        fb_draw_rect(tx, y + sp(56), tab_w - sp(4), sp(34), S_BORDER);
+        draw_text(tx + sp(8), y + sp(67), tab_names[i], i == active_tab ? S_ACCENT : S_TEXT);
     }
 
-    u32 content_x = x + 28;
-    u32 content_y = y + 112;
-    u32 content_w = w - 56;
+    u32 content_x = x + sp(28);
+    u32 content_y = y + sp(112);
+    u32 content_w = w - sp(56);
     switch (active_tab) {
     case 0: draw_appearance(content_x, content_y, content_w); break;
     case 1: draw_system(content_x, content_y); break;
@@ -251,15 +257,15 @@ void settings_ui_render(void) {
     default: break;
     }
 
-    u32 by = y + h - 48;
-    draw_text(x + 20, by + 12, save_ok ? "Saved to CHARISOS.CFG" : "Changes are pending until saved", S_MUTED);
-    u32 save_x = x + w - 206;
-    fb_fill_rect(save_x, by + 4, 88, 32, S_SELECTED);
-    fb_draw_rect(save_x, by + 4, 88, 32, S_BORDER);
-    draw_text(save_x + 24, by + 15, "Save", S_ACCENT);
-    fb_fill_rect(save_x + 100, by + 4, 88, 32, S_RAISED);
-    fb_draw_rect(save_x + 100, by + 4, 88, 32, S_BORDER);
-    draw_text(save_x + 120, by + 15, "Close", S_TEXT);
+    u32 by = y + h - sp(48);
+    draw_text(x + sp(20), by + sp(12), save_ok ? "Saved to CHARISOS.CFG" : "Changes are pending until saved", S_MUTED);
+    u32 save_x = x + w - sp(206);
+    fb_fill_rect(save_x, by + sp(4), sp(88), sp(32), S_SELECTED);
+    fb_draw_rect(save_x, by + sp(4), sp(88), sp(32), S_BORDER);
+    draw_text(save_x + sp(24), by + sp(15), "Save", S_ACCENT);
+    fb_fill_rect(save_x + sp(100), by + sp(4), sp(88), sp(32), S_RAISED);
+    fb_draw_rect(save_x + sp(100), by + sp(4), sp(88), sp(32), S_BORDER);
+    draw_text(save_x + sp(120), by + sp(15), "Close", S_TEXT);
 }
 
 static void adjust_appearance(int direction) {
@@ -312,29 +318,29 @@ bool settings_ui_handle_event(const input_event_t* event) {
     }
 
     u32 tab_w = (w - 32) / SETTINGS_TABS;
-    if (my >= (int)(y + 56) && my < (int)(y + 90) && mx >= (int)(x + 16)) {
-        u32 tab = (u32)(mx - (int)x - 16) / tab_w;
+    if (my >= (int)(y + sp(56)) && my < (int)(y + sp(90)) && mx >= (int)(x + sp(16))) {
+        u32 tab = (u32)(mx - (int)x - (int)sp(16)) / tab_w;
         if (tab < SETTINGS_TABS) active_tab = tab;
         return true;
     }
 
-    u32 by = y + h - 48;
-    u32 save_x = x + w - 206;
-    if (my >= (int)(by + 4) && my < (int)(by + 36)) {
-        if (mx >= (int)save_x && mx < (int)(save_x + 88)) {
+    u32 by = y + h - sp(48);
+    u32 save_x = x + w - sp(206);
+    if (my >= (int)(by + 4) && my < (int)(by + sp(36))) {
+        if (mx >= (int)save_x && mx < (int)(save_x + sp(88))) {
             save_ok = config_save(CONFIG_FILE_PATH);
             return true;
         }
-        if (mx >= (int)(save_x + 100) && mx < (int)(save_x + 188)) {
+        if (mx >= (int)(save_x + sp(100)) && mx < (int)(save_x + sp(188))) {
             settings_ui_close();
             return true;
         }
     }
 
-    if (active_tab == 0 && mx >= (int)(x + 28) && mx < (int)(x + w - 28)) {
-        u32 content_y = y + 112;
-        if (my >= (int)content_y && my < (int)(content_y + 184)) {
-            active_row = (u32)(my - (int)content_y) / 66;
+    if (active_tab == 0 && mx >= (int)(x + sp(28)) && mx < (int)(x + w - sp(28))) {
+        u32 content_y = y + sp(112);
+        if (my >= (int)content_y && my < (int)(content_y + sp(184))) {
+            active_row = (u32)(my - (int)content_y) / sp(66);
             if (active_row > 2) active_row = 2;
             int delta = (mx > (int)(x + w - 150)) ? 1 : -1;
             adjust_appearance(delta);
