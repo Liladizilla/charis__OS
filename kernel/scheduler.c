@@ -55,10 +55,15 @@ void scheduler_init(void) {
 }
 
 void scheduler_add_task(task_t* task) {
-    if (!task || task->state == TASK_STATE_UNUSED ||
-        task->state == TASK_STATE_ZOMBIE) return;
+    if (!task) return;
 
     u64 flags = scheduler_irq_save();
+    if (task->state == TASK_STATE_UNUSED ||
+        task->state == TASK_STATE_ZOMBIE) {
+        scheduler_irq_restore(flags);
+        return;
+    }
+
     /* A task is linked once for its lifetime. Re-adding an existing node used
      * to overwrite its next/prev pointers and could orphan the ready list or
      * create a self-loop when the node was already the tail. */
@@ -147,7 +152,17 @@ void scheduler_start(void) {
 
 void scheduler_schedule(void) {
     task_t* next = scheduler_find_next();
-    if (!next || next == current_task) return;
+    if (!next) return;
+    if (next == current_task) {
+        /* A wakeup can make the currently executing task READY while it is
+         * returning from HLT. If no peer is runnable, selecting that same
+         * task must restore the RUNNING invariant rather than leaving the
+         * live CPU context marked READY. */
+        if (current_task && current_task->state == TASK_STATE_READY) {
+            current_task->state = TASK_STATE_RUNNING;
+        }
+        return;
+    }
 
     task_t* previous = current_task;
     if (previous && previous->state == TASK_STATE_RUNNING) {
