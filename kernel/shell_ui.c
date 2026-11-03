@@ -287,8 +287,13 @@ static int hit_menu_item(int mx, int my) {
 
 /* ── Input plumbing ───────────────────────────────────────────────── */
 
+static volatile u32 ui_keyboard_hook_events = 0;
+
+u32 ui_keyboard_hook_event_count(void) { return ui_keyboard_hook_events; }
+
 /* Runs in the keyboard IRQ: push the scancode as an event and return. */
 static void ui_key_hook(u8 scancode, bool pressed) {
+    ui_keyboard_hook_events++;
     input_event_t evt;
     evt.type = pressed ? INPUT_KEY_DOWN : INPUT_KEY_UP;
     evt.key.scancode = scancode;
@@ -298,6 +303,7 @@ static void ui_key_hook(u8 scancode, bool pressed) {
 }
 
 void ui_install_input_hooks(void) {
+    ui_keyboard_hook_events = 0;
     keyboard_set_key_event_hook(ui_key_hook);
 }
 

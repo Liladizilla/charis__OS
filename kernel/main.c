@@ -90,6 +90,13 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('m');
     idt_init();
     BOOT_MARK('I');
+
+    /* Prepare the shared event ring before any device driver unmasks an IRQ.
+     * Keyboard and mouse handlers can enqueue events as soon as their IRQs
+     * are enabled, so initializing the queue later would discard early input. */
+    input_init();
+    BOOT_MARK('i');
+
     // Comment out advanced features for boot stability
     irq_init();
     BOOT_MARK('Q');
@@ -129,8 +136,6 @@ void kernel_main(u32 magic, u64 info_ptr) {
 
     wm_init();
     BOOT_MARK('W');
-    input_init();
-    BOOT_MARK('i');
     ipc_init();
     BOOT_MARK('p');
     audio_init();

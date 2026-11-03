@@ -21,8 +21,7 @@
 #include <kernel/input.h>
 #include <kernel/keyboard.h>
 #include <kernel/mouse.h>
-#include <kernel/keyboard.h>
-#include <kernel/mouse.h>
+#include <kernel/irq.h>
 #include <kernel/net.h>
 #include <kernel/config.h>
 #include <kernel/ata.h>
@@ -104,6 +103,8 @@ typedef struct {
 } wizard_state_t;
 
 static wizard_state_t w;
+static u32 wizard_key_events = 0;
+static u32 wizard_mouse_clicks = 0;
 
 /* ── Chrome ───────────────────────────────────────────────────────────── */
 
@@ -169,23 +170,46 @@ static bool hit(u32 x, u32 y, u32 w, u32 h) {
 /* Live counters make a frozen first-run screen diagnosable from a
  * screenshot: IRQ delivery, complete PS/2 packets, and queue pressure. */
 static void draw_input_diagnostics(void) {
-    char line[64];
-    const char *labels[] = { "K IRQ ", "M packets ", "Q dropped " };
-    u32 values[] = { keyboard_irq_count(), mouse_packet_count(), input_queue_dropped() };
-    u32 y = 12;
-    for (u32 row = 0; row < 3; row++) {
+    /* Keep the panel self-contained: periodic updates must erase old digits
+     * when a counter changes from (for example) 100 to 99. */
+    const u32 panel_w = 280;
+    const u32 panel_h = 12 + 6 * (font_cell_h + 2);
+    u32 x = g_framebuffer.width > panel_w + 8
+          ? g_framebuffer.width - panel_w - 8 : 4;
+    u32 y = 8;
+    fb_fill_rect(x, y, panel_w, panel_h, W_CARD);
+    fb_draw_rect(x, y, panel_w, panel_h, W_BORDER);
+
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    const char *labels[] = {
+        "KIRQ ", "KHOOK", "MIRQ ", "PKT ", "QDEP ",
+        "DROP ", "MX   ", "MY   ", "BTN  ", "WKEY ", "WCLK "
+    };
+    u32 values[] = {
+        keyboard_irq_count(), ui_keyboard_hook_event_count(),
+        mouse_irq_count(), mouse_packet_count(), input_queue_depth(),
+        input_queue_dropped(), (u32)mouse.x, (u32)mouse.y,
+        (u32)mouse.buttons, wizard_key_events, wizard_mouse_clicks
+    };
+    char line[32];
+    for (u32 item = 0; item < 11; item++) {
         u32 n = 0;
-        while (labels[row][n] && n < sizeof(line) - 1) {
-            line[n] = labels[row][n];
-            n++;
-        }
+        while (labels[item][n] && n < sizeof(line) - 1)
+            line[n] = labels[item][n], n++;
         char digits[11];
-        u32 count = 0, value = values[row];
-        do { digits[count++] = (char)('0' + value % 10); value /= 10; } while (value && count < sizeof(digits));
-        while (count && n < sizeof(line) - 1) line[n++] = digits[--count];
+        u32 count = 0, value = values[item];
+        do {
+            digits[count++] = (char)('0' + value % 10);
+            value /= 10;
+        } while (value && count < sizeof(digits));
+        while (count && n < sizeof(line) - 1)
+            line[n++] = digits[--count];
         line[n] = 0;
-        text(12, y, line, W_HINT);
-        y += font_cell_h + 2;
+        u32 column = item & 1;
+        u32 row = item >> 1;
+        text(x + 8 + column * 136, y + 6 + row * (font_cell_h + 2),
+             line, W_HINT);
     }
 }
 
@@ -457,6 +481,7 @@ static void adjust(int delta) {
 static bool handle_event(const input_event_t* e) {
     switch (e->type) {
     case INPUT_KEY_DOWN: {
+        wizard_key_events++;
         u8 code = e->key.scancode;
         bool ext = (code & 0x80) != 0;
         u8 base = code & 0x7F;
@@ -517,6 +542,7 @@ static bool handle_event(const input_event_t* e) {
     }
 
     case INPUT_MOUSE_DOWN: {
+        wizard_mouse_clicks++;
         u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
 
         if (w.step == STEP_WELCOME) {
@@ -585,6 +611,8 @@ bool wizard_run(void) {
     if (!wizard_is_first_boot()) return false;
 
     w.step = STEP_WELCOME;
+    wizard_key_events = 0;
+    wizard_mouse_clicks = 0;
     w.sel[STEP_MODE] = 0;
     w.sel[STEP_LANGUAGE] = 0;
     w.sel[STEP_TIMEZONE] = 6;        /* UTC+03:00, East Africa */
@@ -604,6 +632,7 @@ bool wizard_run(void) {
     u32 last_sel = 0;
     int last_mx = -1, last_my = -1;
     bool first = true;
+    u64 last_diag_ms = 0;
 
     while (!w.finished) {
         input_process_events();
@@ -630,31 +659,42 @@ bool wizard_run(void) {
         last_h = g_framebuffer.height;
         first = false;
 
-        if (!dirty) { scheduler_yield(); asm volatile("hlt"); continue; }
+        if (dirty) {
+            /* Repaint the full background before each dirty frame so old
+             * cards never ghost through after moving between setup steps. */
+            u32 preview_style = w.step == STEP_WALLPAPER
+                              ? w.sel[STEP_WALLPAPER]
+                              : (u32)config_get_int("wallpaper", 0);
+            wallpaper_draw(preview_style);
 
-        /* Repaint the full background before each dirty frame so old
-         * cards never ghost through after moving between setup steps. The
-         * wallpaper step previews the currently selected solid style. */
-        u32 preview_style = w.step == STEP_WALLPAPER
-                          ? w.sel[STEP_WALLPAPER]
-                          : (u32)config_get_int("wallpaper", 0);
-        wallpaper_draw(preview_style);
+            switch (w.step) {
+            case STEP_WELCOME:  draw_welcome(); break;
+            case STEP_MODE:     draw_mode(); break;
+            case STEP_LANGUAGE: draw_language(); break;
+            case STEP_TIMEZONE: draw_timezone(); break;
+            case STEP_DISK:     draw_disk(); break;
+            case STEP_NETWORK:  draw_network(); break;
+            case STEP_WALLPAPER:draw_wallpaper(); break;
+            case STEP_DONE:     draw_done(); break;
+            default: break;
+            }
 
-        switch (w.step) {
-        case STEP_WELCOME:  draw_welcome(); break;
-        case STEP_MODE:     draw_mode(); break;
-        case STEP_LANGUAGE: draw_language(); break;
-        case STEP_TIMEZONE: draw_timezone(); break;
-        case STEP_DISK:     draw_disk(); break;
-        case STEP_NETWORK:  draw_network(); break;
-        case STEP_WALLPAPER:draw_wallpaper(); break;
-        case STEP_DONE:     draw_done(); break;
-        default: break;
+            draw_footer();
+            draw_input_diagnostics();
+            ui_draw_cursor();
         }
 
-        draw_footer();
-        draw_input_diagnostics();
-        ui_draw_cursor();
+        /* Input counters change while the screen is otherwise static. Refresh
+         * them independently of the full-screen dirty flag, or the diagnostic
+         * display itself freezes at its first values. */
+        u64 diag_now = timer_get_ms();
+        if (diag_now - last_diag_ms >= 250) {
+            if (!dirty) {
+                draw_input_diagnostics();
+                ui_draw_cursor();
+            }
+            last_diag_ms = diag_now;
+        }
 
         /* This wizard runs inside a cooperative task. Yield so the shell and
          * ring-3 test task can make progress while setup waits for input. */

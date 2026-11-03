@@ -26,8 +26,11 @@ static inline void input_irq_restore(u64 flags) {
 }
 
 void input_init(void) {
+    u64 flags = input_irq_save();
     input_head = 0;
     input_tail = 0;
+    input_dropped = 0;
+    input_irq_restore(flags);
 }
 
 bool input_push_event(input_event_t* evt) {
@@ -63,35 +66,48 @@ bool input_pop_event(input_event_t* evt) {
 }
 
 void input_process_events(void) {
-    /* Process keyboard events */
+    /* The raw-scancode hook is the authoritative graphical keyboard path.
+     * The legacy ASCII ring is still filled by the IRQ handler, though, so
+     * consume it even while the hook is active. Leaving it unread eventually
+     * saturates the ring and silently drops future input for any later reader. */
     char c;
-    if (keyboard_get_key(&c)) {
-        input_event_t evt;
-        evt.type = INPUT_KEY_DOWN;
-        evt.key.keycode = (int)c;
-        evt.key.scancode = 0;
-        evt.timestamp = timer_get_ms();
-        input_push_event(&evt);
+    bool raw_hook = keyboard_has_key_hook();
+    u32 drained = 0;
+    while (drained < 64 && keyboard_get_key(&c)) {
+        drained++;
+        if (!raw_hook) {
+            input_event_t evt;
+            evt.type = INPUT_KEY_DOWN;
+            evt.key.keycode = (int)c;
+            evt.key.scancode = 0;
+            evt.timestamp = timer_get_ms();
+            input_push_event(&evt);
+        }
     }
-    
-    /* Process mouse state (simple polling) */
+
+    /* Read one coherent mouse snapshot. IRQ12 may update the state between
+     * ordinary field reads, which can otherwise mix coordinates and buttons
+     * from different packets. */
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+
     static int last_x = -1, last_y = -1;
     static uint8_t last_buttons = 0;
-    
-    if (g_mouse.x != last_x || g_mouse.y != last_y || g_mouse.buttons != last_buttons) {
+
+    if (mouse.x != last_x || mouse.y != last_y || mouse.buttons != last_buttons) {
         input_event_t evt;
         evt.type = INPUT_MOUSE_MOVE;
-        evt.mouse.x = g_mouse.x;
-        evt.mouse.y = g_mouse.y;
-        evt.mouse.dx = g_mouse.dx;
-        evt.mouse.dy = g_mouse.dy;
-        evt.mouse.button = g_mouse.buttons;
+        evt.mouse.x = mouse.x;
+        evt.mouse.y = mouse.y;
+        evt.mouse.dx = mouse.dx;
+        evt.mouse.dy = mouse.dy;
+        evt.mouse.button = mouse.buttons;
         evt.timestamp = timer_get_ms();
         input_push_event(&evt);
-        
+
         /* Also push click events for button changes */
         uint8_t prev = last_buttons;
-        uint8_t cur = g_mouse.buttons;
+        uint8_t cur = mouse.buttons;
         for (int btn = 0; btn < 3; btn++) {
             bool was_down = (prev >> btn) & 1;
             bool is_down = (cur >> btn) & 1;
@@ -109,30 +125,40 @@ void input_process_events(void) {
             }
         }
         
-        last_x = g_mouse.x;
-        last_y = g_mouse.y;
-        last_buttons = g_mouse.buttons;
+        last_x = mouse.x;
+        last_y = mouse.y;
+        last_buttons = mouse.buttons;
     }
 }
 
 int input_get_mouse_x(void) {
-    return g_mouse.x;
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    return mouse.x;
 }
 
 int input_get_mouse_y(void) {
-    return g_mouse.y;
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    return mouse.y;
 }
 
 bool input_get_mouse_left(void) {
-    return (g_mouse.buttons & 0x01) != 0;
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    return (mouse.buttons & 0x01) != 0;
 }
 
 bool input_get_mouse_right(void) {
-    return (g_mouse.buttons & 0x02) != 0;
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    return (mouse.buttons & 0x02) != 0;
 }
 
 bool input_get_mouse_middle(void) {
-    return (g_mouse.buttons & 0x04) != 0;
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    return (mouse.buttons & 0x04) != 0;
 }
 u32 input_queue_depth(void) {
     u64 flags = input_irq_save();

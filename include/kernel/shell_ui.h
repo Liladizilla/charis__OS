@@ -11,6 +11,9 @@ void shell_ui_main(void* arg);
  * keyboard_init() and input_init(). */
 void ui_install_input_hooks(void);
 
+/* Raw keyboard scancodes delivered to the graphical input hook. */
+u32 ui_keyboard_hook_event_count(void);
+
 /* Draw the software pointer. Shared so the setup wizard and the desktop use the
  * same one; in graphics mode there is no hardware cursor. */
 void ui_draw_cursor(void);

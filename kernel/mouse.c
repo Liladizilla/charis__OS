@@ -188,8 +188,23 @@ int mouse_get_buttons(int* buttons) {
 /* Counters and accessors for the shell's input diagnostics. Without these,
  * "the pointer is stuck" is indistinguishable from "no packets ever arrived".
  */
-u32 g_mouse_packets = 0;
+volatile u32 g_mouse_packets = 0;
 
 u32 mouse_packet_count(void) { return g_mouse_packets; }
+
+/* IRQ12 is the sole writer; briefly mask local interrupts while copying so
+ * callers never observe coordinates and button bits from different packets. */
+void mouse_get_snapshot(mouse_state_t* out) {
+    if (!out) return;
+
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) :: "memory");
+    out->x = g_mouse.x;
+    out->y = g_mouse.y;
+    out->dx = g_mouse.dx;
+    out->dy = g_mouse.dy;
+    out->buttons = g_mouse.buttons;
+    asm volatile("pushq %0; popfq" :: "r"(flags) : "memory", "cc");
+}
 
 mouse_state_t* mouse_get_state(void) { return &g_mouse; }
