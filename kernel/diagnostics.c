@@ -28,7 +28,9 @@ void diag_collect_stats(system_stats_t* stats) {
                     &stats->processes_blocked);
     
     // Memory stats from PMM
-    stats->memory_used = pmm_used_pages() * 4; // KB
+    stats->memory_used = pmm_used_pages() * 4; // KB, allocated + reserved
+    stats->memory_allocated = pmm_allocated_pages() * 4; // KB
+    stats->memory_reserved = pmm_reserved_pages() * 4; // KB
     stats->memory_free = pmm_free_pages() * 4; // KB
     
     stats->context_switches = diag_context_switches;
