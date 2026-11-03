@@ -17,6 +17,7 @@
 #include <kernel/timer.h>
 #include <kernel/keyboard.h>
 #include <kernel/mouse.h>
+#include <kernel/net.h>
 #include <kernel/bootmem.h>
 #include <kernel/ui_theme.h>
 #include <kernel/security.h>
@@ -31,7 +32,7 @@
 #define S_ACCENT   CHARIS_UI_ACCENT
 #define S_SELECTED CHARIS_UI_ACCENT_SURFACE
 
-#define SETTINGS_TABS 5
+#define SETTINGS_TABS 6
 
 static u32 sp(u32 logical) { return gfx_ui_scale(logical); }
 
@@ -41,7 +42,7 @@ static u32 active_row;
 static bool save_ok;
 
 static const char* const tab_names[SETTINGS_TABS] = {
-    "Look", "Sys", "HW", "Safe", "Info"
+    "UI", "SYS", "HW", "NET", "SEC", "OS"
 };
 
 void settings_ui_open(void) {
@@ -377,6 +378,73 @@ static void draw_hardware(u32 x, u32 y) {
     draw_text(x, y + step * 7, line, S_TEXT);
     draw_text(x, y + step * 8, "Drivers pending: AHCI, NVMe, USB HID, GPU support.", S_MUTED);
 }
+static void format_mac(char out[18], const u8 mac[6]) {
+    static const char hex[] = "0123456789ABCDEF";
+    u32 p = 0;
+    for (u32 i = 0; i < 6; i++) {
+        if (i) out[p++] = ':';
+        out[p++] = hex[(mac[i] >> 4) & 0x0F];
+        out[p++] = hex[mac[i] & 0x0F];
+    }
+    out[p] = 0;
+}
+
+static void format_ipv4(char out[16], const u8 ip[4]) {
+    u32 p = 0;
+    for (u32 i = 0; i < 4; i++) {
+        if (i) out[p++] = '.';
+        append_u32(out, 16, &p, ip[i]);
+    }
+}
+
+static void draw_network(u32 x, u32 y, u32 w) {
+    draw_text(x, y, "Network configuration", S_ACCENT);
+    y += title_step();
+
+    bool enabled = config_get_bool("net_enabled", true);
+    bool dhcp = config_get_bool("net_dhcp", true);
+    draw_row(x, y, w, "Enable networking at startup",
+             enabled ? "Enabled" : "Disabled", active_row == 0);
+    draw_row(x, y + row_step(), w, "Prefer DHCP configuration",
+             dhcp ? "Preferred" : "Static preference", active_row == 1);
+
+    u32 step = line_step();
+    u32 info_y = y + row_step() * 2 + sp(12);
+    net_interface_t* net = net_get_interface();
+    draw_text(x, info_y,
+              net && net->initialized ? "RTL8139 Ethernet: initialized" :
+                                        "RTL8139 Ethernet: not detected", S_TEXT);
+
+    char mac[18], ip[16], line[96];
+    if (net && net->initialized) {
+        format_mac(mac, net->mac_addr);
+        format_ipv4(ip, net->ip_addr);
+    } else {
+        kstrncpy(mac, "unavailable", sizeof(mac) - 1);
+        mac[sizeof(mac) - 1] = 0;
+        kstrncpy(ip, "unavailable", sizeof(ip) - 1);
+        ip[sizeof(ip) - 1] = 0;
+    }
+    draw_text(x, info_y + step, "MAC address", S_MUTED);
+    draw_text(x + sp(160), info_y + step, mac, S_TEXT);
+    draw_text(x, info_y + step * 2, "Current IPv4", S_MUTED);
+    draw_text(x + sp(160), info_y + step * 2, ip, S_TEXT);
+
+    u32 pos = 0; line[0] = 0;
+    append_text(line, sizeof(line), &pos, "Packets RX ");
+    append_u32(line, sizeof(line), &pos, net ? net->packets_rx : 0);
+    append_text(line, sizeof(line), &pos, "   TX ");
+    append_u32(line, sizeof(line), &pos, net ? net->packets_tx : 0);
+    draw_text(x, info_y + step * 3, line, S_TEXT);
+
+    draw_text(x, info_y + step * 4,
+              "DHCP client is not implemented in this build.", S_MUTED);
+    draw_text(x, info_y + step * 5,
+              "Startup and address preferences require reboot to take effect.", S_MUTED);
+    draw_text(x, info_y + step * 6,
+              "Driver support is currently limited to RTL8139 polling.", S_MUTED);
+}
+
 static void draw_security(u32 x, u32 y) {
     draw_text(x, y, "Security status", S_ACCENT);
     y += title_step();
@@ -434,8 +502,9 @@ void settings_ui_render(void) {
     case 0: draw_appearance(content_x, content_y, content_w); break;
     case 1: draw_system(content_x, content_y); break;
     case 2: draw_hardware(content_x, content_y); break;
-    case 3: draw_security(content_x, content_y); break;
-    case 4: draw_about(content_x, content_y); break;
+    case 3: draw_network(content_x, content_y, content_w); break;
+    case 4: draw_security(content_x, content_y); break;
+    case 5: draw_about(content_x, content_y); break;
     default: break;
     }
 
@@ -496,14 +565,30 @@ bool settings_ui_handle_event(const input_event_t* event) {
         u8 base = code & 0x7F;
         if (base == KEY_ESCAPE) { settings_ui_close(); return true; }
         if (base == KEY_UP) { if (active_row) active_row--; return true; }
-        if (base == KEY_DOWN) { if (active_row < 2) active_row++; return true; }
+        if (base == KEY_DOWN) {
+            u32 max_row = active_tab == 0 ? 2 : active_tab == 3 ? 1 : 0;
+            if (active_row < max_row) active_row++;
+            return true;
+        }
         if (base == KEY_LEFT || base == KEY_RIGHT) {
             int delta = base == KEY_RIGHT ? 1 : -1;
             if (active_tab == 0) adjust_appearance(delta);
-            else active_tab = (active_tab + SETTINGS_TABS + delta) % SETTINGS_TABS;
+            else if (active_tab == 3) {
+                bool current = config_get_bool(active_row == 0 ? "net_enabled" : "net_dhcp", true);
+                config_set_bool(active_row == 0 ? "net_enabled" : "net_dhcp",
+                                delta > 0 ? true : !current);
+                if (delta < 0) config_set_bool(active_row == 0 ? "net_enabled" : "net_dhcp", !current);
+                save_ok = false;
+            } else active_tab = (active_tab + SETTINGS_TABS + delta) % SETTINGS_TABS;
             return true;
         }
         if (base == KEY_ENTER && active_tab == 0) { adjust_appearance(1); return true; }
+        if (base == KEY_ENTER && active_tab == 3) {
+            const char* key = active_row == 0 ? "net_enabled" : "net_dhcp";
+            config_set_bool(key, !config_get_bool(key, true));
+            save_ok = false;
+            return true;
+        }
         return true;
     }
 
@@ -517,7 +602,7 @@ bool settings_ui_handle_event(const input_event_t* event) {
 
     u32 tab_area = w > sp(32) ? w - sp(32) : 0;
     u32 tab_w = tab_area / SETTINGS_TABS;
-    u32 tabs_y = y + header_height() + sp(12);
+    u32 tabs_y = y + header_height() + sp(4);
     if (tab_w && my >= (int)tabs_y && my < (int)(tabs_y + tab_height()) && mx >= (int)(x + sp(16))) {
         u32 tab = (u32)(mx - (int)x - (int)sp(16)) / tab_w;
         if (tab < SETTINGS_TABS) active_tab = tab;
@@ -548,13 +633,21 @@ bool settings_ui_handle_event(const input_event_t* event) {
         }
     }
 
-    if (active_tab == 0 && mx >= (int)(x + sp(28)) && mx < (int)(x + w - sp(28))) {
+    if ((active_tab == 0 || active_tab == 3) &&
+        mx >= (int)(x + sp(28)) && mx < (int)(x + w - sp(28))) {
+        u32 count = active_tab == 0 ? 3 : 2;
         u32 content_y = content_top(y) + title_step();
-        if (my >= (int)content_y && my < (int)(content_y + row_step() * 3)) {
+        if (my >= (int)content_y && my < (int)(content_y + row_step() * count)) {
             active_row = (u32)(my - (int)content_y) / row_step();
-            if (active_row > 2) active_row = 2;
-            int delta = (mx > (int)(x + w - sp(150))) ? 1 : -1;
-            adjust_appearance(delta);
+            if (active_row >= count) active_row = count - 1;
+            if (active_tab == 0) {
+                int delta = (mx > (int)(x + w - sp(150))) ? 1 : -1;
+                adjust_appearance(delta);
+            } else {
+                const char* key = active_row == 0 ? "net_enabled" : "net_dhcp";
+                config_set_bool(key, !config_get_bool(key, true));
+                save_ok = false;
+            }
             return true;
         }
     }
