@@ -35,7 +35,6 @@ static bool opened;
 static u32 active_tab;
 static u32 active_row;
 static bool save_ok;
-static u64 saved_at;
 
 static const char* const tab_names[SETTINGS_TABS] = {
     "Appearance", "System", "Hardware", "Security", "About"
@@ -251,7 +250,7 @@ void settings_ui_render(void) {
     }
 
     u32 by = y + h - 48;
-    draw_text(x + 20, by + 12, save_ok ? "Saved to CHARISOS.CFG" : "Changes are pending until saved");
+    draw_text(x + 20, by + 12, save_ok ? "Saved to CHARISOS.CFG" : "Changes are pending until saved", S_MUTED);
     u32 save_x = x + w - 206;
     fb_fill_rect(save_x, by + 4, 88, 32, S_SELECTED);
     fb_draw_rect(save_x, by + 4, 88, 32, S_BORDER);
@@ -288,7 +287,6 @@ bool settings_ui_handle_event(const input_event_t* event) {
 
     if (event->type == INPUT_KEY_DOWN) {
         u8 code = (u8)event->key.scancode;
-        bool extended = (code & 0x80) != 0;
         u8 base = code & 0x7F;
         if (base == KEY_ESCAPE) { settings_ui_close(); return true; }
         if (base == KEY_UP) { if (active_row) active_row--; return true; }
@@ -323,7 +321,6 @@ bool settings_ui_handle_event(const input_event_t* event) {
     if (my >= (int)(by + 4) && my < (int)(by + 36)) {
         if (mx >= (int)save_x && mx < (int)(save_x + 88)) {
             save_ok = config_save(CONFIG_FILE_PATH);
-            if (save_ok) saved_at = timer_get_ms();
             return true;
         }
         if (mx >= (int)(save_x + 100) && mx < (int)(save_x + 188)) {
