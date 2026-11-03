@@ -155,6 +155,9 @@ void task_exit_with_status(u32 status) {
          * The table slot remains available for waitpid(), but open descriptors
          * must not remain live for the lifetime of the zombie record. */
         fd_table_close_all(current->fd_table);
+        /* Exited tasks are never scheduled again. Unlink the zombie before
+         * parking its stack so the scheduler list only contains live tasks. */
+        scheduler_remove_task(current);
     }
     task_defer_release(current);
     scheduler_yield();
