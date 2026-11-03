@@ -95,7 +95,6 @@ void gfx_draw_string_centered(u32 y, const char* s, u32 fg, u32 bg) {
     u32 width = 0;
     for (const char* p = s; *p; p++)
         width += glyph_width(text_scale) + (text_style == 1 ? text_scale : 0);
-    if (width) width -= text_style == 1 ? text_scale : 0;
     u32 x = g_framebuffer.width > width ? (g_framebuffer.width - width) / 2 : 0;
     gfx_draw_string(x, y, s, fg, bg);
 }
@@ -116,7 +115,7 @@ void gfx_text_size(const char* s, u32* out_w, u32* out_h) {
     }
     if (current > longest) longest = current;
     u32 cell_w = glyph_width(text_scale) + (text_style == 1 ? text_scale : 0);
-    if (longest) cell_w = longest * cell_w - (text_style == 1 ? text_scale : 0);
+    if (longest) cell_w = longest * cell_w;
     if (out_w) *out_w = longest ? cell_w : 0;
     if (out_h) *out_h = lines * (u32)font_cell_h * text_scale;
 }
