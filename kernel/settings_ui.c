@@ -12,6 +12,7 @@
 #include <kernel/diagnostics.h>
 #include <kernel/display.h>
 #include <kernel/ata.h>
+#include <kernel/fs.h>
 #include <kernel/pci.h>
 #include <kernel/pmm.h>
 #include <kernel/timer.h>
@@ -33,7 +34,7 @@
 #define S_ACCENT   CHARIS_UI_ACCENT
 #define S_SELECTED CHARIS_UI_ACCENT_SURFACE
 
-#define SETTINGS_TABS 6
+#define SETTINGS_TABS 7
 
 static u32 sp(u32 logical) { return gfx_ui_scale(logical); }
 
@@ -43,7 +44,7 @@ static u32 active_row;
 static bool save_ok;
 
 static const char* const tab_names[SETTINGS_TABS] = {
-    "UI", "SYS", "HW", "NET", "SEC", "OS"
+    "UI", "SYS", "HW", "NET", "DISK", "SEC", "OS"
 };
 
 void settings_ui_open(void) {
@@ -448,6 +449,22 @@ static void draw_network(u32 x, u32 y, u32 w) {
               "Driver support is currently limited to RTL8139 polling.", S_MUTED);
 }
 
+static void draw_storage(u32 x, u32 y) {
+    draw_text(x, y, "Storage and filesystems", S_ACCENT);
+    y += title_step();
+    u32 step = line_step();
+
+    draw_text(x, y, ata_is_present() ? "ATA device: detected" :
+                                      "ATA device: unavailable", S_TEXT);
+    draw_text(x, y + step, fs_is_mounted() ? "FAT32 volume: mounted" :
+                                             "FAT32 volume: not mounted", S_TEXT);
+    draw_text(x, y + step * 2, "Filesystem: root-directory FAT32 support.", S_TEXT);
+    draw_text(x, y + step * 3, "Names: current driver supports root-level 8.3 files.", S_MUTED);
+    draw_text(x, y + step * 4, "Settings file: /CHARISOS.CFG on writable FAT32.", S_TEXT);
+    draw_text(x, y + step * 5, "Executable support: CEX v1 wrapping ELF64 ET_EXEC.", S_TEXT);
+    draw_text(x, y + step * 6, "Not implemented: AHCI, NVMe, USB storage, journaling.", S_MUTED);
+}
+
 static void draw_security(u32 x, u32 y) {
     draw_text(x, y, "Security status", S_ACCENT);
     y += title_step();
@@ -473,6 +490,7 @@ static void draw_about(u32 x, u32 y) {
     draw_text(x, y + step * 4, "Checksum detects corruption; it does not authenticate publishers.", S_MUTED);
     draw_text(x, y + step * 5, "BIOS boot path is under active validation; UEFI remains advisory.", S_TEXT);
     draw_text(x, y + step * 6, "Hardware support depends on the drivers present in this build.", S_MUTED);
+    draw_text(x, y + step * 7, "Kernel build: " __DATE__ " " __TIME__, S_MUTED);
 }
 
 void settings_ui_render(void) {
@@ -506,8 +524,9 @@ void settings_ui_render(void) {
     case 1: draw_system(content_x, content_y); break;
     case 2: draw_hardware(content_x, content_y); break;
     case 3: draw_network(content_x, content_y, content_w); break;
-    case 4: draw_security(content_x, content_y); break;
-    case 5: draw_about(content_x, content_y); break;
+    case 4: draw_storage(content_x, content_y); break;
+    case 5: draw_security(content_x, content_y); break;
+    case 6: draw_about(content_x, content_y); break;
     default: break;
     }
 
