@@ -154,7 +154,7 @@ static void draw_row(u32 x, u32 y, u32 w, const char* name, const char* value,
 }
 
 static void draw_appearance(u32 x, u32 y, u32 w) {
-    static const char* const fonts[] = { "Bitmap", "Bold bitmap", "Compact bitmap" };
+    static const char* const fonts[] = { "Sans", "Monospace", "Serif" };
     static const char* const scales[] = { "80%", "100%", "120%" };
     static const char* const sizes[] = { "1x", "2x", "3x" };
     u32 style = (u32)config_get_int("font_style", 0);
