@@ -48,10 +48,11 @@ extern int desktop_surface_taskbar_hit_test(int mx, int my, u32 taskbar_y);
 #define T_CURSOR      CHARIS_UI_TEXT
 
 /* Layout. */
-#define TASKBAR_H     44
-#define START_BTN_W   96
-#define MENU_W        260
-#define MENU_ITEM_H   34
+static u32 ui_px(u32 logical) { return gfx_ui_scale(logical); }
+static u32 taskbar_height(void) { return ui_px(44); }
+static u32 start_button_width(void) { return ui_px(96); }
+static u32 menu_width(void) { return ui_px(260); }
+static u32 menu_item_height(void) { return ui_px(34); }
 #define CURSOR_BLINK  400   /* ms */
 
 typedef struct {
@@ -75,7 +76,7 @@ static const char* const NOTICE_LINE_1[] = {
     "A graphical terminal is not wired up yet.",
     "The VFS exists, but the graphical browser is",
     "No graphical editor is implemented yet.",
-    "A graphical settings panel is not wired up.",
+    "System preferences and hardware diagnostics are available.",
     "CharisOS is a from-scratch x86_64 kernel.",
 };
 static const char* const NOTICE_LINE_2[] = {
@@ -83,7 +84,7 @@ static const char* const NOTICE_LINE_2[] = {
     "Kernel output remains on the text/serial console.",
     "not connected to file operations yet.",
     "This screen will not pretend to show source code.",
-    "Persistence needs an existing writable config file.",
+    "Preferences save to CHARISOS.CFG on writable FAT32 media.",
     "The desktop and built-in apps are still partial.",
 };
 #define MENU_ITEM_COUNT ((u32)(sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0])))
@@ -104,21 +105,23 @@ static ui_state_t ui = { false, -1, false, 0, 0, true };
 static void draw_taskbar(void) {
     u32 w = g_framebuffer.width;
     u32 h = g_framebuffer.height;
-    u32 y = h - TASKBAR_H;
+    u32 bar_h = taskbar_height();
+    u32 y = h > bar_h ? h - bar_h : 0;
 
-    fb_fill_rect(0, y, w, TASKBAR_H, T_TASKBAR);
+    fb_fill_rect(0, y, w, bar_h, T_TASKBAR);
     fb_fill_rect(0, y, w, 1, T_BORDER);
 
     /* Start button. */
-    bool hovered = input_get_mouse_y() >= (int)y && input_get_mouse_x() < (int)START_BTN_W;
+    bool hovered = input_get_mouse_y() >= (int)y && input_get_mouse_x() < (int)start_button_width();
     u32 bg = ui.menu_open ? T_MENU_HOVER
             : hovered     ? T_START_HOVER : T_START_BTN;
-    fb_fill_rect(0, y, START_BTN_W, TASKBAR_H, bg);
-    fb_draw_rect(0, y, START_BTN_W, TASKBAR_H, T_BORDER);
+    fb_fill_rect(0, y, start_button_width(), bar_h, bg);
+    fb_draw_rect(0, y, start_button_width(), bar_h, T_BORDER);
 
     /* "Charis" label, vertically centred in the cell. */
-    u32 ty = y + (TASKBAR_H - font_cell_h) / 2;
-    gfx_draw_string(14, ty, "Charis", T_FG, FB_TRANSPARENT);
+    u32 ty = y + (bar_h > font_cell_h * gfx_text_get_scale() ?
+                  (bar_h - font_cell_h * gfx_text_get_scale()) / 2 : 0);
+    gfx_draw_string(ui_px(14), ty, "Charis", T_FG, FB_TRANSPARENT);
     desktop_surface_draw_taskbar_icons(y);
 
     /* The timer provides uptime, not wall-clock time. Label it explicitly
@@ -135,8 +138,8 @@ static void draw_taskbar(void) {
     clock[9] = '0' + (char)((secs / 10) % 10);
     clock[10] = '0' + (char)(secs % 10);
     clock[11] = 0;
-    u32 cw = 11 * 8;
-    gfx_draw_string(w - cw - 16, ty, clock, T_FG_DIM, FB_TRANSPARENT);
+    u32 cw = ui_px(11 * font_cell_w * gfx_text_get_scale());
+    gfx_draw_string(w > cw + ui_px(16) ? w - cw - ui_px(16) : 0, ty, clock, T_FG_DIM, FB_TRANSPARENT);
 }
 
 /* Every launcher entry gets a small, high-contrast icon drawn from
@@ -179,21 +182,22 @@ static void draw_menu(void) {
     if (!ui.menu_open) return;
 
     u32 h = g_framebuffer.height;
-    u32 menu_h = MENU_ITEM_H * MENU_ITEM_COUNT + 16;
-    u32 y = h - TASKBAR_H - menu_h;
+    u32 menu_h = menu_item_height() * MENU_ITEM_COUNT + ui_px(16);
+    u32 occupied = taskbar_height() + menu_h;
+    u32 y = h > occupied ? h - occupied : 0;
     u32 x = 0;
 
-    fb_fill_rect(x + 4, y + 4, MENU_W, menu_h, CHARIS_UI_SHADOW);
-    fb_fill_rect(x, y, MENU_W, menu_h, T_MENU);
-    fb_draw_rect(x, y, MENU_W, menu_h, T_BORDER);
+    fb_fill_rect(x + ui_px(4), y + ui_px(4), menu_width(), menu_h, CHARIS_UI_SHADOW);
+    fb_fill_rect(x, y, menu_width(), menu_h, T_MENU);
+    fb_draw_rect(x, y, menu_width(), menu_h, T_BORDER);
 
     for (u32 i = 0; i < MENU_ITEM_COUNT; i++) {
-        u32 iy = y + 8 + i * MENU_ITEM_H;
+        u32 iy = y + ui_px(8) + i * menu_item_height();
         bool hovered = (ui.hover_item == (int)i);
-        fb_fill_rect(x + 2, iy, MENU_W - 4, MENU_ITEM_H,
+        fb_fill_rect(x + ui_px(2), iy, menu_width() - ui_px(4), menu_item_height(),
                      hovered ? T_MENU_HOVER : T_MENU_ITEM);
-        draw_app_icon(i, x + 12, iy + 7);
-        gfx_draw_string(x + 44, iy + (MENU_ITEM_H - font_cell_h) / 2,
+        draw_app_icon(i, x + ui_px(12), iy + ui_px(7));
+        gfx_draw_string(x + ui_px(44), iy + (menu_item_height() - font_cell_h * gfx_text_get_scale()) / 2,
                         MENU_ITEMS[i].label, T_FG, FB_TRANSPARENT);
     }
 }
@@ -205,25 +209,25 @@ static void draw_notice(void) {
     if (!notice_open || notice_item < 0 || notice_item >= (int)MENU_ITEM_COUNT) return;
 
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    u32 cw = 440, ch = 152;
+    u32 cw = ui_px(440), ch = ui_px(152);
     u32 x = sw > cw ? (sw - cw) / 2 : 0;
     u32 y = sh > ch ? (sh - ch) / 2 : 0;
 
-    fb_fill_rect(x + 4, y + 4, cw, ch, CHARIS_UI_SHADOW);
+    fb_fill_rect(x + ui_px(4), y + ui_px(4), cw, ch, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, cw, ch, T_MENU);
     fb_draw_rect(x, y, cw, ch, T_BORDER);
-    fb_fill_rect(x, y, cw, 28, T_START_BTN);
-    fb_fill_rect(x, y, cw, 1, CHARIS_UI_BORDER_STRONG);
-    gfx_draw_string(x + 16, y + 7, MENU_ITEMS[notice_item].label, T_FG, FB_TRANSPARENT);
+    fb_fill_rect(x, y, cw, ui_px(28), T_START_BTN);
+    fb_fill_rect(x, y, cw, ui_px(1), CHARIS_UI_BORDER_STRONG);
+    gfx_draw_string(x + ui_px(16), y + ui_px(7), MENU_ITEMS[notice_item].label, T_FG, FB_TRANSPARENT);
 
-    gfx_draw_string(x + 20, y + 48, NOTICE_LINE_1[notice_item], T_FG, FB_TRANSPARENT);
-    gfx_draw_string(x + 20, y + 72, NOTICE_LINE_2[notice_item], T_FG_DIM, FB_TRANSPARENT);
+    gfx_draw_string(x + ui_px(20), y + ui_px(48), NOTICE_LINE_1[notice_item], T_FG, FB_TRANSPARENT);
+    gfx_draw_string(x + ui_px(20), y + ui_px(72), NOTICE_LINE_2[notice_item], T_FG_DIM, FB_TRANSPARENT);
 
-    u32 bw = 88, bh = 28;
-    u32 bx = x + cw - bw - 16, by = y + ch - bh - 12;
+    u32 bw = ui_px(88), bh = ui_px(28);
+    u32 bx = x + cw - bw - ui_px(16), by = y + ch - bh - ui_px(12);
     fb_fill_rect(bx, by, bw, bh, CHARIS_UI_ACCENT_SURFACE);
     fb_draw_rect(bx, by, bw, bh, CHARIS_UI_BORDER_STRONG);
-    gfx_draw_string(bx + 24, by + 6, "Close", T_FG, FB_TRANSPARENT);
+    gfx_draw_string(bx + ui_px(24), by + ui_px(6), "Close", T_FG, FB_TRANSPARENT);
 }
 
 /* Software cursor. The PS/2 mouse has no hardware cursor once the display is
@@ -284,15 +288,16 @@ static void redraw_all(void) {
 static int hit_menu_item(int mx, int my) {
     if (!ui.menu_open) return -1;
     u32 h = g_framebuffer.height;
-    u32 menu_h = MENU_ITEM_H * MENU_ITEM_COUNT + 16;
-    u32 top = h - TASKBAR_H - menu_h;
+    u32 menu_h = menu_item_height() * MENU_ITEM_COUNT + ui_px(16);
+    u32 occupied = taskbar_height() + menu_h;
+    u32 top = h > occupied ? h - occupied : 0;
 
-    if ((u32)mx >= MENU_W) return -1;
-    if (my < (int)top + 8) return -1;
+    if (mx < 0 || (u32)mx >= menu_width()) return -1;
+    if (my < (int)top + (int)ui_px(8)) return -1;
 
-    u32 rel = (u32)my - top - 8;
-    if (rel >= MENU_ITEM_H * MENU_ITEM_COUNT) return -1;
-    return (int)(rel / MENU_ITEM_H);
+    u32 rel = (u32)my - top - ui_px(8);
+    if (rel >= menu_item_height() * MENU_ITEM_COUNT) return -1;
+    return (int)(rel / menu_item_height());
 }
 
 /* ── Input plumbing ───────────────────────────────────────────────── */
@@ -360,8 +365,8 @@ static void handle_event(const input_event_t* e) {
 
     case INPUT_MOUSE_MOVE: {
         int hit = hit_menu_item(e->mouse.x, e->mouse.y);
-        bool over_start = e->mouse.y >= (int)(g_framebuffer.height - TASKBAR_H)
-                       && e->mouse.x < (int)START_BTN_W;
+        bool over_start = e->mouse.y >= (int)(g_framebuffer.height - taskbar_height())
+                       && e->mouse.x < (int)start_button_width();
         if (hit != ui.hover_item || over_start) ui.needs_redraw = true;
         ui.hover_item = hit;
         return;
@@ -387,7 +392,7 @@ static void handle_event(const input_event_t* e) {
 
         /* Desktop shortcuts sit behind the launcher. Never let their hit
          * region steal clicks from an open menu on short framebuffers. */
-        if (!ui.menu_open && my < (int)(g_framebuffer.height - TASKBAR_H)) {
+        if (!ui.menu_open && my < (int)(g_framebuffer.height - taskbar_height())) {
             int desktop_app = desktop_surface_hit_test(mx, my);
             if (desktop_app >= 0) {
                 if (desktop_app == 0) {
@@ -401,9 +406,9 @@ static void handle_event(const input_event_t* e) {
             }
         }
 
-        bool on_taskbar = my >= (int)(g_framebuffer.height - TASKBAR_H);
+        bool on_taskbar = my >= (int)(g_framebuffer.height - taskbar_height());
 
-        if (on_taskbar && mx < (int)START_BTN_W) {
+        if (on_taskbar && mx < (int)start_button_width()) {
             ui.menu_open = !ui.menu_open;
             ui.hover_item = -1;
             ui.needs_redraw = true;
@@ -412,7 +417,7 @@ static void handle_event(const input_event_t* e) {
 
         if (on_taskbar) {
             int pinned = desktop_surface_taskbar_hit_test(mx, my,
-                g_framebuffer.height - TASKBAR_H);
+                g_framebuffer.height - taskbar_height());
             if (pinned >= 0) {
                 if (pinned == 0) browser_open();
                 else {
