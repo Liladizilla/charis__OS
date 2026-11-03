@@ -132,23 +132,33 @@ void input_process_events(void) {
 }
 
 int input_get_mouse_x(void) {
-    return g_mouse.x;
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    return mouse.x;
 }
 
 int input_get_mouse_y(void) {
-    return g_mouse.y;
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    return mouse.y;
 }
 
 bool input_get_mouse_left(void) {
-    return (g_mouse.buttons & 0x01) != 0;
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    return (mouse.buttons & 0x01) != 0;
 }
 
 bool input_get_mouse_right(void) {
-    return (g_mouse.buttons & 0x02) != 0;
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    return (mouse.buttons & 0x02) != 0;
 }
 
 bool input_get_mouse_middle(void) {
-    return (g_mouse.buttons & 0x04) != 0;
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    return (mouse.buttons & 0x04) != 0;
 }
 u32 input_queue_depth(void) {
     u64 flags = input_irq_save();
