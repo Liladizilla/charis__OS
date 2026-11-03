@@ -8,6 +8,22 @@ static input_event_t input_queue[INPUT_QUEUE_SIZE];
 static u32 input_head = 0;
 static u32 input_tail = 0;
 
+/*
+ * Keyboard events are produced from IRQ1, while mouse events are produced
+ * by the desktop task. Protect the shared ring against an IRQ interrupting
+ * a task-side push/pop. Save and restore the prior IF state so callers that
+ * already run with interrupts disabled remain disabled.
+ */
+static inline u64 input_irq_save(void) {
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) :: "memory");
+    return flags;
+}
+
+static inline void input_irq_restore(u64 flags) {
+    asm volatile("pushq %0; popfq" :: "r"(flags) : "memory", "cc");
+}
+
 void input_init(void) {
     input_head = 0;
     input_tail = 0;
@@ -15,25 +31,32 @@ void input_init(void) {
 
 bool input_push_event(input_event_t* evt) {
     if (!evt) return false;
-    
+
+    u64 flags = input_irq_save();
     u32 next_head = (input_head + 1) % INPUT_QUEUE_SIZE;
     if (next_head == input_tail) {
+        input_irq_restore(flags);
         return false; /* Queue full */
     }
-    
+
     input_queue[input_head] = *evt;
     input_head = next_head;
+    input_irq_restore(flags);
     return true;
 }
 
 bool input_pop_event(input_event_t* evt) {
     if (!evt) return false;
+
+    u64 flags = input_irq_save();
     if (input_tail == input_head) {
+        input_irq_restore(flags);
         return false; /* Queue empty */
     }
-    
+
     *evt = input_queue[input_tail];
     input_tail = (input_tail + 1) % INPUT_QUEUE_SIZE;
+    input_irq_restore(flags);
     return true;
 }
 
@@ -110,9 +133,10 @@ bool input_get_mouse_middle(void) {
     return (g_mouse.buttons & 0x04) != 0;
 }
 u32 input_queue_depth(void) {
-    /* Single-producer, single-consumer ring; a full lap is not a concern at
-     * this queue size, so the count is just the distance between them. */
-    return (input_head >= input_tail)
-         ? (input_head - input_tail)
-         : (INPUT_QUEUE_SIZE - (input_tail - input_head));
+    u64 flags = input_irq_save();
+    u32 depth = (input_head >= input_tail)
+              ? (input_head - input_tail)
+              : (INPUT_QUEUE_SIZE - (input_tail - input_head));
+    input_irq_restore(flags);
+    return depth;
 }
