@@ -98,7 +98,7 @@ void keyboard_handler(reg_frame_t* frame) {
                 keyboard_write_pos = next_write_pos;
 
                 /* Wake up any task waiting for input */
-                wait_queue_wake();
+                task_wake_keyboard_waiters();
             }
         }
     }
@@ -106,18 +106,39 @@ void keyboard_handler(reg_frame_t* frame) {
     pic_send_eoi(IRQ_KEYBOARD);
 }
 
+/* The keyboard IRQ is the sole producer of this ring buffer. These
+ * short critical sections prevent IRQ1 from changing write_pos between a
+ * consumer's empty check and dequeue. This is single-CPU synchronization,
+ * not an SMP lock. */
+static inline u64 keyboard_irq_save(void) {
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static inline void keyboard_irq_restore(u64 flags) {
+    asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
+}
+
 bool keyboard_get_key(char* out) {
     if (!out) return false;
+
+    u64 irq_flags = keyboard_irq_save();
     if (keyboard_read_pos != keyboard_write_pos) {
         *out = keyboard_buffer[keyboard_read_pos];
         keyboard_read_pos = (keyboard_read_pos + 1) % 256;
+        keyboard_irq_restore(irq_flags);
         return true;
     }
+    keyboard_irq_restore(irq_flags);
     return false;
 }
 
 bool keyboard_has_input(void) {
-    return keyboard_read_pos != keyboard_write_pos;
+    u64 irq_flags = keyboard_irq_save();
+    bool has_input = keyboard_read_pos != keyboard_write_pos;
+    keyboard_irq_restore(irq_flags);
+    return has_input;
 }
 
 void keyboard_read_line(char* buffer, usize max_len) {
@@ -125,16 +146,46 @@ void keyboard_read_line(char* buffer, usize max_len) {
     usize i = 0;
     while (i < max_len - 1) {
         char c;
-        /* Block if no input available - yield to scheduler */
-        while (!keyboard_get_key(&c)) {
+        for (;;) {
+            /* Atomically test the ring and publish the blocked state. IRQ1
+             * cannot arrive between the empty check and registration, so a
+             * keystroke cannot be lost in the check-then-sleep window. */
+            u64 irq_flags = keyboard_irq_save();
+            if (keyboard_get_key(&c)) {
+                keyboard_irq_restore(irq_flags);
+                break;
+            }
+
             task_t* current = scheduler_current();
-            if (current) {
-                current->state = TASK_STATE_BLOCKED;
-                wait_queue_add(current);
-                scheduler_yield();
+            if (!current) {
+                keyboard_irq_restore(irq_flags);
+                asm volatile("pause");
+                continue;
+            }
+
+            current->waiting_event = TASK_WAITING_KEYBOARD;
+            current->state = TASK_STATE_BLOCKED;
+            keyboard_irq_restore(irq_flags);
+            scheduler_yield();
+
+            /* If no other task is runnable, scheduler_yield() can return
+             * while this task is still blocked. Sleep until an IRQ changes
+             * the state instead of spinning through the empty-buffer path. */
+            if (current->state == TASK_STATE_BLOCKED) {
+                asm volatile("sti; hlt" : : : "memory");
             }
         }
+
         if (c == '\n') break;
+        if (c == '\b') {
+            if (i > 0) {
+                i--;
+                vga_putchar('\b');
+                vga_putchar(' ');
+                vga_putchar('\b');
+            }
+            continue;
+        }
         buffer[i++] = c;
         vga_putchar(c);
     }

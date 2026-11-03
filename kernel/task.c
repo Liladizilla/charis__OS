@@ -13,9 +13,6 @@ static task_t task_pool[TASK_MAX_TASKS];
 static task_t* task_list = NULL;
 static u32 next_pid = 1;
 
-/* Wait queue for tasks blocked on keyboard input */
-static wait_queue_t* wait_queue_head = NULL;
-static wait_queue_t* wait_queue_tail = NULL;
 
 void task_init(void) {
     for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
@@ -496,37 +493,15 @@ void task_wake_sleepers(u64 now_ms) {
     }
 }
 
-/* Wait queue implementation */
-void wait_queue_init(void) {
-    wait_queue_head = NULL;
-    wait_queue_tail = NULL;
-}
-
-void wait_queue_add(struct task* task) {
-    wait_queue_t* node = (wait_queue_t*)kmalloc(sizeof(wait_queue_t));
-    if (!node) return;
-    
-    node->task = task;
-    node->next = NULL;
-    
-    if (wait_queue_tail) {
-        wait_queue_tail->next = node;
-    } else {
-        wait_queue_head = node;
-    }
-    wait_queue_tail = node;
-}
-
-void wait_queue_wake(void) {
-    if (wait_queue_head) {
-        wait_queue_t* node = wait_queue_head;
-        wait_queue_head = node->next;
-        if (!wait_queue_head) {
-            wait_queue_tail = NULL;
+/* IRQ1 cannot allocate or free queue nodes. Keyboard waiters live in the
+ * fixed task table, so waking them is bounded and allocation-free. */
+void task_wake_keyboard_waiters(void) {
+    for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
+        task_t* task = &task_pool[i];
+        if (task->state == TASK_STATE_BLOCKED &&
+            task->waiting_event == TASK_WAITING_KEYBOARD) {
+            task->waiting_event = 0;
+            task->state = TASK_STATE_READY;
         }
-        if (node->task && node->task->state == TASK_STATE_BLOCKED) {
-            node->task->state = TASK_STATE_READY;
-        }
-        kfree(node);
     }
 }

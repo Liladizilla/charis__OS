@@ -16,6 +16,7 @@
 #define TASK_MAX_TASKS          32
 #define TASK_DEFAULT_QUANTUM    10
 #define TASK_WAITING_SLEEP       0x534C4550U /* 'SLEP': blocked until event_data deadline */
+#define TASK_WAITING_KEYBOARD    0x4B455942U /* 'KEYB': waiting for keyboard input */
 
 /* VMA - Virtual Memory Area */
 typedef struct vma {
@@ -107,12 +108,5 @@ void task_trampoline(void);
 /* Task exit handler */
 void task_exit_handler(void);
 
-/* Task wait queue */
-typedef struct wait_queue {
-    struct task* task;
-    struct wait_queue* next;
-} wait_queue_t;
-
-void wait_queue_init(void);
-void wait_queue_add(struct task* task);
-void wait_queue_wake(void);
+/* Wake keyboard readers from IRQ1 without allocating memory in interrupt context. */
+void task_wake_keyboard_waiters(void);
