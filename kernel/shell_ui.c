@@ -27,6 +27,9 @@
 #include <kernel/config.h>
 #include <kernel/wizard.h>
 
+/* Native desktop widgets and shortcut surface. */
+extern void desktop_surface_render(void);
+
 /* ── Shared solid-morphism theme ─────────────────────────────────── */
 #define T_BG          CHARIS_UI_BACKGROUND
 #define T_TASKBAR     CHARIS_UI_PANEL
@@ -262,6 +265,7 @@ void ui_draw_cursor(void) {
 
 static void redraw_all(void) {
     wallpaper_draw((u32)config_get_int("wallpaper", 0));
+    desktop_surface_render();
     browser_render();
     draw_taskbar();
     draw_menu();
