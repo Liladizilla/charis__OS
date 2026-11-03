@@ -37,7 +37,7 @@ LD_FLAGS = -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack
 
 # Source files
 BOOT_SOURCES = $(BOOT_DIR)/boot.asm $(BOOT_DIR)/long_mode.asm
-KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/bootmem.c $(KERNEL_DIR)/heap.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c $(KERNEL_DIR)/net_stack.c $(KERNEL_DIR)/dns.c $(KERNEL_DIR)/tcp.c $(KERNEL_DIR)/http.c $(KERNEL_DIR)/ata.c $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/vfs.c $(KERNEL_DIR)/elf.c $(KERNEL_DIR)/user.c $(KERNEL_DIR)/input.c $(KERNEL_DIR)/mouse.c $(KERNEL_DIR)/fb.c $(KERNEL_DIR)/psf.c $(KERNEL_DIR)/graphics.c $(KERNEL_DIR)/compositor.c $(KERNEL_DIR)/wm.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/socket.c $(KERNEL_DIR)/demo.c $(KERNEL_DIR)/desktop.c $(KERNEL_DIR)/desktop_surface.c $(KERNEL_DIR)/apps.c $(KERNEL_DIR)/audio.c $(KERNEL_DIR)/usb.c $(KERNEL_DIR)/pci.c $(KERNEL_DIR)/services.c $(KERNEL_DIR)/diagnostics.c $(KERNEL_DIR)/display.c $(KERNEL_DIR)/config.c $(KERNEL_DIR)/power.c $(KERNEL_DIR)/security.c $(KERNEL_DIR)/widgets.c $(KERNEL_DIR)/signal.c $(KERNEL_DIR)/pipe.c $(KERNEL_DIR)/driver.c $(KERNEL_DIR)/raster.c $(KERNEL_DIR)/hda.c $(KERNEL_DIR)/gamepad.c $(KERNEL_DIR)/logo.c $(KERNEL_DIR)/font_data.c $(KERNEL_DIR)/gfx_text.c $(KERNEL_DIR)/browser.c $(KERNEL_DIR)/shell_ui.c $(KERNEL_DIR)/settings_ui.c $(KERNEL_DIR)/wizard.c $(KERNEL_DIR)/wallpaper.c $(KERNEL_DIR)/vmm_test.c
+KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/bootmem.c $(KERNEL_DIR)/heap.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c $(KERNEL_DIR)/net_stack.c $(KERNEL_DIR)/dns.c $(KERNEL_DIR)/tcp.c $(KERNEL_DIR)/http.c $(KERNEL_DIR)/ata.c $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/vfs.c $(KERNEL_DIR)/cex.c $(KERNEL_DIR)/elf.c $(KERNEL_DIR)/user.c $(KERNEL_DIR)/input.c $(KERNEL_DIR)/mouse.c $(KERNEL_DIR)/fb.c $(KERNEL_DIR)/psf.c $(KERNEL_DIR)/graphics.c $(KERNEL_DIR)/compositor.c $(KERNEL_DIR)/wm.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/socket.c $(KERNEL_DIR)/demo.c $(KERNEL_DIR)/desktop.c $(KERNEL_DIR)/desktop_surface.c $(KERNEL_DIR)/apps.c $(KERNEL_DIR)/audio.c $(KERNEL_DIR)/usb.c $(KERNEL_DIR)/pci.c $(KERNEL_DIR)/services.c $(KERNEL_DIR)/diagnostics.c $(KERNEL_DIR)/display.c $(KERNEL_DIR)/config.c $(KERNEL_DIR)/power.c $(KERNEL_DIR)/security.c $(KERNEL_DIR)/widgets.c $(KERNEL_DIR)/signal.c $(KERNEL_DIR)/pipe.c $(KERNEL_DIR)/driver.c $(KERNEL_DIR)/raster.c $(KERNEL_DIR)/hda.c $(KERNEL_DIR)/gamepad.c $(KERNEL_DIR)/logo.c $(KERNEL_DIR)/font_data.c $(KERNEL_DIR)/gfx_text.c $(KERNEL_DIR)/browser.c $(KERNEL_DIR)/shell_ui.c $(KERNEL_DIR)/settings_ui.c $(KERNEL_DIR)/wizard.c $(KERNEL_DIR)/wallpaper.c $(KERNEL_DIR)/vmm_test.c
 ASM_SOURCES = $(KERNEL_DIR)/asm/interrupt_stubs.asm $(KERNEL_DIR)/asm/context.asm $(KERNEL_DIR)/asm/gdt.asm $(KERNEL_DIR)/asm/io.asm
 
 # Object files
@@ -73,8 +73,12 @@ USB_IMG = $(BUILD_DIR)/charisos-usb.img
 images: $(VM_ISO) $(USB_IMG)
 
 ELF_SMOKE_IMAGE = $(BUILD_DIR)/elf-smoke-disk.img
+CEX_SMOKE = $(BUILD_DIR)/elf-smoke.cex
 
-elf-test: $(ELF_SMOKE_IMAGE)
+elf-test: $(ELF_SMOKE_IMAGE) cex-format-test
+
+cex-format-test:
+	python3 tools/test_mkcex.py
 
 $(BUILD_DIR)/elf-smoke.o: tests/elf_smoke.asm
 	mkdir -p $(BUILD_DIR)
@@ -83,10 +87,14 @@ $(BUILD_DIR)/elf-smoke.o: tests/elf_smoke.asm
 $(BUILD_DIR)/elf-smoke.elf: $(BUILD_DIR)/elf-smoke.o tests/elf_smoke.ld
 	$(LD) -m elf_x86_64 -nostdlib -T tests/elf_smoke.ld -o $@ $<
 
-$(ELF_SMOKE_IMAGE): $(BUILD_DIR)/elf-smoke.elf
+$(CEX_SMOKE): $(BUILD_DIR)/elf-smoke.elf tools/mkcex.py
+	python3 tools/mkcex.py $< $@ --force
+
+$(ELF_SMOKE_IMAGE): $(BUILD_DIR)/elf-smoke.elf $(CEX_SMOKE)
 	dd if=/dev/zero of=$@ bs=1M count=64 status=none
 	mkfs.fat -F 32 $@
-	mcopy -i $@ $< ::TEST.ELF
+	mcopy -i $@ $(BUILD_DIR)/elf-smoke.elf ::TEST.ELF
+	mcopy -i $@ $(CEX_SMOKE) ::TEST.CEX
 
 # ── Text-only variant ─────────────────────────────────────────────────
 # Same source, graphics compiled out. Boots to the VGA text console and the
