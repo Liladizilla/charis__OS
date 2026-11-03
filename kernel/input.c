@@ -26,8 +26,11 @@ static inline void input_irq_restore(u64 flags) {
 }
 
 void input_init(void) {
+    u64 flags = input_irq_save();
     input_head = 0;
     input_tail = 0;
+    input_dropped = 0;
+    input_irq_restore(flags);
 }
 
 bool input_push_event(input_event_t* evt) {
