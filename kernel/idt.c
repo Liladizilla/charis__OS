@@ -1,5 +1,6 @@
 #include <kernel/idt.h>
 #include <kernel/irq.h>
+#include <kernel/diagnostics.h>
 #include <kernel/vga.h>
 #include <kernel/serial.h>
 #include <kernel/scheduler.h>
@@ -52,6 +53,7 @@ void idt_set_gate(u8 vector, u64 handler, u8 ist, u8 type_attr) {
 void idt_dispatch_handler(reg_frame_t* frame) {
     if (frame->vector == 0x80) {
         if (frame->rax == SYS_EXEC && (frame->cs & 3) == 3) {
+            diag_note_syscall();
             if (!syscall_exec_from_frame(frame)) frame->rax = (u64)-1;
             return;
         }
