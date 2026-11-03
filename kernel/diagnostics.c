@@ -19,6 +19,7 @@ void diag_init(void) {
 }
 
 void diag_collect_stats(system_stats_t* stats) {
+    if (!stats) return;
     stats->uptime_ms = timer_get_ms();
     
     /* A partially initialized scheduler has no current task yet. Bound the
