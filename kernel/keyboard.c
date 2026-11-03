@@ -106,18 +106,39 @@ void keyboard_handler(reg_frame_t* frame) {
     pic_send_eoi(IRQ_KEYBOARD);
 }
 
+/* The keyboard IRQ is the sole producer of this ring buffer. These
+ * short critical sections prevent IRQ1 from changing write_pos between a
+ * consumer's empty check and dequeue. This is single-CPU synchronization,
+ * not an SMP lock. */
+static inline u64 keyboard_irq_save(void) {
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static inline void keyboard_irq_restore(u64 flags) {
+    asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
+}
+
 bool keyboard_get_key(char* out) {
     if (!out) return false;
+
+    u64 irq_flags = keyboard_irq_save();
     if (keyboard_read_pos != keyboard_write_pos) {
         *out = keyboard_buffer[keyboard_read_pos];
         keyboard_read_pos = (keyboard_read_pos + 1) % 256;
+        keyboard_irq_restore(irq_flags);
         return true;
     }
+    keyboard_irq_restore(irq_flags);
     return false;
 }
 
 bool keyboard_has_input(void) {
-    return keyboard_read_pos != keyboard_write_pos;
+    u64 irq_flags = keyboard_irq_save();
+    bool has_input = keyboard_read_pos != keyboard_write_pos;
+    keyboard_irq_restore(irq_flags);
+    return has_input;
 }
 
 void keyboard_read_line(char* buffer, usize max_len) {
