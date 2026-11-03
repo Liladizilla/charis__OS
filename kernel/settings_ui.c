@@ -574,10 +574,8 @@ bool settings_ui_handle_event(const input_event_t* event) {
             int delta = base == KEY_RIGHT ? 1 : -1;
             if (active_tab == 0) adjust_appearance(delta);
             else if (active_tab == 3) {
-                bool current = config_get_bool(active_row == 0 ? "net_enabled" : "net_dhcp", true);
                 config_set_bool(active_row == 0 ? "net_enabled" : "net_dhcp",
-                                delta > 0 ? true : !current);
-                if (delta < 0) config_set_bool(active_row == 0 ? "net_enabled" : "net_dhcp", !current);
+                                delta > 0);
                 save_ok = false;
             } else active_tab = (active_tab + SETTINGS_TABS + delta) % SETTINGS_TABS;
             return true;
