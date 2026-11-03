@@ -17,6 +17,7 @@
 #include <kernel/wizard.h>
 #include <kernel/fb.h>
 #include <kernel/gfx_text.h>
+#include <kernel/ui_geometry.h>
 #include <kernel/font.h>
 #include <kernel/input.h>
 #include <kernel/keyboard.h>
@@ -141,14 +142,8 @@ static u32 list_row_height(void) { return font_cell_h + 10; }
 
 /* Which row is under the pointer, or -1. Same geometry as draw_list(). */
 static int hit_list(u32 x, u32 y, u32 w, u32 count) {
-    int mx = input_get_mouse_x();
-    int my = input_get_mouse_y();
-    if (mx < (int)x || mx >= (int)(x + w)) return -1;
-    u32 row_h = list_row_height();
-    if (my < (int)y) return -1;
-    u32 rel = (u32)my - y;
-    if (rel >= row_h * count) return -1;
-    return (int)(rel / row_h);
+    return ui_hit_row(input_get_mouse_x(), input_get_mouse_y(),
+                      x, y, w, count, list_row_height(), list_row_height());
 }
 
 static void button(u32 x, u32 y, u32 w, u32 h, const char* label, bool primary) {
@@ -596,7 +591,13 @@ static bool handle_event(const input_event_t* e) {
                   : (w.step == STEP_LANGUAGE) ? LANGUAGE_COUNT
                   : (w.step == STEP_TIMEZONE) ? TIMEZONE_COUNT : 0;
         if (!count) return false;
-        int r = hit_list(cx + x, cy + y, cw, count);
+        int r;
+        if (w.step == STEP_DISPLAY) {
+            r = ui_hit_row(input_get_mouse_x(), input_get_mouse_y(),
+                           cx + 32, cy + 108, 576, 3, 48, 38);
+        } else {
+            r = hit_list(cx + x, cy + y, cw, count);
+        }
         if (r >= 0) w.sel[w.step] = (u32)r;
         return true;
     }
@@ -650,7 +651,10 @@ static bool handle_event(const input_event_t* e) {
 
         u32 cx = sw > card_w ? (sw - card_w) / 2 : 0;
         u32 cy = sh > card_h ? (sh - card_h) / 2 : 0;
-        int row = hit_list(cx + row_x, cy + row_y, row_w, row_count);
+        int row = (w.step == STEP_DISPLAY)
+            ? ui_hit_row(input_get_mouse_x(), input_get_mouse_y(),
+                         cx + 32, cy + 108, 576, 3, 48, 38)
+            : hit_list(cx + row_x, cy + row_y, row_w, row_count);
         if (row >= 0) {
             if (w.step == STEP_DISPLAY && w.sel[STEP_DISPLAY] == (u32)row) {
                 if (row == 0) w.font_style = (w.font_style + 1) % 3;
