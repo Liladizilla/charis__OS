@@ -60,12 +60,12 @@ static const u8* glyph_data(char ch, u32* left, u32* right) {
 }
 
 static u32 glyph_advance(char ch, u32 scale) {
-    if (ch == ' ') return (u32)(font_cell_w / 2) * scale;
+    if (ch == ' ') return (u32)(font_cell_w / 2 + (text_style == 2 ? 1 : 0)) * scale;
     u32 left = 0, right = (u32)font_cell_w - 1U;
     (void)glyph_data(ch, &left, &right);
-    if (text_style == 0) {
+    if (text_style != 1) {
         u32 width = right >= left ? right - left + 1 : 1;
-        return (width + 1) * scale;
+        return (width + (text_style == 2 ? 2 : 1)) * scale;
     }
     return (u32)font_cell_w * scale + scale;
 }
@@ -77,7 +77,7 @@ static void draw_glyph(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale) {
     const u8* rows = glyph_data(ch, &left, &right);
     if (!rows) return;
 
-    bool proportional = (text_style == 0);
+    bool proportional = (text_style != 1);
     u32 source_left = proportional ? left : 0;
     u32 source_right = proportional ? right : ((u32)font_cell_w - 1U);
     u32 advance_width = glyph_advance(ch, scale);
@@ -93,25 +93,20 @@ static void draw_glyph(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale) {
         }
     }
 
-    /* Bitmap-serif treatment: extend top and baseline terminals by one
-     * pixel on either side. This is intentionally conservative at 8x16. */
-    if (text_style == 2 && font_cell_w > 2 && font_cell_h > 4) {
-        for (u32 col = source_left; col <= source_right; col++) {
-            u32 dx = proportional ? col - source_left : col;
-            u32 px = x + dx * scale;
-            if (rows[0] & (1U << col)) {
-                if (dx > 0) fb_fill_rect(px - scale, y, scale, scale, fg);
-                if (dx + 1 < (proportional ? source_right - source_left + 1 : font_cell_w))
-                    fb_fill_rect(px + scale, y, scale, scale, fg);
-            }
-            if (rows[font_cell_h - 1] & (1U << col)) {
-                u32 py = y + (font_cell_h - 1) * scale;
-                if (dx > 0) fb_fill_rect(px - scale, py, scale, scale, fg);
-                if (dx + 1 < (proportional ? source_right - source_left + 1 : font_cell_w))
-                    fb_fill_rect(px + scale, py, scale, scale, fg);
+    /* Bold Sans expands each lit bitmap pixel by one cell-scale pixel.
+     * The advance width reserves space so adjacent glyphs never collide. */
+    if (text_style == 2) {
+        for (u32 row = 0; row < font_cell_h; row++) {
+            u8 bits = rows[row];
+            for (u32 col = source_left; col <= source_right; col++) {
+                if (!(bits & (1U << col))) continue;
+                u32 dx = proportional ? col - source_left : col;
+                fb_fill_rect(x + (dx + 1) * scale, y + row * scale,
+                             scale, scale, fg);
             }
         }
     }
+}
 }
 
 void gfx_draw_char(u32 x, u32 y, char ch, u32 fg, u32 bg) {
