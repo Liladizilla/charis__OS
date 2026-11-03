@@ -81,8 +81,6 @@ static void draw_glyph(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale) {
     u32 source_left = proportional ? left : 0;
     u32 source_right = proportional ? right : font_cell_w - 1;
     u32 advance_width = glyph_advance(ch, scale);
-    u32 ink_width = (source_right >= source_left ? source_right - source_left + 1 : 1) * scale;
-
     if (bg != FB_TRANSPARENT)
         fb_fill_rect(x, y, advance_width, (u32)font_cell_h * scale, bg);
 
@@ -95,28 +93,25 @@ static void draw_glyph(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale) {
         }
     }
 
-    /* A restrained bitmap-serif treatment: extend true outer stem pixels
-     * along the cap/baseline, without changing punctuation or round glyphs. */
+    /* Bitmap-serif treatment: extend top and baseline terminals by one
+     * pixel on either side. This is intentionally conservative at 8x16. */
     if (text_style == 2 && font_cell_w > 2 && font_cell_h > 4) {
-        bool left_stem = false, right_stem = false;
-        for (u32 row = 2; row + 2 < font_cell_h; row++) {
-            if (rows[row] & (1U << 0)) left_stem = true;
-            if (rows[row] & (1U << (font_cell_w - 1))) right_stem = true;
-        }
-        if (left_stem) {
-            if (rows[0] & 1U) fb_fill_rect(x, y, scale, scale, fg);
-            if (rows[font_cell_h - 1] & 1U)
-                fb_fill_rect(x, y + (font_cell_h - 1) * scale, scale, scale, fg);
-        }
-        if (right_stem) {
-            u32 sx = (font_cell_w - 1) * scale;
-            if (rows[0] & (1U << (font_cell_w - 1)))
-                fb_fill_rect(x + sx, y, scale, scale, fg);
-            if (rows[font_cell_h - 1] & (1U << (font_cell_w - 1)))
-                fb_fill_rect(x + sx, y + (font_cell_h - 1) * scale, scale, scale, fg);
+        for (u32 col = source_left; col <= source_right; col++) {
+            u32 dx = proportional ? col - source_left : col;
+            u32 px = x + dx * scale;
+            if (rows[0] & (1U << col)) {
+                if (dx > 0) fb_fill_rect(px - scale, y, scale, scale, fg);
+                if (dx + 1 < (proportional ? source_right - source_left + 1 : font_cell_w))
+                    fb_fill_rect(px + scale, y, scale, scale, fg);
+            }
+            if (rows[font_cell_h - 1] & (1U << col)) {
+                u32 py = y + (font_cell_h - 1) * scale;
+                if (dx > 0) fb_fill_rect(px - scale, py, scale, scale, fg);
+                if (dx + 1 < (proportional ? source_right - source_left + 1 : font_cell_w))
+                    fb_fill_rect(px + scale, py, scale, scale, fg);
+            }
         }
     }
-    (void)ink_width;
 }
 
 void gfx_draw_char(u32 x, u32 y, char ch, u32 fg, u32 bg) {
