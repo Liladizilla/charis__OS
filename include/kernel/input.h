@@ -43,3 +43,5 @@ int input_get_mouse_y(void);
 bool input_get_mouse_left(void);
 bool input_get_mouse_right(void);
 bool input_get_mouse_middle(void);
+/* Events rejected because the input ring was full. */
+u32 input_queue_dropped(void);
