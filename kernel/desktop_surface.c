@@ -72,12 +72,21 @@ static void draw_status_widget(void) {
     label(x + 90, y + 59, "Live environment", DS_WHITE);
     label(x + 12, y + 82, "Uptime", DS_MUTED);
     u64 sec = timer_get_ms() / 1000;
-    char time[16];
-    u32 hh = (u32)(sec / 3600), mm = (u32)((sec / 60) % 60), ss = (u32)(sec % 60);
-    time[0] = (char)('0' + (hh / 10) % 10); time[1] = (char)('0' + hh % 10);
-    time[2] = ':'; time[3] = (char)('0' + mm / 10); time[4] = (char)('0' + mm % 10);
-    time[5] = ':'; time[6] = (char)('0' + ss / 10); time[7] = (char)('0' + ss % 10);
-    time[8] = 0;
+    char time[24];
+    char hour_digits[16];
+    u64 hours = sec / 3600;
+    u32 hour_count = 0, pos = 0;
+    u32 mm = (u32)((sec / 60) % 60), ss = (u32)(sec % 60);
+    do {
+        hour_digits[hour_count++] = (char)('0' + hours % 10);
+        hours /= 10;
+    } while (hours && hour_count < sizeof(hour_digits));
+    while (hour_count) time[pos++] = hour_digits[--hour_count];
+    time[pos++] = ':';
+    time[pos++] = (char)('0' + mm / 10); time[pos++] = (char)('0' + mm % 10);
+    time[pos++] = ':';
+    time[pos++] = (char)('0' + ss / 10); time[pos++] = (char)('0' + ss % 10);
+    time[pos] = 0;
     label(x + 90, y + 82, time, DS_WHITE);
     fb_fill_rect(x + 12, y + 108, w - 24, 2, DS_LINE);
     fb_fill_rect(x + 12, y + 108, (w - 24) / 3, 2, DS_BLUE);
