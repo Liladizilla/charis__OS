@@ -21,8 +21,6 @@
 #include <kernel/input.h>
 #include <kernel/keyboard.h>
 #include <kernel/mouse.h>
-#include <kernel/keyboard.h>
-#include <kernel/mouse.h>
 #include <kernel/net.h>
 #include <kernel/config.h>
 #include <kernel/ata.h>
@@ -31,6 +29,7 @@
 #include <kernel/timer.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
+#include <kernel/vga.h>
 #include <kernel/ui_theme.h>
 #include <kernel/scheduler.h>
 
