@@ -39,7 +39,7 @@ static u32 active_row;
 static bool save_ok;
 
 static const char* const tab_names[SETTINGS_TABS] = {
-    "Appearance", "System", "Hardware", "Security", "About"
+    "Look", "System", "Devices", "Secure", "About"
 };
 
 void settings_ui_open(void) {
@@ -361,7 +361,7 @@ bool settings_ui_handle_event(const input_event_t* event) {
 
     u32 by = y + h - sp(48);
     u32 save_x = x + w - sp(206);
-    if (my >= (int)(by + 4) && my < (int)(by + sp(36))) {
+    if (my >= (int)(by + sp(4)) && my < (int)(by + sp(36))) {
         if (mx >= (int)save_x && mx < (int)(save_x + sp(88))) {
             save_ok = config_save(CONFIG_FILE_PATH);
             return true;
