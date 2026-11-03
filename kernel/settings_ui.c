@@ -140,6 +140,18 @@ static void append_text(char* out, u32 capacity, u32* pos, const char* value) {
     out[*pos] = 0;
 }
 
+static void append_u64(char* out, u32 capacity, u32* pos, u64 value) {
+    char digits[21];
+    u32 n = 0;
+    do {
+        digits[n++] = (char)('0' + value % 10);
+        value /= 10;
+    } while (value && n < sizeof(digits));
+    while (n && *pos + 1 < capacity) out[(*pos)++] = digits[--n];
+    out[*pos] = 0;
+}
+
+
 static void format_pair(char* out, u32 cap, const char* label, u32 value, const char* unit) {
     u32 pos = 0;
     out[0] = 0;
@@ -209,7 +221,7 @@ static void draw_row(u32 x, u32 y, u32 w, const char* name, const char* value,
 static void draw_appearance(u32 x, u32 y, u32 w) {
     draw_text(x, y, "Appearance", S_ACCENT);
     y += title_step();
-    static const char* const fonts[] = { "Sans", "Monospace", "Serif" };
+    static const char* const fonts[] = { "Sans", "Monospace", "Bold Sans" };
     static const char* const scales[] = { "80%", "100%", "120%" };
     static const char* const sizes[] = { "1x", "2x", "3x" };
     u32 style = (u32)config_get_int("font_style", 0);
@@ -261,8 +273,13 @@ static void draw_system(u32 x, u32 y) {
     draw_text(x, y + step * 4, line, S_TEXT);
     format_pair(line, sizeof(line), "System calls: ", stats.syscalls, "");
     draw_text(x, y + step * 5, line, S_TEXT);
-    draw_text(x, y + step * 6, "RAM reports the currently managed 1 GiB physical window.", S_MUTED);
-    draw_text(x, y + step * 7, "CPU usage remains unavailable until idle-time accounting is verified.", S_MUTED);
+    pos = 0; line[0] = 0;
+    append_text(line, sizeof(line), &pos, "Firmware-available RAM: ");
+    append_u64(line, sizeof(line), &pos, pmm_detected_ram_bytes() / (1024ULL * 1024ULL));
+    append_text(line, sizeof(line), &pos, " MiB");
+    draw_text(x, y + step * 6, line, S_TEXT);
+    draw_text(x, y + step * 7, "The PMM currently manages only the first 1 GiB.", S_MUTED);
+    draw_text(x, y + step * 8, "CPU usage remains unavailable until idle-time accounting is verified.", S_MUTED);
 }
 
 static void draw_hardware(u32 x, u32 y) {
@@ -350,10 +367,11 @@ void settings_ui_render(void) {
     draw_text(x + sp(20), y + (header_height() - settings_text_height()) / 2,
               "System Settings", S_TEXT);
 
-    u32 tab_w = (w - sp(32)) / SETTINGS_TABS;
+    u32 tab_area = w > sp(32) ? w - sp(32) : 0;
+    u32 tab_w = tab_area / SETTINGS_TABS;
     u32 tabs_y = y + header_height() + sp(12);
     u32 tabs_h = tab_height();
-    for (u32 i = 0; i < SETTINGS_TABS; i++) {
+    for (u32 i = 0; tab_w && i < SETTINGS_TABS; i++) {
         u32 tx = x + sp(16) + i * tab_w;
         fb_fill_rect(tx, tabs_y, tab_w - sp(4), tabs_h, i == active_tab ? S_SELECTED : S_RAISED);
         fb_draw_rect(tx, tabs_y, tab_w - sp(4), tabs_h, S_BORDER);
@@ -364,7 +382,7 @@ void settings_ui_render(void) {
 
     u32 content_x = x + sp(28);
     u32 content_y = content_top(y);
-    u32 content_w = w - sp(56);
+    u32 content_w = w > sp(56) ? w - sp(56) : 0;
     switch (active_tab) {
     case 0: draw_appearance(content_x, content_y, content_w); break;
     case 1: draw_system(content_x, content_y); break;
@@ -386,7 +404,8 @@ void settings_ui_render(void) {
     button_w += sp(20);
     if (button_w < sp(88)) button_w = sp(88);
     u32 gap = sp(12);
-    u32 save_x = x + w - button_w * 2 - gap - sp(16);
+    u32 buttons_total = button_w * 2 + gap + sp(16);
+    u32 save_x = x + (w > buttons_total ? w - buttons_total : 0);
     draw_text(x + sp(20), by + (foot_h > settings_text_height() ?
               (foot_h - settings_text_height()) / 2 : 0),
               save_ok ? "Saved to CHARISOS.CFG" : "Changes are pending until saved", S_MUTED);
@@ -449,9 +468,10 @@ bool settings_ui_handle_event(const input_event_t* event) {
         return true;
     }
 
-    u32 tab_w = (w - sp(32)) / SETTINGS_TABS;
+    u32 tab_area = w > sp(32) ? w - sp(32) : 0;
+    u32 tab_w = tab_area / SETTINGS_TABS;
     u32 tabs_y = y + header_height() + sp(12);
-    if (my >= (int)tabs_y && my < (int)(tabs_y + tab_height()) && mx >= (int)(x + sp(16))) {
+    if (tab_w && my >= (int)tabs_y && my < (int)(tabs_y + tab_height()) && mx >= (int)(x + sp(16))) {
         u32 tab = (u32)(mx - (int)x - (int)sp(16)) / tab_w;
         if (tab < SETTINGS_TABS) active_tab = tab;
         return true;
@@ -468,7 +488,8 @@ bool settings_ui_handle_event(const input_event_t* event) {
     u32 button_w = close_width > save_width ? close_width : save_width;
     button_w += sp(20);
     if (button_w < sp(88)) button_w = sp(88);
-    u32 save_x = x + w - (button_w * 2) - sp(28);
+    u32 buttons_total = button_w * 2 + sp(28);
+    u32 save_x = x + (w > buttons_total ? w - buttons_total : 0);
     if (my >= (int)button_y && my < (int)(button_y + button_h)) {
         if (mx >= (int)save_x && mx < (int)(save_x + button_w)) {
             save_ok = config_save(CONFIG_FILE_PATH);
