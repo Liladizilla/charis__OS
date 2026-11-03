@@ -27,9 +27,16 @@ static void pmm_mark_range(u64 start, u64 end, bool used) {
     if (start < PMM_BASE) start = PMM_BASE;
     if (end > PMM_LIMIT) end = PMM_LIMIT;
 
-    /* Only whole pages fully contained in an available region are usable. */
-    start = ALIGN_UP(start, 4096ULL);
-    end = ALIGN_DOWN(end, 4096ULL);
+    /* Available memory is rounded inward so partial pages are never
+     * exposed. Reserved ranges are rounded outward so no partial page can
+     * remain available to the allocator. */
+    if (used) {
+        start = ALIGN_DOWN(start, 4096ULL);
+        end = ALIGN_UP(end, 4096ULL);
+    } else {
+        start = ALIGN_UP(start, 4096ULL);
+        end = ALIGN_DOWN(end, 4096ULL);
+    }
     for (u64 addr = start; addr < end; addr += 4096ULL) {
         u64 page = (addr - PMM_BASE) / 4096ULL;
         u8 mask = (u8)(1U << (page & 7U));
@@ -119,8 +126,10 @@ void pmm_free_page(u64 addr) {
     u32 byte = (u32)(page >> 3);
     u8 bit = (u8)(page & 7U);
     u8 mask = (u8)(1U << bit);
+    /* A set bit means allocated. Clear it exactly once; a clear bit is
+     * already free and is ignored to prevent double-free accounting. */
     if (!(bitmap[byte] & mask)) return;
-    bitmap[byte] |= mask;
+    bitmap[byte] &= (u8)~mask;
     if (byte < last_free) last_free = byte;
 }
 
