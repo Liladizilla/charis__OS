@@ -321,7 +321,6 @@ bool calculator_ui_handle_event(const input_event_t* event) {
         if (code == 0x0D) { activate_key('+'); return true; }
         if (code == 0x35) { activate_key('/'); return true; }
         if (code == 0x37) { activate_key('*'); return true; }
-        if (code == 0x0E) { backspace_entry(); return true; }
         if (code == 0x1C) { calculate_result(); return true; }
         if (code == 0x39) { enter_digit('0'); return true; }
         return true;
@@ -350,7 +349,7 @@ bool calculator_ui_handle_event(const input_event_t* event) {
     if (relative_y == 0xFFFFFFFFU || row_span == 0) return true;
     u32 row = relative_y / row_span;
     if (row >= 4 || relative_y % row_span >= button_h) return true;
-    u32 relative_x = mx > (int)(x + pad) ? (u32)(mx - (int)(x + pad)) : 0xFFFFFFFFU;
+    u32 relative_x = mx >= (int)(x + pad) ? (u32)(mx - (int)(x + pad)) : 0xFFFFFFFFU;
     if (relative_x == 0xFFFFFFFFU) return true;
     u32 col_span = button_w + gap;
     u32 col = relative_x / col_span;
