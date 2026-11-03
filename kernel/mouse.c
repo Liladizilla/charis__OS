@@ -110,7 +110,7 @@ void mouse_init(void) {
         config = inb(0x60);
         config_valid = true;
     } else {
-        kprintf("Mouse: controller config read timed out\\n");
+        kprintf("Mouse: controller config read timed out\n");
     }
 
     /* Only write the configuration back when the read succeeded. Writing a
