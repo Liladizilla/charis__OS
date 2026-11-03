@@ -1,6 +1,7 @@
 #include <kernel/usb.h>
 #include <kernel/pci.h>
 #include <kernel/vga.h>
+#include <kernel/string.h>
 #include <kernel/memory.h>
 
 static usb_device_t usb_devices[USB_MAX_DEVICES];
