@@ -30,6 +30,8 @@
 /* Native desktop widgets and shortcut surface. */
 extern void desktop_surface_render(void);
 extern int desktop_surface_hit_test(int mx, int my);
+extern void desktop_surface_draw_taskbar_icons(u32 y);
+extern int desktop_surface_taskbar_hit_test(int mx, int my, u32 taskbar_y);
 
 /* ── Shared solid-morphism theme ─────────────────────────────────── */
 #define T_BG          CHARIS_UI_BACKGROUND
@@ -116,6 +118,7 @@ static void draw_taskbar(void) {
     /* "Charis" label, vertically centred in the cell. */
     u32 ty = y + (TASKBAR_H - font_cell_h) / 2;
     gfx_draw_string(14, ty, "Charis", T_FG, FB_TRANSPARENT);
+    desktop_surface_draw_taskbar_icons(y);
 
     /* The timer provides uptime, not wall-clock time. Label it explicitly
      * and use one unambiguous HH:MM:SS format. */
@@ -398,6 +401,20 @@ static void handle_event(const input_event_t* e) {
             ui.hover_item = -1;
             ui.needs_redraw = true;
             return;
+        }
+
+        if (on_taskbar) {
+            int pinned = desktop_surface_taskbar_hit_test(mx, my,
+                g_framebuffer.height - TASKBAR_H);
+            if (pinned >= 0) {
+                if (pinned == 0) browser_open();
+                else {
+                    notice_item = pinned == 1 ? 2 : 1;
+                    notice_open = true;
+                }
+                ui.needs_redraw = true;
+                return;
+            }
         }
 
         int hit = hit_menu_item(mx, my);
