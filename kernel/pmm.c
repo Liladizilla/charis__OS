@@ -55,6 +55,7 @@ void pmm_init(multiboot_info_t* info) {
 
     /* Fail closed: RAM is reserved until the firmware explicitly marks it usable. */
     kmemset(bitmap, 0xFF, sizeof(bitmap));
+    kmemset(allocated_bitmap, 0, sizeof(allocated_bitmap));
     last_free = 0;
 
     for (u32 i = 0; i < memory_map_count; i++) {
