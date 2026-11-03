@@ -9,6 +9,9 @@ static char keyboard_buffer[256];
 static u32 keyboard_read_pos = 0;
 static u32 keyboard_write_pos = 0;
 static bool shift_held = false;
+volatile u32 g_keyboard_irqs = 0;
+
+u32 keyboard_irq_count(void) { return g_keyboard_irqs; }
 
 const char keyboard_scancode_set1[128] = {
     0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
@@ -45,6 +48,7 @@ void keyboard_set_key_event_hook(void (*hook)(u8 scancode, bool pressed)) {
 
 void keyboard_handler(reg_frame_t* frame) {
     (void)frame;
+    g_keyboard_irqs++;
     u8 scancode;
     asm volatile("inb %1, %0" : "=a"(scancode) : "Nd"((u16)KEYBOARD_DATA_PORT));
 
