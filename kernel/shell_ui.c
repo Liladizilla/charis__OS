@@ -380,7 +380,7 @@ static void handle_event(const input_event_t* e) {
 
         /* Desktop shortcuts sit behind the launcher. Never let their hit
          * region steal clicks from an open menu on short framebuffers. */
-        if (!ui.menu_open) {
+        if (!ui.menu_open && my < (int)(g_framebuffer.height - TASKBAR_H)) {
             int desktop_app = desktop_surface_hit_test(mx, my);
             if (desktop_app >= 0) {
                 if (desktop_app == 0) {
