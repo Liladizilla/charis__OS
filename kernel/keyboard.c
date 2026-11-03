@@ -167,13 +167,22 @@ void keyboard_read_line(char* buffer, usize max_len) {
             current->state = TASK_STATE_BLOCKED;
             keyboard_irq_restore(irq_flags);
             scheduler_yield();
+
+            /* If no other task is runnable, scheduler_yield() can return
+             * while this task is still blocked. Sleep until an IRQ changes
+             * the state instead of spinning through the empty-buffer path. */
+            if (current->state == TASK_STATE_BLOCKED) {
+                asm volatile("sti; hlt" : : : "memory");
+            }
         }
 
         if (c == '\n') break;
         if (c == '\b') {
             if (i > 0) {
                 i--;
-                vga_puts("\b ");
+                vga_putchar('\b');
+                vga_putchar(' ');
+                vga_putchar('\b');
             }
             continue;
         }
