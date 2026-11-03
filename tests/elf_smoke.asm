@@ -40,7 +40,7 @@ _start:
     jmp .loop
 
 section .rodata
-message: db "ELF_EXEC_OK", 10, 0
+message: db "CEX_EXEC_OK", 10, 0
 bad_argc_message: db "ELF_BAD_ARGC", 10, 0
 bad_argv_message: db "ELF_BAD_ARGV", 10, 0
 bad_envp_message: db "ELF_BAD_ENVP", 10, 0
