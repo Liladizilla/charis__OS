@@ -8,8 +8,10 @@
 #include <kernel/printf.h>
 
 #define ELF_MAX_VECTOR_ENTRIES 16
-#define ELF_USER_IMAGE_MIN 0x00400000ULL
+#define ELF_USER_IMAGE_MIN ((u64)(uintptr_t)_kernel_end)
 #define ELF_MAX_LOAD_SEGMENTS 128
+
+extern char _kernel_end[];
 
 typedef struct {
     u64 page_start;
@@ -57,20 +59,23 @@ static bool elf_load_segment(pml4_t* pml4, int fd, u64 file_base,
     u64 segment_end = phdr->p_vaddr + phdr->p_memsz;
     u64 page_start = phdr->p_vaddr & ~(PAGE_SIZE - 1);
     u64 page_end = (segment_end + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
-    if (page_end < segment_end) return false;
+    u64 kernel_end = ALIGN_UP(ELF_USER_IMAGE_MIN, PAGE_SIZE);
+    if (page_end < segment_end || page_start < kernel_end) return false;
 
     u64 map_flags = VMM_FLAG_PRESENT | VMM_FLAG_USER;
     if (phdr->p_flags & PF_W) map_flags |= VMM_FLAG_WRITABLE;
     if (!(phdr->p_flags & PF_X)) map_flags |= VMM_FLAG_NX;
 
+    u64 mapped_pages = 0;
     for (u64 addr = page_start; addr < page_end; addr += PAGE_SIZE) {
         u64 phys = pmm_alloc_page();
-        if (!phys) return false;
+        if (!phys) goto segment_fail;
         kmemset((void*)(uintptr_t)phys, 0, PAGE_SIZE);
         if (!vmm_map_page_pml4(pml4, addr, phys, map_flags)) {
             pmm_free_page(phys);
-            return false;
+            goto segment_fail;
         }
+        mapped_pages++;
     }
 
     u8 buffer[512];
@@ -78,15 +83,14 @@ static bool elf_load_segment(pml4_t* pml4, int fd, u64 file_base,
     while (copied < phdr->p_filesz) {
         usize chunk = (usize)(phdr->p_filesz - copied);
         if (chunk > sizeof(buffer)) chunk = sizeof(buffer);
-        if (fd_read_all(fd, file_base + phdr->p_offset + copied, buffer, chunk) != (int)chunk) {
-            return false;
-        }
+        if (fd_read_all(fd, file_base + phdr->p_offset + copied, buffer, chunk) != (int)chunk)
+            goto segment_fail;
 
         usize written = 0;
         while (written < chunk) {
             u64 vaddr = phdr->p_vaddr + copied + written;
             pte_t* pte = vmm_walk(pml4, vaddr, false);
-            if (!pte || !(*pte & VMM_FLAG_PRESENT)) return false;
+            if (!pte || !(*pte & VMM_FLAG_PRESENT)) goto segment_fail;
             u64 phys = (*pte & 0x000FFFFFFFFFF000ULL) | (vaddr & (PAGE_SIZE - 1));
             usize page_bytes = PAGE_SIZE - (usize)(vaddr & (PAGE_SIZE - 1));
             usize bytes = chunk - written;
@@ -98,6 +102,17 @@ static bool elf_load_segment(pml4_t* pml4, int fd, u64 file_base,
     }
 
     return true;
+
+segment_fail:
+    /* This segment may have failed after mapping only part of its range or
+     * while reading file data. Remove its own leaves before returning so the
+     * caller can separately roll back previously completed segments. */
+    for (u64 page = 0; page < mapped_pages; page++) {
+        u64 address = page_start + page * PAGE_SIZE;
+        u64 phys = vmm_unmap_page_pml4(pml4, address);
+        if (phys) pmm_free_page(phys);
+    }
+    return false;
 }
 
 int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
