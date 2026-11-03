@@ -143,6 +143,10 @@ u32 pmm_used_pages(void) {
     u32 count = 0;
     for (u32 i = 0; i < BITMAP_SIZE; i++) {
         u8 value = bitmap[i];
+        /* The managed range contains 262143 pages, leaving one padding bit
+         * in the final byte. It is not a physical page and must not count. */
+        if (i == BITMAP_SIZE - 1 && (PMM_PAGE_COUNT & 7ULL))
+            value &= (u8)((1U << (PMM_PAGE_COUNT & 7ULL)) - 1U);
         for (u8 bit = 0; bit < 8; bit++) {
             if (value & (1U << bit)) count++;
         }
@@ -158,6 +162,8 @@ u32 pmm_allocated_pages(void) {
     u32 count = 0;
     for (u32 i = 0; i < BITMAP_SIZE; i++) {
         u8 value = allocated_bitmap[i];
+        if (i == BITMAP_SIZE - 1 && (PMM_PAGE_COUNT & 7ULL))
+            value &= (u8)((1U << (PMM_PAGE_COUNT & 7ULL)) - 1U);
         for (u8 bit = 0; bit < 8; bit++)
             if (value & (1U << bit)) count++;
     }
