@@ -26,6 +26,7 @@
 #include <kernel/wallpaper.h>
 #include <kernel/config.h>
 #include <kernel/wizard.h>
+#include <kernel/settings_ui.h>
 
 /* Native desktop widgets and shortcut surface. */
 extern void desktop_surface_render(void);
@@ -274,6 +275,7 @@ static void redraw_all(void) {
     draw_taskbar();
     draw_menu();
     draw_notice();
+    settings_ui_render();
     ui_draw_cursor();
 }
 
@@ -312,6 +314,11 @@ void ui_install_input_hooks(void) {
 static bool super_held = false;
 
 static void handle_event(const input_event_t* e) {
+    if (settings_ui_is_open()) {
+        settings_ui_handle_event(e);
+        ui.needs_redraw = true;
+        return;
+    }
     switch (e->type) {
     case INPUT_KEY_DOWN:
     case INPUT_KEY_UP: {
@@ -424,6 +431,9 @@ static void handle_event(const input_event_t* e) {
             if (hit == 0) {
                 notice_open = false;
                 browser_open();
+            } else if (hit == 4) {
+                notice_open = false;
+                settings_ui_open();
             } else {
                 notice_item = hit;
                 notice_open = true;
