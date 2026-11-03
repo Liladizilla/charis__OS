@@ -334,6 +334,48 @@ static void draw_network(void) {
 /* The wallpaper step previews full-screen: the chosen style is drawn behind
  * everything, and the card sits on top with its name. Seeing the whole desktop
  * is the point, so there is nothing to clip. */
+static void draw_display(void) {
+    static const char* const styles[] = { "Bitmap", "Bold bitmap", "Compact bitmap" };
+    static const char* const sizes[] = { "1x", "2x", "3x" };
+    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
+    u32 cw = 640, ch = 390;
+    u32 cx = sw > cw ? (sw - cw) / 2 : 0;
+    u32 cy = sh > ch ? (sh - ch) / 2 : 0;
+    card(cx, cy, cw, ch);
+    draw_step_header("Display preferences",
+                     "Choose your font style, letter size and desktop scale.", cx, cy);
+
+    const char* values[3];
+    values[0] = styles[w.font_style % 3];
+    values[1] = sizes[(w.font_scale >= 1 && w.font_scale <= 3) ? w.font_scale - 1 : 0];
+    values[2] = w.ui_scale == 80 ? "80%" : w.ui_scale == 120 ? "120%" : "100%";
+    static const char* const labels[] = { "Font style", "Letter size", "Interface scale" };
+
+    for (u32 i = 0; i < 3; i++) {
+        u32 ry = cy + 108 + i * 48;
+        bool selected = w.sel[STEP_DISPLAY] == i;
+        fb_fill_rect(cx + 32, ry, cw - 64, 38, selected ? W_SEL : W_CARD);
+        text(cx + 48, ry + 11, labels[i], selected ? W_ACCENT : W_FG);
+        text(cx + 340, ry + 11, values[i], W_FG);
+        text(cx + 548, ry + 11, "<  >", W_ACCENT);
+    }
+
+    text(cx + 40, cy + 278, "Preview", W_DIM);
+    u32 old_style = (u32)config_get_int("font_style", 0);
+    u32 old_scale = (u32)config_get_int("font_scale", 1);
+    config_set_int("font_style", (int)w.font_style);
+    config_set_int("font_scale", (int)w.font_scale);
+    gfx_text_apply_preferences();
+    gfx_draw_string(cx + 40, cy + 310, "CharisOS Desktop", W_FG, FB_TRANSPARENT);
+    config_set_int("font_style", (int)old_style);
+    config_set_int("font_scale", (int)old_scale);
+    gfx_text_apply_preferences();
+    text(cx + 40, cy + 356, "Up/Down selects a row. Left/Right changes its value.", W_HINT);
+}
+
+/* The wallpaper step previews full-screen: the chosen style is drawn behind
+ * everything, and the card sits on top with its name. Seeing the whole desktop
+ * is the point, so there is nothing to clip. */
 static void draw_wallpaper(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
     u32 cw = 420, ch = 96;
