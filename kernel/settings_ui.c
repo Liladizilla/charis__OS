@@ -100,15 +100,48 @@ static void format_pair(char* out, u32 cap, const char* label, u32 value, const 
     append_text(out, cap, &pos, unit);
 }
 
+static void cpuid(u32 leaf, u32 subleaf,
+                   u32* eax, u32* ebx, u32* ecx, u32* edx) {
+    u32 a = leaf, b = 0, c = subleaf, d = 0;
+    __asm__ volatile("cpuid" : "+a"(a), "=b"(b), "+c"(c), "=d"(d));
+    if (eax) *eax = a;
+    if (ebx) *ebx = b;
+    if (ecx) *ecx = c;
+    if (edx) *edx = d;
+}
+
 static void cpu_vendor(char out[13]) {
-    u32 eax = 0, ebx = 0, ecx = 0, edx = 0;
-    __asm__ volatile("cpuid" : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+    u32 ebx = 0, edx = 0, ecx = 0;
+    cpuid(0, 0, NULL, &ebx, &ecx, &edx);
     kmemcpy(out, &ebx, 4);
     kmemcpy(out + 4, &edx, 4);
     kmemcpy(out + 8, &ecx, 4);
     out[12] = 0;
-    for (u32 i = 0; i < 12; i++) {
+    for (u32 i = 0; i < 12; i++)
         if ((u8)out[i] < 32 || (u8)out[i] > 126) out[i] = '?';
+}
+
+static void cpu_brand(char out[49]) {
+    u32 maximum = 0;
+    cpuid(0x80000000U, 0, &maximum, NULL, NULL, NULL);
+    if (maximum >= 0x80000004U) {
+        for (u32 leaf = 0; leaf < 3; leaf++) {
+            u32 a, b, c, d;
+            cpuid(0x80000002U + leaf, 0, &a, &b, &c, &d);
+            kmemcpy(out + leaf * 16, &a, 4);
+            kmemcpy(out + leaf * 16 + 4, &b, 4);
+            kmemcpy(out + leaf * 16 + 8, &c, 4);
+            kmemcpy(out + leaf * 16 + 12, &d, 4);
+        }
+        out[48] = 0;
+        for (u32 i = 0; i < 48; i++)
+            if ((u8)out[i] < 32 || (u8)out[i] > 126) out[i] = ' ';
+        while (out[0] == ' ') kmemmove(out, out + 1, kstrlen(out));
+    } else {
+        char vendor[13];
+        cpu_vendor(vendor);
+        kstrncpy(out, vendor, 48);
+        out[48] = 0;
     }
 }
 
@@ -178,11 +211,13 @@ static void draw_system(u32 x, u32 y) {
 }
 
 static void draw_hardware(u32 x, u32 y) {
-    char vendor[13];
-    char line[96];
+    char vendor[13], model[49], line[96];
     cpu_vendor(vendor);
-    draw_text(x, y, "Processor vendor", S_MUTED);
-    draw_text(x + sp(220), y, vendor, S_TEXT);
+    cpu_brand(model);
+    draw_text(x, y, "CPU model", S_MUTED);
+    draw_text(x, y + sp(24), model, S_TEXT);
+    draw_text(x, y + sp(48), "CPU vendor", S_MUTED);
+    draw_text(x + sp(220), y + sp(48), vendor, S_TEXT);
 
     if (g_framebuffer.initialized) {
         u32 pos = 0;
@@ -197,15 +232,15 @@ static void draw_hardware(u32 x, u32 y) {
         kstrncpy(line, "Framebuffer unavailable", sizeof(line) - 1);
         line[sizeof(line) - 1] = 0;
     }
-    draw_text(x, y + sp(44), "Display mode", S_MUTED);
-    draw_text(x + sp(220), y + sp(44), line, S_TEXT);
+    draw_text(x, y + sp(88), "Display mode", S_MUTED);
+    draw_text(x + sp(220), y + sp(88), line, S_TEXT);
 
     format_pair(line, sizeof(line), "PCI devices enumerated: ", (u32)pci_count, "");
-    draw_text(x, y + sp(88), line, S_TEXT);
-    draw_text(x, y + sp(132), ata_is_present() ? "Primary ATA device: detected" :
-                                             "Primary ATA device: unavailable", S_TEXT);
-    draw_text(x, y + sp(188), "Current storage driver: legacy ATA PIO only.", S_MUTED);
-    draw_text(x, y + sp(212), "SATA/AHCI, NVMe, USB HID and broad GPU support are not yet complete.", S_MUTED);
+    draw_text(x, y + sp(132), line, S_TEXT);
+    draw_text(x, y + sp(164), ata_is_present() ? "Primary ATA device: detected" :
+                                               "Primary ATA device: unavailable", S_TEXT);
+    draw_text(x, y + sp(212), "Current storage driver: legacy ATA PIO only.", S_MUTED);
+    draw_text(x, y + sp(240), "SATA/AHCI, NVMe, USB HID and broad GPU support are not yet complete.", S_MUTED);
 }
 
 static void draw_security(u32 x, u32 y) {
