@@ -64,14 +64,33 @@ static u32 panel_width(void) {
     return desired < available ? desired : available;
 }
 
-static u32 panel_height(void) {
-    u32 available = g_framebuffer.height > 16 ? g_framebuffer.height - 16 : g_framebuffer.height;
-    u32 desired = sp(560);
-    return desired < available ? desired : available;
-}
-
 static u32 settings_text_height(void) {
     return (u32)font_cell_h * gfx_text_get_scale();
+}
+
+static u32 title_step(void) {
+    u32 base = sp(36), needed = settings_text_height() + sp(8);
+    return base > needed ? base : needed;
+}
+
+static u32 line_step(void) {
+    u32 base = sp(32), needed = settings_text_height();
+    return base > needed ? base : needed;
+}
+
+static u32 row_height(void) {
+    u32 base = sp(52), needed = settings_text_height() + sp(8);
+    return base > needed ? base : needed;
+}
+
+static u32 row_step(void) {
+    u32 base = sp(66), needed = row_height() + sp(12);
+    return base > needed ? base : needed;
+}
+
+static u32 header_height(void) {
+    u32 base = sp(44), needed = settings_text_height() + sp(12);
+    return base > needed ? base : needed;
 }
 
 static u32 tab_height(void) {
@@ -80,12 +99,21 @@ static u32 tab_height(void) {
 }
 
 static u32 content_top(u32 y) {
-    return y + sp(56) + tab_height() + sp(22);
+    return y + header_height() + sp(12) + tab_height() + sp(18);
 }
 
 static u32 footer_height(void) {
     u32 base = sp(48), needed = settings_text_height() + sp(16);
     return base > needed ? base : needed;
+}
+
+static u32 panel_height(void) {
+    u32 available = g_framebuffer.height > 16 ? g_framebuffer.height - 16 : g_framebuffer.height;
+    u32 desired = sp(560);
+    u32 needed = content_top(0) + title_step() + line_step() * 10 +
+                 footer_height() + sp(16);
+    if (needed > desired) desired = needed;
+    return desired < available ? desired : available;
 }
 
 static u32 panel_x(void) {
@@ -167,15 +195,20 @@ static void cpu_brand(char out[49]) {
 
 static void draw_row(u32 x, u32 y, u32 w, const char* name, const char* value,
                      bool selected) {
-    fb_fill_rect(x, y, w, sp(52), selected ? S_SELECTED : S_RAISED);
-    fb_draw_rect(x, y, w, sp(52), S_BORDER);
-    draw_text(x + sp(16), y + sp(7), name, selected ? S_ACCENT : S_TEXT);
-    draw_text(x + sp(16), y + sp(29), value, S_MUTED);
+    u32 h = row_height();
+    fb_fill_rect(x, y, w, h, selected ? S_SELECTED : S_RAISED);
+    fb_draw_rect(x, y, w, h, S_BORDER);
+    u32 text_y = y + (h > settings_text_height() ?
+                      (h - settings_text_height()) / 2 : 0);
+    draw_text(x + sp(16), text_y, name, selected ? S_ACCENT : S_TEXT);
+    u32 value_width = 0;
+    gfx_text_size(value, &value_width, NULL);
+    draw_text(x + w - value_width - sp(16), text_y, value, S_MUTED);
 }
 
 static void draw_appearance(u32 x, u32 y, u32 w) {
     draw_text(x, y, "Appearance", S_ACCENT);
-    y += sp(36);
+    y += title_step();
     static const char* const fonts[] = { "Sans", "Monospace", "Serif" };
     static const char* const scales[] = { "80%", "100%", "120%" };
     static const char* const sizes[] = { "1x", "2x", "3x" };
@@ -187,66 +220,67 @@ static void draw_appearance(u32 x, u32 y, u32 w) {
     if (ui != 80 && ui != 100 && ui != 120) ui = 100;
 
     draw_row(x, y, w, "Font family", fonts[style], active_row == 0);
-    draw_row(x, y + sp(66), w, "Letter size", sizes[size - 1], active_row == 1);
-    draw_row(x, y + sp(132), w, "Interface scale", ui == 80 ? scales[0] : ui == 120 ? scales[2] : scales[1],
-             active_row == 2);
+    draw_row(x, y + row_step(), w, "Letter size", sizes[size - 1], active_row == 1);
+    draw_row(x, y + row_step() * 2, w, "Interface scale",
+             ui == 80 ? scales[0] : ui == 120 ? scales[2] : scales[1], active_row == 2);
 
-    u32 old_style = style, old_size = size;
-    config_set_int("font_style", (int)style);
-    config_set_int("font_scale", (int)size);
-    gfx_text_apply_preferences();
-    draw_text(x, y + sp(222), "Live typography preview", S_MUTED);
-    gfx_draw_string_scaled(x, y + sp(250), "CharisOS Settings", S_TEXT, FB_TRANSPARENT, 1);
-    config_set_int("font_style", (int)old_style);
-    config_set_int("font_scale", (int)old_size);
-    gfx_text_apply_preferences();
-    draw_text(x, y + sp(300), "Arrow keys or row clicks change the selected setting.", S_MUTED);
-    draw_text(x, y + sp(324), "Appearance changes preview immediately; Save keeps them.", S_MUTED);
+    u32 preview_y = y + row_step() * 3 + sp(16);
+    draw_text(x, preview_y, "Live typography preview", S_MUTED);
+    gfx_draw_string_scaled(x, preview_y + settings_text_height() + sp(8),
+                           "CharisOS Settings", S_TEXT, FB_TRANSPARENT, 1);
+    u32 note_y = preview_y + settings_text_height() * 2 + sp(20);
+    draw_text(x, note_y, "Arrow keys or row clicks change the selected setting.", S_MUTED);
+    draw_text(x, note_y + line_step(), "Appearance changes preview immediately; Save keeps them.", S_MUTED);
 }
 
 static void draw_system(u32 x, u32 y) {
     draw_text(x, y, "System diagnostics", S_ACCENT);
-    y += sp(36);
+    y += title_step();
     system_stats_t stats;
     diag_collect_stats(&stats);
     char line[96];
-    u32 pos = 0;
+    u32 step = line_step();
+    u32 pos;
 
     format_pair(line, sizeof(line), "Uptime: ", (u32)(stats.uptime_ms / 1000), " seconds");
     draw_text(x, y, line, S_TEXT);
     format_pair(line, sizeof(line), "Tasks active: ", stats.processes_active, "");
-    pos = (u32)kstrlen(line); append_text(line, sizeof(line), &pos, " / ");
-    append_u32(line, sizeof(line), stats.processes_total);
-    draw_text(x, y + sp(32), line, S_TEXT);
-    format_pair(line, sizeof(line), "Tasks blocked: ", stats.processes_blocked, "");
-    draw_text(x, y + sp(52), line, S_TEXT);
+    pos = (u32)kstrlen(line);
+    append_text(line, sizeof(line), &pos, " / ");
+    append_u32(line, sizeof(line), &pos, stats.processes_total);
+    append_text(line, sizeof(line), &pos, "   Blocked: ");
+    append_u32(line, sizeof(line), &pos, stats.processes_blocked);
+    draw_text(x, y + step, line, S_TEXT);
     format_pair(line, sizeof(line), "Physical pages used: ", stats.memory_used / 4, "");
-    draw_text(x, y + sp(64), line, S_TEXT);
-    format_pair(line, sizeof(line), "Physical pages free: ", stats.memory_free / 4, "");
-    draw_text(x, y + sp(96), line, S_TEXT);
+    pos = (u32)kstrlen(line); append_text(line, sizeof(line), &pos, "   Free: ");
+    append_u32(line, sizeof(line), &pos, stats.memory_free / 4);
+    draw_text(x, y + step * 2, line, S_TEXT);
     format_pair(line, sizeof(line), "Context switches: ", stats.context_switches, "");
-    draw_text(x, y + sp(128), line, S_TEXT);
+    draw_text(x, y + step * 3, line, S_TEXT);
     format_pair(line, sizeof(line), "Interrupts: ", stats.interrupts, "");
-    draw_text(x, y + sp(160), line, S_TEXT);
+    draw_text(x, y + step * 4, line, S_TEXT);
     format_pair(line, sizeof(line), "System calls: ", stats.syscalls, "");
-    draw_text(x, y + sp(192), line, S_TEXT);
-    draw_text(x, y + sp(244), "Memory figures cover the currently managed 1 GiB physical window.", S_MUTED);
-    draw_text(x, y + sp(268), "CPU utilization is not reported until idle accounting is trustworthy.", S_MUTED);
+    draw_text(x, y + step * 5, line, S_TEXT);
+    draw_text(x, y + step * 6, "RAM reports the currently managed 1 GiB physical window.", S_MUTED);
+    draw_text(x, y + step * 7, "CPU usage remains unavailable until idle-time accounting is verified.", S_MUTED);
 }
 
 static void draw_hardware(u32 x, u32 y) {
     draw_text(x, y, "Hardware inventory", S_ACCENT);
-    y += sp(36);
+    y += title_step();
     char vendor[13], model[49], line[96];
+    u32 step = line_step();
+    u32 pos;
     cpu_vendor(vendor);
     cpu_brand(model);
+    model[32] = 0;
     draw_text(x, y, "CPU model", S_MUTED);
-    draw_text(x, y + sp(24), model, S_TEXT);
-    draw_text(x, y + sp(48), "CPU vendor", S_MUTED);
-    draw_text(x + sp(220), y + sp(48), vendor, S_TEXT);
+    draw_text(x, y + step, model, S_TEXT);
+    draw_text(x, y + step * 2, "CPU vendor", S_MUTED);
+    draw_text(x + sp(220), y + step * 2, vendor, S_TEXT);
 
     if (g_framebuffer.initialized) {
-        u32 pos = 0;
+        pos = 0;
         line[0] = 0;
         append_u32(line, sizeof(line), &pos, g_framebuffer.width);
         append_text(line, sizeof(line), &pos, " x ");
@@ -258,48 +292,52 @@ static void draw_hardware(u32 x, u32 y) {
         kstrncpy(line, "Framebuffer unavailable", sizeof(line) - 1);
         line[sizeof(line) - 1] = 0;
     }
-    draw_text(x, y + sp(84), "Display mode", S_MUTED);
-    draw_text(x + sp(220), y + sp(84), line, S_TEXT);
+    draw_text(x, y + step * 3, "Display mode", S_MUTED);
+    draw_text(x + sp(220), y + step * 3, line, S_TEXT);
+    format_pair(line, sizeof(line), "PCI devices: ", (u32)pci_count, "");
+    draw_text(x, y + step * 4, line, S_TEXT);
 
-    format_pair(line, sizeof(line), "PCI devices enumerated: ", (u32)pci_count, "");
-    draw_text(x, y + sp(120), line, S_TEXT);
-    draw_text(x, y + sp(152),
-              keyboard_controller_ready() ? "PS/2 keyboard: initialized" :
-                                            "PS/2 keyboard: initialization failed", S_TEXT);
-    format_pair(line, sizeof(line), "Keyboard IRQ deliveries: ", keyboard_irq_count(), "");
-    draw_text(x, y + sp(180), line, S_TEXT);
+    pos = 0; line[0] = 0;
+    append_text(line, sizeof(line), &pos, "PS/2 keyboard: ");
+    append_text(line, sizeof(line), &pos,
+                keyboard_controller_ready() ? "initialized" : "init failed");
+    append_text(line, sizeof(line), &pos, "   IRQ1: ");
+    append_u32(line, sizeof(line), &pos, keyboard_irq_count());
+    draw_text(x, y + step * 5, line, S_TEXT);
     format_pair(line, sizeof(line), "PS/2 mouse packets: ", mouse_packet_count(), "");
-    draw_text(x, y + sp(208), line, S_TEXT);
-    draw_text(x, y + sp(236), ata_is_present() ? "Primary ATA device: detected" :
+    draw_text(x, y + step * 6, line, S_TEXT);
+    draw_text(x, y + step * 7, ata_is_present() ? "Primary ATA device: detected" :
                                                "Primary ATA device: unavailable", S_TEXT);
-    format_pair(line, sizeof(line), "Boot memory map regions: ", boot_info.region_count, "");
-    draw_text(x, y + sp(264), line, S_TEXT);
-    draw_text(x, y + sp(296), "Storage currently uses legacy ATA PIO.", S_MUTED);
-    draw_text(x, y + sp(320), "AHCI, NVMe, USB HID and broad GPU drivers remain incomplete.", S_MUTED);
+    format_pair(line, sizeof(line), "Boot memory-map regions: ", boot_info.region_count, "");
+    draw_text(x, y + step * 8, line, S_TEXT);
+    draw_text(x, y + step * 9, "Drivers pending: AHCI, NVMe, USB HID, GPU support.", S_MUTED);
 }
 
 static void draw_security(u32 x, u32 y) {
     draw_text(x, y, "Security status", S_ACCENT);
-    y += sp(36);
+    y += title_step();
+    u32 step = line_step();
     draw_text(x, y, "Kernel stack protector: enabled at compile time", S_TEXT);
-    draw_text(x, y + sp(36), "Process isolation: ring-3 address spaces and page permissions", S_TEXT);
-    draw_text(x, y + sp(72), "Permissions: task capability bitmasks", S_TEXT);
-    draw_text(x, y + sp(108), "Filesystem paths: traversal checks in security layer", S_TEXT);
-    draw_text(x, y + sp(160), "Not yet implemented or verified:", S_ACCENT);
-    draw_text(x, y + sp(192), "Secure Boot chain, cryptographic random source, signed packages,", S_MUTED);
-    draw_text(x, y + 216, "full syscall audit coverage, memory-safe drivers and USB isolation.", S_MUTED);
-    draw_text(x, y + 272, "Do not treat this development build as safe for sensitive workloads.", S_ACCENT);
+    draw_text(x, y + step, "Process isolation: ring-3 address spaces and page permissions", S_TEXT);
+    draw_text(x, y + step * 2, "Permissions: task capability bitmasks", S_TEXT);
+    draw_text(x, y + step * 3, "Filesystem paths: traversal checks in security layer", S_TEXT);
+    draw_text(x, y + step * 4, "Not implemented: Secure Boot and cryptographic random source.", S_MUTED);
+    draw_text(x, y + step * 5, "Not implemented: signed packages and full syscall audit.", S_MUTED);
+    draw_text(x, y + step * 6, "USB isolation and memory-safe drivers remain future work.", S_MUTED);
+    draw_text(x, y + step * 7, "Development build: do not use for sensitive workloads.", S_ACCENT);
 }
 
 static void draw_about(u32 x, u32 y) {
     draw_text(x, y, "About CharisOS", S_ACCENT);
-    y += sp(36);
-    draw_text(x, y, "CharisOS", S_ACCENT);
-    draw_text(x, y + sp(36), "64-bit x86 operating system written in C and Assembly.", S_TEXT);
-    draw_text(x, y + sp(72), "Current executable support: validated ELF64 ET_EXEC loading.", S_TEXT);
-    draw_text(x, y + sp(108), "CEX v1 wraps ELF64 with architecture metadata and a checksum.", S_MUTED);
-    draw_text(x, y + sp(160), "Build target: freestanding x86_64, BIOS boot path under active testing.", S_TEXT);
-    draw_text(x, y + sp(196), "Hardware support is driver-specific and is not universal yet.", S_MUTED);
+    y += title_step();
+    u32 step = line_step();
+    draw_text(x, y, "CharisOS: native 64-bit x86 operating system.", S_TEXT);
+    draw_text(x, y + step, "Kernel and system components are written in C and Assembly.", S_TEXT);
+    draw_text(x, y + step * 2, "Native application container: CEX v1.", S_TEXT);
+    draw_text(x, y + step * 3, "CEX wraps validated ELF64 ET_EXEC payloads with a checksum.", S_TEXT);
+    draw_text(x, y + step * 4, "Checksum detects corruption; it does not authenticate publishers.", S_MUTED);
+    draw_text(x, y + step * 5, "BIOS boot path is under active validation; UEFI remains advisory.", S_TEXT);
+    draw_text(x, y + step * 6, "Hardware support depends on the drivers present in this build.", S_MUTED);
 }
 
 void settings_ui_render(void) {
@@ -308,11 +346,12 @@ void settings_ui_render(void) {
     fb_fill_rect(x + sp(5), y + sp(5), w, h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, w, h, S_PANEL);
     fb_draw_rect(x, y, w, h, S_BORDER);
-    fb_fill_rect(x, y, w, sp(44), S_RAISED);
-    draw_text(x + sp(20), y + sp(14), "System Settings", S_TEXT);
+    fb_fill_rect(x, y, w, header_height(), S_RAISED);
+    draw_text(x + sp(20), y + (header_height() - settings_text_height()) / 2,
+              "System Settings", S_TEXT);
 
     u32 tab_w = (w - sp(32)) / SETTINGS_TABS;
-    u32 tabs_y = y + sp(56);
+    u32 tabs_y = y + header_height() + sp(12);
     u32 tabs_h = tab_height();
     for (u32 i = 0; i < SETTINGS_TABS; i++) {
         u32 tx = x + sp(16) + i * tab_w;
@@ -340,16 +379,25 @@ void settings_ui_render(void) {
     u32 button_h = settings_text_height() + sp(8);
     if (button_h > foot_h - sp(8)) button_h = foot_h - sp(8);
     u32 button_y = by + (foot_h - button_h) / 2;
+    u32 close_width = 0, save_width = 0;
+    gfx_text_size("Close", &close_width, NULL);
+    gfx_text_size("Save", &save_width, NULL);
+    u32 button_w = close_width > save_width ? close_width : save_width;
+    button_w += sp(20);
+    if (button_w < sp(88)) button_w = sp(88);
+    u32 gap = sp(12);
+    u32 save_x = x + w - button_w * 2 - gap - sp(16);
     draw_text(x + sp(20), by + (foot_h > settings_text_height() ?
               (foot_h - settings_text_height()) / 2 : 0),
               save_ok ? "Saved to CHARISOS.CFG" : "Changes are pending until saved", S_MUTED);
-    u32 save_x = x + w - sp(206);
-    fb_fill_rect(save_x, button_y, sp(88), button_h, S_SELECTED);
-    fb_draw_rect(save_x, button_y, sp(88), button_h, S_BORDER);
-    draw_text(save_x + sp(24), button_y + (button_h - settings_text_height()) / 2, "Save", S_ACCENT);
-    fb_fill_rect(save_x + sp(100), button_y, sp(88), button_h, S_RAISED);
-    fb_draw_rect(save_x + sp(100), button_y, sp(88), button_h, S_BORDER);
-    draw_text(save_x + sp(120), button_y + (button_h - settings_text_height()) / 2, "Close", S_TEXT);
+    fb_fill_rect(save_x, button_y, button_w, button_h, S_SELECTED);
+    fb_draw_rect(save_x, button_y, button_w, button_h, S_BORDER);
+    draw_text(save_x + (button_w - save_width) / 2,
+              button_y + (button_h - settings_text_height()) / 2, "Save", S_ACCENT);
+    fb_fill_rect(save_x + button_w + gap, button_y, button_w, button_h, S_RAISED);
+    fb_draw_rect(save_x + button_w + gap, button_y, button_w, button_h, S_BORDER);
+    draw_text(save_x + button_w + gap + (button_w - close_width) / 2,
+              button_y + (button_h - settings_text_height()) / 2, "Close", S_TEXT);
 }
 
 static void adjust_appearance(int direction) {
@@ -402,7 +450,7 @@ bool settings_ui_handle_event(const input_event_t* event) {
     }
 
     u32 tab_w = (w - sp(32)) / SETTINGS_TABS;
-    u32 tabs_y = y + sp(56);
+    u32 tabs_y = y + header_height() + sp(12);
     if (my >= (int)tabs_y && my < (int)(tabs_y + tab_height()) && mx >= (int)(x + sp(16))) {
         u32 tab = (u32)(mx - (int)x - (int)sp(16)) / tab_w;
         if (tab < SETTINGS_TABS) active_tab = tab;
@@ -414,22 +462,28 @@ bool settings_ui_handle_event(const input_event_t* event) {
     u32 button_h = settings_text_height() + sp(8);
     if (button_h > foot_h - sp(8)) button_h = foot_h - sp(8);
     u32 button_y = by + (foot_h - button_h) / 2;
-    u32 save_x = x + w - sp(206);
+    u32 close_width = 0, save_width = 0;
+    gfx_text_size("Close", &close_width, NULL);
+    gfx_text_size("Save", &save_width, NULL);
+    u32 button_w = close_width > save_width ? close_width : save_width;
+    button_w += sp(20);
+    if (button_w < sp(88)) button_w = sp(88);
+    u32 save_x = x + w - (button_w * 2) - sp(28);
     if (my >= (int)button_y && my < (int)(button_y + button_h)) {
-        if (mx >= (int)save_x && mx < (int)(save_x + sp(88))) {
+        if (mx >= (int)save_x && mx < (int)(save_x + button_w)) {
             save_ok = config_save(CONFIG_FILE_PATH);
             return true;
         }
-        if (mx >= (int)(save_x + sp(100)) && mx < (int)(save_x + sp(188))) {
+        if (mx >= (int)(save_x + button_w + sp(12)) && mx < (int)(save_x + button_w * 2 + sp(12))) {
             settings_ui_close();
             return true;
         }
     }
 
     if (active_tab == 0 && mx >= (int)(x + sp(28)) && mx < (int)(x + w - sp(28))) {
-        u32 content_y = content_top(y) + sp(36);
-        if (my >= (int)content_y && my < (int)(content_y + sp(184))) {
-            active_row = (u32)(my - (int)content_y) / sp(66);
+        u32 content_y = content_top(y) + title_step();
+        if (my >= (int)content_y && my < (int)(content_y + row_step() * 3)) {
+            active_row = (u32)(my - (int)content_y) / row_step();
             if (active_row > 2) active_row = 2;
             int delta = (mx > (int)(x + w - sp(150))) ? 1 : -1;
             adjust_appearance(delta);
