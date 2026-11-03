@@ -14,6 +14,7 @@ typedef struct {
 } file_t;
 
 void fs_init(void);
+bool fs_is_mounted(void);
 int fs_open(const char* path, file_t* file);
 int fs_read(file_t* file, void* buffer, usize size);
 int fs_write(file_t* file, const void* buffer, usize size);
