@@ -16,6 +16,8 @@
 #include <kernel/pmm.h>
 #include <kernel/timer.h>
 #include <kernel/keyboard.h>
+#include <kernel/mouse.h>
+#include <kernel/bootmem.h>
 #include <kernel/ui_theme.h>
 #include <kernel/security.h>
 #include <kernel/string.h>
@@ -232,15 +234,24 @@ static void draw_hardware(u32 x, u32 y) {
         kstrncpy(line, "Framebuffer unavailable", sizeof(line) - 1);
         line[sizeof(line) - 1] = 0;
     }
-    draw_text(x, y + sp(88), "Display mode", S_MUTED);
-    draw_text(x + sp(220), y + sp(88), line, S_TEXT);
+    draw_text(x, y + sp(84), "Display mode", S_MUTED);
+    draw_text(x + sp(220), y + sp(84), line, S_TEXT);
 
     format_pair(line, sizeof(line), "PCI devices enumerated: ", (u32)pci_count, "");
-    draw_text(x, y + sp(132), line, S_TEXT);
-    draw_text(x, y + sp(164), ata_is_present() ? "Primary ATA device: detected" :
+    draw_text(x, y + sp(120), line, S_TEXT);
+    draw_text(x, y + sp(152),
+              keyboard_controller_ready() ? "PS/2 keyboard: initialized" :
+                                            "PS/2 keyboard: initialization failed", S_TEXT);
+    format_pair(line, sizeof(line), "Keyboard IRQ deliveries: ", keyboard_irq_count(), "");
+    draw_text(x, y + sp(180), line, S_TEXT);
+    format_pair(line, sizeof(line), "PS/2 mouse packets: ", mouse_packet_count(), "");
+    draw_text(x, y + sp(208), line, S_TEXT);
+    draw_text(x, y + sp(236), ata_is_present() ? "Primary ATA device: detected" :
                                                "Primary ATA device: unavailable", S_TEXT);
-    draw_text(x, y + sp(212), "Current storage driver: legacy ATA PIO only.", S_MUTED);
-    draw_text(x, y + sp(240), "SATA/AHCI, NVMe, USB HID and broad GPU support are not yet complete.", S_MUTED);
+    format_pair(line, sizeof(line), "Boot memory map regions: ", boot_info.region_count, "");
+    draw_text(x, y + sp(264), line, S_TEXT);
+    draw_text(x, y + sp(296), "Storage currently uses legacy ATA PIO.", S_MUTED);
+    draw_text(x, y + sp(320), "AHCI, NVMe, USB HID and broad GPU drivers remain incomplete.", S_MUTED);
 }
 
 static void draw_security(u32 x, u32 y) {
