@@ -51,6 +51,9 @@ jobs:
       - name: Build ELF smoke-test disk
         run: make elf-test
 
+      - name: Validate wizard and desktop hit-test geometry
+        run: make ui-geometry-test
+
       - name: Compile VMM self-tests
         run: make test
 
