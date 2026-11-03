@@ -141,11 +141,11 @@ jobs:
           # Feed two QEMU monitor commands through a shell pipe. No helper
           # language, generated code, or changes to the C/assembly OS sources.
           {
-            # Complete the seven-step first-run wizard using its real keyboard
+            # Complete the eight-step first-run wizard using its real keyboard
             # controls, so the artifact captures the desktop rather than the
             # welcome screen. Enter advances each step and applies defaults.
             sleep 8
-            for step in {1..7}; do
+            for step in {1..8}; do
               printf 'sendkey ret\n'
               sleep 1
             done
