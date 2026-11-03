@@ -140,7 +140,7 @@ static void draw_appearance(u32 x, u32 y, u32 w) {
     config_set_int("font_scale", (int)old_size);
     gfx_text_apply_preferences();
     draw_text(x, y + 300, "Arrow keys or row clicks change the selected setting.", S_MUTED);
-    draw_text(x, y + 324, "Save applies the appearance on the next desktop redraw.", S_MUTED);
+    draw_text(x, y + 324, "Appearance changes preview immediately; Save keeps them.", S_MUTED);
 }
 
 static void draw_system(u32 x, u32 y) {
@@ -153,8 +153,10 @@ static void draw_system(u32 x, u32 y) {
     draw_text(x, y, line, S_TEXT);
     format_pair(line, sizeof(line), "Tasks active: ", stats.processes_active, "");
     pos = (u32)kstrlen(line); append_text(line, sizeof(line), &pos, " / ");
-    append_u32(line, sizeof(line), &pos, stats.processes_total);
+    append_u32(line, sizeof(line), stats.processes_total);
     draw_text(x, y + 32, line, S_TEXT);
+    format_pair(line, sizeof(line), "Tasks blocked: ", stats.processes_blocked, "");
+    draw_text(x, y + 52, line, S_TEXT);
     format_pair(line, sizeof(line), "Physical pages used: ", stats.memory_used / 4, "");
     draw_text(x, y + 64, line, S_TEXT);
     format_pair(line, sizeof(line), "Physical pages free: ", stats.memory_free / 4, "");
@@ -215,7 +217,7 @@ static void draw_about(u32 x, u32 y) {
     draw_text(x, y, "CharisOS", S_ACCENT);
     draw_text(x, y + 36, "64-bit x86 operating system written in C and Assembly.", S_TEXT);
     draw_text(x, y + 72, "Current executable support: validated ELF64 ET_EXEC loading.", S_TEXT);
-    draw_text(x, y + 108, "Native CEX executable container: design and loader work still pending.", S_MUTED);
+    draw_text(x, y + 108, "CEX v1 wraps ELF64 with architecture metadata and a checksum.", S_MUTED);
     draw_text(x, y + 160, "Build target: freestanding x86_64, BIOS boot path under active testing.", S_TEXT);
     draw_text(x, y + 196, "Hardware support is driver-specific and is not universal yet.", S_MUTED);
 }
