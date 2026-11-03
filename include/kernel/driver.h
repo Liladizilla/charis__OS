@@ -31,6 +31,7 @@ extern int driver_capacity;
 #define PCI_CLASS_DISPLAY     0x03
 #define PCI_CLASS_INPUT       0x09
 #define PCI_CLASS_SERIAL      0x07
+#define PCI_CLASS_MULTIMEDIA  0x04
 
 /* Storage subclasses */
 #define PCI_SUBCLASS_IDE      0x01
