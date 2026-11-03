@@ -102,22 +102,24 @@ void mouse_init(void) {
     /* Enable the aux port. */
     ps2_write_command(0xA8);
 
-    /* Read the configuration byte, skipping the ACK that answers 0x20. */
-    u8 config;
+    /* Command 0x20 returns one configuration byte; it has no ACK byte. */
+    u8 config = 0;
+    bool config_valid = false;
     ps2_write_command(0x20);
     if (ps2_wait_read()) {
         config = inb(0x60);
+        config_valid = true;
     } else {
-        /* Preserve unrelated controller bits and continue without IRQ12 if
-         * the controller does not answer. Never OR an absent byte into config. */
-        config = 0;
         kprintf("Mouse: controller config read timed out\\n");
     }
-    config |= 0x02;        /* enable the aux interrupt (IRQ 12) */
 
-    /* Write it back, skipping the ACK that answers 0x60. */
-    ps2_write_command(0x60);
-    (void)ps2_write_data(config);
+    /* Only write the configuration back when the read succeeded. Writing a
+     * fabricated zero would silently clear unrelated controller settings. */
+    if (config_valid) {
+        config |= 0x02;    /* enable the aux interrupt (IRQ 12) */
+        ps2_write_command(0x60);
+        (void)ps2_write_data(config);
+    }
 
     /* Defaults, then enable reporting on the auxiliary mouse device. */
     u8 defaults_ack = ps2_write_aux_data(0xF6);
