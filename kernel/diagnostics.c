@@ -78,7 +78,7 @@ void diag_dump_tasks(void) {
             case TASK_STATE_ZOMBIE: state_str = "ZOMBIE"; break;
             case TASK_STATE_UNUSED: state_str = "UNUSED"; break;
         }
-        kprintf("  [%u] %s: %s (quantum=%u)\\n",
+        kprintf("  [%u] %s: %s (quantum=%u)\n",
                 t->pid, t->name, state_str, t->remaining_quantum);
         t = t->next;
         if (t == cur) break;
