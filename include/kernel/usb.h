@@ -13,6 +13,24 @@ typedef enum {
     USB_DEV_HID
 } usb_device_type_t;
 
+typedef enum {
+    USB_CTRL_UNKNOWN,
+    USB_CTRL_UHCI,
+    USB_CTRL_OHCI,
+    USB_CTRL_EHCI,
+    USB_CTRL_XHCI
+} usb_controller_type_t;
+
+typedef struct {
+    u16 vendor_id;
+    u16 device_id;
+    u8 bus;
+    u8 device;
+    u8 function;
+    u8 prog_if;
+    usb_controller_type_t type;
+} usb_controller_t;
+
 typedef struct {
     u16 vendor_id;
     u16 product_id;
@@ -25,3 +43,5 @@ void usb_init(void);
 int usb_poll(void);
 usb_device_t* usb_get_device(int index);
 int usb_get_device_count(void);
+int usb_get_controller_count(void);
+usb_controller_t* usb_get_controller(int index);
