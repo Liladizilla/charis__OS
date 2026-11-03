@@ -375,16 +375,20 @@ static void handle_event(const input_event_t* e) {
             return;
         }
 
-        int desktop_app = desktop_surface_hit_test(mx, my);
-        if (desktop_app >= 0) {
-            if (desktop_app == 0) {
-                browser_open();
-            } else {
-                notice_item = desktop_app == 1 ? 2 : 1;
-                notice_open = true;
+        /* Desktop shortcuts sit behind the launcher. Never let their hit
+         * region steal clicks from an open menu on short framebuffers. */
+        if (!ui.menu_open) {
+            int desktop_app = desktop_surface_hit_test(mx, my);
+            if (desktop_app >= 0) {
+                if (desktop_app == 0) {
+                    browser_open();
+                } else {
+                    notice_item = desktop_app == 1 ? 2 : 1;
+                    notice_open = true;
+                }
+                ui.needs_redraw = true;
+                return;
             }
-            ui.needs_redraw = true;
-            return;
         }
 
         bool on_taskbar = my >= (int)(g_framebuffer.height - TASKBAR_H);
