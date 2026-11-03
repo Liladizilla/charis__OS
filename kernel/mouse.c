@@ -25,19 +25,12 @@ void mouse_set_bounds(uint32_t width, uint32_t height) {
 /*
  * PS/2 controller handshake helpers.
  *
- * Every command the controller accepts is answered with an acknowledge byte
- * on the data port. Those bytes have to be consumed, and the original code
- * consumed none of them, so the sequence was:
- *
- *   outb(0x64, 0x20)     ; ask for the config byte
- *   config = inb(0x60)   ; ...this reads the ACK (0xFA), not the config
- *   config |= 0x02
- *   outb(0x64, 0x60)
- *   outb(0x60, config)   ; writes 0xFA|0x02 back as the configuration
- *
- * which clobbered the aux-port bits and left IRQ 12 disabled -- the pointer
- * never moved. The two bytes left over from the 0xF6 and 0xF4 commands also
- * arrive as IRQ 12 data and get parsed as motion packets.
+ * Controller commands are not all acknowledged like mouse-device commands.
+ * In particular, writing 0x20 to port 0x64 returns the controller
+ * configuration byte directly through port 0x60. The previous helper drained
+ * the output buffer after every command, consuming that response before
+ * mouse_init() could read it. Mouse-device commands sent through 0xD4 do
+ * return ACK bytes, which ps2_write_aux_data() consumes separately.
  */
 static void ps2_wait_write(void) {
     /* Wait for the input buffer to drain (IBF clear).
