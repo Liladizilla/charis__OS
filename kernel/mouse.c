@@ -59,9 +59,19 @@ static void ps2_drain_output(void) {
 }
 
 static void ps2_write_command(u8 cmd) {
+    /* Do not drain after issuing a controller command: command 0x20 returns
+     * the configuration byte on the output buffer. Draining here consumed
+     * that response before mouse_init() could read it. Drain stale data before
+     * starting initialization instead. */
     ps2_wait_write();
     outb(0x64, cmd);
-    ps2_drain_output();
+}
+
+static bool ps2_wait_read(void) {
+    for (volatile int i = 0; i < 2000; i++) {
+        if (inb(0x64) & 0x01) return true;
+    }
+    return false;
 }
 
 static u8 ps2_write_data(u8 value) {
@@ -79,6 +89,9 @@ static u8 ps2_write_aux_data(u8 value) {
 }
 
 void mouse_init(void) {
+    /* Discard stale controller/device bytes before changing its state. */
+    ps2_drain_output();
+
     /* Disable the aux port while it is reconfigured, or stray bytes arrive
      * mid-sequence and desynchronise the packet stream. */
     ps2_write_command(0xA7);
@@ -92,7 +105,14 @@ void mouse_init(void) {
     /* Read the configuration byte, skipping the ACK that answers 0x20. */
     u8 config;
     ps2_write_command(0x20);
-    config = inb(0x60);
+    if (ps2_wait_read()) {
+        config = inb(0x60);
+    } else {
+        /* Preserve unrelated controller bits and continue without IRQ12 if
+         * the controller does not answer. Never OR an absent byte into config. */
+        config = 0;
+        kprintf("Mouse: controller config read timed out\\n");
+    }
     config |= 0x02;        /* enable the aux interrupt (IRQ 12) */
 
     /* Write it back, skipping the ACK that answers 0x60. */
