@@ -44,8 +44,8 @@ void user_main(void) {
     char* envp[] = {environment, NULL};
     if (sys_execve(elf_path, argv, envp) == (u64)-1) {
         char exec_unavailable[22];
-        exec_unavailable[0] = 'E'; exec_unavailable[1] = 'L';
-        exec_unavailable[2] = 'F'; exec_unavailable[3] = ' ';
+        exec_unavailable[0] = 'C'; exec_unavailable[1] = 'E';
+        exec_unavailable[2] = 'X'; exec_unavailable[3] = ' ';
         exec_unavailable[4] = 'e'; exec_unavailable[5] = 'x';
         exec_unavailable[6] = 'e'; exec_unavailable[7] = 'c';
         exec_unavailable[8] = ' '; exec_unavailable[9] = 'u';
