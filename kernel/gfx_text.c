@@ -46,6 +46,38 @@ void gfx_draw_string(u32 x, u32 y, const char* s, u32 fg, u32 bg) {
     }
 }
 
+/* Draw text with integer nearest-neighbour scaling. The base font is a
+ * compact 8x16 bitmap; scaling headings keeps the UI legible without a
+ * floating-point rasterizer or an external font dependency. */
+void gfx_draw_string_scaled(u32 x, u32 y, const char* s, u32 fg, u32 bg, u32 scale) {
+    if (!g_framebuffer.initialized || !s || !scale || scale > 4) return;
+    u32 origin_x = x;
+    for (; *s; ++s) {
+        if (*s == '\n') {
+            y += (u32)font_cell_h * scale;
+            x = origin_x;
+            continue;
+        }
+        s16 idx = font_glyph_index((unsigned char)*s);
+        if (idx < 0) idx = font_glyph_index('?');
+        if (idx >= 0) {
+            const u8* rows = font_glyph_rows((u16)idx);
+            for (u32 row = 0; row < font_cell_h; ++row) {
+                u8 bits = rows[row];
+                for (u32 col = 0; col < font_cell_w; ++col) {
+                    bool on = (bits >> col) & 1;
+                    if (on) fb_fill_rect(x + col * scale, y + row * scale,
+                                         scale, scale, fg);
+                    else if (bg != FB_TRANSPARENT)
+                        fb_fill_rect(x + col * scale, y + row * scale,
+                                     scale, scale, bg);
+                }
+            }
+        }
+        x += (u32)font_cell_w * scale;
+    }
+}
+
 /* Centre a string horizontally on the screen. */
 void gfx_draw_string_centered(u32 y, const char* s, u32 fg, u32 bg) {
     if (!g_framebuffer.initialized || !s) return;
