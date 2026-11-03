@@ -70,7 +70,8 @@ void input_process_events(void) {
      * events. Do not drain the parallel ASCII buffer and enqueue a duplicate
      * character event, which wastes queue capacity during held-key repeats. */
     char c;
-    if (!keyboard_has_key_hook() && keyboard_get_key(&c)) {
+    bool have_ascii = keyboard_get_key(&c);
+    if (have_ascii && !keyboard_has_key_hook()) {
         input_event_t evt;
         evt.type = INPUT_KEY_DOWN;
         evt.key.keycode = (int)c;
