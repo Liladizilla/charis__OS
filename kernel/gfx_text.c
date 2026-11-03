@@ -1,8 +1,9 @@
-/* gfx_text.c - Configurable text renderer for the linear framebuffer.
+/* gfx_text.c - Configurable native bitmap typography.
  *
- * The kernel ships a small deterministic bitmap font so the early boot UI
- * never depends on a mounted disk. Appearance preferences transform those
- * glyphs at render time: regular, bold and compact, at integer scales.
+ * Family 0 uses measured proportional advances, family 1 is fixed-cell
+ * monospace, and family 2 adds serif terminals to the bundled bitmap glyphs.
+ * Every mode is generated from the built-in 8x16 font, so boot rendering has
+ * no external filesystem or runtime font dependency.
  */
 #include <kernel/gfx_text.h>
 #include <kernel/fb.h>
@@ -35,35 +36,86 @@ u32 gfx_ui_scale(u32 logical_pixels) {
     return scaled > 0xFFFFFFFFULL ? 0xFFFFFFFFU : (u32)scaled;
 }
 
-static u32 glyph_width(u32 scale) {
-    if (text_style == 2) return ((u32)font_cell_w * scale * 7U) / 8U;
-    return (u32)font_cell_w * scale;
+static const u8* glyph_data(char ch, u32* left, u32* right) {
+    s16 index = font_glyph_index((unsigned char)ch);
+    if (index < 0) index = font_glyph_index('?');
+    if (index < 0) return NULL;
+
+    const u8* rows = font_glyph_rows((u16)index);
+    u32 first = font_cell_w, last = 0;
+    bool found = false;
+    for (u32 row = 0; row < font_cell_h; row++) {
+        u8 bits = rows[row];
+        for (u32 col = 0; col < font_cell_w; col++) {
+            if (!(bits & (1U << col))) continue;
+            if (col < first) first = col;
+            if (col > last) last = col;
+            found = true;
+        }
+    }
+    if (!found) first = last = 0;
+    if (left) *left = first;
+    if (right) *right = last;
+    return rows;
+}
+
+static u32 glyph_advance(char ch, u32 scale) {
+    u32 left = 0, right = font_cell_w - 1;
+    (void)glyph_data(ch, &left, &right);
+    if (text_style == 0) {
+        u32 width = right >= left ? right - left + 1 : 1;
+        return (width + 1) * scale;
+    }
+    return (u32)font_cell_w * scale + scale;
 }
 
 static void draw_glyph(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale) {
     if (!g_framebuffer.initialized || !scale || scale > 8) return;
 
-    s16 idx = font_glyph_index((unsigned char)ch);
-    if (idx < 0) idx = font_glyph_index('?');
-    if (idx < 0) return;
+    u32 left = 0, right = font_cell_w - 1;
+    const u8* rows = glyph_data(ch, &left, &right);
+    if (!rows) return;
 
-    const u8* rows = font_glyph_rows((u16)idx);
+    bool proportional = (text_style == 0);
+    u32 source_left = proportional ? left : 0;
+    u32 source_right = proportional ? right : font_cell_w - 1;
+    u32 advance_width = glyph_advance(ch, scale);
+    u32 ink_width = (source_right >= source_left ? source_right - source_left + 1 : 1) * scale;
+
+    if (bg != FB_TRANSPARENT)
+        fb_fill_rect(x, y, advance_width, (u32)font_cell_h * scale, bg);
+
     for (u32 row = 0; row < font_cell_h; row++) {
         u8 bits = rows[row];
-        for (u32 col = 0; col < font_cell_w; col++) {
-            u32 px = col * scale;
-            if (text_style == 2) px = (col * scale * 7U) / 8U;
-            bool on = (bits >> col) & 1U;
-            u32 yy = y + row * scale;
-            if (on) {
-                fb_fill_rect(x + px, yy, scale, scale, fg);
-                if (text_style == 1)
-                    fb_fill_rect(x + px + scale, yy, scale, scale, fg);
-            } else if (bg != FB_TRANSPARENT) {
-                fb_fill_rect(x + px, yy, scale, scale, bg);
-            }
+        for (u32 col = source_left; col <= source_right; col++) {
+            if (!(bits & (1U << col))) continue;
+            u32 dx = proportional ? col - source_left : col;
+            fb_fill_rect(x + dx * scale, y + row * scale, scale, scale, fg);
         }
     }
+
+    /* A restrained bitmap-serif treatment: extend true outer stem pixels
+     * along the cap/baseline, without changing punctuation or round glyphs. */
+    if (text_style == 2 && font_cell_w > 2 && font_cell_h > 4) {
+        bool left_stem = false, right_stem = false;
+        for (u32 row = 2; row + 2 < font_cell_h; row++) {
+            if (rows[row] & (1U << 0)) left_stem = true;
+            if (rows[row] & (1U << (font_cell_w - 1))) right_stem = true;
+        }
+        if (left_stem) {
+            if (rows[0] & 1U) fb_fill_rect(x, y, scale, scale, fg);
+            if (rows[font_cell_h - 1] & 1U)
+                fb_fill_rect(x, y + (font_cell_h - 1) * scale, scale, scale, fg);
+        }
+        if (right_stem) {
+            u32 sx = (font_cell_w - 1) * scale;
+            if (rows[0] & (1U << (font_cell_w - 1)))
+                fb_fill_rect(x + sx, y, scale, scale, fg);
+            if (rows[font_cell_h - 1] & (1U << (font_cell_w - 1)))
+                fb_fill_rect(x + sx, y + (font_cell_h - 1) * scale, scale, scale, fg);
+        }
+    }
+    (void)ink_width;
 }
 
 void gfx_draw_char(u32 x, u32 y, char ch, u32 fg, u32 bg) {
@@ -80,7 +132,7 @@ void gfx_draw_string(u32 x, u32 y, const char* s, u32 fg, u32 bg) {
             continue;
         }
         draw_glyph(x, y, *s, fg, bg, text_scale);
-        x += glyph_width(text_scale) + (text_style == 1 ? text_scale : 0);
+        x += glyph_advance(*s, text_scale);
     }
 }
 
@@ -96,7 +148,7 @@ void gfx_draw_string_scaled(u32 x, u32 y, const char* s, u32 fg, u32 bg, u32 sca
             continue;
         }
         draw_glyph(x, y, *s, fg, bg, effective);
-        x += glyph_width(effective) + (text_style == 1 ? effective : 0);
+        x += glyph_advance(*s, effective);
     }
 }
 
@@ -104,7 +156,7 @@ void gfx_draw_string_centered(u32 y, const char* s, u32 fg, u32 bg) {
     if (!g_framebuffer.initialized || !s) return;
     u32 width = 0;
     for (const char* p = s; *p; p++)
-        width += glyph_width(text_scale) + (text_style == 1 ? text_scale : 0);
+        if (*p != '\n') width += glyph_advance(*p, text_scale);
     u32 x = g_framebuffer.width > width ? (g_framebuffer.width - width) / 2 : 0;
     gfx_draw_string(x, y, s, fg, bg);
 }
@@ -121,11 +173,9 @@ void gfx_text_size(const char* s, u32* out_w, u32* out_h) {
             if (current > longest) longest = current;
             current = 0;
             lines++;
-        } else current++;
+        } else current += glyph_advance(*p, text_scale);
     }
     if (current > longest) longest = current;
-    u32 cell_w = glyph_width(text_scale) + (text_style == 1 ? text_scale : 0);
-    if (longest) cell_w = longest * cell_w;
-    if (out_w) *out_w = longest ? cell_w : 0;
+    if (out_w) *out_w = longest;
     if (out_h) *out_h = lines * (u32)font_cell_h * text_scale;
 }
