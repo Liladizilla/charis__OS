@@ -77,6 +77,7 @@ void config_load(const char* path) {
     config_set_bool("boot_sound", true);
     config_set_int("screen_brightness", 100);
     config_set_bool("net_enabled", true);
+    config_set_bool("net_dhcp", true);
     config_set_int("font_style", 0);
     config_set_int("font_scale", 1);
     config_set_int("ui_scale", 100);
