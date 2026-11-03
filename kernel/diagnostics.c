@@ -64,16 +64,22 @@ void diag_dump_tasks(void) {
     task_t* cur = scheduler_current();
     task_t* t = cur;
     kprintf("=== Task List ===\n");
-    
-    do {
+    if (!t) {
+        kprintf("  <no scheduler task>\n");
+        return;
+    }
+
+    for (u32 i = 0; t && i < TASK_MAX_TASKS; i++) {
         const char* state_str = "UNKNOWN";
         switch (t->state) {
             case TASK_STATE_READY: state_str = "READY"; break;
             case TASK_STATE_RUNNING: state_str = "RUNNING"; break;
             case TASK_STATE_BLOCKED: state_str = "BLOCKED"; break;
             case TASK_STATE_ZOMBIE: state_str = "ZOMBIE"; break;
+            case TASK_STATE_UNUSED: state_str = "UNUSED"; break;
         }
-        kprintf("  [%u] %s: %s (quantum=%u)\n", t->pid, t->name, state_str, t->remaining_quantum);
+        kprintf("  [%u] %s: %s (quantum=%u)\\n",
+                t->pid, t->name, state_str, t->remaining_quantum);
         t = t->next;
         if (t == cur) break;
     }
