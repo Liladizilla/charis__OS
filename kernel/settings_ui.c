@@ -99,7 +99,8 @@ static u32 tab_height(void) {
 }
 
 static u32 content_top(u32 y) {
-    return y + header_height() + sp(12) + tab_height() + sp(18);
+    /* Keep the diagnostic rows visible at 3x text on a 768px-tall display. */
+    return y + header_height() + sp(4) + tab_height() + sp(6);
 }
 
 static u32 footer_height(void) {
@@ -111,7 +112,7 @@ static u32 panel_height(void) {
     u32 available = g_framebuffer.height > 16 ? g_framebuffer.height - 16 : g_framebuffer.height;
     u32 desired = sp(560);
     u32 needed = content_top(0) + title_step() + line_step() * 10 +
-                 footer_height() + sp(16);
+                 footer_height() + sp(4);
     if (needed > desired) desired = needed;
     return desired < available ? desired : available;
 }
@@ -371,7 +372,7 @@ void settings_ui_render(void) {
 
     u32 tab_area = w > sp(32) ? w - sp(32) : 0;
     u32 tab_w = tab_area / SETTINGS_TABS;
-    u32 tabs_y = y + header_height() + sp(12);
+    u32 tabs_y = y + header_height() + sp(4);
     u32 tabs_h = tab_height();
     for (u32 i = 0; tab_w && i < SETTINGS_TABS; i++) {
         u32 tx = x + sp(16) + i * tab_w;
