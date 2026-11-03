@@ -279,9 +279,9 @@ static void draw_system(u32 x, u32 y) {
     append_text(line, sizeof(line), &pos, "Firmware-available RAM: ");
     append_u64(line, sizeof(line), &pos, pmm_detected_ram_bytes() / (1024ULL * 1024ULL));
     append_text(line, sizeof(line), &pos, " MiB");
-    draw_text(x, y + step * 6, line, S_TEXT);
-    draw_text(x, y + step * 7, "The PMM currently manages only the first 1 GiB.", S_MUTED);
-    draw_text(x, y + step * 8, "CPU usage remains unavailable until idle-time accounting is verified.", S_MUTED);
+    draw_text(x, y + step * 7, line, S_TEXT);
+    draw_text(x, y + step * 8, "The PMM currently manages only the first 1 GiB.", S_MUTED);
+    draw_text(x, y + step * 9, "CPU usage remains unavailable until idle-time accounting is verified.", S_MUTED);
 }
 
 static void draw_hardware(u32 x, u32 y) {
