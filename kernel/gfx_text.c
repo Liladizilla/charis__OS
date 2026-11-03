@@ -61,7 +61,7 @@ static const u8* glyph_data(char ch, u32* left, u32* right) {
 
 static u32 glyph_advance(char ch, u32 scale) {
     if (ch == ' ') return (u32)(font_cell_w / 2) * scale;
-    u32 left = 0, right = font_cell_w - 1;
+    u32 left = 0, right = (u32)font_cell_w - 1U;
     (void)glyph_data(ch, &left, &right);
     if (text_style == 0) {
         u32 width = right >= left ? right - left + 1 : 1;
@@ -79,7 +79,7 @@ static void draw_glyph(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale) {
 
     bool proportional = (text_style == 0);
     u32 source_left = proportional ? left : 0;
-    u32 source_right = proportional ? right : font_cell_w - 1;
+    u32 source_right = proportional ? right : ((u32)font_cell_w - 1U);
     u32 advance_width = glyph_advance(ch, scale);
     if (bg != FB_TRANSPARENT)
         fb_fill_rect(x, y, advance_width, (u32)font_cell_h * scale, bg);
