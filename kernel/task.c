@@ -480,6 +480,16 @@ void task_sleep_ms(u32 ms) {
     current->waiting_event = TASK_WAITING_SLEEP;
     current->state = TASK_STATE_BLOCKED;
     scheduler_yield();
+
+    /* scheduler_yield() only switches when another task is runnable. With a
+     * single task (or when every peer is blocked), it returns immediately.
+     * Do not let a blocked sleeper continue executing just because there was
+     * nobody else to run. HLT releases the CPU until the next timer/device IRQ;
+     * the timer changes this task back to READY when its deadline expires. */
+    while (current->state == TASK_STATE_BLOCKED &&
+           current->waiting_event == TASK_WAITING_SLEEP) {
+        asm volatile("sti; hlt" : : : "memory");
+    }
 }
 
 void task_wake_sleepers(u64 now_ms) {
