@@ -456,10 +456,22 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
 void task_sleep_ms(u32 ms) {
     if (ms == 0) return;
 
+    /* A syscall arrives through an interrupt gate with IF cleared. Preserve
+     * the caller's full flags: the wait loop briefly enables interrupts so
+     * HLT can wake, but must not leak IF=1 back into the syscall dispatcher. */
+    u64 saved_flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(saved_flags) : : "memory");
+
     task_t* current = scheduler_current();
     if (!current) {
-        /* Early boot or a non-task caller: there is no task to park. */
-        timer_sleep_ms(ms);
+        /* Early boot or a non-task caller: there is no task to park. Keep the
+         * same interrupt-safe wait semantics without relying on timer_sleep_ms
+         * being called with IF already enabled. */
+        u64 start = timer_get_ms();
+        while (timer_get_ms() - start < (u64)ms) {
+            asm volatile("sti; hlt; cli" : : : "memory");
+        }
+        asm volatile("pushq %0; popfq" : : "r"(saved_flags) : "memory", "cc");
         return;
     }
 
@@ -468,9 +480,8 @@ void task_sleep_ms(u32 ms) {
      * event paths, so the timer must not wake arbitrary blocked tasks just
      * because their event_data happens to look like a deadline.
      *
-     * The syscall/interrupt gate enters with maskable interrupts disabled;
-     * the task is marked blocked before yielding, so a timer tick cannot be
-     * lost between publishing the deadline and switching away.
+     * Keep IF clear until the blocked state is visible and the scheduler has
+     * had the chance to switch away. That closes the deadline-publication race.
      */
     current->event_data = timer_get_ms() + (u64)ms;
     current->waiting_event = TASK_WAITING_SLEEP;
@@ -480,12 +491,14 @@ void task_sleep_ms(u32 ms) {
     /* scheduler_yield() only switches when another task is runnable. With a
      * single task (or when every peer is blocked), it returns immediately.
      * Do not let a blocked sleeper continue executing just because there was
-     * nobody else to run. HLT releases the CPU until the next timer/device IRQ;
-     * the timer changes this task back to READY when its deadline expires. */
+     * nobody else to run. STI;HLT;CLI sleeps atomically with respect to the
+     * next interrupt, then returns to the saved IF state before checking again. */
     while (current->state == TASK_STATE_BLOCKED &&
            current->waiting_event == TASK_WAITING_SLEEP) {
-        asm volatile("sti; hlt" : : : "memory");
+        asm volatile("sti; hlt; cli" : : : "memory");
     }
+
+    asm volatile("pushq %0; popfq" : : "r"(saved_flags) : "memory", "cc");
 }
 
 void task_wake_sleepers(u64 now_ms) {
