@@ -256,7 +256,7 @@ static void draw_notice(void) {
 /* Native settings surface: font family, text size and global interface scale. */
 static void draw_settings(void) {
     if (!settings_open) return;
-    static const char* const styles[] = { "Proportional", "Monospace", "Bitmap Serif" };
+    static const char* const styles[] = { "Prop", "Mono", "Serif" };
     static const char* const scales[] = { "1x", "2x", "3x" };
     static const char* const ui_scales[] = { "80%", "100%", "120%" };
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
@@ -271,7 +271,7 @@ static void draw_settings(void) {
     fb_fill_rect(x, y, cw, ch, T_MENU);
     fb_draw_rect(x, y, cw, ch, T_BORDER);
     fb_fill_rect(x, y, cw, title_h, T_START_BTN);
-    gfx_draw_string(x + ui_px(18), y + ui_px(10), "DESKTOP SETTINGS", T_FG, FB_TRANSPARENT);
+    gfx_draw_string(x + ui_px(18), y + ui_px(10), "SETTINGS", T_FG, FB_TRANSPARENT);
 
     const char* values[3];
     int style = config_get_int("font_style", 0);
@@ -283,7 +283,7 @@ static void draw_settings(void) {
     values[0] = styles[style];
     values[1] = scales[font_scale - 1];
     values[2] = ui_scales[scale_index];
-    const char* labels[3] = { "Font family", "Font size", "Interface scale" };
+    const char* labels[3] = { "Font family", "Font size", "UI scale" };
 
     for (u32 i = 0; i < 3; i++) {
         u32 ry = y + title_h + ui_px(12) + i * row_h;
@@ -300,7 +300,7 @@ static void draw_settings(void) {
         gfx_draw_string(plus_x + ui_px(10), by + ui_px(7), "+", T_FG, FB_TRANSPARENT);
     }
     gfx_draw_string(x + ui_px(20), y + ch - ui_px(28),
-                    "Changes apply now; saving needs a writable config file.",
+                    "Applied now; session only.",
                     T_FG_DIM, FB_TRANSPARENT);
 }
 
