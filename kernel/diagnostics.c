@@ -39,9 +39,14 @@ void diag_collect_stats(system_stats_t* stats) {
     stats->processes_total = total;
     stats->processes_blocked = blocked;
     
-    // Memory stats from PMM
-    stats->memory_used = pmm_used_pages() * 4; // KB
-    stats->memory_free = pmm_free_pages() * 4; // KB
+    /* PMM's bitmap spans the 64 GiB address limit and marks all
+     * non-RAM/reserved pages as used. Use only firmware-approved managed RAM
+     * for the user-visible used/free totals. Values are reported in KB. */
+    u32 managed_pages = pmm_total_pages();
+    u32 free_pages = pmm_free_pages();
+    if (free_pages > managed_pages) free_pages = managed_pages;
+    stats->memory_used = (managed_pages - free_pages) * 4;
+    stats->memory_free = free_pages * 4;
     
     stats->context_switches = diag_context_switches;
     stats->interrupts = diag_interrupts;
