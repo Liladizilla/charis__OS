@@ -18,6 +18,17 @@ void user_main(void) {
     greeting[18] = 'd'; greeting[19] = 'e'; greeting[20] = '!';
     greeting[21] = '\n'; greeting[22] = '\0';
     sys_print(greeting);
+    /* Exercise the real ring-3 sleep path before the yield/resume check.
+     * The text is built on the user stack because kernel .rodata is not mapped. */
+    sys_sleep(25);
+    char sleep_ok[16];
+    sleep_ok[0] = 'R'; sleep_ok[1] = 'I'; sleep_ok[2] = 'N';
+    sleep_ok[3] = 'G'; sleep_ok[4] = '3'; sleep_ok[5] = '_';
+    sleep_ok[6] = 'S'; sleep_ok[7] = 'L'; sleep_ok[8] = 'E';
+    sleep_ok[9] = 'E'; sleep_ok[10] = 'P'; sleep_ok[11] = '_';
+    sleep_ok[12] = 'O'; sleep_ok[13] = 'K'; sleep_ok[14] = '\n';
+    sleep_ok[15] = '\0';
+    sys_print(sleep_ok);
 
     char elf_path[10];
     elf_path[0] = '/'; elf_path[1] = 'T'; elf_path[2] = 'E';
