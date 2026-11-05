@@ -41,8 +41,8 @@
 // External syscall dispatch function
 extern u64 syscall_dispatch(u64 num, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6);
 
-static inline u64 syscall_invoke(u64 number, u64 a1, u64 a2, u64 a3,
-                                 u64 a4, u64 a5, u64 a6) {
+__attribute__((always_inline)) static inline u64 syscall_invoke(
+    u64 number, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     register u64 arg4 asm("r10") = a4;
     register u64 arg5 asm("r8") = a5;
     register u64 arg6 asm("r9") = a6;
