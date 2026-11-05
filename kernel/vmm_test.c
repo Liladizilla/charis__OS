@@ -74,7 +74,10 @@ static bool test_map_user_page(void) {
     u64 phys = pmm_alloc_page();
     if (!phys) return false;
 
-    u64 virt = 0xFFFFA00000004000ULL;
+    /* Use an unused lower-half PML4 slot. Testing a USER mapping in the
+     * kernel's shared high-half slot would unnecessarily relax upper-level
+     * permissions for the kernel mapping tree. */
+    u64 virt = 0x0000400000004000ULL;
 
     if (!vmm_map_page(virt, phys, PTE_WRITABLE | PTE_USER)) return false;
     if (vmm_get_phys(virt) != (phys & ~0xFFFULL)) return false;
