@@ -315,7 +315,11 @@ fi
 
 if [ "$REQUIRE_VMM_TESTS" = "1" ]; then
     for test_name in map_existing map_missing remap_same unmap_page \
-                     map_user_page walk_rejects_huge translate_effective_user; do
+                     map_user_page walk_rejects_huge translate_effective_user \
+                     physmap_supervisor_alias pmm_direct_mapped_ram pmm_free_count \
+                     pmm_reserved_frame_protected user_kernel_half_denied \
+                     unaligned_page_denied mapping_validation_matrix \
+                     destroy_address_space kernel_clone_rejects_user; do
         grep -Fq "[VMM] $test_name: OK" "$LOG" \
             || fail "VMM regression test failed or did not execute: $test_name"
     done
