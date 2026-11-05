@@ -17,6 +17,7 @@ static u8 bitmap[BITMAP_SIZE];
 /* Distinguish allocated frames from permanent reservations. */
 static u8 allocated_bitmap[BITMAP_SIZE];
 static u32 last_free = 0;
+static u32 managed_page_count = 0;
 
 static void pmm_mark_used(u64 addr) {
     if (addr < PMM_BITMAP_BASE || addr >= VMM_PHYSICAL_LIMIT) return;
@@ -80,6 +81,7 @@ extern char _kernel_end[];
 void pmm_init(multiboot_info_t* info) {
     memory_map = bootmem_regions(&memory_map_count);
     last_free = 0;
+    managed_page_count = 0;
 
     /* Fail closed: only complete, firmware-declared RAM blocks are eligible. */
     kmemset(bitmap, 0xFF, sizeof(bitmap));
@@ -90,6 +92,7 @@ void pmm_init(multiboot_info_t* info) {
          block <= VMM_PHYSICAL_LIMIT - PMM_BLOCK_SIZE;
          block += PMM_BLOCK_SIZE) {
         if (!pmm_block_is_usable_ram(block)) continue;
+        managed_page_count += (u32)(PMM_BLOCK_SIZE / 4096ULL);
         for (u64 addr = block; addr < block + PMM_BLOCK_SIZE; addr += 4096ULL) {
             pmm_mark_free(addr);
         }
@@ -193,4 +196,9 @@ u32 pmm_used_pages(void) {
 
 u32 pmm_free_pages(void) {
     return (u32)PMM_PAGE_COUNT - pmm_used_pages();
+}
+
+
+u32 pmm_total_pages(void) {
+    return managed_page_count;
 }
