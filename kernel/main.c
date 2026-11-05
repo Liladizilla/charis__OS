@@ -103,6 +103,9 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('Q');
     timer_init(1000);
     BOOT_MARK('T');
+    /* Seed stack protection before initializing the remaining subsystems. */
+    security_init();
+    BOOT_MARK('S');
     keyboard_init();
     BOOT_MARK('K');
     ata_init();
@@ -166,8 +169,6 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('D');
     power_init();
     BOOT_MARK('p');
-    security_init();
-    BOOT_MARK('S');
 
     // Initialize network once, if enabled in config.
     // net_init() resets the RTL8139 and reinitializes its RX/TX state, so
