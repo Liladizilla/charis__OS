@@ -50,7 +50,14 @@ pml4:
     resb 4096
 pdpt:
     resb 4096
-pd:
+; Four contiguous page directories cover the PMM's 4 GiB physical window.
+pd0:
+    resb 4096
+pd1:
+    resb 4096
+pd2:
+    resb 4096
+pd3:
     resb 4096
 
 align 16
@@ -154,7 +161,7 @@ start:
      mov al, '4'
      out dx, al
 
-    ; Set up identity paging for first 1GB using 2MB huge pages
+    ; Set up identity paging for first 4GB using 2MB huge pages
     call setup_page_tables
     VGA_WRITE 'P'  ; Paging setup OK
     mov dx, 0x3F8
@@ -267,7 +274,7 @@ setup_page_tables:
     ; Clear page tables
     mov edi, pml4
     xor eax, eax
-    mov ecx, 4096 * 3 / 4   ; 3 pages = 12288 bytes, /4 for dwords
+    mov ecx, 4096 * 6 / 4   ; PML4 + PDPT + four 4 KiB page directories
     rep stosd
 
     ; PML4[0] -> PDPT
@@ -276,19 +283,30 @@ setup_page_tables:
     or eax, 0x03            ; Present + Writable
     mov [edi], eax
 
-    ; PDPT[0] -> PD
+    ; PDPT[0..3] -> four directory pages, each covering one GiB.
+    ; The four PD pages are contiguous in BSS, so one loop fills all 2048
+    ; huge-page entries from physical 0 through (but not including) 4 GiB.
     mov edi, pdpt
-    mov eax, pd
-    or eax, 0x03
+    mov eax, pd0
+    or eax, 0x03            ; Present + Writable
     mov [edi], eax
+    mov eax, pd1
+    or eax, 0x03
+    mov [edi + 8], eax
+    mov eax, pd2
+    or eax, 0x03
+    mov [edi + 16], eax
+    mov eax, pd3
+    or eax, 0x03
+    mov [edi + 24], eax
 
-    ; PD[i] = (i * 2MB) | HugePage | Present | Writable
-    mov edi, pd
-    mov eax, 0x83           ; Present + Writable + Huge
-    mov ecx, 512            ; 512 entries = 1GB
+    ; PDE[i] = (i * 2 MiB) | Present | Writable | Huge.
+    mov edi, pd0
+    mov eax, 0x83
+    mov ecx, 2048           ; 4 directories * 512 entries = 4 GiB
 .pt_loop:
     mov [edi], eax
-    add eax, 0x200000       ; Next 2MB page
+    add eax, 0x200000
     add edi, 8
     loop .pt_loop
 
@@ -310,7 +328,7 @@ enable_paging:
 
      ; Enable PAE (Physical Address Extension)
      mov eax, cr4
-     or eax, 1 << 5          ; PAE bit
+     or eax, (1 << 5) | (1 << 4) ; PAE + PSE (2 MiB page support)
      mov cr4, eax
 
      ; Enable long mode (LME) and NX via EFER MSR

@@ -72,6 +72,13 @@ USB_IMG = $(BUILD_DIR)/charisos-usb.img
 
 images: $(VM_ISO) $(USB_IMG)
 
+# Build a separate kernel/ISO with the VMM regression suite executed during
+# early boot. It must not reuse normal object files because RUN_VMM_TESTS
+# changes kernel_main's compiled control flow.
+images-vmm-test:
+	rm -rf $(BUILD_DIR)/vmm-test
+	$(MAKE) BUILD_DIR=$(BUILD_DIR)/vmm-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DRUN_VMM_TESTS" images
+
 ELF_SMOKE_IMAGE = $(BUILD_DIR)/elf-smoke-disk.img
 
 elf-test: $(ELF_SMOKE_IMAGE)
@@ -226,4 +233,4 @@ clean:
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-.PHONY: all check-tools images elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
+.PHONY: all check-tools images images-vmm-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean

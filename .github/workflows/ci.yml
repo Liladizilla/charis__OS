@@ -118,6 +118,12 @@ jobs:
               || echo "::warning::UEFI+KVM boot check did not pass on this runner (firmware-dependent) -- see local \`make verify-boot\`"
           fi
 
+      - name: Boot VMM huge-page and permission regression suite
+        run: |
+          set -e
+          make images-vmm-test
+          BUILD_DIR=build/vmm-test ./tools/verify-boot.sh build/vmm-test/charisos-vm.iso --require-vmm-tests
+
       - name: Capture real graphical desktop screenshot
         if: always()
         continue-on-error: true

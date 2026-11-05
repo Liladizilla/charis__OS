@@ -47,6 +47,7 @@ NEEDS_DISPLAY=0
 TIMEOUT=60
 LOG=""
 ELF_TEST_DISK=""
+REQUIRE_VMM_TESTS=0
 
 usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
@@ -56,6 +57,7 @@ while [ $# -gt 0 ]; do
         --uefi)   FIRMWARE="${OVMF:-/usr/share/edk2/ovmf/OVMF_CODE.fd}"; shift ;;
         --kvm)    USE_KVM=1; shift ;;
         --elf-test-disk) ELF_TEST_DISK="$2"; shift 2 ;;
+        --require-vmm-tests) REQUIRE_VMM_TESTS=1; shift ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         -h|--help) usage ;;
         -*) echo "unknown option: $1" >&2; exit 2 ;;
@@ -284,15 +286,28 @@ grep -q '\[BOOT\] init complete, entering scheduler' "$LOG" \
 grep -q 'Hello from user mode!' "$LOG" \
     || fail "ring-3 task did not complete its print syscall"
 
-grep -q 'RING3_SLEEP_OK' "$LOG" \
-    || fail "ring-3 sleep syscall did not return to user mode"
-
 if [ -n "$ELF_TEST_DISK" ]; then
     grep -q 'ELF_EXEC_OK' "$LOG" \
         || fail "ELF image did not execute its user-mode smoke test"
 else
+    grep -q 'RING3_SLEEP_OK' "$LOG" \
+        || fail "ring-3 sleep syscall did not return to user mode"
     grep -q 'Back in user mode after yield.' "$LOG" \
         || fail "ring-3 task did not resume after yielding to the kernel task"
+    grep -q 'RING3_FAULT_ARMED' "$LOG" \
+        || fail "ring-3 page-fault isolation probe did not run"
+    grep -q 'USER PAGE FAULT:' "$LOG" \
+        || fail "invalid ring-3 access was not contained as a user page fault"
+    grep -q 'RING3_SYSCALL_PTR_REJECT_OK' "$LOG" \
+        || fail "ring-3 syscall pointer validation did not reject untrusted addresses"
+fi
+
+if [ "$REQUIRE_VMM_TESTS" = "1" ]; then
+    for test_name in map_existing map_missing remap_same unmap_page \
+                     map_user_page walk_rejects_huge translate_effective_user; do
+        grep -Fq "[VMM] $test_name: OK" "$LOG" \
+            || fail "VMM regression test failed or did not execute: $test_name"
+    done
 fi
 
 grep -q 'Invalid Multiboot2 magic' "$LOG" \

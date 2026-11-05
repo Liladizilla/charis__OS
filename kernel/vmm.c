@@ -73,6 +73,14 @@ bool vmm_map_page(u64 virt, u64 phys, u64 flags) {
     u64 pde = pd[i3];
     u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
 
+    /* x86 checks the USER permission at every level, not only the leaf PTE.
+     * Propagate it through this path when a user mapping is requested. */
+    if (flags & PTE_USER) {
+        pml4[i1] |= PTE_USER;
+        pdpt[i2] |= PTE_USER;
+        pd[i3] |= PTE_USER;
+    }
+
     pt[PT_INDEX(virt)] = (phys & ~0xFFFULL) | PTE_PRESENT | (flags & (PTE_WRITABLE | PTE_USER | PTE_NX));
 
     flush_tlb();
@@ -165,8 +173,9 @@ void vmm_init(void) {
 // Walk the page table tree and return the PTE for a virtual address.
 // If create=true, allocate missing intermediate tables.
 pte_t* vmm_walk(pml4_t* pml4, u64 vaddr, bool create) {
+    if (!pml4) return NULL;
+
     u64* pml4_table = (u64*)pml4;
-    
     u16 i1 = PML4_INDEX(vaddr);
     u64 pml4e = pml4_table[i1];
     if (!(pml4e & PTE_PRESENT)) {
@@ -189,6 +198,11 @@ pte_t* vmm_walk(pml4_t* pml4, u64 vaddr, bool create) {
         pdpt[i2] = (phys & ~0xFFFULL) | PTE_PRESENT | PTE_WRITABLE;
         pdpte = pdpt[i2];
     }
+
+    /* A 1 GiB PDPTE is a leaf mapping, not a pointer to a page directory.
+     * This API returns a 4 KiB PTE pointer; refuse huge leaves rather than
+     * interpreting mapped data as a page-table page. */
+    if (pdpte & PTE_HUGE) return NULL;
     u64* pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
 
     u16 i3 = PD_INDEX(vaddr);
@@ -201,9 +215,72 @@ pte_t* vmm_walk(pml4_t* pml4, u64 vaddr, bool create) {
         pd[i3] = (phys & ~0xFFFULL) | PTE_PRESENT | PTE_WRITABLE;
         pde = pd[i3];
     }
-    u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
 
+    /* Likewise, a 2 MiB PDE is a leaf. Callers that need physical translation
+     * of huge mappings must use a huge-page-aware translator, not a PTE walk. */
+    if (pde & PTE_HUGE) return NULL;
+    u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
     return &pt[PT_INDEX(vaddr)];
+}
+
+/*
+ * Translate a virtual address without assuming every mapping is 4 KiB.
+ * Large PDPTE/PDE entries are valid leaves. Permission bits are effective
+ * only when every level in the walk grants them: USER/WRITABLE are ANDed,
+ * while NX is restrictive and therefore ORed.
+ */
+bool vmm_translate(pml4_t* pml4, u64 vaddr, u64* physical, u64* flags) {
+    if (!pml4 || !physical || !flags) return false;
+
+    const u64* pml4_table = (const u64*)pml4;
+    u64 pml4e = pml4_table[PML4_INDEX(vaddr)];
+    if (!(pml4e & PTE_PRESENT)) return false;
+
+    const u64* pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
+    u64 pdpte = pdpt[PDPT_INDEX(vaddr)];
+    if (!(pdpte & PTE_PRESENT)) return false;
+
+    bool user = (pml4e & PTE_USER) && (pdpte & PTE_USER);
+    bool writable = (pml4e & PTE_WRITABLE) && (pdpte & PTE_WRITABLE);
+    bool nx = ((pml4e | pdpte) & PTE_NX) != 0;
+    u64 translated;
+
+    if (pdpte & PTE_HUGE) {
+        /* 1 GiB leaf: bits 51:30 contain the physical frame base. */
+        translated = (pdpte & 0x000FFFFFC0000000ULL) |
+                     (vaddr & 0x3FFFFFFFULL);
+    } else {
+        const u64* pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
+        u64 pde = pd[PD_INDEX(vaddr)];
+        if (!(pde & PTE_PRESENT)) return false;
+
+        user = user && ((pde & PTE_USER) != 0);
+        writable = writable && ((pde & PTE_WRITABLE) != 0);
+        nx = nx || ((pde & PTE_NX) != 0);
+
+        if (pde & PTE_HUGE) {
+            /* 2 MiB leaf: bits 51:21 contain the physical frame base. */
+            translated = (pde & 0x000FFFFFFFE00000ULL) |
+                         (vaddr & 0x1FFFFFULL);
+        } else {
+            const u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
+            u64 pte = pt[PT_INDEX(vaddr)];
+            if (!(pte & PTE_PRESENT)) return false;
+
+            user = user && ((pte & PTE_USER) != 0);
+            writable = writable && ((pte & PTE_WRITABLE) != 0);
+            nx = nx || ((pte & PTE_NX) != 0);
+            translated = (pte & 0x000FFFFFFFFFF000ULL) |
+                         (vaddr & 0xFFFULL);
+        }
+    }
+
+    *physical = translated;
+    *flags = VMM_FLAG_PRESENT |
+             (user ? VMM_FLAG_USER : 0) |
+             (writable ? VMM_FLAG_WRITABLE : 0) |
+             (nx ? VMM_FLAG_NX : 0);
+    return true;
 }
 
 // Create a new empty page table (for new processes).
