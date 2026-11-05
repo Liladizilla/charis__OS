@@ -81,13 +81,26 @@ void irq_init(void) {
 }
 
 void irq_register_handler(u8 irq, void (*handler)(reg_frame_t*)) {
+    /* The legacy PIC exposes exactly 16 IRQ lines. Reject invalid indices
+     * before touching the fixed handler table or PIC mask registers. */
+    if (irq >= 16 || !handler) return;
+
     irq_handlers[irq] = handler;
     pic_unmask_irq(irq);
 }
 
 // Called from idt_dispatch_handler
 void irq_dispatch(u8 irq, reg_frame_t* frame) {
-    if (irq_handlers[irq]) {
-        irq_handlers[irq](frame);
+    if (irq >= 16) return;
+
+    void (*handler)(reg_frame_t*) = irq_handlers[irq];
+    if (handler) {
+        handler(frame);
+    } else {
+        /* Every unhandled line must still be acknowledged. Otherwise the PIC
+         * keeps it in service and can block later interrupts at the same or
+         * lower priority. Registered handlers own their EOI because some
+         * devices need to acknowledge only after consuming their data. */
+        pic_send_eoi(irq);
     }
 }
