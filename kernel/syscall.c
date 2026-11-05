@@ -17,6 +17,7 @@
 #include <kernel/string.h>
 #include <kernel/elf.h>
 #include <kernel/security.h>
+#include <kernel/serial.h>
 
 extern u64 isr_table[256];
 
@@ -414,9 +415,16 @@ bool syscall_exec_from_frame(reg_frame_t* frame) {
     if (!frame || (frame->cs & 3) != 3) return false;
     task_t* task = scheduler_current();
     if (!task || !task->is_user || !task->mm.pml4 ||
-        task->address_space != task->mm.pml4 ||
-        !security_check_capability(task, CAP_SPAWN) ||
-        !security_check_capability(task, CAP_ALLOW_EXEC)) return false;
+        task->address_space != task->mm.pml4) return false;
+
+    /* Explicitly report the safe default so boot tests can distinguish a
+     * deliberate policy denial from a broken ELF loader. */
+    if (!security_check_capability(task, CAP_SPAWN) ||
+        !security_check_capability(task, CAP_ALLOW_EXEC)) {
+        serial_puts("ELF_EXEC_DENIED_CAPABILITY\n");
+        security_audit("exec-denied-capability", task);
+        return false;
+    }
 
     char path[256];
     if (!syscall_copy_user_string(task, frame->rdi, path, sizeof(path)) ||
