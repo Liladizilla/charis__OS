@@ -160,7 +160,7 @@ jobs:
             printf 'screendump build/charisos-settings-preview.ppm\n'
             sleep 2
             printf 'quit\n'
-          } | timeout 35s qemu-system-x86_64 \
+          } | timeout 45s qemu-system-x86_64 \
             -machine q35 -m 512M -vga std -nic none -no-reboot \
             -cdrom build/charisos-vm.iso -boot order=d \
             -serial file:build/desktop-capture-serial.log \
