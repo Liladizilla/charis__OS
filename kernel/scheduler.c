@@ -159,6 +159,7 @@ void scheduler_start(void) {
     }
 
     current_task->started = true;
+    diag_note_context_switch();
     u64 bootstrap_rsp = 0;
     context_switch(&bootstrap_rsp, current_task->rsp, use_iret);
 
@@ -210,6 +211,7 @@ void scheduler_schedule(void) {
     }
 
     current_task->started = true;
+    diag_note_context_switch();
     if (previous) {
         context_switch(&previous->rsp, current_task->rsp, use_iret);
     } else {
