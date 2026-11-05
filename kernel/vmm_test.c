@@ -285,7 +285,7 @@ void vmm_run_tests(void) {
     report("map_user_page", test_map_user_page());
     report("walk_rejects_huge", test_walk_rejects_huge_leaves());
     report("translate_effective_user", test_translate_requires_user_at_every_level());
-    report("physmap_supervisor_gt4g", test_supervisor_direct_map_above_4g());
+    report("physmap_supervisor_alias", test_supervisor_direct_map_above_4g());
     report("pmm_direct_mapped_ram", test_pmm_returns_direct_mapped_ram());
     report("pmm_reserved_frame_protected", test_pmm_cannot_free_reserved_frame());
 }
