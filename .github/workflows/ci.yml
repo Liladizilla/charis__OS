@@ -167,7 +167,7 @@ jobs:
             sleep 1
             printf 'mouse_button 0\n'
             sleep 1
-            printf 'mouse_move -9 44\n'
+            printf 'mouse_move 15 44\n'
             sleep 1
             printf 'mouse_button 1\n'
             sleep 1
