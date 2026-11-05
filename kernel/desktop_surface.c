@@ -86,7 +86,8 @@ static void draw_status_widget(u32* out_x, u32* out_y, u32* out_w, u32* out_h) {
     u32 first_line = title_h + u(12);
     u32 ram_line = first_line + gap;
     u32 task_line = ram_line + gap;
-    u32 foot_line = task_line + gap;
+    u32 activity_line = task_line + gap;
+    u32 foot_line = activity_line + gap;
     u32 bar_y = foot_line + text_h() + u(10);
     u32 h = bar_y + u(14);
     u32 x = sw > w + u(22) ? sw - w - u(22) : 0;
@@ -132,10 +133,20 @@ static void draw_status_widget(u32* out_x, u32* out_y, u32* out_w, u32* out_h) {
     append_text(tasks, sizeof(tasks), &pos, "  B:");
     append_u32(tasks, sizeof(tasks), &pos, stats.processes_blocked);
 
+    char activity[64];
+    pos = 0; activity[0] = 0;
+    append_text(activity, sizeof(activity), &pos, "CS ");
+    append_u32(activity, sizeof(activity), &pos, stats.context_switches);
+    append_text(activity, sizeof(activity), &pos, "  IRQ ");
+    append_u32(activity, sizeof(activity), &pos, stats.interrupts);
+    append_text(activity, sizeof(activity), &pos, "  SYS ");
+    append_u32(activity, sizeof(activity), &pos, stats.syscalls);
+
     label(x + u(12), y + first_line, "Up", DS_MUTED);
     label(x + u(52), y + first_line, time, DS_WHITE);
     label(x + u(12), y + ram_line, memory, DS_WHITE);
     label(x + u(12), y + task_line, tasks, DS_WHITE);
+    label(x + u(12), y + activity_line, activity, DS_MUTED);
     label(x + u(12), y + foot_line, "Managed physical memory", DS_MUTED);
 
     u32 bar_x = x + u(12), bar_w = w > u(24) ? w - u(24) : 1;
