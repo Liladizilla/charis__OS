@@ -306,6 +306,17 @@ static bool test_pmm_returns_direct_mapped_ram(void) {
 }
 
 
+static bool test_pmm_free_count_is_constant_time_consistent(void) {
+    u32 before = pmm_free_pages();
+    u64 page = pmm_alloc_page();
+    if (!page) return false;
+    bool decremented = pmm_free_pages() + 1 == before;
+    pmm_free_page(page);
+    bool restored = pmm_free_pages() == before;
+    pmm_free_page(page); /* A duplicate free must not inflate the cached count. */
+    return decremented && restored && pmm_free_pages() == before;
+}
+
 static bool test_pmm_cannot_free_reserved_frame(void) {
     u32 used_before = pmm_used_pages();
     pmm_free_page(0x00100000ULL); /* kernel image reservation */
@@ -549,6 +560,7 @@ void vmm_run_tests(void) {
     report("translate_effective_user", test_translate_requires_user_at_every_level());
     report("physmap_supervisor_alias", test_supervisor_direct_map_above_4g());
     report("pmm_direct_mapped_ram", test_pmm_returns_direct_mapped_ram());
+    report("pmm_free_count", test_pmm_free_count_is_constant_time_consistent());
     report("pmm_reserved_frame_protected", test_pmm_cannot_free_reserved_frame());
     report("user_kernel_half_denied", test_user_mapping_rejects_kernel_half());
     report("unaligned_page_denied", test_vmm_rejects_unaligned_pages());
