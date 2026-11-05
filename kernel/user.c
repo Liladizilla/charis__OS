@@ -100,6 +100,13 @@ void user_main(void) {
         syscall_pointers_ok = false;
     }
     if (sys_open((const char*)bad_low) != (u64)-1) syscall_pointers_ok = false;
+    char traversal_path[13];
+    traversal_path[0] = '/'; traversal_path[1] = '.'; traversal_path[2] = '.';
+    traversal_path[3] = '/'; traversal_path[4] = 'T'; traversal_path[5] = 'E';
+    traversal_path[6] = 'S'; traversal_path[7] = 'T'; traversal_path[8] = '.';
+    traversal_path[9] = 'E'; traversal_path[10] = 'L'; traversal_path[11] = 'F';
+    traversal_path[12] = '\0';
+    if (sys_open(traversal_path) != (u64)-1) syscall_pointers_ok = false;
     if (syscall_invoke(SYS_WRITE, 1, bad_low, 1, 0, 0, 0) != (u64)-1 ||
         syscall_invoke(SYS_WRITE, 1, bad_noncanonical, 1, 0, 0, 0) != (u64)-1) {
         syscall_pointers_ok = false;
