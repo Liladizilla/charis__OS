@@ -316,6 +316,9 @@ static bool syscall_copy_user_string(task_t* task, u64 user_address,
     for (usize i = 0; i < capacity; i++) {
         u64 address = user_address + i;
         if (address < user_address || address >= 0x0000800000000000ULL) return false;
+        /* vmm_walk returns NULL for a huge leaf because it cannot expose
+         * a 4 KiB PTE. This deliberately rejects user pointers into the
+         * supervisor identity map instead of dereferencing a fake PT. */
         pte_t* pte = vmm_walk(task->mm.pml4, address, false);
         if (!pte || !(*pte & VMM_FLAG_PRESENT) || !(*pte & VMM_FLAG_USER)) return false;
         u64 phys = (*pte & 0x000FFFFFFFFFF000ULL) | (address & 0xFFFULL);
