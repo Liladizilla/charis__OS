@@ -120,44 +120,39 @@ void pmm_reserve_range(u64 addr, u64 len) {
 }
 
 u64 pmm_alloc_page(void) {
-    /* The final bitmap byte includes the 1 MiB tail beyond 4 GiB; those bits
-     * are permanently reserved by pmm_init(), but enforce the boundary here
-     * too so corrupted bookkeeping can never return an unmapped page. */
     const u32 allocatable_pages = (u32)((PMM_MAX_PHYS - bitmap_base) / 4096ULL);
+    const u32 allocatable_bytes = (allocatable_pages + 7U) / 8U;
     u32 i;
-    for (i = last_free; i < allocatable_pages / 8 + 1 && i < BITMAP_SIZE; i++) {
-        if (bitmap[i] != 0xFF) {
-            u8 bit;
-            for (bit = 0; bit < 8; bit++) {
-                if (!(bitmap[i] & (1 << bit))) {
-                    bitmap[i] |= (1 << bit);
-                    last_free = i;
-                    u64 addr = bitmap_base + (u64)(i * 8 + bit) * 4096ULL;
-                    if (addr >= PMM_MAX_PHYS) {
-                        bitmap[i] |= (u8)(1U << bit);
-                        continue;
-                    }
-                    return addr;
-                }
-            }
+
+    for (i = last_free; i < allocatable_bytes; i++) {
+        if (bitmap[i] == 0xFF) continue;
+        for (u8 bit = 0; bit < 8; bit++) {
+            if (bitmap[i] & (1U << bit)) continue;
+            u32 page = i * 8U + bit;
+            u64 addr = bitmap_base + (u64)page * 4096ULL;
+            if (addr >= PMM_MAX_PHYS) break;
+            bitmap[i] |= (u8)(1U << bit);
+            last_free = i;
+            return addr;
         }
     }
-    // wrap around
-    for (i = 0; i < last_free && i < allocatable_pages / 8 + 1; i++) {
-        if (bitmap[i] != 0xFF) {
-            u8 bit;
-            for (bit = 0; bit < 8; bit++) {
-                if (!(bitmap[i] & (1 << bit))) {
-                    bitmap[i] |= (1 << bit);
-                    last_free = i;
-                    return bitmap_base + (i * 8 + bit) * 4096;
-                }
-            }
+
+    /* Wrap once, looking only below the previous next-fit position. */
+    for (i = 0; i < last_free && i < allocatable_bytes; i++) {
+        if (bitmap[i] == 0xFF) continue;
+        for (u8 bit = 0; bit < 8; bit++) {
+            if (bitmap[i] & (1U << bit)) continue;
+            u32 page = i * 8U + bit;
+            u64 addr = bitmap_base + (u64)page * 4096ULL;
+            if (addr >= PMM_MAX_PHYS) break;
+            bitmap[i] |= (u8)(1U << bit);
+            last_free = i;
+            return addr;
         }
     }
+
     return 0;
 }
-
 void pmm_free_page(u64 addr) {
     if (addr < bitmap_base || addr >= PMM_MAX_PHYS) return; // invalid/outside direct map
     u32 page = (addr - bitmap_base) / 4096;
