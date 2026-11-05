@@ -23,8 +23,9 @@ static void entropy_add(u64 val) {
 }
 
 static u64 entropy_get(void) {
+    /* This fallback may run before the PIT is initialized. TSC and the
+     * pool address provide only a weak canary seed, never token entropy. */
     entropy_add(read_tsc());
-    entropy_add(timer_get_ms());
     entropy_add((u64)(uintptr_t)&entropy_pool);
     return entropy_pool;
 }
@@ -56,6 +57,7 @@ static bool security_random_u64(u64* value) {
  * compatibility but is explicitly not suitable for security tokens. */
 uintptr_t __stack_chk_guard;
 
+__attribute__((no_stack_protector))
 void security_init(void) {
     for (int i = 0; i < TASK_MAX_TASKS; i++) {
         security_contexts[i].process_caps = 0;
