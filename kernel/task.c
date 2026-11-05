@@ -162,7 +162,7 @@ void task_exit_with_status(u32 status) {
         if (current->is_user && current->mm.pml4) {
             task_release_user_code_pages(current, current->mm.pml4);
             task_release_user_stack_pages(current, current->mm.pml4);
-            serial_puts("RING3_PRIVATE_PAGES_RELEASED\\n");
+            serial_puts("RING3_PRIVATE_PAGES_RELEASED\n");
         }
         /* Exited tasks are never scheduled again. Unlink the zombie before
          * parking its stack so the scheduler list only contains live tasks. */
@@ -387,7 +387,7 @@ bool task_prepare_user_space(task_t* task, void* entry_point) {
     task->mm.stack_top = user_stack_top;
     ((u64*)task->rsp)[10] = user_stack_top;
     task->mm.pml4 = pml4;
-    serial_puts("RING3_CODE_ISOLATION_OK\\n");
+    serial_puts("RING3_CODE_ISOLATION_OK\n");
     return true;
 }
 
