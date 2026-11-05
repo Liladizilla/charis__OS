@@ -37,6 +37,7 @@
 #include <kernel/driver.h>
 #include <kernel/logo.h>
 #include <kernel/fb.h>
+#include <kernel/gfx_text.h>
 #include <kernel/mouse.h>
 #include <kernel/shell_ui.h>
 
@@ -153,6 +154,7 @@ void kernel_main(u32 magic, u64 info_ptr) {
     config_init();
     BOOT_MARK('c');
     config_load("/etc/charisos.conf");
+    gfx_text_apply_preferences();
     BOOT_MARK('L');
     display_init();
     BOOT_MARK('D');
