@@ -85,6 +85,67 @@ void user_main(void) {
     resumed[30] = '\n'; resumed[31] = '\0';
     sys_print(resumed);
 
+    /*
+     * Regression probes for untrusted syscall pointers. 0x1000 lies in the
+     * boot identity map, whose huge-page ancestors are supervisor-only.
+     * 0x0000800000000000 is outside the lower canonical user range. Every
+     * copy helper must reject both without dereferencing a bogus PTE in ring 0.
+     */
+    const u64 bad_low = 0x1000ULL;
+    const u64 bad_noncanonical = 0x0000800000000000ULL;
+    bool syscall_pointers_ok = true;
+
+    if (sys_print((const char*)bad_low) != (u64)-1 ||
+        sys_print((const char*)bad_noncanonical) != (u64)-1) {
+        syscall_pointers_ok = false;
+    }
+    if (sys_open((const char*)bad_low) != (u64)-1) syscall_pointers_ok = false;
+    if (sys_ipc_create((const char*)bad_low) != (u64)-1) syscall_pointers_ok = false;
+    if (syscall_invoke(SYS_DIAG_STATS, bad_low, 0, 0, 0, 0, 0) != (u64)-1 ||
+        syscall_invoke(SYS_DIAG_STATS, bad_noncanonical, 0, 0, 0, 0, 0) != (u64)-1) {
+        syscall_pointers_ok = false;
+    }
+
+    char channel_name[10];
+    channel_name[0] = 'p'; channel_name[1] = 't'; channel_name[2] = 'r';
+    channel_name[3] = '-'; channel_name[4] = 't'; channel_name[5] = 'e';
+    channel_name[6] = 's'; channel_name[7] = 't';
+    channel_name[8] = '\0';
+    u64 channel = sys_ipc_create(channel_name);
+    if (channel == (u64)-1 ||
+        sys_ipc_send(channel, (const void*)bad_low, 1) != (u64)-1) {
+        syscall_pointers_ok = false;
+    }
+
+    if (syscall_pointers_ok) {
+        char pointer_ok[29];
+        pointer_ok[0] = 'R'; pointer_ok[1] = 'I'; pointer_ok[2] = 'N';
+        pointer_ok[3] = 'G'; pointer_ok[4] = '3'; pointer_ok[5] = '_';
+        pointer_ok[6] = 'S'; pointer_ok[7] = 'Y'; pointer_ok[8] = 'S';
+        pointer_ok[9] = 'C'; pointer_ok[10] = 'A'; pointer_ok[11] = 'L';
+        pointer_ok[12] = 'L'; pointer_ok[13] = '_'; pointer_ok[14] = 'P';
+        pointer_ok[15] = 'T'; pointer_ok[16] = 'R'; pointer_ok[17] = '_';
+        pointer_ok[18] = 'R'; pointer_ok[19] = 'E'; pointer_ok[20] = 'J';
+        pointer_ok[21] = 'E'; pointer_ok[22] = 'C'; pointer_ok[23] = 'T';
+        pointer_ok[24] = '_'; pointer_ok[25] = 'O'; pointer_ok[26] = 'K';
+        pointer_ok[27] = '\n'; pointer_ok[28] = '\0';
+        sys_print(pointer_ok);
+    } else {
+        char pointer_fail[31];
+        pointer_fail[0] = 'R'; pointer_fail[1] = 'I'; pointer_fail[2] = 'N';
+        pointer_fail[3] = 'G'; pointer_fail[4] = '3'; pointer_fail[5] = '_';
+        pointer_fail[6] = 'S'; pointer_fail[7] = 'Y'; pointer_fail[8] = 'S';
+        pointer_fail[9] = 'C'; pointer_fail[10] = 'A'; pointer_fail[11] = 'L';
+        pointer_fail[12] = 'L'; pointer_fail[13] = '_'; pointer_fail[14] = 'P';
+        pointer_fail[15] = 'T'; pointer_fail[16] = 'R'; pointer_fail[17] = '_';
+        pointer_fail[18] = 'R'; pointer_fail[19] = 'E'; pointer_fail[20] = 'J';
+        pointer_fail[21] = 'E'; pointer_fail[22] = 'C'; pointer_fail[23] = 'T';
+        pointer_fail[24] = '_'; pointer_fail[25] = 'F'; pointer_fail[26] = 'A';
+        pointer_fail[27] = 'I'; pointer_fail[28] = 'L';
+        pointer_fail[29] = '\n'; pointer_fail[30] = '\0';
+        sys_print(pointer_fail);
+    }
+
     /* Deliberately touch an unmapped canonical user address. The kernel
      * must terminate only this task, never manufacture a writable page or
      * halt the desktop. The verifier checks the kernel's isolation report. */
