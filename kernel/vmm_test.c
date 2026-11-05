@@ -6,15 +6,14 @@
 #include <kernel/types.h>
 
 static void report(const char* name, bool ok) {
-    if (ok) {
-        vga_puts("[VMM] ");
-        vga_puts(name);
-        vga_puts(": OK\n");
-    } else {
-        vga_puts("[VMM] ");
-        vga_puts(name);
-        vga_puts(": FAIL\n");
-    }
+    const char* result = ok ? "OK" : "FAIL";
+    vga_puts("[VMM] ");
+    vga_puts(name);
+    vga_puts(": ");
+    vga_puts(result);
+    vga_puts("\n");
+    /* The CI boot gate reads the COM1 log, not a framebuffer screenshot. */
+    serial_printf("[VMM] %s: %s\\n", name, result);
 }
 
 static bool test_map_existing(void) {
