@@ -91,6 +91,7 @@ static const menu_entry_t MENU_ITEMS[] = {
 
 static bool notice_open = false;
 static int notice_item = -1;
+static bool settings_open = false;
 
 static const char* const NOTICE_LINE_1[] = {
     "Local pages work; remote web transport is not ready.",
@@ -252,6 +253,98 @@ static void draw_notice(void) {
     gfx_draw_string(bx + ui_px(24), by + ui_px(6), "Close", T_FG, FB_TRANSPARENT);
 }
 
+/* Native settings surface: font family, text size and global interface scale. */
+static void draw_settings(void) {
+    if (!settings_open) return;
+    static const char* const styles[] = { "Proportional", "Monospace", "Bitmap Serif" };
+    static const char* const scales[] = { "1x", "2x", "3x" };
+    static const char* const ui_scales[] = { "80%", "100%", "120%" };
+    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
+    u32 cw = ui_px(500), ch = ui_px(286);
+    u32 x = sw > cw ? (sw - cw) / 2 : 0;
+    u32 y = sh > ch ? (sh - ch) / 2 : 0;
+    u32 title_h = ui_px(36), row_h = ui_px(48);
+    u32 control_x = x + ui_px(340);
+    u32 button_w = ui_px(30), button_h = ui_px(28);
+
+    fb_fill_rect(x + ui_px(5), y + ui_px(5), cw, ch, CHARIS_UI_SHADOW);
+    fb_fill_rect(x, y, cw, ch, T_MENU);
+    fb_draw_rect(x, y, cw, ch, T_BORDER);
+    fb_fill_rect(x, y, cw, title_h, T_START_BTN);
+    gfx_draw_string(x + ui_px(18), y + ui_px(10), "DESKTOP SETTINGS", T_FG, FB_TRANSPARENT);
+
+    const char* values[3];
+    int style = config_get_int("font_style", 0);
+    int font_scale = config_get_int("font_scale", 1);
+    int global_scale = config_get_int("ui_scale", 100);
+    if (style < 0 || style > 2) style = 0;
+    if (font_scale < 1 || font_scale > 3) font_scale = 1;
+    int scale_index = global_scale <= 80 ? 0 : global_scale >= 120 ? 2 : 1;
+    values[0] = styles[style];
+    values[1] = scales[font_scale - 1];
+    values[2] = ui_scales[scale_index];
+    const char* labels[3] = { "Font family", "Font size", "Interface scale" };
+
+    for (u32 i = 0; i < 3; i++) {
+        u32 ry = y + title_h + ui_px(12) + i * row_h;
+        fb_fill_rect(x + ui_px(12), ry, cw - ui_px(24), row_h - ui_px(4), T_MENU_ITEM);
+        gfx_draw_string(x + ui_px(24), ry + ui_px(13), labels[i], T_FG, FB_TRANSPARENT);
+        u32 by = ry + (row_h - button_h) / 2;
+        fb_fill_rect(control_x, by, button_w, button_h, CHARIS_UI_PANEL_RAISED);
+        fb_draw_rect(control_x, by, button_w, button_h, T_BORDER);
+        gfx_draw_string(control_x + ui_px(10), by + ui_px(7), "-", T_FG, FB_TRANSPARENT);
+        gfx_draw_string(control_x + button_w + ui_px(12), by + ui_px(7), values[i], T_FG, FB_TRANSPARENT);
+        u32 plus_x = x + cw - ui_px(44);
+        fb_fill_rect(plus_x, by, button_w, button_h, CHARIS_UI_ACCENT_SURFACE);
+        fb_draw_rect(plus_x, by, button_w, button_h, CHARIS_UI_BORDER_STRONG);
+        gfx_draw_string(plus_x + ui_px(10), by + ui_px(7), "+", T_FG, FB_TRANSPARENT);
+    }
+    gfx_draw_string(x + ui_px(20), y + ch - ui_px(28),
+                    "Changes apply now; saving needs a writable config file.",
+                    T_FG_DIM, FB_TRANSPARENT);
+}
+
+static bool settings_handle_click(int mx, int my) {
+    if (!settings_open) return false;
+    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
+    u32 cw = ui_px(500), ch = ui_px(286);
+    u32 x = sw > cw ? (sw - cw) / 2 : 0;
+    u32 y = sh > ch ? (sh - ch) / 2 : 0;
+    if (mx < (int)x || mx >= (int)(x + cw) || my < (int)y || my >= (int)(y + ch)) {
+        settings_open = false;
+        return true;
+    }
+    u32 title_h = ui_px(36), row_h = ui_px(48);
+    u32 control_x = x + ui_px(340), button_w = ui_px(30);
+    u32 plus_x = x + cw - ui_px(44);
+    if (my < (int)(y + title_h + ui_px(12))) return true;
+    u32 row = (u32)(my - (int)(y + title_h + ui_px(12))) / row_h;
+    if (row >= 3) return true;
+    int direction = mx >= (int)plus_x && mx < (int)(plus_x + button_w) ? 1 :
+                    mx >= (int)control_x && mx < (int)(control_x + button_w) ? -1 : 0;
+    if (!direction) return true;
+
+    if (row == 0) {
+        int value = config_get_int("font_style", 0) + direction;
+        if (value < 0) value = 2;
+        if (value > 2) value = 0;
+        config_set_int("font_style", value);
+    } else if (row == 1) {
+        int value = config_get_int("font_scale", 1) + direction;
+        if (value < 1) value = 1;
+        if (value > 3) value = 3;
+        config_set_int("font_scale", value);
+    } else {
+        int value = config_get_int("ui_scale", 100);
+        value += direction * 20;
+        if (value < 80) value = 80;
+        if (value > 120) value = 120;
+        config_set_int("ui_scale", value);
+    }
+    gfx_text_apply_preferences();
+    return true;
+}
+
 /* Software cursor. The PS/2 mouse has no hardware cursor once the display is
  * in graphics mode, so the pointer is drawn into the framebuffer. */
 void ui_draw_cursor(void) {
@@ -301,6 +394,7 @@ static void redraw_all(void) {
     draw_taskbar();
     draw_menu();
     draw_notice();
+    draw_settings();
     ui_draw_cursor();
 }
 
@@ -372,7 +466,10 @@ static void handle_event(const input_event_t* e) {
 
         /* Escape dismisses the topmost transient surface. */
         if (e->type == INPUT_KEY_DOWN && base == KEY_ESCAPE) {
-            if (notice_open) {
+            if (settings_open) {
+                settings_open = false;
+                ui.needs_redraw = true;
+            } else if (notice_open) {
                 notice_open = false;
                 notice_item = -1;
                 ui.needs_redraw = true;
@@ -401,6 +498,12 @@ static void handle_event(const input_event_t* e) {
 
         if (browser_is_open()) {
             browser_handle_mouse(mx, my);
+            ui.needs_redraw = true;
+            return;
+        }
+
+        if (settings_open) {
+            settings_handle_click(mx, my);
             ui.needs_redraw = true;
             return;
         }
@@ -462,6 +565,9 @@ static void handle_event(const input_event_t* e) {
             if (hit == 0) {
                 notice_open = false;
                 browser_open();
+            } else if (hit == 4) {
+                settings_open = true;
+                notice_open = false;
             } else {
                 notice_item = hit;
                 notice_open = true;
