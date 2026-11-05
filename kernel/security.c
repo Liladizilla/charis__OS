@@ -29,7 +29,31 @@ static u64 entropy_get(void) {
     return entropy_pool;
 }
 
-/* Stack canary guard value - randomized at boot */
+/* RDRAND is optional on x86-64. Timestamps are not cryptographic entropy:
+ * if the CPU lacks RDRAND or it repeatedly fails, token generation fails. */
+static bool security_random_u64(u64* value) {
+    if (!value) return false;
+
+    u32 eax = 1, ebx = 0, ecx = 0, edx = 0;
+    __asm__ volatile("cpuid"
+                     : "+a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx));
+    if (!(ecx & (1U << 30))) return false;
+
+    for (u32 attempt = 0; attempt < 10; attempt++) {
+        u8 ready = 0;
+        u64 candidate = 0;
+        __asm__ volatile("rdrand %0; setc %1"
+                         : "=r"(candidate), "=qm"(ready));
+        if (ready) {
+            *value = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Prefer hardware entropy for the stack guard. The fallback preserves boot
+ * compatibility but is explicitly not suitable for security tokens. */
 uintptr_t __stack_chk_guard;
 
 void security_init(void) {
@@ -38,7 +62,17 @@ void security_init(void) {
         security_contexts[i].parent_token = 0;
         security_contexts[i].is_privileged = false;
     }
-    __stack_chk_guard = (uintptr_t)entropy_get();
+
+    u64 seed = 0;
+    if (security_random_u64(&seed)) {
+        __stack_chk_guard = (uintptr_t)seed;
+        entropy_pool = seed;
+        vga_puts("Security: hardware entropy available\n");
+    } else {
+        __stack_chk_guard = (uintptr_t)entropy_get();
+        vga_puts("SECURITY WARNING: weak stack-canary seed; RDRAND unavailable\n");
+        serial_puts("SECURITY WARNING: RDRAND unavailable; cryptographic tokens disabled\n");
+    }
     vga_puts("Security: Framework initialized\n");
 }
 
@@ -72,13 +106,22 @@ bool security_verify_path(const char* path, task_t* task) {
 }
 
 int security_generate_token(u8* out_token) {
-    u32 token = (u32)(entropy_get() & 0xFFFFFFFF);
-    if (out_token) {
-        for (int i = 0; i < SECURITY_TOKEN_SIZE; i++) {
-            out_token[i] = (u8)(token ^ (entropy_get() & 0xFF) ^ (i * 0x5A));
+    if (!out_token) return -1;
+
+    u64 first = 0;
+    for (int offset = 0; offset < SECURITY_TOKEN_SIZE; offset += 8) {
+        u64 random_word = 0;
+        if (!security_random_u64(&random_word)) {
+            /* Never return a partial or predictable token. */
+            kmemset(out_token, 0, SECURITY_TOKEN_SIZE);
+            return -1;
+        }
+        if (offset == 0) first = random_word;
+        for (u32 byte = 0; byte < 8; byte++) {
+            out_token[offset + byte] = (u8)(random_word >> (byte * 8));
         }
     }
-    return token;
+    return (int)(u32)first;
 }
 
 /* Called by GCC when a stack canary mismatch is detected */

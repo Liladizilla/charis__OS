@@ -100,20 +100,27 @@ void user_main(void) {
         syscall_pointers_ok = false;
     }
     if (sys_open((const char*)bad_low) != (u64)-1) syscall_pointers_ok = false;
-    if (sys_ipc_create((const char*)bad_low) != (u64)-1) syscall_pointers_ok = false;
+    char traversal_path[13];
+    traversal_path[0] = '/'; traversal_path[1] = '.'; traversal_path[2] = '.';
+    traversal_path[3] = '/'; traversal_path[4] = 'T'; traversal_path[5] = 'E';
+    traversal_path[6] = 'S'; traversal_path[7] = 'T'; traversal_path[8] = '.';
+    traversal_path[9] = 'E'; traversal_path[10] = 'L'; traversal_path[11] = 'F';
+    traversal_path[12] = '\0';
+    if (sys_open(traversal_path) != (u64)-1) syscall_pointers_ok = false;
+    if (syscall_invoke(SYS_WRITE, 1, bad_low, 1, 0, 0, 0) != (u64)-1 ||
+        syscall_invoke(SYS_WRITE, 1, bad_noncanonical, 1, 0, 0, 0) != (u64)-1) {
+        syscall_pointers_ok = false;
+    }
     if (syscall_invoke(SYS_DIAG_STATS, bad_low, 0, 0, 0, 0, 0) != (u64)-1 ||
         syscall_invoke(SYS_DIAG_STATS, bad_noncanonical, 0, 0, 0, 0, 0) != (u64)-1) {
         syscall_pointers_ok = false;
     }
 
-    char channel_name[10];
-    channel_name[0] = 'p'; channel_name[1] = 't'; channel_name[2] = 'r';
-    channel_name[3] = '-'; channel_name[4] = 't'; channel_name[5] = 'e';
-    channel_name[6] = 's'; channel_name[7] = 't';
-    channel_name[8] = '\0';
-    u64 channel = sys_ipc_create(channel_name);
-    if (channel == (u64)-1 ||
-        sys_ipc_send(channel, (const void*)bad_low, 1) != (u64)-1) {
+    /* IPC and networking remain unavailable to ring 3 until their global
+     * tables have per-process ownership and capability-backed handles. */
+    if (sys_ipc_create((const char*)bad_low) != (u64)-1 ||
+        sys_ipc_create("user-channel") != (u64)-1 ||
+        sys_ipc_send(0, (const void*)bad_low, 1) != (u64)-1) {
         syscall_pointers_ok = false;
     }
 
