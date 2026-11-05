@@ -1,33 +1,32 @@
 #include <kernel/pmm.h>
+#include <kernel/vmm.h>
 #include <kernel/vga.h>
 #include <kernel/string.h>
 #include <kernel/multiboot.h>
 #include <kernel/printf.h>
 #include <kernel/bootmem.h>
 
-// Memory map from Multiboot
+#define PMM_BITMAP_BASE 0x100000ULL
+#define PMM_BLOCK_SIZE  (2ULL * 1024ULL * 1024ULL)
+#define PMM_PAGE_COUNT  ((VMM_PHYSICAL_LIMIT - PMM_BITMAP_BASE) / 4096ULL)
+#define BITMAP_SIZE     ((PMM_PAGE_COUNT + 7ULL) / 8ULL)
+
 static const mem_map_entry_t* memory_map;
 static u32 memory_map_count;
-
-// Bitmap for 4GB (assuming 4KB pages, 128KB bitmap)
-#define BITMAP_SIZE (1024 * 1024 / 8) // 128KB for 4GB
 static u8 bitmap[BITMAP_SIZE];
-static u64 bitmap_base = 0x100000;
-static u32 last_free = 0; // next-fit cursor for speed
-
-/* The boot page tables identity-map [0, 4 GiB); never allocate outside
- * that directly addressable physical window until a larger direct map exists. */
-#define PMM_MAX_PHYS 0x100000000ULL
+/* Distinguish allocated frames from permanent reservations. */
+static u8 allocated_bitmap[BITMAP_SIZE];
+static u32 last_free = 0;
 
 static void pmm_mark_used(u64 addr) {
-    if (addr < bitmap_base || addr >= PMM_MAX_PHYS) return;
-    u32 page = (u32)((addr - bitmap_base) / 4096);
+    if (addr < PMM_BITMAP_BASE || addr >= VMM_PHYSICAL_LIMIT) return;
+    u64 page = (addr - PMM_BITMAP_BASE) / 4096ULL;
     bitmap[page / 8] |= (u8)(1U << (page % 8));
 }
 
 static void pmm_mark_free(u64 addr) {
-    if (addr < bitmap_base || addr >= PMM_MAX_PHYS) return;
-    u32 page = (u32)((addr - bitmap_base) / 4096);
+    if (addr < PMM_BITMAP_BASE || addr >= VMM_PHYSICAL_LIMIT) return;
+    u64 page = (addr - PMM_BITMAP_BASE) / 4096ULL;
     bitmap[page / 8] &= (u8)~(1U << (page % 8));
 }
 
@@ -36,144 +35,162 @@ static u64 pmm_align_up_page(u64 value) {
     return (value + 4095ULL) & ~4095ULL;
 }
 
+
+/* A 2 MiB block is direct-mappable only when it is entirely backed by usable
+ * RAM and no firmware reservation or framebuffer overlaps it. */
+bool pmm_block_is_usable_ram(u64 block_base) {
+    if ((block_base & (PMM_BLOCK_SIZE - 1)) ||
+        block_base < PMM_BITMAP_BASE ||
+        block_base > VMM_PHYSICAL_LIMIT - PMM_BLOCK_SIZE) return false;
+
+    u64 block_end = block_base + PMM_BLOCK_SIZE;
+    bool covered = false;
+    for (u32 i = 0; i < memory_map_count; i++) {
+        const mem_map_entry_t* region = &memory_map[i];
+        if (region->type != MULTIBOOT_MEMORY_AVAILABLE) continue;
+        u64 end = region->base + region->length;
+        if (end < region->base) continue;
+        if (region->base <= block_base && end >= block_end) {
+            covered = true;
+            break;
+        }
+    }
+    if (!covered) return false;
+
+    for (u32 i = 0; i < memory_map_count; i++) {
+        const mem_map_entry_t* region = &memory_map[i];
+        if (region->type == MULTIBOOT_MEMORY_AVAILABLE || !region->length) continue;
+        u64 end = region->base + region->length;
+        if (end < region->base) end = UINT64_MAX;
+        if (region->base < block_end && end > block_base) return false;
+    }
+
+    if (boot_info.has_framebuffer) {
+        u64 fb_start = boot_info.framebuffer_addr;
+        u64 fb_bytes = (u64)boot_info.framebuffer_pitch * boot_info.framebuffer_height;
+        u64 fb_end = fb_start + fb_bytes;
+        if (fb_end < fb_start) fb_end = UINT64_MAX;
+        if (fb_start < block_end && fb_end > block_base) return false;
+    }
+    return true;
+}
+
 extern char _kernel_end[];
 
 void pmm_init(multiboot_info_t* info) {
-    (void)info;
+    memory_map = bootmem_regions(&memory_map_count);
+    last_free = 0;
 
-    /* The map comes from the mmap tag, recovered by bootmem_parse_multiboot().
-     * The info header's mmap_addr/mmap_length fields are not usable on this
-     * bootloader: they point at unrelated data, which previously produced a
-     * nine-million-entry "map" and a walk off into invalid memory. */
-    u32 count = 0;
-    const mem_map_entry_t* regions = bootmem_regions(&count);
-    memory_map = regions;
-    memory_map_count = count;
-
-    /*
-     * Default every managed page to RESERVED. Only pages wholly contained in
-     * an explicit Multiboot AVAILABLE region are opened for allocation. This
-     * prevents holes and unreported physical ranges from being mistaken for
-     * RAM merely because no reserved entry described them.
-     */
-    kmemset(bitmap, 0xFF, BITMAP_SIZE);
-    for (u32 i = 0; i < memory_map_count; i++) {
-        if (memory_map[i].type != MULTIBOOT_MEMORY_AVAILABLE) continue;
-        u64 region_end = memory_map[i].base + memory_map[i].length;
-        if (region_end < memory_map[i].base) continue;
-
-        u64 start = pmm_align_up_page(memory_map[i].base);
-        if (start < bitmap_base) start = bitmap_base;
-        u64 end = region_end & ~4095ULL;
-        if (end > PMM_MAX_PHYS) end = PMM_MAX_PHYS;
-
-        for (u64 addr = start; addr < end; addr += 4096) {
+    /* Fail closed: only complete, firmware-declared RAM blocks are eligible. */
+    kmemset(bitmap, 0xFF, sizeof(bitmap));
+    kmemset(allocated_bitmap, 0, sizeof(allocated_bitmap));
+    u64 first_block = (PMM_BITMAP_BASE + PMM_BLOCK_SIZE - 1) &
+                      ~(PMM_BLOCK_SIZE - 1);
+    for (u64 block = first_block;
+         block <= VMM_PHYSICAL_LIMIT - PMM_BLOCK_SIZE;
+         block += PMM_BLOCK_SIZE) {
+        if (!pmm_block_is_usable_ram(block)) continue;
+        for (u64 addr = block; addr < block + PMM_BLOCK_SIZE; addr += 4096ULL) {
             pmm_mark_free(addr);
         }
     }
 
-    /* Re-apply non-available entries after the clear pass so a malformed or
-     * overlapping AVAILABLE range can never override a firmware reservation. */
-    for (u32 i = 0; i < memory_map_count; i++) {
-        if (memory_map[i].type == MULTIBOOT_MEMORY_AVAILABLE) continue;
-        u64 region_end = memory_map[i].base + memory_map[i].length;
-        if (region_end < memory_map[i].base) continue;
-
-        u64 start = memory_map[i].base & ~4095ULL;
-        u64 end = pmm_align_up_page(region_end);
-        if (start < bitmap_base) start = bitmap_base;
-        if (end > PMM_MAX_PHYS) end = PMM_MAX_PHYS;
-
-        for (u64 addr = start; addr < end; addr += 4096) {
-            pmm_mark_used(addr);
-        }
-    }
-
-    /* Mark the kernel image and the still-referenced Multiboot tag block used. */
-    u64 kernel_start = 0x100000;
-    u64 kernel_end = (u64)_kernel_end;
-    for (u64 addr = kernel_start; addr < kernel_end; addr += 4096) {
+    /* Kernel image and still-referenced Multiboot tag storage remain reserved. */
+    for (u64 addr = 0x100000ULL; addr < (u64)_kernel_end; addr += 4096ULL) {
         pmm_mark_used(addr);
     }
     if (info && info->total_size) {
         pmm_reserve_range((u64)(uintptr_t)info, info->total_size);
     }
 
-    vga_printf("PMM: %u regions, %u pages used, %u free\n",
-               memory_map_count, pmm_used_pages(), pmm_free_pages());
+    vga_printf("PMM: %u regions, %u pages used, %u free (managed limit %u GiB)\\n",
+               memory_map_count, pmm_used_pages(), pmm_free_pages(),
+               (u32)(VMM_PHYSICAL_LIMIT >> 30));
 }
 
 void pmm_reserve_range(u64 addr, u64 len) {
-    if (!len || addr >= PMM_MAX_PHYS) return;
+    if (!len || addr >= VMM_PHYSICAL_LIMIT) return;
+
     u64 end = addr + len;
-    if (end < addr) end = PMM_MAX_PHYS;
-    if (end > PMM_MAX_PHYS) end = PMM_MAX_PHYS;
+    if (end < addr || end > VMM_PHYSICAL_LIMIT) end = VMM_PHYSICAL_LIMIT;
 
     u64 start = addr & ~4095ULL;
     end = pmm_align_up_page(end);
-    if (end > PMM_MAX_PHYS) end = PMM_MAX_PHYS;
-    if (start < bitmap_base) start = bitmap_base;
+    if (start < PMM_BITMAP_BASE) start = PMM_BITMAP_BASE;
+    if (end > VMM_PHYSICAL_LIMIT) end = VMM_PHYSICAL_LIMIT;
 
-    for (u64 a = start; a < end; a += 4096) {
-        pmm_mark_used(a);
+    for (u64 current = start; current < end; current += 4096ULL) {
+        u64 page = (current - PMM_BITMAP_BASE) / 4096ULL;
+        u32 byte = (u32)(page / 8ULL);
+        u8 mask = (u8)(1U << (page % 8ULL));
+        pmm_mark_used(current);
+        allocated_bitmap[byte] &= (u8)~mask;
     }
 }
 
 u64 pmm_alloc_page(void) {
-    const u32 allocatable_pages = (u32)((PMM_MAX_PHYS - bitmap_base) / 4096ULL);
-    const u32 allocatable_bytes = (allocatable_pages + 7U) / 8U;
-    u32 i;
-
-    for (i = last_free; i < allocatable_bytes; i++) {
+    for (u32 i = last_free; i < BITMAP_SIZE; i++) {
         if (bitmap[i] == 0xFF) continue;
+
         for (u8 bit = 0; bit < 8; bit++) {
-            if (bitmap[i] & (1U << bit)) continue;
-            u32 page = i * 8U + bit;
-            u64 addr = bitmap_base + (u64)page * 4096ULL;
-            if (addr >= PMM_MAX_PHYS) break;
-            bitmap[i] |= (u8)(1U << bit);
-            last_free = i;
-            return addr;
+            u64 page = (u64)i * 8ULL + bit;
+            if (page >= PMM_PAGE_COUNT) break;
+            if (!(bitmap[i] & (1U << bit))) {
+                bitmap[i] |= (u8)(1U << bit);
+                allocated_bitmap[i] |= (u8)(1U << bit);
+                last_free = i;
+                return PMM_BITMAP_BASE + page * 4096ULL;
+            }
         }
     }
 
-    /* Wrap once, looking only below the previous next-fit position. */
-    for (i = 0; i < last_free && i < allocatable_bytes; i++) {
+    for (u32 i = 0; i < last_free && i < BITMAP_SIZE; i++) {
         if (bitmap[i] == 0xFF) continue;
+
         for (u8 bit = 0; bit < 8; bit++) {
-            if (bitmap[i] & (1U << bit)) continue;
-            u32 page = i * 8U + bit;
-            u64 addr = bitmap_base + (u64)page * 4096ULL;
-            if (addr >= PMM_MAX_PHYS) break;
-            bitmap[i] |= (u8)(1U << bit);
-            last_free = i;
-            return addr;
+            u64 page = (u64)i * 8ULL + bit;
+            if (page >= PMM_PAGE_COUNT) break;
+            if (!(bitmap[i] & (1U << bit))) {
+                bitmap[i] |= (u8)(1U << bit);
+                allocated_bitmap[i] |= (u8)(1U << bit);
+                last_free = i;
+                return PMM_BITMAP_BASE + page * 4096ULL;
+            }
         }
     }
 
     return 0;
 }
+
 void pmm_free_page(u64 addr) {
-    if (addr < bitmap_base || addr >= PMM_MAX_PHYS) return; // invalid/outside direct map
-    u32 page = (addr - bitmap_base) / 4096;
-    if (page >= BITMAP_SIZE * 8) return;
-    u32 byte = page / 8;
-    u8 bit = page % 8;
-    if ((bitmap[byte] & (1 << bit)) == 0) return; // double-free protection
-    bitmap[byte] &= ~(1 << bit);
+    if (addr < PMM_BITMAP_BASE || addr >= VMM_PHYSICAL_LIMIT ||
+        (addr & 4095ULL)) return;
+
+    u64 page = (addr - PMM_BITMAP_BASE) / 4096ULL;
+    if (page >= PMM_PAGE_COUNT) return;
+
+    u32 byte = (u32)(page / 8ULL);
+    u8 bit = (u8)(page % 8ULL);
+    if (!(allocated_bitmap[byte] & (1U << bit))) return; /* reserved or already freed */
+
+    allocated_bitmap[byte] &= (u8)~(1U << bit);
+    bitmap[byte] &= (u8)~(1U << bit);
     if (byte < last_free) last_free = byte;
 }
 
 u32 pmm_used_pages(void) {
     u32 count = 0;
-    for (u32 i = 0; i < BITMAP_SIZE; i++) {
+    for (u32 byte = 0; byte < BITMAP_SIZE; byte++) {
+        u8 value = bitmap[byte];
         for (u8 bit = 0; bit < 8; bit++) {
-            if (bitmap[i] & (1 << bit)) count++;
+            u64 page = (u64)byte * 8ULL + bit;
+            if (page >= PMM_PAGE_COUNT) break;
+            if (value & (1U << bit)) count++;
         }
     }
     return count;
 }
 
 u32 pmm_free_pages(void) {
-    return (u32)(BITMAP_SIZE * 8) - pmm_used_pages();
+    return (u32)PMM_PAGE_COUNT - pmm_used_pages();
 }
