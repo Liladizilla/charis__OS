@@ -289,6 +289,9 @@ grep -q 'Hello from user mode!' "$LOG" \
 grep -q 'RING3_CODE_ISOLATION_OK' "$LOG" \
     || fail "bootstrap user code was not copied into private executable pages"
 
+grep -q 'TSS_RSP0_USER_STACK_OK' "$LOG" \
+    || fail "ring-3 task did not receive its own kernel interrupt stack"
+
 if [ -n "$ELF_TEST_DISK" ]; then
     if grep -q 'ELF_EXEC_OK' "$LOG"; then
         ELF_RESULT="executed"
