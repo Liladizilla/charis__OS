@@ -77,9 +77,25 @@ static bool test_map_user_page(void) {
     u64 virt = 0xFFFFA00000004000ULL;
 
     if (!vmm_map_page(virt, phys, PTE_WRITABLE | PTE_USER)) return false;
+    if (vmm_get_phys(virt) != (phys & ~0xFFFULL)) return false;
 
-    // We can only validate mapping presence, not permission bits (no page-walk flags here).
-    return vmm_get_phys(virt) == (phys & ~0xFFFULL);
+    u64 cr3;
+    asm volatile("mov %%cr3, %0" : "=r"(cr3));
+    u64* pml4 = (u64*)cr3;
+    u64 pml4e = pml4[(virt >> 39) & 0x1FF];
+    if (!(pml4e & (1ULL << 2))) return false;
+
+    u64* pdpt = (u64*)(pml4e & ~0xFFFULL);
+    u64 pdpte = pdpt[(virt >> 30) & 0x1FF];
+    if (!(pdpte & (1ULL << 2))) return false;
+
+    u64* pd = (u64*)(pdpte & ~0xFFFULL);
+    u64 pde = pd[(virt >> 21) & 0x1FF];
+    if (!(pde & (1ULL << 2))) return false;
+
+    u64* pt = (u64*)(pde & ~0xFFFULL);
+    u64 pte = pt[(virt >> 12) & 0x1FF];
+    return (pte & (1ULL << 2)) != 0;
 }
 
 void vmm_run_tests(void) {
