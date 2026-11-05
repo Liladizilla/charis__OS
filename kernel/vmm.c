@@ -30,6 +30,10 @@ static u64 kernel_cr3 = 0;
 
 void* vmm_phys_to_virt(u64 physical) {
     if (physical >= VMM_PHYSICAL_LIMIT) return NULL;
+    /* Keep the first 2 MiB on the existing identity map. It contains legacy
+     * firmware regions as well as bootstrap tables, so do not add a second
+     * write-back alias for that mixed-purpose physical range. */
+    if (physical < 0x200000ULL) return (void*)(uintptr_t)physical;
     if (physmap_ready) {
         u32 pdpt_index = (u32)(physical >> 30);
         u32 pd_index = (u32)((physical >> 21) & 0x1FF);
@@ -90,8 +94,7 @@ void vmm_init(void) {
             u64 physical = ((u64)i << 30) | ((u64)j << 21);
             /* The first 2 MiB contains bootstrap page tables and low kernel data.
              * It is excluded from PMM, but must remain addressable by the VMM. */
-            bool bootstrap_block = (physical == 0);
-            physmap_pd[i][j] = (bootstrap_block || pmm_block_is_usable_ram(physical))
+            physmap_pd[i][j] = pmm_block_is_usable_ram(physical)
                 ? (physical | PTE_PRESENT | PTE_WRITABLE | PTE_HUGE | PTE_NX)
                 : 0;
         }
