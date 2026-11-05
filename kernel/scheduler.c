@@ -23,8 +23,20 @@ void spinlock_unlock(spinlock_t* lock) {
     __sync_lock_release(&lock->lock);
 }
 
+/* Scheduler list mutations can also be reached from ordinary kernel
+ * code while the PIT is enabled. Keep IRQ0 from observing a half-linked node.
+ * This is local-CPU exclusion; the current kernel is not SMP-enabled. */
+static inline u64 scheduler_irq_save(void) {
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) :: "memory");
+    return flags;
+}
+
+static inline void scheduler_irq_restore(u64 flags) {
+    asm volatile("pushq %0; popfq" :: "r"(flags) : "memory", "cc");
+}
+
 static void enqueue_task(task_t* task) {
-    if (!task) return;
     task->next = NULL;
     task->prev = ready_tail;
     if (ready_tail) {
@@ -33,6 +45,7 @@ static void enqueue_task(task_t* task) {
         ready_head = task;
     }
     ready_tail = task;
+    task->scheduler_queued = true;
 }
 
 void scheduler_init(void) {
@@ -43,8 +56,43 @@ void scheduler_init(void) {
 
 void scheduler_add_task(task_t* task) {
     if (!task) return;
-    task->state = TASK_STATE_READY;
-    enqueue_task(task);
+
+    u64 flags = scheduler_irq_save();
+    if (task->state == TASK_STATE_UNUSED ||
+        task->state == TASK_STATE_ZOMBIE) {
+        scheduler_irq_restore(flags);
+        return;
+    }
+
+    /* A task is linked once for its lifetime. Re-adding an existing node used
+     * to overwrite its next/prev pointers and could orphan the ready list or
+     * create a self-loop when the node was already the tail. */
+    if (!task->scheduler_queued) {
+        task->state = TASK_STATE_READY;
+        enqueue_task(task);
+    }
+    scheduler_irq_restore(flags);
+}
+
+void scheduler_remove_task(task_t* task) {
+    if (!task) return;
+
+    u64 flags = scheduler_irq_save();
+    if (!task->scheduler_queued) {
+        scheduler_irq_restore(flags);
+        return;
+    }
+
+    if (task->prev) task->prev->next = task->next;
+    else ready_head = task->next;
+
+    if (task->next) task->next->prev = task->prev;
+    else ready_tail = task->prev;
+
+    task->next = NULL;
+    task->prev = NULL;
+    task->scheduler_queued = false;
+    scheduler_irq_restore(flags);
 }
 
 static task_t* scheduler_find_next(void) {
@@ -104,7 +152,17 @@ void scheduler_start(void) {
 
 void scheduler_schedule(void) {
     task_t* next = scheduler_find_next();
-    if (!next || next == current_task) return;
+    if (!next) return;
+    if (next == current_task) {
+        /* A wakeup can make the currently executing task READY while it is
+         * returning from HLT. If no peer is runnable, selecting that same
+         * task must restore the RUNNING invariant rather than leaving the
+         * live CPU context marked READY. */
+        if (current_task && current_task->state == TASK_STATE_READY) {
+            current_task->state = TASK_STATE_RUNNING;
+        }
+        return;
+    }
 
     task_t* previous = current_task;
     if (previous && previous->state == TASK_STATE_RUNNING) {

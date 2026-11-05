@@ -57,6 +57,7 @@ typedef struct task {
     u32 waiting_event;
     bool is_user;
     bool started;
+    bool scheduler_queued; /* Membership in the scheduler's intrusive task list. */
     u64 user_stack_base;
     u64 user_rsp;
     /* Dedicated zeroed physical pages mapped only into this task as user stack. */
