@@ -565,9 +565,18 @@ extern u8 tss[];
 bool task_set_tss_rsp0(task_t* task) {
     if (!task || !task->stack_base) return false;
     u64 stack_top = task->stack_base + TASK_STACK_SIZE;
-    volatile u64* rsp0 = (volatile u64*)(uintptr_t)(tss + 4);
-    *rsp0 = stack_top;
-    return *rsp0 == stack_top;
+    u64 observed = 0;
+    /* RSP0 is intentionally unaligned at TSS byte offset 4. Use explicit
+     * x86 moves so the compiler cannot assume natural u64 alignment. */
+    asm volatile("movq %1, 4(%2)"
+                 : "=m"(*(volatile u64*)(void*)(tss + 4))
+                 : "r"(stack_top), "r"(tss)
+                 : "memory");
+    asm volatile("movq 4(%1), %0"
+                 : "=r"(observed)
+                 : "r"(tss)
+                 : "memory");
+    return observed == stack_top;
 }
 
 void task_discard_unstarted(task_t* task) {
