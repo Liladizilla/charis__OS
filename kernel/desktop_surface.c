@@ -8,6 +8,7 @@
 #include <kernel/font.h>
 #include <kernel/timer.h>
 #include <kernel/diagnostics.h>
+#include <kernel/task.h>
 #include <kernel/ui_theme.h>
 
 #define DS_PANEL       0xE916202Cu
@@ -99,7 +100,8 @@ static void draw_status_widget(u32* out_x, u32* out_y, u32* out_w, u32* out_h) {
     u32 first_line = title_h + u(12);
     u32 ram_line = first_line + gap;
     u32 task_line = ram_line + gap;
-    u32 activity_line = task_line + gap;
+    u32 current_line = task_line + gap;
+    u32 activity_line = current_line + gap;
     u32 foot_line = activity_line + gap;
     u32 bar_y = foot_line + text_h() + u(10);
     u32 h = bar_y + u(14);
@@ -146,6 +148,18 @@ static void draw_status_widget(u32* out_x, u32* out_y, u32* out_w, u32* out_h) {
     append_text(tasks, sizeof(tasks), &pos, "  B:");
     append_u32(tasks, sizeof(tasks), &pos, stats.processes_blocked);
 
+    char current_task[64];
+    pos = 0; current_task[0] = 0;
+    task_t* active_task = scheduler_current();
+    append_text(current_task, sizeof(current_task), &pos, "Task ");
+    if (active_task && active_task->name[0])
+        append_text(current_task, sizeof(current_task), &pos, active_task->name);
+    else
+        append_text(current_task, sizeof(current_task), &pos, "idle");
+    append_text(current_task, sizeof(current_task), &pos, " #");
+    append_u32(current_task, sizeof(current_task), &pos,
+               active_task ? active_task->pid : 0);
+
     char activity[64];
     pos = 0; activity[0] = 0;
     append_text(activity, sizeof(activity), &pos, "CS ");
@@ -159,6 +173,7 @@ static void draw_status_widget(u32* out_x, u32* out_y, u32* out_w, u32* out_h) {
     label(x + u(52), y + first_line, time, DS_WHITE);
     label(x + u(12), y + ram_line, memory, DS_WHITE);
     label(x + u(12), y + task_line, tasks, DS_WHITE);
+    label(x + u(12), y + current_line, current_task, DS_MUTED);
     label(x + u(12), y + activity_line, activity, DS_MUTED);
     label(x + u(12), y + foot_line, "Managed physical memory", DS_MUTED);
 
