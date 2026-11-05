@@ -22,10 +22,9 @@ void memory_init(multiboot_info_t* info) {
     // those pages out later and the display would start showing kernel data.
     if (boot_info.has_framebuffer) {
         u64 fb_bytes = (u64)boot_info.framebuffer_pitch * boot_info.framebuffer_height;
-        u64 fb_start = boot_info.framebuffer_addr & ~(PAGE_SIZE - 1);
-        for (u64 a = fb_start; a < fb_start + fb_bytes; a += PAGE_SIZE) {
-            pmm_reserve_range(a, PAGE_SIZE);
-        }
+        /* pmm_reserve_range() rounds both ends, including an unaligned
+         * framebuffer base, so the final partial page cannot be allocated. */
+        pmm_reserve_range(boot_info.framebuffer_addr, fb_bytes);
     }
 
     // Map heap pages into the higher-half heap region.

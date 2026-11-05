@@ -1,9 +1,8 @@
 /* fb.c - Linear framebuffer driver
  *
- * The boot code identity-maps only the first gigabyte with 2MB pages, and
- * firmware framebuffers are usually well above that (QEMU places the standard
- * VGA window at 0xFD000000). So the driver maps the advertised physical range
- * into a kernel window with ordinary 4KB pages before anything draws to it.
+ * The boot code identity-maps the first 4 GiB with 2 MiB pages. The driver
+ * maps the surface into a dedicated kernel window with 4 KiB pages; where a
+ * low identity alias exists, both aliases use the same non-cacheable type.
  *
  * Pixel format is taken from the GFX tag rather than assumed: the tag reports
  * the bit position of each colour component, and not every firmware uses the
@@ -13,6 +12,7 @@
 #include <kernel/fb.h>
 #include <kernel/bootmem.h>
 #include <kernel/memory.h>
+#include <kernel/vmm.h>
 #include <kernel/vga.h>
 #include <kernel/printf.h>
 #include <kernel/string.h>
@@ -105,19 +105,40 @@ int fb_init(void) {
         return -1;
     }
 
-    /* Map the whole surface. Guard against an overflow in the byte count. */
+    /* Include the physical page offset in the mapping span. Firmware usually
+     * page-aligns the surface, but the framebuffer tag does not require it. */
     u64 bytes = (u64)pitch * height;
-    if (bytes == 0 || bytes > 256ULL * 1024 * 1024) {
+    u64 fb_offset = boot_info.framebuffer_addr & (PAGE_SIZE - 1);
+    u64 fb_span = bytes + fb_offset;
+    if (bytes == 0 || bytes > 256ULL * 1024 * 1024 || fb_span < bytes ||
+        fb_span > 256ULL * 1024 * 1024 + PAGE_SIZE) {
         kprintf("FB: implausible framebuffer size\n");
         return -1;
     }
 
-    u64 pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+    u64 fb_phys_base = boot_info.framebuffer_addr & ~(PAGE_SIZE - 1);
+    u64 pages = (fb_span + PAGE_SIZE - 1) / PAGE_SIZE;
+    u64 map_flags = PTE_PRESENT | PTE_WRITABLE | PTE_NOCACHE;
+    u64 current_cr3;
+    asm volatile("mov %%cr3, %0" : "=r"(current_cr3));
+    pml4_t* kernel_pml4 = (pml4_t*)(uintptr_t)(current_cr3 & ~(PAGE_SIZE - 1));
+
     for (u64 i = 0; i < pages; i++) {
         u64 virt = FB_VIRT_BASE + i * PAGE_SIZE;
-        u64 phys = (boot_info.framebuffer_addr + i * PAGE_SIZE) & ~(PAGE_SIZE - 1);
-        if (!vmm_map_page(virt, phys, PTE_PRESENT | PTE_WRITABLE | PTE_NOCACHE)) {
+        u64 phys = fb_phys_base + i * PAGE_SIZE;
+
+        if (!vmm_map_page(virt, phys, map_flags)) {
             kprintf("FB: failed to map page %llu of %llu\n", i, pages);
+            return -1;
+        }
+
+        /* The bootstrap identity map uses write-back huge pages. If the
+         * framebuffer is below 4 GiB, split that huge mapping and give the
+         * identity alias the same non-cacheable type as the dedicated window. */
+        if (phys < 0x100000000ULL &&
+            !vmm_map_page_pml4(kernel_pml4, phys, phys, map_flags)) {
+            kprintf("FB: failed to normalize identity cache type at %p\n",
+                    (void*)(uintptr_t)phys);
             return -1;
         }
     }
@@ -134,7 +155,7 @@ int fb_init(void) {
 
     /* Only 32bpp can be handed out as a u32*; the other depths go through
      * fb_put_pixel(), which packs each pixel individually. */
-    fb->pixels = (bpp == 32) ? (u32*)(uintptr_t)FB_VIRT_BASE : 0;
+    fb->pixels = (bpp == 32) ? (u32*)(uintptr_t)(FB_VIRT_BASE + fb_offset) : 0;
 
     /*
      * Derive masks from the reported bit positions.
@@ -185,7 +206,7 @@ int fb_init(void) {
     fb->initialized = true;
 
     kprintf("FB: %ux%u %ubpp mapped at %p, %s%u%s%u%s\n",
-               width, height, bpp, (void*)FB_VIRT_BASE,
+               width, height, bpp, (void*)(uintptr_t)(FB_VIRT_BASE + fb_offset),
                "R", fb->red_pos, " G", fb->green_pos, " B", fb->blue_pos);
     return 0;
 }
@@ -196,7 +217,7 @@ void fb_put_pixel(u32 x, u32 y, u32 argb) {
     if (x >= fb->width || y >= fb->height) return;
     if (argb == FB_TRANSPARENT) return;
 
-    u8* base = (u8*)(uintptr_t)FB_VIRT_BASE;
+    u8* base = (u8*)(uintptr_t)(FB_VIRT_BASE + (fb->phys_addr & (PAGE_SIZE - 1)));
     u8* row  = base + (u64)y * fb->pitch;
     u32 px   = fb_pack(argb);
 

@@ -298,7 +298,14 @@ bool task_prepare_user_space(task_t* task, void* entry_point) {
             return false;
         }
         task->user_stack_pages[i] = phys;
-        kmemset((void*)phys, 0, PAGE_SIZE);
+        void* page_alias = vmm_phys_to_virt(phys);
+        if (!page_alias) {
+            task->user_stack_pages[i] = 0;
+            pmm_free_page(phys);
+            task_release_user_stack_pages(task, pml4);
+            return false;
+        }
+        kmemset(page_alias, 0, PAGE_SIZE);
 
         if (!vmm_map_page_pml4(pml4, user_stack_start + (i * PAGE_SIZE), phys,
                 VMM_FLAG_PRESENT | VMM_FLAG_USER | VMM_FLAG_WRITABLE | VMM_FLAG_NX)) {
