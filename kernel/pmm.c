@@ -106,9 +106,9 @@ void pmm_init(multiboot_info_t* info) {
         pmm_reserve_range((u64)(uintptr_t)info, info->total_size);
     }
 
-    vga_printf("PMM: %u regions, %u pages used, %u free (managed limit %u GiB)\n",
-               memory_map_count, pmm_used_pages(), pmm_free_pages(),
-               (u32)(VMM_PHYSICAL_LIMIT >> 30));
+    vga_printf("PMM: %u regions, %u managed pages, %u used/reserved, %u free\n",
+               memory_map_count, pmm_total_pages(),
+               pmm_total_pages() - pmm_free_pages(), pmm_free_pages());
 }
 
 void pmm_reserve_range(u64 addr, u64 len) {
