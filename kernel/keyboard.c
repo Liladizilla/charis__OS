@@ -9,9 +9,11 @@ static char keyboard_buffer[256];
 static u32 keyboard_read_pos = 0;
 static u32 keyboard_write_pos = 0;
 static bool shift_held = false;
+static volatile u32 g_keyboard_buffer_dropped = 0;
 volatile u32 g_keyboard_irqs = 0;
 
 u32 keyboard_irq_count(void) { return g_keyboard_irqs; }
+u32 keyboard_buffer_dropped(void) { return g_keyboard_buffer_dropped; }
 
 const char keyboard_scancode_set1[128] = {
     0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
@@ -32,6 +34,9 @@ const char keyboard_scancode_set1_shift[128] = {
 };
 
 void keyboard_init(void) {
+    keyboard_read_pos = 0;
+    keyboard_write_pos = 0;
+    g_keyboard_buffer_dropped = 0;
     /* Register IRQ handler */
     irq_register_handler(IRQ_KEYBOARD, keyboard_handler);
     vga_puts("Keyboard initialized\n");
@@ -99,6 +104,8 @@ void keyboard_handler(reg_frame_t* frame) {
 
                 /* Wake up any task waiting for input */
                 task_wake_keyboard_waiters();
+            } else {
+                g_keyboard_buffer_dropped++;
             }
         }
     }
