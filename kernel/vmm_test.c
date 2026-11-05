@@ -13,7 +13,7 @@ static void report(const char* name, bool ok) {
     vga_puts(result);
     vga_puts("\n");
     /* The CI boot gate reads the COM1 log, not a framebuffer screenshot. */
-    serial_printf("[VMM] %s: %s\\n", name, result);
+    serial_printf("[VMM] %s: %s\n", name, result);
 }
 
 static bool test_map_existing(void) {
