@@ -415,7 +415,8 @@ bool syscall_exec_from_frame(reg_frame_t* frame) {
     task_t* task = scheduler_current();
     if (!task || !task->is_user || !task->mm.pml4 ||
         task->address_space != task->mm.pml4 ||
-        !security_check_capability(task, CAP_SPAWN)) return false;
+        !security_check_capability(task, CAP_SPAWN) ||
+        !security_check_capability(task, CAP_ALLOW_EXEC)) return false;
 
     char path[256];
     if (!syscall_copy_user_string(task, frame->rdi, path, sizeof(path)) ||
