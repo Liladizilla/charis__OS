@@ -12,6 +12,8 @@
 
 void keyboard_init(void);
 void keyboard_handler(reg_frame_t* frame);
+/* Decode a byte read from the shared controller output buffer outside IRQ1. */
+void keyboard_process_scancode(u8 scancode);
 bool keyboard_get_key(char* out);
 bool keyboard_has_input(void);
 void keyboard_read_line(char* buffer, usize max_len);
