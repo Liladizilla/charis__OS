@@ -73,6 +73,14 @@ bool vmm_map_page(u64 virt, u64 phys, u64 flags) {
     u64 pde = pd[i3];
     u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
 
+    /* x86 checks the USER permission at every level, not only the leaf PTE.
+     * Propagate it through this path when a user mapping is requested. */
+    if (flags & PTE_USER) {
+        pml4[i1] |= PTE_USER;
+        pdpt[i2] |= PTE_USER;
+        pd[i3] |= PTE_USER;
+    }
+
     pt[PT_INDEX(virt)] = (phys & ~0xFFFULL) | PTE_PRESENT | (flags & (PTE_WRITABLE | PTE_USER | PTE_NX));
 
     flush_tlb();
