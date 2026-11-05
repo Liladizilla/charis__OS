@@ -280,6 +280,74 @@ static bool test_pmm_cannot_free_reserved_frame(void) {
     return used_before == used_after;
 }
 
+static bool test_user_mapping_rejects_kernel_half(void) {
+    u64 pml4_phys = pmm_alloc_page();
+    u64 frame_phys = pmm_alloc_page();
+    if (!pml4_phys || !frame_phys) {
+        if (pml4_phys) pmm_free_page(pml4_phys);
+        if (frame_phys) pmm_free_page(frame_phys);
+        return false;
+    }
+
+    u64* pml4 = (u64*)vmm_phys_to_virt(pml4_phys);
+    if (!pml4) {
+        pmm_free_page(frame_phys);
+        pmm_free_page(pml4_phys);
+        return false;
+    }
+    kmemset(pml4, 0, PAGE_SIZE);
+
+    const u64 kernel_va = 0xFFFF900000001000ULL;
+    const u64 noncanonical_va = 0x0000800000001000ULL;
+    u32 kernel_slot = (u32)((kernel_va >> 39) & 0x1FF);
+    u32 invalid_slot = (u32)((noncanonical_va >> 39) & 0x1FF);
+
+    bool kernel_rejected =
+        !vmm_map_page_pml4((pml4_t*)pml4_phys, kernel_va, frame_phys,
+                           VMM_FLAG_PRESENT | VMM_FLAG_USER) &&
+        pml4[kernel_slot] == 0;
+    bool noncanonical_rejected =
+        !vmm_map_page_pml4((pml4_t*)pml4_phys, noncanonical_va, frame_phys,
+                           VMM_FLAG_PRESENT | VMM_FLAG_USER) &&
+        pml4[invalid_slot] == 0;
+
+    pmm_free_page(frame_phys);
+    pmm_free_page(pml4_phys);
+    return kernel_rejected && noncanonical_rejected;
+}
+
+static bool test_vmm_rejects_unaligned_pages(void) {
+    u64 pml4_phys = pmm_alloc_page();
+    u64 frame_phys = pmm_alloc_page();
+    if (!pml4_phys || !frame_phys) {
+        if (pml4_phys) pmm_free_page(pml4_phys);
+        if (frame_phys) pmm_free_page(frame_phys);
+        return false;
+    }
+
+    u64* pml4 = (u64*)vmm_phys_to_virt(pml4_phys);
+    if (!pml4) {
+        pmm_free_page(frame_phys);
+        pmm_free_page(pml4_phys);
+        return false;
+    }
+    kmemset(pml4, 0, PAGE_SIZE);
+
+    bool virtual_rejected =
+        !vmm_map_page_pml4((pml4_t*)pml4_phys, 0x0000400000004001ULL,
+                           frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER);
+    bool physical_rejected =
+        !vmm_map_page_pml4((pml4_t*)pml4_phys, 0x0000400000004000ULL,
+                           frame_phys + 1, VMM_FLAG_PRESENT | VMM_FLAG_USER);
+    u32 target_slot = (u32)((0x0000400000004000ULL >> 39) & 0x1FF);
+    bool no_tables_created = pml4[target_slot] == 0;
+
+    pmm_free_page(frame_phys);
+    pmm_free_page(pml4_phys);
+    return virtual_rejected && physical_rejected && no_tables_created;
+}
+
+
 void vmm_run_tests(void) {
     report("map_existing", test_map_existing());
     report("map_missing", test_map_missing_page());
@@ -291,5 +359,7 @@ void vmm_run_tests(void) {
     report("physmap_supervisor_alias", test_supervisor_direct_map_above_4g());
     report("pmm_direct_mapped_ram", test_pmm_returns_direct_mapped_ram());
     report("pmm_reserved_frame_protected", test_pmm_cannot_free_reserved_frame());
+    report("user_kernel_half_denied", test_user_mapping_rejects_kernel_half());
+    report("unaligned_page_denied", test_vmm_rejects_unaligned_pages());
 }
 
