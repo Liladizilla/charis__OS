@@ -89,6 +89,8 @@ void task_init(void);
 task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user);
 task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user, pml4_t* pml4);
 void task_discard_unstarted(task_t* task);
+/* Point the CPU's privilege-transition stack at this task's private kernel stack. */
+bool task_set_tss_rsp0(task_t* task);
 task_t* task_allocate(void);
 u32 task_next_pid(void);
 void task_exit(void);
