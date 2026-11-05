@@ -39,7 +39,7 @@ context_switch:
 
     ; A first-run user task has a synthetic kernel-RFLAGS slot in its frame.
     ; Discard it and let iretq restore the user RFLAGS from the privilege frame.
-    cmp rdx, 1
+    cmp dl, 1
     je .iretq
     popfq
     ret
