@@ -13,6 +13,8 @@ typedef u64 pml4_t;
 
 /* Returns a 4 KiB PTE pointer, or NULL for a missing/huge leaf. */
 pte_t* vmm_walk(pml4_t* pml4, u64 vaddr, bool create);
+/* Huge-page-aware translation with effective permissions from every level. */
+bool vmm_translate(pml4_t* pml4, u64 vaddr, u64* physical, u64* flags);
 bool vmm_map_page(u64 virt, u64 phys, u64 flags);
 bool vmm_map_page_pml4(pml4_t* pml4, u64 virt, u64 phys, u64 flags);
 void vmm_unmap_page(u64 virt);
