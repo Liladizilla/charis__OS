@@ -504,6 +504,41 @@ static bool test_destroy_address_space_reclaims_owned_pages(void) {
     return user_mapped && supervisor_mapped && reclaimed;
 }
 
+static bool test_kernel_mapping_clone_rejects_user_leaves(void) {
+    u32 free_before = pmm_free_pages();
+    u64 src_phys = pmm_alloc_page();
+    u64 dst_phys = pmm_alloc_page();
+    if (!src_phys || !dst_phys) {
+        if (src_phys) pmm_free_page(src_phys);
+        if (dst_phys) pmm_free_page(dst_phys);
+        return false;
+    }
+    u64* src = (u64*)vmm_phys_to_virt(src_phys);
+    u64* dst = (u64*)vmm_phys_to_virt(dst_phys);
+    if (!src || !dst) {
+        pmm_free_page(src_phys);
+        pmm_free_page(dst_phys);
+        return false;
+    }
+    kmemset(src, 0, PAGE_SIZE);
+    kmemset(dst, 0, PAGE_SIZE);
+
+    /* The source is deliberately malformed: neither high-half nor low-half
+     * kernel mappings may carry USER permissions into a new process. */
+    src[256] = 0x1000ULL | PTE_PRESENT | PTE_USER;
+    bool high_rejected = !vmm_copy_kernel_mappings((pml4_t*)dst_phys,
+                                                    (pml4_t*)src_phys);
+    kmemset(dst, 0, PAGE_SIZE);
+    src[256] = 0;
+    src[0] = 0x1000ULL | PTE_PRESENT | PTE_USER;
+    bool low_rejected = !vmm_copy_kernel_mappings((pml4_t*)dst_phys,
+                                                   (pml4_t*)src_phys);
+
+    vmm_destroy_address_space((pml4_t*)dst_phys);
+    pmm_free_page(src_phys);
+    return high_rejected && low_rejected && pmm_free_pages() == free_before;
+}
+
 void vmm_run_tests(void) {
     report("map_existing", test_map_existing());
     report("map_missing", test_map_missing_page());
@@ -519,5 +554,6 @@ void vmm_run_tests(void) {
     report("unaligned_page_denied", test_vmm_rejects_unaligned_pages());
     report("mapping_validation_matrix", test_mapping_validation_matrix());
     report("destroy_address_space", test_destroy_address_space_reclaims_owned_pages());
+    report("kernel_clone_rejects_user", test_kernel_mapping_clone_rejects_user_leaves());
 }
 
