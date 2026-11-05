@@ -22,6 +22,8 @@ void vmm_unmap_page(u64 virt);
 u64 vmm_unmap_page_pml4(pml4_t* pml4, u64 virt);
 u64 vmm_get_phys(u64 virt);
 void vmm_init(void);
+/* Present in RUN_VMM_TESTS builds; exercises page-table and permission paths. */
+void vmm_run_tests(void);
 
 pml4_t* vmm_create_address_space(void);
 bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src);
