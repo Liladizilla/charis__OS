@@ -3,6 +3,7 @@
 #include <kernel/signal.h>
 #include <kernel/vga.h>
 #include <kernel/serial.h>
+#include <kernel/diagnostics.h>
 
 static task_t* ready_head = NULL;
 static task_t* ready_tail = NULL;
