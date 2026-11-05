@@ -20,95 +20,128 @@ static void report(const char* name, bool ok) {
 static bool test_map_existing(void) {
     u64 phys = pmm_alloc_page();
     if (!phys) return false;
-
     u64 virt = 0xFFFFB00000000000ULL;
+    bool ok = false;
 
-    if (!vmm_map_page(virt, phys, PTE_WRITABLE)) return false;
-    u64 phys2 = vmm_get_phys(virt);
-    if (phys2 != (phys & ~0xFFFULL)) return false;
-
-    // map same page again
-    return vmm_map_page(virt, phys, PTE_WRITABLE);
+    if (vmm_map_page(virt, phys, PTE_WRITABLE)) {
+        u64 phys2 = vmm_get_phys(virt);
+        ok = phys2 == (phys & ~0xFFFULL) &&
+             vmm_map_page(virt, phys, PTE_WRITABLE);
+        vmm_unmap_page(virt);
+    }
+    pmm_free_page(phys);
+    return ok;
 }
 
 static bool test_map_missing_page(void) {
     u64 phys = pmm_alloc_page();
     if (!phys) return false;
-
     u64 virt = 0xFFFFB00000001000ULL;
+    bool ok = false;
 
-    // Should create missing tables and then map
-    if (!vmm_map_page(virt, phys, PTE_WRITABLE)) return false;
-
-    u64 phys2 = vmm_get_phys(virt);
-    return phys2 == (phys & ~0xFFFULL);
+    if (vmm_map_page(virt, phys, PTE_WRITABLE)) {
+        ok = vmm_get_phys(virt) == (phys & ~0xFFFULL);
+        vmm_unmap_page(virt);
+    }
+    pmm_free_page(phys);
+    return ok;
 }
 
 static bool test_remap_same_page(void) {
     u64 phys1 = pmm_alloc_page();
     u64 phys2 = pmm_alloc_page();
-    if (!phys1 || !phys2) return false;
+    if (!phys1 || !phys2) {
+        if (phys1) pmm_free_page(phys1);
+        if (phys2) pmm_free_page(phys2);
+        return false;
+    }
 
     u64 virt = 0xFFFFB00000002000ULL;
-
-    if (!vmm_map_page(virt, phys1, PTE_WRITABLE)) return false;
-    if (!vmm_map_page(virt, phys2, PTE_WRITABLE)) return false;
-
-    u64 phys2_ret = vmm_get_phys(virt);
-    return phys2_ret == (phys2 & ~0xFFFULL);
+    bool mapped = false, ok = false;
+    if (vmm_map_page(virt, phys1, PTE_WRITABLE)) {
+        mapped = true;
+        if (vmm_map_page(virt, phys2, PTE_WRITABLE))
+            ok = vmm_get_phys(virt) == (phys2 & ~0xFFFULL);
+    }
+    if (mapped) vmm_unmap_page(virt);
+    pmm_free_page(phys1);
+    pmm_free_page(phys2);
+    return ok;
 }
 
 static bool test_unmap_page(void) {
     u64 phys = pmm_alloc_page();
     if (!phys) return false;
-
     u64 virt = 0xFFFFB00000003000ULL;
+    bool ok = false;
 
-    if (!vmm_map_page(virt, phys, PTE_WRITABLE)) return false;
-
-    vmm_unmap_page(virt);
-    return vmm_get_phys(virt) == 0;
+    if (vmm_map_page(virt, phys, PTE_WRITABLE)) {
+        vmm_unmap_page(virt);
+        ok = vmm_get_phys(virt) == 0;
+    }
+    pmm_free_page(phys);
+    return ok;
 }
 
 static bool test_map_user_page(void) {
+    /* Exercise USER permissions in an isolated temporary PML4. Never leave a
+     * USER leaf in the kernel CR3 where later process tables could inherit it. */
+    u64 pml4_phys = pmm_alloc_page();
     u64 phys = pmm_alloc_page();
-    if (!phys) return false;
+    if (!pml4_phys || !phys) {
+        if (pml4_phys) pmm_free_page(pml4_phys);
+        if (phys) pmm_free_page(phys);
+        return false;
+    }
 
-    /* Use an unused lower-half PML4 slot. Testing a USER mapping in the
-     * kernel's shared high-half slot would unnecessarily relax upper-level
-     * permissions for the kernel mapping tree. */
-    u64 virt = 0x0000400000004000ULL;
+    u64* pml4 = (u64*)vmm_phys_to_virt(pml4_phys);
+    if (!pml4) {
+        pmm_free_page(phys);
+        pmm_free_page(pml4_phys);
+        return false;
+    }
+    kmemset(pml4, 0, PAGE_SIZE);
+    const u64 virt = 0x0000400000004000ULL;
+    bool ok = vmm_map_page_pml4((pml4_t*)pml4_phys, virt, phys,
+                                VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
 
-    if (!vmm_map_page(virt, phys, PTE_WRITABLE | PTE_USER)) return false;
-    if (vmm_get_phys(virt) != (phys & ~0xFFFULL)) return false;
+    u64 pdpt_phys = 0, pd_phys = 0, pt_phys = 0;
+    if (ok) {
+        u64 pml4e = pml4[(virt >> 39) & 0x1FF];
+        u64* pdpt = (u64*)vmm_phys_to_virt(pml4e & ~0xFFFULL);
+        ok = (pml4e & PTE_USER) && pdpt;
+        if (ok) {
+            u64 pdpte = pdpt[(virt >> 30) & 0x1FF];
+            pdpt_phys = pml4e & ~0xFFFULL;
+            u64* pd = (u64*)vmm_phys_to_virt(pdpte & ~0xFFFULL);
+            ok = (pdpte & PTE_USER) && pd;
+            if (ok) {
+                u64 pde = pd[(virt >> 21) & 0x1FF];
+                pd_phys = pdpte & ~0xFFFULL;
+                u64* pt = (u64*)vmm_phys_to_virt(pde & ~0xFFFULL);
+                ok = (pde & PTE_USER) && pt;
+                if (ok) {
+                    pt_phys = pde & ~0xFFFULL;
+                    u64 pte = pt[(virt >> 12) & 0x1FF];
+                    u64 translated = 0, effective = 0;
+                    ok = (pte & PTE_USER) &&
+                         vmm_translate((pml4_t*)pml4_phys, virt,
+                                       &translated, &effective) &&
+                         translated == (phys & ~0xFFFULL) &&
+                         (effective & (VMM_FLAG_USER | VMM_FLAG_WRITABLE)) ==
+                         (VMM_FLAG_USER | VMM_FLAG_WRITABLE);
+                }
+            }
+        }
+    }
 
-    u64 cr3;
-    asm volatile("mov %%cr3, %0" : "=r"(cr3));
-    u64* pml4 = (u64*)vmm_phys_to_virt(cr3 & ~0xFFFULL);
-    if (!pml4) return false;
-    u64 pml4e = pml4[(virt >> 39) & 0x1FF];
-    if (!(pml4e & (1ULL << 2))) return false;
-
-    u64* pdpt = (u64*)vmm_phys_to_virt(pml4e & ~0xFFFULL);
-    if (!pdpt) return false;
-    u64 pdpte = pdpt[(virt >> 30) & 0x1FF];
-    if (!(pdpte & (1ULL << 2))) return false;
-
-    u64* pd = (u64*)vmm_phys_to_virt(pdpte & ~0xFFFULL);
-    if (!pd) return false;
-    u64 pde = pd[(virt >> 21) & 0x1FF];
-    if (!(pde & (1ULL << 2))) return false;
-
-    u64* pt = (u64*)vmm_phys_to_virt(pde & ~0xFFFULL);
-    if (!pt) return false;
-    u64 pte = pt[(virt >> 12) & 0x1FF];
-    if (!(pte & (1ULL << 2))) return false;
-
-    u64 translated = 0, effective = 0;
-    if (!vmm_translate((pml4_t*)(cr3 & ~0xFFFULL), virt, &translated, &effective)) return false;
-    return translated == (phys & ~0xFFFULL) &&
-           (effective & (VMM_FLAG_USER | VMM_FLAG_WRITABLE)) ==
-           (VMM_FLAG_USER | VMM_FLAG_WRITABLE);
+    u64 mapped = vmm_unmap_page_pml4((pml4_t*)pml4_phys, virt);
+    pmm_free_page(mapped ? mapped : phys);
+    if (pt_phys) pmm_free_page(pt_phys);
+    if (pd_phys) pmm_free_page(pd_phys);
+    if (pdpt_phys) pmm_free_page(pdpt_phys);
+    pmm_free_page(pml4_phys);
+    return ok;
 }
 
 static bool test_walk_rejects_huge_leaves(void) {
