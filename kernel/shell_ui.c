@@ -566,6 +566,13 @@ static void handle_event(const input_event_t* e) {
                 ui.needs_redraw = true;
                 return;
             }
+            if (pinned == 3) {
+                ui.menu_open = false;
+                notice_open = false;
+                settings_open = true;
+                ui.needs_redraw = true;
+                return;
+            }
         }
 
         if (on_taskbar && mx < (int)START_BTN_W) {
