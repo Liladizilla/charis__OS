@@ -467,6 +467,43 @@ static bool test_mapping_validation_matrix(void) {
 }
 
 
+static bool test_destroy_address_space_reclaims_owned_pages(void) {
+    u32 free_before = pmm_free_pages();
+    u64 pml4_phys = pmm_alloc_page();
+    u64 user_phys = pmm_alloc_page();
+    u64 supervisor_phys = pmm_alloc_page();
+    if (!pml4_phys || !user_phys || !supervisor_phys) {
+        if (pml4_phys) pmm_free_page(pml4_phys);
+        if (user_phys) pmm_free_page(user_phys);
+        if (supervisor_phys) pmm_free_page(supervisor_phys);
+        return false;
+    }
+
+    u64* pml4 = (u64*)vmm_phys_to_virt(pml4_phys);
+    if (!pml4) {
+        pmm_free_page(supervisor_phys);
+        pmm_free_page(user_phys);
+        pmm_free_page(pml4_phys);
+        return false;
+    }
+    kmemset(pml4, 0, PAGE_SIZE);
+
+    const u64 user_va = 0x0000400000004000ULL;
+    const u64 supervisor_va = 0x0000400000005000ULL;
+    bool user_mapped = vmm_map_page_pml4((pml4_t*)pml4_phys, user_va, user_phys,
+        VMM_FLAG_PRESENT | VMM_FLAG_USER | VMM_FLAG_WRITABLE);
+    bool supervisor_mapped = vmm_map_page_pml4((pml4_t*)pml4_phys,
+        supervisor_va, supervisor_phys, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE);
+
+    /* Destroy must free user-owned leaves and every private table, but must
+     * leave supervisor leaf frames alone even when an ancestor has USER set. */
+    vmm_destroy_address_space((pml4_t*)pml4_phys);
+    pmm_free_page(user_phys);       /* harmless if the destroy path freed it */
+    pmm_free_page(supervisor_phys); /* destroy must not free this frame */
+    bool reclaimed = pmm_free_pages() == free_before;
+    return user_mapped && supervisor_mapped && reclaimed;
+}
+
 void vmm_run_tests(void) {
     report("map_existing", test_map_existing());
     report("map_missing", test_map_missing_page());
@@ -481,5 +518,6 @@ void vmm_run_tests(void) {
     report("user_kernel_half_denied", test_user_mapping_rejects_kernel_half());
     report("unaligned_page_denied", test_vmm_rejects_unaligned_pages());
     report("mapping_validation_matrix", test_mapping_validation_matrix());
+    report("destroy_address_space", test_destroy_address_space_reclaims_owned_pages());
 }
 
