@@ -107,6 +107,21 @@ void user_main(void) {
     traversal_path[9] = 'E'; traversal_path[10] = 'L'; traversal_path[11] = 'F';
     traversal_path[12] = '\0';
     if (sys_open(traversal_path) != (u64)-1) syscall_pointers_ok = false;
+
+    char backslash_path[15];
+    backslash_path[0] = '/'; backslash_path[1] = 'T'; backslash_path[2] = 'E';
+    backslash_path[3] = 'S'; backslash_path[4] = 'T'; backslash_path[5] = '\\';
+    backslash_path[6] = '.'; backslash_path[7] = '.'; backslash_path[8] = '\\';
+    backslash_path[9] = 'S'; backslash_path[10] = 'E'; backslash_path[11] = 'C';
+    backslash_path[12] = 'R'; backslash_path[13] = 'E'; backslash_path[14] = '\0';
+    if (sys_open(backslash_path) != (u64)-1) syscall_pointers_ok = false;
+
+    char relative_path[10];
+    relative_path[0] = 'T'; relative_path[1] = 'E'; relative_path[2] = 'S';
+    relative_path[3] = 'T'; relative_path[4] = '.'; relative_path[5] = 'E';
+    relative_path[6] = 'L'; relative_path[7] = 'F'; relative_path[8] = '\0';
+    if (sys_open(relative_path) != (u64)-1) syscall_pointers_ok = false;
+
     if (syscall_invoke(SYS_WRITE, 1, bad_low, 1, 0, 0, 0) != (u64)-1 ||
         syscall_invoke(SYS_WRITE, 1, bad_noncanonical, 1, 0, 0, 0) != (u64)-1) {
         syscall_pointers_ok = false;
