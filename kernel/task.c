@@ -558,6 +558,44 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
     return task;
 }
 
+void task_discard_unstarted(task_t* task) {
+    if (!task || task->state == TASK_STATE_UNUSED ||
+        task->started || task->scheduler_queued) return;
+
+    if (task->guard_page_addr) kfree((void*)(uintptr_t)task->guard_page_addr);
+    task->state = TASK_STATE_UNUSED;
+    task->pid = 0;
+    task->parent_pid = 0;
+    task->exit_code = 0;
+    task->rsp = 0;
+    task->stack_base = 0;
+    task->guard_page_addr = 0;
+    task->stack_canary_addr = 0;
+    task->address_space = NULL;
+    task->is_user = false;
+    task->started = false;
+    task->capabilities = 0;
+    task->user_stack_base = 0;
+    task->user_rsp = 0;
+    task->user_stack_pages[0] = 0;
+    task->user_stack_pages[1] = 0;
+    task->user_code_page_count = 0;
+    for (u32 page = 0; page < TASK_USER_CODE_MAX_PAGES; page++)
+        task->user_code_pages[page] = 0;
+    task->mm.pml4 = NULL;
+    task->mm.heap_start = 0;
+    task->mm.heap_end = 0;
+    task->mm.stack_top = 0;
+    task->mm.vmas = NULL;
+    task->event_data = 0;
+    task->waiting_event = 0;
+    task->next = NULL;
+    task->prev = NULL;
+    task->ipc_wait_next = NULL;
+    task->name[0] = '\0';
+    kmemset(task->fd_table, 0, sizeof(task->fd_table));
+}
+
 void task_sleep_ms(u32 ms) {
     if (ms == 0) return;
 
