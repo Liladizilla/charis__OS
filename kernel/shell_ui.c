@@ -267,7 +267,8 @@ static u32 settings_button_width(void) {
     return base > needed ? base : needed;
 }
 static u32 settings_panel_width(void) {
-    return ui_px(500) + (text_height() * 2);
+    /* Reserve enough value-column width for the widest 3x setting (120%). */
+    return ui_px(500) + (text_height() * 2) + ui_px(8);
 }
 static u32 settings_panel_height(void) {
     return settings_title_height() + ui_px(12) +
