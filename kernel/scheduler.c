@@ -128,7 +128,11 @@ void scheduler_unblock_task(task_t* task) {
 }
 
 void scheduler_start(void) {
+    /* Do not let PIT preempt the bootstrap handoff after current_task is
+     * published but before the CPU has moved onto that task's stack. */
+    u64 flags = scheduler_irq_save();
     if (!ready_head) {
+        scheduler_irq_restore(flags);
         vga_puts("No tasks to schedule\n");
         return;
     }
@@ -148,11 +152,22 @@ void scheduler_start(void) {
     current_task->started = true;
     u64 bootstrap_rsp = 0;
     context_switch(&bootstrap_rsp, current_task->rsp, use_iret);
+
+    /* The bootstrap stack is not normally scheduled again, but keep the
+     * original interrupt state if a future scheduler path ever returns here. */
+    scheduler_irq_restore(flags);
 }
 
 void scheduler_schedule(void) {
+    /* Keep the ready-list walk, current_task publication, CR3 update and stack
+     * handoff atomic with respect to IRQ0. The saved IF bit is restored on the
+     * task's own stack after its context_switch call eventually resumes. */
+    u64 flags = scheduler_irq_save();
     task_t* next = scheduler_find_next();
-    if (!next) return;
+    if (!next) {
+        scheduler_irq_restore(flags);
+        return;
+    }
     if (next == current_task) {
         /* A wakeup can make the currently executing task READY while it is
          * returning from HLT. If no peer is runnable, selecting that same
@@ -161,6 +176,7 @@ void scheduler_schedule(void) {
         if (current_task && current_task->state == TASK_STATE_READY) {
             current_task->state = TASK_STATE_RUNNING;
         }
+        scheduler_irq_restore(flags);
         return;
     }
 
@@ -192,6 +208,7 @@ void scheduler_schedule(void) {
      * released without freeing memory under our own feet.
      */
     task_release_pending();
+    scheduler_irq_restore(flags);
 }
 
 void scheduler_yield(void) {
