@@ -96,9 +96,9 @@ void idt_dispatch_handler(reg_frame_t* frame) {
              */
             task_t* faulting_task = scheduler_current();
             if ((frame->cs & 3) == 3 && faulting_task && faulting_task->is_user) {
-                kprintf("USER PAGE FAULT: PID %d task %s CR2=0x%llx\\n",
+                kprintf("USER PAGE FAULT: PID %d task %s CR2=0x%llx\n",
                         faulting_task->pid, faulting_task->name, cr2);
-                kprintf("Terminating faulting user task\\n");
+                kprintf("Terminating faulting user task\n");
                 task_exit_with_status(128 + 14); /* conventional SIGSEGV-style status */
                 for (;;) asm volatile("cli; hlt" : : : "memory");
             }
@@ -124,7 +124,7 @@ void idt_dispatch_handler(reg_frame_t* frame) {
             }
         }
         
-        kprintf("KERNEL PANIC: unhandled exception #%d\\n", frame->vector);
+        kprintf("KERNEL PANIC: unhandled exception #%d\n", frame->vector);
         while (1) asm volatile("cli; hlt" : : : "memory");
     }
 
