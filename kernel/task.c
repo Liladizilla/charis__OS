@@ -162,6 +162,7 @@ void task_exit_with_status(u32 status) {
         if (current->is_user && current->mm.pml4) {
             task_release_user_code_pages(current, current->mm.pml4);
             task_release_user_stack_pages(current, current->mm.pml4);
+            serial_puts("RING3_PRIVATE_PAGES_RELEASED\\n");
         }
         /* Exited tasks are never scheduled again. Unlink the zombie before
          * parking its stack so the scheduler list only contains live tasks. */
