@@ -18,17 +18,24 @@ static u8 bitmap[BITMAP_SIZE];
 static u8 allocated_bitmap[BITMAP_SIZE];
 static u32 last_free = 0;
 static u32 managed_page_count = 0;
+static u32 free_page_count = 0;
 
 static void pmm_mark_used(u64 addr) {
     if (addr < PMM_BITMAP_BASE || addr >= VMM_PHYSICAL_LIMIT) return;
     u64 page = (addr - PMM_BITMAP_BASE) / 4096ULL;
-    bitmap[page / 8] |= (u8)(1U << (page % 8));
+    u32 byte = (u32)(page / 8ULL);
+    u8 mask = (u8)(1U << (page % 8ULL));
+    if (!(bitmap[byte] & mask) && free_page_count) free_page_count--;
+    bitmap[byte] |= mask;
 }
 
 static void pmm_mark_free(u64 addr) {
     if (addr < PMM_BITMAP_BASE || addr >= VMM_PHYSICAL_LIMIT) return;
     u64 page = (addr - PMM_BITMAP_BASE) / 4096ULL;
-    bitmap[page / 8] &= (u8)~(1U << (page % 8));
+    u32 byte = (u32)(page / 8ULL);
+    u8 mask = (u8)(1U << (page % 8ULL));
+    if (bitmap[byte] & mask) free_page_count++;
+    bitmap[byte] &= (u8)~mask;
 }
 
 static u64 pmm_align_up_page(u64 value) {
@@ -82,6 +89,7 @@ void pmm_init(multiboot_info_t* info) {
     memory_map = bootmem_regions(&memory_map_count);
     last_free = 0;
     managed_page_count = 0;
+    free_page_count = 0;
 
     /* Fail closed: only complete, firmware-declared RAM blocks are eligible. */
     kmemset(bitmap, 0xFF, sizeof(bitmap));
@@ -141,6 +149,7 @@ u64 pmm_alloc_page(void) {
             if (!(bitmap[i] & (1U << bit))) {
                 bitmap[i] |= (u8)(1U << bit);
                 allocated_bitmap[i] |= (u8)(1U << bit);
+                if (free_page_count) free_page_count--;
                 last_free = i;
                 return PMM_BITMAP_BASE + page * 4096ULL;
             }
@@ -177,25 +186,21 @@ void pmm_free_page(u64 addr) {
     if (!(allocated_bitmap[byte] & (1U << bit))) return; /* reserved or already freed */
 
     allocated_bitmap[byte] &= (u8)~(1U << bit);
-    bitmap[byte] &= (u8)~(1U << bit);
+    if (bitmap[byte] & (1U << bit)) {
+        bitmap[byte] &= (u8)~(1U << bit);
+        free_page_count++;
+    }
     if (byte < last_free) last_free = byte;
 }
 
 u32 pmm_used_pages(void) {
-    u32 count = 0;
-    for (u32 byte = 0; byte < BITMAP_SIZE; byte++) {
-        u8 value = bitmap[byte];
-        for (u8 bit = 0; bit < 8; bit++) {
-            u64 page = (u64)byte * 8ULL + bit;
-            if (page >= PMM_PAGE_COUNT) break;
-            if (value & (1U << bit)) count++;
-        }
-    }
-    return count;
+    return (u32)PMM_PAGE_COUNT - free_page_count;
 }
 
 u32 pmm_free_pages(void) {
-    return (u32)PMM_PAGE_COUNT - pmm_used_pages();
+    /* The cached count is updated with each bitmap transition so live desktop
+     * diagnostics remain O(1), not a scan of the entire 64 GiB page bitmap. */
+    return free_page_count;
 }
 
 
