@@ -143,6 +143,22 @@ jobs:
             sleep 4
             printf 'screendump build/charisos-desktop-preview.ppm\n'
             sleep 2
+            # Open Start, then the Settings entry, and capture the real
+            # interactive typography/scaling panel as a second image.
+            printf 'mouse_move -500 1000\n'
+            sleep 1
+            printf 'mouse_button 1\n'
+            sleep 1
+            printf 'mouse_button 0\n'
+            sleep 1
+            printf 'mouse_move 100 -110\n'
+            sleep 1
+            printf 'mouse_button 1\n'
+            sleep 1
+            printf 'mouse_button 0\n'
+            sleep 2
+            printf 'screendump build/charisos-settings-preview.ppm\n'
+            sleep 2
             printf 'quit\n'
           } | timeout 35s qemu-system-x86_64 \
             -machine q35 -m 512M -vga std -nic none -no-reboot \
@@ -165,6 +181,7 @@ jobs:
           name: charisos-desktop-preview
           path: |
             build/charisos-desktop-preview.ppm
+            build/charisos-settings-preview.ppm
             build/desktop-capture-serial.log
             build/desktop-capture-qemu.log
           if-no-files-found: warn
