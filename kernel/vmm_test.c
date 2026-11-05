@@ -243,6 +243,9 @@ static bool test_supervisor_direct_map_above_4g(void) {
     bool ok = alias != NULL;
     u64 cr3;
     asm volatile("mov %%cr3, %0" : "=r"(cr3));
+    u64 cr3_phys = cr3 & ~0xFFFULL;
+    void* cr3_alias = vmm_phys_to_virt(cr3_phys);
+    if (!cr3_alias || vmm_get_phys((u64)(uintptr_t)cr3_alias) != cr3_phys) ok = false;
     u64 translated = 0, flags = 0;
     if (ok) {
         ok = vmm_get_phys((u64)(uintptr_t)alias) == physical &&
