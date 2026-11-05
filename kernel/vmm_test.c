@@ -21,7 +21,7 @@ static bool test_map_existing(void) {
     u64 phys = pmm_alloc_page();
     if (!phys) return false;
 
-    u64 virt = 0xFFFFA00000000000ULL;
+    u64 virt = 0xFFFFB00000000000ULL;
 
     if (!vmm_map_page(virt, phys, PTE_WRITABLE)) return false;
     u64 phys2 = vmm_get_phys(virt);
@@ -35,7 +35,7 @@ static bool test_map_missing_page(void) {
     u64 phys = pmm_alloc_page();
     if (!phys) return false;
 
-    u64 virt = 0xFFFFA00000001000ULL;
+    u64 virt = 0xFFFFB00000001000ULL;
 
     // Should create missing tables and then map
     if (!vmm_map_page(virt, phys, PTE_WRITABLE)) return false;
@@ -49,7 +49,7 @@ static bool test_remap_same_page(void) {
     u64 phys2 = pmm_alloc_page();
     if (!phys1 || !phys2) return false;
 
-    u64 virt = 0xFFFFA00000002000ULL;
+    u64 virt = 0xFFFFB00000002000ULL;
 
     if (!vmm_map_page(virt, phys1, PTE_WRITABLE)) return false;
     if (!vmm_map_page(virt, phys2, PTE_WRITABLE)) return false;
@@ -62,7 +62,7 @@ static bool test_unmap_page(void) {
     u64 phys = pmm_alloc_page();
     if (!phys) return false;
 
-    u64 virt = 0xFFFFA00000003000ULL;
+    u64 virt = 0xFFFFB00000003000ULL;
 
     if (!vmm_map_page(virt, phys, PTE_WRITABLE)) return false;
 
