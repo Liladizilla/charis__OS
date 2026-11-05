@@ -465,14 +465,19 @@ bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src) {
     u64* src_pml4 = phys_to_virt_pt(src ? (u64)src : get_cr3());
     if (!dst_pml4 || !src_pml4) return false;
 
-    /* Share all supervisor-only high-half mappings, including the direct map. */
-    for (u32 i = 256; i < 512; i++) dst_pml4[i] = src_pml4[i];
+    /* Share only supervisor-only high-half mappings, including the direct
+     * map. A USER bit here would expose the kernel to every ring-3 process. */
+    for (u32 i = 256; i < 512; i++) {
+        if (src_pml4[i] & PTE_USER) return false;
+        dst_pml4[i] = src_pml4[i];
+    }
 
     /* Clone the low identity-map hierarchy. Build only private child tables:
      * never leave pointers to source tables in a partially built destination.
      * This makes vmm_destroy_address_space() safe on every failure path. */
     u64 pml4e = src_pml4[0];
     if (!(pml4e & PTE_PRESENT)) return true;
+    if (pml4e & PTE_USER) return false;
 
     u64 pdpt_phys = pmm_alloc_page();
     if (!pdpt_phys) return false;
@@ -488,6 +493,7 @@ bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src) {
     for (u32 i = 0; i < 512; i++) {
         u64 pdpte = src_pdpt[i];
         if (!(pdpte & PTE_PRESENT)) continue;
+        if (pdpte & PTE_USER) return false;
         if (pdpte & PTE_HUGE) {
             dst_pdpt[i] = pdpte;
             continue;
@@ -507,6 +513,7 @@ bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src) {
         for (u32 j = 0; j < 512; j++) {
             u64 pde = src_pd[j];
             if (!(pde & PTE_PRESENT)) continue;
+            if (pde & PTE_USER) return false;
             if (pde & PTE_HUGE) {
                 dst_pd[j] = pde;
                 continue;
@@ -522,7 +529,10 @@ bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src) {
             }
             kmemset(dst_pt, 0, PAGE_SIZE);
             dst_pd[j] = pt_phys | (pde & 0x8000000000000FFFULL);
-            for (u32 k = 0; k < 512; k++) dst_pt[k] = src_pt[k];
+            for (u32 k = 0; k < 512; k++) {
+                if (src_pt[k] & PTE_USER) return false;
+                dst_pt[k] = src_pt[k];
+            }
         }
     }
     return true;
