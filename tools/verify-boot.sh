@@ -284,6 +284,9 @@ grep -q '\[BOOT\] init complete, entering scheduler' "$LOG" \
 grep -q 'Hello from user mode!' "$LOG" \
     || fail "ring-3 task did not complete its print syscall"
 
+grep -q 'RING3_SLEEP_OK' "$LOG" \
+    || fail "ring-3 sleep syscall did not return to user mode"
+
 if [ -n "$ELF_TEST_DISK" ]; then
     grep -q 'ELF_EXEC_OK' "$LOG" \
         || fail "ELF image did not execute its user-mode smoke test"
