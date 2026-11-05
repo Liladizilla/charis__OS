@@ -4,6 +4,7 @@
 #include <kernel/serial.h>
 #include <kernel/vga.h>
 #include <kernel/types.h>
+#include <kernel/string.h>
 
 static void report(const char* name, bool ok) {
     const char* result = ok ? "OK" : "FAIL";
