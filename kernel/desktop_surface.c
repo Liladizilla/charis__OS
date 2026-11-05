@@ -27,6 +27,15 @@ static u32 shortcut_stride(void) {
     return max_u32(u(82), u(40) + text_h() + u(12));
 }
 
+static u32 desktop_title_y(void) { return u(34); }
+static u32 desktop_title_height(void) { return u(32); }
+static u32 desktop_subtitle_y(void) {
+    return desktop_title_y() + desktop_title_height() + u(12);
+}
+static u32 desktop_shortcuts_top(void) {
+    return desktop_subtitle_y() + text_h() + u(24);
+}
+
 static void label(u32 x, u32 y, const char *s, u32 color) {
     gfx_draw_string(x, y, s, color, FB_TRANSPARENT);
 }
@@ -96,7 +105,7 @@ static void draw_app_icon(u32 x, u32 y, u32 kind) {
 
 static void draw_shortcuts(void) {
     static const char *names[] = { "Browser", "Files", "Terminal" };
-    u32 y = u(28);
+    u32 y = desktop_shortcuts_top();
     u32 stride = shortcut_stride();
     for (u32 i = 0; i < 3; ++i) {
         draw_app_icon(u(22), y, i);
@@ -233,8 +242,8 @@ static void draw_notification_widget(u32 x, u32 y, u32 w) {
 
 void desktop_surface_render(void) {
     if (!g_framebuffer.initialized) return;
-    gfx_draw_string_scaled(u(82), u(34), "CHARIS OS", DS_WHITE, FB_TRANSPARENT, 2);
-    label(u(84), u(70), "A native desktop environment", DS_MUTED);
+    gfx_draw_string_scaled(u(82), desktop_title_y(), "CHARIS OS", DS_WHITE, FB_TRANSPARENT, 2);
+    label(u(84), desktop_subtitle_y(), "Native system", DS_MUTED);
     draw_shortcuts();
     u32 widget_x = 0, widget_y = 0, widget_w = 0, widget_h = 0;
     draw_status_widget(&widget_x, &widget_y, &widget_w, &widget_h);
@@ -245,7 +254,7 @@ void desktop_surface_render(void) {
 
 /* Return the shortcut under the pointer: 0 browser, 1 files, 2 terminal. */
 int desktop_surface_hit_test(int mx, int my) {
-    u32 left = u(12), right = u(66), top = u(28), stride = shortcut_stride();
+    u32 left = u(12), right = u(66), top = desktop_shortcuts_top(), stride = shortcut_stride();
     if (mx < (int)left || mx >= (int)right || my < (int)top ||
         my >= (int)(top + stride * 3)) return -1;
     u32 relative = (u32)(my - (int)top);
