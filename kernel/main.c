@@ -42,6 +42,7 @@
 
 /* The multiboot2 info pointer arrives zero-extended in RDI, so it is a 64-bit
  * value here. Declaring it u32 would silently truncate any address above 4GB. */
+__attribute__((no_stack_protector))
 void kernel_main(u32 magic, u64 info_ptr) {
     // Boot marker helper - writes sequential chars to VGA text buffer at even offsets
     static int boot_marker_col = 0;
@@ -73,6 +74,12 @@ void kernel_main(u32 magic, u64 info_ptr) {
         }
     }
     BOOT_MARK('M');
+
+    /* Seed stack protection before memory management and device subsystems.
+     * kernel_main itself is unprotected so its entry guard remains stable
+     * while security_init installs the randomized guard for later functions. */
+    security_init();
+    BOOT_MARK('S');
 
     // Initialize subsystems in exact order
     memory_init((multiboot_info_t*)(uintptr_t)info_ptr);
@@ -164,8 +171,6 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('D');
     power_init();
     BOOT_MARK('p');
-    security_init();
-    BOOT_MARK('S');
 
     // Initialize network once, if enabled in config.
     // net_init() resets the RTL8139 and reinitializes its RX/TX state, so
