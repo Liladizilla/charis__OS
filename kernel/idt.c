@@ -4,7 +4,6 @@
 #include <kernel/serial.h>
 #include <kernel/scheduler.h>
 #include <kernel/task.h>
-#include <kernel/vmm.h>
 #include <kernel/syscall.h>
 #include <kernel/printf.h>
 #include <kernel/memory.h>
@@ -60,72 +59,61 @@ void idt_dispatch_handler(reg_frame_t* frame) {
     }
 
     if (frame->vector < 32) {
-        // Exception - full register dump
+        task_t* t = scheduler_current();
+
         kprintf("=== EXCEPTION #%d ===\n", frame->vector);
-        kprintf("RIP=0x%llx  CS=0x%llx  RFLAGS=0x%llx\n", frame->rip, frame->cs, frame->rflags);
-        /* Do not dereference RIP while handling an exception: a non-present
-         * or non-canonical instruction address could recursively fault here.
-         * The register dump already records RIP; CR2 below records the fault. */
+        kprintf("RIP=0x%llx  CS=0x%llx  RFLAGS=0x%llx\n",
+                frame->rip, frame->cs, frame->rflags);
         kprintf("RSP=0x%llx  SS=0x%llx\n", frame->rsp, frame->ss);
-        kprintf("RAX=0x%llx  RBX=0x%llx  RCX=0x%llx  RDX=0x%llx\n", frame->rax, frame->rbx, frame->rcx, frame->rdx);
-        kprintf("RSI=0x%llx  RDI=0x%llx  RBP=0x%llx\n", frame->rsi, frame->rdi, frame->rbp);
-        kprintf("R8=0x%llx   R9=0x%llx   R10=0x%llx  R11=0x%llx\n", frame->r8, frame->r9, frame->r10, frame->r11);
-        kprintf("R12=0x%llx  R13=0x%llx  R14=0x%llx  R15=0x%llx\n", frame->r12, frame->r13, frame->r14, frame->r15);
+        kprintf("RAX=0x%llx  RBX=0x%llx  RCX=0x%llx  RDX=0x%llx\n",
+                frame->rax, frame->rbx, frame->rcx, frame->rdx);
+        kprintf("RSI=0x%llx  RDI=0x%llx  RBP=0x%llx\n",
+                frame->rsi, frame->rdi, frame->rbp);
+        kprintf("R8=0x%llx   R9=0x%llx   R10=0x%llx  R11=0x%llx\n",
+                frame->r8, frame->r9, frame->r10, frame->r11);
+        kprintf("R12=0x%llx  R13=0x%llx  R14=0x%llx  R15=0x%llx\n",
+                frame->r12, frame->r13, frame->r14, frame->r15);
         kprintf("Error code: 0x%llx\n", frame->error_code);
-        
-        // Page fault specific info
+
+        u64 cr2 = 0;
         if (frame->vector == 14) {
-            u64 cr2;
-            asm volatile("mov %%cr2,%0":"=r"(cr2));
+            asm volatile("mov %%cr2,%0" : "=r"(cr2));
             kprintf("Page fault at CR2=0x%llx\n", cr2);
             kprintf("Reason: %s %s %s\n",
                 frame->error_code & 1 ? "protection" : "not-present",
                 frame->error_code & 2 ? "write" : "read",
                 frame->error_code & 4 ? "user" : "kernel");
+        }
 
-            /*
-             * There is no registered VMA/lazy-page policy yet: task->mm.vmas
-             * is always NULL. Mapping every not-present address here silently
-             * turns null pointers, guard-page hits and arbitrary user faults
-             * into writable memory. It also used vmm_map_page(), whose current
-             * address-space path does not propagate USER through every level.
-             *
-             * Fail closed. A genuine ring-3 fault belongs to that process and
-             * must not take down the desktop/kernel. Kernel-mode faults are
-             * fatal because continuing would trust corrupted kernel state.
-             */
-            task_t* faulting_task = scheduler_current();
-            if ((frame->cs & 3) == 3 && faulting_task && faulting_task->is_user) {
+        /* User faults are process failures, not kernel failures. There is no
+         * VMA registration/lazy-page policy yet, so never allocate a page just
+         * because an arbitrary address faulted. */
+        if ((frame->cs & 3) == 3 && t && t->is_user) {
+            if (frame->vector == 14) {
                 kprintf("USER PAGE FAULT: PID %d task %s CR2=0x%llx\n",
-                        faulting_task->pid, faulting_task->name, cr2);
-                kprintf("Terminating faulting user task\n");
-                task_exit_with_status(128 + 14); /* conventional SIGSEGV-style status */
-                for (;;) asm volatile("cli; hlt" : : : "memory");
+                        t->pid, t->name, cr2);
+            } else {
+                kprintf("USER EXCEPTION: PID %d task %s vector %d RIP=0x%llx\n",
+                        t->pid, t->name, frame->vector, frame->rip);
             }
+            task_exit_with_status(128 + (u32)frame->vector);
+            for (;;) asm volatile("cli; hlt" : : : "memory");
+        }
 
-            kprintf("KERNEL PANIC: unhandled page fault at CR2=0x%llx\\n", cr2);
-        }
-        
-        // Print task info
-        task_t* t = scheduler_current();
-        if (t) {
-            kprintf("In task: %s (PID %d)\n", t->name, t->pid);
-        }
-        
-        // Check for stack canary
         if (t && t->stack_canary_addr) {
             u64 canary = *(u64*)t->stack_canary_addr;
             if (canary != 0xDEADC0DEDEADC0DE) {
-                kprintf("STACK SMASH DETECTED in task %s PID %d - canary was 0x%llx\n", 
-                    t->name, t->pid, canary);
-                t->state = TASK_STATE_ZOMBIE;
-                scheduler_schedule();
-                return;
+                kprintf("STACK SMASH DETECTED in task %s PID %d - canary was 0x%llx\n",
+                        t->name, t->pid, canary);
             }
         }
-        
-        kprintf("KERNEL PANIC: unhandled exception #%d\n", frame->vector);
-        while (1) asm volatile("cli; hlt" : : : "memory");
+
+        if (frame->vector == 14) {
+            kprintf("KERNEL PANIC: unhandled page fault at CR2=0x%llx\n", cr2);
+        } else {
+            kprintf("KERNEL PANIC: unhandled exception #%d\n", frame->vector);
+        }
+        for (;;) asm volatile("cli; hlt" : : : "memory");
     }
 
     if (frame->vector >= 32 && frame->vector < 48) {
