@@ -558,6 +558,18 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
     return task;
 }
 
+/* The CPU reads TSS.RSP0 on every CPL3 -> CPL0 transition. A single
+ * boot-stack value is unsafe once more than one user task exists. */
+extern u8 tss[];
+
+bool task_set_tss_rsp0(task_t* task) {
+    if (!task || !task->stack_base) return false;
+    u64 stack_top = task->stack_base + TASK_STACK_SIZE;
+    volatile u64* rsp0 = (volatile u64*)(uintptr_t)(tss + 4);
+    *rsp0 = stack_top;
+    return *rsp0 == stack_top;
+}
+
 void task_discard_unstarted(task_t* task) {
     if (!task || task->state == TASK_STATE_UNUSED ||
         task->started || task->scheduler_queued) return;
