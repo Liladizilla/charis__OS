@@ -286,6 +286,9 @@ grep -q '\[BOOT\] init complete, entering scheduler' "$LOG" \
 grep -q 'Hello from user mode!' "$LOG" \
     || fail "ring-3 task did not complete its print syscall"
 
+grep -q 'RING3_CODE_ISOLATION_OK' "$LOG" \
+    || fail "bootstrap user code was not copied into private executable pages"
+
 if [ -n "$ELF_TEST_DISK" ]; then
     if grep -q 'ELF_EXEC_OK' "$LOG"; then
         ELF_RESULT="executed"
@@ -306,6 +309,8 @@ else
         || fail "invalid ring-3 access was not contained as a user page fault"
     grep -q 'RING3_SYSCALL_PTR_REJECT_OK' "$LOG" \
         || fail "ring-3 syscall pointer validation did not reject untrusted addresses"
+    grep -q 'RING3_PRIVATE_PAGES_RELEASED' "$LOG" \
+        || fail "ring-3 exit did not release its private code and stack frames"
 fi
 
 if [ "$REQUIRE_VMM_TESTS" = "1" ]; then
