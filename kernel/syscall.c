@@ -319,7 +319,9 @@ static bool syscall_copy_user_string(task_t* task, u64 user_address,
         u64 phys = 0, flags = 0;
         if (!vmm_translate(task->mm.pml4, address, &phys, &flags) ||
             !(flags & VMM_FLAG_USER)) return false;
-        destination[i] = *(const char*)(uintptr_t)phys;
+        const char* mapped_byte = (const char*)vmm_phys_to_virt(phys);
+        if (!mapped_byte) return false;
+        destination[i] = *mapped_byte;
         if (!destination[i]) return true;
     }
     destination[capacity - 1] = '\0';
@@ -341,7 +343,9 @@ static bool syscall_copy_user_data(task_t* task, u64 user_address,
             !(flags & VMM_FLAG_USER)) return false;
         usize chunk = PAGE_SIZE - (usize)(address & (PAGE_SIZE - 1));
         if (chunk > size - copied) chunk = size - copied;
-        kmemcpy((u8*)destination + copied, (const void*)(uintptr_t)phys, chunk);
+        const void* source_page = vmm_phys_to_virt(phys);
+        if (!source_page) return false;
+        kmemcpy((u8*)destination + copied, source_page, chunk);
         copied += chunk;
     }
     return true;
@@ -362,7 +366,9 @@ static bool syscall_copy_to_user_data(task_t* task, u64 user_address,
             !(flags & VMM_FLAG_USER) || !(flags & VMM_FLAG_WRITABLE)) return false;
         usize chunk = PAGE_SIZE - (usize)(address & (PAGE_SIZE - 1));
         if (chunk > size - copied) chunk = size - copied;
-        kmemcpy((void*)(uintptr_t)phys, (const u8*)source + copied, chunk);
+        void* destination_page = vmm_phys_to_virt(phys);
+        if (!destination_page) return false;
+        kmemcpy(destination_page, (const u8*)source + copied, chunk);
         copied += chunk;
     }
     return true;
