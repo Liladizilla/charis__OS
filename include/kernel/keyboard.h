@@ -12,9 +12,13 @@
 
 void keyboard_init(void);
 void keyboard_handler(reg_frame_t* frame);
+/* Decode a byte read from the shared controller output buffer outside IRQ1. */
+void keyboard_process_scancode(u8 scancode);
 bool keyboard_get_key(char* out);
 bool keyboard_has_input(void);
 void keyboard_read_line(char* buffer, usize max_len);
+/* Count of ASCII characters rejected because the legacy ring was full. */
+u32 keyboard_buffer_dropped(void);
 
 /* Raw scancode sink, for keys that have no ASCII character: the Windows/Super
  * key, arrows, function keys, Escape. Called from the IRQ handler, so keep it
