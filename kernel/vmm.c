@@ -36,7 +36,7 @@ void* vmm_phys_to_virt(u64 physical) {
         if (!(physmap_pd[pdpt_index][pd_index] & PTE_PRESENT)) return NULL;
         return (void*)(uintptr_t)(physmap_base + physical);
     }
-    if (physical < 0x40000000ULL) return (void*)(uintptr_t)physical;
+    if (physical < 0x100000000ULL) return (void*)(uintptr_t)physical;
     return NULL;
 }
 
@@ -58,13 +58,13 @@ static void flush_tlb(void) {
 }
 
 void vmm_init(void) {
-    /* Bootstrap page tables and kernel image are identity mapped below 1 GiB.
+    /* Bootstrap page tables and kernel image are identity mapped below 4 GiB.
      * Install the high-half direct map before PMM frames are dereferenced. */
     u64 boot_cr3 = get_cr3() & ~0xFFFULL;
-    if (boot_cr3 >= 0x40000000ULL ||
-        (u64)(uintptr_t)physmap_pdpt >= 0x40000000ULL ||
-        (u64)(uintptr_t)physmap_pd >= 0x40000000ULL) {
-        vga_puts("VMM: bootstrap structures outside 1 GiB identity map\\n");
+    if (boot_cr3 >= 0x100000000ULL ||
+        (u64)(uintptr_t)physmap_pdpt >= 0x100000000ULL ||
+        (u64)(uintptr_t)physmap_pd >= 0x100000000ULL) {
+        vga_puts("VMM: bootstrap structures outside 4 GiB identity map\\n");
         for (;;) asm volatile("cli; hlt" : : : "memory");
     }
 
