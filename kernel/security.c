@@ -94,14 +94,24 @@ void security_audit(const char* action, task_t* task) {
 
 bool security_verify_path(const char* path, task_t* task) {
     (void)task;
-    if (!path) return false;
-    
-    for (const char* p = path; *p; p++) {
-        if (p[0] == '.' && p[1] == '.' && (p[2] == '/' || p[2] == '\0' || p[2] == 0)) {
-            return false;
+    if (!path || path[0] != '/') return false;
+
+    /* VFS/FAT paths are slash-separated and bounded by the syscall buffer.
+     * Reject alternate separators and parent components before any resolver
+     * or filesystem code sees the path. */
+    usize length = 0;
+    const char* component = path + 1;
+    for (const char* p = path + 1; ; p++) {
+        if (*p == '\\') return false;
+        if (*p && ++length > 255) return false;
+        if (*p == '/' || *p == '\0') {
+            usize component_length = (usize)(p - component);
+            if (component_length == 2 &&
+                component[0] == '.' && component[1] == '.') return false;
+            if (*p == '\0') break;
+            component = p + 1;
         }
     }
-    
     return true;
 }
 
