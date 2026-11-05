@@ -85,6 +85,24 @@ void user_main(void) {
     resumed[30] = '\n'; resumed[31] = '\0';
     sys_print(resumed);
 
+    /* Deliberately touch an unmapped canonical user address. The kernel
+     * must terminate only this task, never manufacture a writable page or
+     * halt the desktop. The verifier checks the kernel's isolation report. */
+    char fault_armed[19];
+    fault_armed[0] = 'R'; fault_armed[1] = 'I'; fault_armed[2] = 'N';
+    fault_armed[3] = 'G'; fault_armed[4] = '3'; fault_armed[5] = '_';
+    fault_armed[6] = 'F'; fault_armed[7] = 'A'; fault_armed[8] = 'U';
+    fault_armed[9] = 'L'; fault_armed[10] = 'T'; fault_armed[11] = '_';
+    fault_armed[12] = 'A'; fault_armed[13] = 'R'; fault_armed[14] = 'M';
+    fault_armed[15] = 'E'; fault_armed[16] = 'D'; fault_armed[17] = '\n';
+    fault_armed[18] = '\0';
+    sys_print(fault_armed);
+
+    volatile u64 fault_probe =
+        *(volatile u64*)0x0000400000000000ULL;
+    (void)fault_probe;
+
+    /* Reaching this point means the supposedly unmapped page was accepted. */
     while (1) {
         sys_yield();
     }
