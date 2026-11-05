@@ -2,6 +2,7 @@
 #include <kernel/task.h>
 #include <kernel/signal.h>
 #include <kernel/vga.h>
+#include <kernel/diagnostics.h>
 
 static task_t* ready_head = NULL;
 static task_t* ready_tail = NULL;
@@ -153,6 +154,7 @@ void scheduler_start(void) {
     bool use_iret = current_task->is_user && !current_task->started;
     current_task->started = true;
     u64 bootstrap_rsp = 0;
+    diag_note_context_switch();
     context_switch(&bootstrap_rsp, current_task->rsp, use_iret);
 
     /* The bootstrap stack is not normally scheduled again, but keep the
@@ -197,6 +199,7 @@ void scheduler_schedule(void) {
 
     bool use_iret = current_task->is_user && !current_task->started;
     current_task->started = true;
+    diag_note_context_switch();
     if (previous) {
         context_switch(&previous->rsp, current_task->rsp, use_iret);
     } else {
