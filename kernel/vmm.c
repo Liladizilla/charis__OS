@@ -44,6 +44,32 @@ void* vmm_phys_to_virt(u64 physical) {
     return NULL;
 }
 
+static bool vmm_is_canonical(u64 address) {
+    u64 upper = address >> 48;
+    bool sign = (address & (1ULL << 47)) != 0;
+    return sign ? upper == 0xFFFFULL : upper == 0;
+}
+
+/* A 4 KiB mapping must fit wholly inside one canonical x86-64 address range. */
+static bool vmm_valid_page_address(u64 address) {
+    if (address & (PAGE_SIZE - 1)) return false;
+    if (address > UINT64_MAX - (PAGE_SIZE - 1)) return false;
+    return vmm_is_canonical(address) &&
+           vmm_is_canonical(address + PAGE_SIZE - 1);
+}
+
+static bool vmm_valid_mapping(u64 virt, u64 phys, u64 flags) {
+    if (!vmm_valid_page_address(virt) ||
+        (phys & (PAGE_SIZE - 1)) ||
+        phys > 0x000FFFFFFFFFF000ULL) return false;
+
+    /* Ring 3 is confined to the lower canonical half. Never let a mistaken
+     * USER flag relax PML4 permissions for the kernel, direct map, heap or
+     * device windows. */
+    if ((flags & PTE_USER) && virt >= 0x0000800000000000ULL) return false;
+    return true;
+}
+
 static inline u64* phys_to_virt_pt(u64 phys) {
     return (u64*)vmm_phys_to_virt(phys & ~0xFFFULL);
 }
@@ -132,6 +158,7 @@ static bool get_or_create_table(u64* parent_table, u16 idx, u64 flags) {
 
 
 bool vmm_map_page(u64 virt, u64 phys, u64 flags) {
+    if (!vmm_valid_mapping(virt, phys, flags)) return false;
     u64* pml4 = phys_to_virt_pt(get_cr3());
     if (!pml4) return false;
 
@@ -426,7 +453,7 @@ void vmm_switch(pml4_t* pml4) {
 
 // Map a page into a specific address space (not current)
 bool vmm_map_page_pml4(pml4_t* pml4, u64 virt, u64 phys, u64 flags) {
-    if (!pml4) return false;
+    if (!pml4 || !vmm_valid_mapping(virt, phys, flags)) return false;
     u64* pml4_table = phys_to_virt_pt((u64)pml4);
     if (!pml4_table) return false;
 
