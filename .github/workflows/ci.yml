@@ -159,6 +159,22 @@ jobs:
             sleep 2
             printf 'screendump build/charisos-settings-preview.ppm\n'
             sleep 2
+            # Exercise font-size and global-scale plus controls, then capture
+            # the resized settings panel to prove the controls are live.
+            printf 'mouse_move 649 -269\n'
+            sleep 1
+            printf 'mouse_button 1\n'
+            sleep 1
+            printf 'mouse_button 0\n'
+            sleep 1
+            printf 'mouse_move -9 44\n'
+            sleep 1
+            printf 'mouse_button 1\n'
+            sleep 1
+            printf 'mouse_button 0\n'
+            sleep 2
+            printf 'screendump build/charisos-settings-adjusted-preview.ppm\n'
+            sleep 2
             printf 'quit\n'
           } | timeout 45s qemu-system-x86_64 \
             -machine q35 -m 512M -vga std -nic none -no-reboot \
@@ -182,6 +198,7 @@ jobs:
           path: |
             build/charisos-desktop-preview.ppm
             build/charisos-settings-preview.ppm
+            build/charisos-settings-adjusted-preview.ppm
             build/desktop-capture-serial.log
             build/desktop-capture-qemu.log
           if-no-files-found: warn
