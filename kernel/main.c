@@ -197,9 +197,13 @@ void kernel_main(u32 magic, u64 info_ptr) {
         if (user_task && task_prepare_user_space(user_task, (void*)user_main)) {
             scheduler_add_task(user_task);
         } else {
+            /* A failed bootstrap must not strand its cloned page-table tree.
+             * task_prepare_user_space rolls back any user leaf frames first. */
+            vmm_destroy_address_space(user_pml4);
             vga_puts_error("ERROR: Failed to prepare ring-3 task!");
         }
     } else {
+        if (user_pml4) vmm_destroy_address_space(user_pml4);
         vga_puts_error("ERROR: Failed to create user address space!");
     }
 
