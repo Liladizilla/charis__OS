@@ -6,6 +6,8 @@
 #include <kernel/string.h>
 #include <kernel/printf.h>
 #include <kernel/vmm.h>
+#include <kernel/security.h>
+#include <kernel/scheduler.h>
 
 #define ELF_MAX_VECTOR_ENTRIES 16
 #define ELF_MAX_SEGMENT_BYTES (32ULL * 1024ULL * 1024ULL)
@@ -175,6 +177,14 @@ static bool elf_validate_segments(pml4_t* pml4, const elf64_phdr_t* phdrs,
 
 int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
     if (!path || !mm || !mm->pml4 || !entry_point) return -1;
+
+    /* Keep policy at the loader boundary too; callers must not be able to
+     * bypass syscall path checks or execution capabilities. */
+    task_t* current = scheduler_current();
+    if (!security_verify_path(path, current)) return -1;
+    if (current && current->is_user &&
+        (!security_check_capability(current, CAP_SPAWN) ||
+         !security_check_capability(current, CAP_ALLOW_EXEC))) return -1;
 
     vfs_node_t* node = vfs_resolve(path);
     if (!node || !(node->flags & VFS_FILE) || !node->read) return -1;
