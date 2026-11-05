@@ -4,7 +4,6 @@
 #include <kernel/serial.h>
 #include <kernel/scheduler.h>
 #include <kernel/task.h>
-#include <kernel/pmm.h>
 #include <kernel/vmm.h>
 #include <kernel/syscall.h>
 #include <kernel/printf.h>
@@ -64,13 +63,9 @@ void idt_dispatch_handler(reg_frame_t* frame) {
         // Exception - full register dump
         kprintf("=== EXCEPTION #%d ===\n", frame->vector);
         kprintf("RIP=0x%llx  CS=0x%llx  RFLAGS=0x%llx\n", frame->rip, frame->cs, frame->rflags);
-        /* Preserve the faulting instruction bytes in serial logs so a ring-3
-         * transition failure can be diagnosed from CI without guessing at RIP. */
-        kprintf("RIP bytes:");
-        for (u32 byte_i = 0; byte_i < 16; byte_i++) {
-            kprintf(" %02x", ((const u8*)frame->rip)[byte_i]);
-        }
-        kprintf("\n");
+        /* Do not dereference RIP while handling an exception: a non-present
+         * or non-canonical instruction address could recursively fault here.
+         * The register dump already records RIP; CR2 below records the fault. */
         kprintf("RSP=0x%llx  SS=0x%llx\n", frame->rsp, frame->ss);
         kprintf("RAX=0x%llx  RBX=0x%llx  RCX=0x%llx  RDX=0x%llx\n", frame->rax, frame->rbx, frame->rcx, frame->rdx);
         kprintf("RSI=0x%llx  RDI=0x%llx  RBP=0x%llx\n", frame->rsi, frame->rdi, frame->rbp);
@@ -88,15 +83,27 @@ void idt_dispatch_handler(reg_frame_t* frame) {
                 frame->error_code & 2 ? "write" : "read",
                 frame->error_code & 4 ? "user" : "kernel");
 
-            // Handle page fault: if not present, allocate page
-            if (!(frame->error_code & 1)) {
-                u64 phys = pmm_alloc_page();
-                if (phys && vmm_map_page(cr2 & ~0xFFF, phys, 0x02 | (frame->error_code & 4 ? 0x04 : 0))) {
-                    kprintf("Allocated page for 0x%llx\n", cr2 & ~0xFFF);
-                    return; // Continue
-                }
+            /*
+             * There is no registered VMA/lazy-page policy yet: task->mm.vmas
+             * is always NULL. Mapping every not-present address here silently
+             * turns null pointers, guard-page hits and arbitrary user faults
+             * into writable memory. It also used vmm_map_page(), whose current
+             * address-space path does not propagate USER through every level.
+             *
+             * Fail closed. A genuine ring-3 fault belongs to that process and
+             * must not take down the desktop/kernel. Kernel-mode faults are
+             * fatal because continuing would trust corrupted kernel state.
+             */
+            task_t* faulting_task = scheduler_current();
+            if ((frame->cs & 3) == 3 && faulting_task && faulting_task->is_user) {
+                kprintf("USER PAGE FAULT: PID %d task %s CR2=0x%llx\\n",
+                        faulting_task->pid, faulting_task->name, cr2);
+                kprintf("Terminating faulting user task\\n");
+                task_exit_with_status(128 + 14); /* conventional SIGSEGV-style status */
+                for (;;) asm volatile("cli; hlt" : : : "memory");
             }
-            kprintf("Unhandled page fault\n");
+
+            kprintf("KERNEL PANIC: unhandled page fault at CR2=0x%llx\\n", cr2);
         }
         
         // Print task info
@@ -117,7 +124,8 @@ void idt_dispatch_handler(reg_frame_t* frame) {
             }
         }
         
-        while(1) asm volatile("hlt");
+        kprintf("KERNEL PANIC: unhandled exception #%d\\n", frame->vector);
+        while (1) asm volatile("cli; hlt" : : : "memory");
     }
 
     if (frame->vector >= 32 && frame->vector < 48) {
