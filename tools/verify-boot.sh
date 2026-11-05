@@ -284,15 +284,18 @@ grep -q '\[BOOT\] init complete, entering scheduler' "$LOG" \
 grep -q 'Hello from user mode!' "$LOG" \
     || fail "ring-3 task did not complete its print syscall"
 
-grep -q 'RING3_SLEEP_OK' "$LOG" \
-    || fail "ring-3 sleep syscall did not return to user mode"
-
 if [ -n "$ELF_TEST_DISK" ]; then
     grep -q 'ELF_EXEC_OK' "$LOG" \
         || fail "ELF image did not execute its user-mode smoke test"
 else
+    grep -q 'RING3_SLEEP_OK' "$LOG" \
+        || fail "ring-3 sleep syscall did not return to user mode"
     grep -q 'Back in user mode after yield.' "$LOG" \
         || fail "ring-3 task did not resume after yielding to the kernel task"
+    grep -q 'RING3_FAULT_ARMED' "$LOG" \
+        || fail "ring-3 page-fault isolation probe did not run"
+    grep -q 'USER PAGE FAULT:' "$LOG" \
+        || fail "invalid ring-3 access was not contained as a user page fault"
 fi
 
 grep -q 'Invalid Multiboot2 magic' "$LOG" \
