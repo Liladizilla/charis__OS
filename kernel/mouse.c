@@ -2,6 +2,7 @@
 #include <kernel/io.h>
 #include <kernel/printf.h>
 #include <kernel/irq.h>
+#include <kernel/keyboard.h>
 #include <kernel/vga.h>
 
 mouse_state_t g_mouse = {50, 50, 0, 0, 0};
@@ -36,106 +37,143 @@ void mouse_set_bounds(uint32_t width, uint32_t height) {
 }
 
 /*
- * PS/2 controller handshake helpers.
- *
- * Controller commands are not all acknowledged like mouse-device commands.
- * In particular, writing 0x20 to port 0x64 returns the controller
- * configuration byte directly through port 0x60. The previous helper drained
- * the output buffer after every command, consuming that response before
- * mouse_init() could read it. Mouse-device commands sent through 0xD4 do
- * return ACK bytes, which ps2_write_aux_data() consumes separately.
+ * 8042 controller helpers. The status register's AUX bit distinguishes mouse
+ * replies from keyboard scancodes on the shared data port. Every wait is
+ * bounded, and no command is written after an input-buffer timeout.
  */
-static void ps2_wait_write(void) {
-    /* Wait for the input buffer to drain (IBF clear).
-     *
-     * The bound is small on purpose. Under KVM every inb() is a VM exit, so a
-     * long spin here is not slow, it is a boot that never finishes -- the same
-     * failure the ATA wait loop had. The controller answers within a few
-     * hundred microseconds or not at all, and either way the boot must
-     * continue. */
-    for (volatile int i = 0; i < 2000; i++) {
-        if (!(inb(0x64) & 0x02)) return;
-    }
-}
+#define PS2_STATUS_PORT       0x64
+#define PS2_COMMAND_PORT      0x64
+#define PS2_DATA_PORT         0x60
+#define PS2_STATUS_OUTPUT     0x01
+#define PS2_STATUS_INPUT      0x02
+#define PS2_STATUS_AUX        0x20
+#define PS2_REPLY_ACK         0xFA
+#define PS2_REPLY_RESEND      0xFE
+#define PS2_WAIT_LIMIT        4000
+#define PS2_DEVICE_RETRIES    3
 
-static void ps2_drain_output(void) {
-    /* Give the device a moment, then throw away whatever it queued. */
-    for (volatile int i = 0; i < 200; i++) io_delay();
-    if (inb(0x64) & 0x01) (void)inb(0x60);
-}
-
-static void ps2_write_command(u8 cmd) {
-    /* Do not drain after issuing a controller command: command 0x20 returns
-     * the configuration byte on the output buffer. Draining here consumed
-     * that response before mouse_init() could read it. Drain stale data before
-     * starting initialization instead. */
-    ps2_wait_write();
-    outb(0x64, cmd);
-}
-
-static bool ps2_wait_read(void) {
-    for (volatile int i = 0; i < 2000; i++) {
-        if (inb(0x64) & 0x01) return true;
+static bool ps2_wait_write(void) {
+    for (volatile u32 i = 0; i < PS2_WAIT_LIMIT; i++) {
+        if (!(inb(PS2_STATUS_PORT) & PS2_STATUS_INPUT)) return true;
     }
     return false;
 }
 
-static u8 ps2_write_data(u8 value) {
-    ps2_wait_write();
-    outb(0x60, value);
-    for (volatile int i = 0; i < 200; i++) io_delay();
-    if (inb(0x64) & 0x01) return inb(0x60);   /* the ACK, if any */
-    return 0xFF;                              /* timed out */
+static bool ps2_write_command(u8 cmd) {
+    if (!ps2_wait_write()) return false;
+    outb(PS2_COMMAND_PORT, cmd);
+    return true;
 }
 
-static u8 ps2_write_aux_data(u8 value) {
-    ps2_wait_write();
-    outb(0x64, 0xD4);                         /* route next byte to mouse */
-    return ps2_write_data(value);
+/* Controller data writes (such as the configuration byte) have no mouse ACK. */
+static bool ps2_write_controller_data(u8 value) {
+    if (!ps2_wait_write()) return false;
+    outb(PS2_DATA_PORT, value);
+    return true;
+}
+
+/* Before the controller replies, process any keyboard bytes already queued on
+ * the shared output port. AUX bytes are stale mouse data and can be discarded. */
+static bool ps2_read_controller_data(u8* out) {
+    if (!out) return false;
+    for (volatile u32 i = 0; i < PS2_WAIT_LIMIT; i++) {
+        u8 status = inb(PS2_STATUS_PORT);
+        if (!(status & PS2_STATUS_OUTPUT)) continue;
+        u8 value = inb(PS2_DATA_PORT);
+        if (status & PS2_STATUS_AUX) continue;
+        *out = value;
+        return true;
+    }
+    return false;
+}
+
+static void ps2_drain_output(void) {
+    for (volatile u32 i = 0; i < PS2_WAIT_LIMIT; i++) {
+        u8 status = inb(PS2_STATUS_PORT);
+        if (!(status & PS2_STATUS_OUTPUT)) return;
+        u8 value = inb(PS2_DATA_PORT);
+        if (status & PS2_STATUS_AUX) {
+            continue;
+        }
+        keyboard_process_scancode(value);
+    }
+}
+
+/* Mouse replies are read only when the controller marks the byte as AUX.
+ * Keyboard scancodes are decoded and preserved while waiting for the ACK. */
+static bool ps2_wait_aux_reply(u8* reply) {
+    if (!reply) return false;
+    for (volatile u32 i = 0; i < PS2_WAIT_LIMIT; i++) {
+        u8 status = inb(PS2_STATUS_PORT);
+        if (!(status & PS2_STATUS_OUTPUT)) continue;
+        u8 value = inb(PS2_DATA_PORT);
+        if (status & PS2_STATUS_AUX) {
+            *reply = value;
+            return true;
+        }
+        keyboard_process_scancode(value);
+    }
+    return false;
+}
+
+static bool ps2_write_aux_data(u8 value) {
+    for (u32 attempt = 0; attempt < PS2_DEVICE_RETRIES; attempt++) {
+        u8 reply = 0;
+        if (!ps2_write_command(0xD4) ||
+            !ps2_write_controller_data(value) ||
+            !ps2_wait_aux_reply(&reply)) {
+            return false;
+        }
+        if (reply == PS2_REPLY_ACK) return true;
+        if (reply != PS2_REPLY_RESEND) return false;
+    }
+    return false;
 }
 
 void mouse_init(void) {
-    /* Discard stale controller/device bytes before changing its state. */
+    /* IRQ12 must stay masked until both the controller and device have
+     * acknowledged setup. The handler is already registered by irq_init(). */
+    pic_mask_irq(IRQ_MOUSE);
     ps2_drain_output();
 
-    /* Disable the aux port while it is reconfigured, or stray bytes arrive
-     * mid-sequence and desynchronise the packet stream. */
-    ps2_write_command(0xA7);
-
-    /* Drain anything the controller was already holding. */
+    if (!ps2_write_command(0xA7)) {
+        kprintf("Mouse: controller timeout disabling AUX port\n");
+        return;
+    }
     ps2_drain_output();
 
-    /* Enable the aux port. */
-    ps2_write_command(0xA8);
+    if (!ps2_write_command(0xA8)) {
+        kprintf("Mouse: controller timeout enabling AUX port\n");
+        return;
+    }
 
-    /* Command 0x20 returns one configuration byte; it has no ACK byte. */
+    /* Controller command 0x20 returns one configuration byte, not an ACK. */
     u8 config = 0;
-    bool config_valid = false;
-    ps2_write_command(0x20);
-    if (ps2_wait_read()) {
-        config = inb(0x60);
-        config_valid = true;
-    } else {
-        kprintf("Mouse: controller config read timed out\n");
+    if (!ps2_write_command(0x20) || !ps2_read_controller_data(&config)) {
+        kprintf("Mouse: controller configuration read failed\n");
+        return;
     }
 
-    /* Only write the configuration back when the read succeeded. Writing a
-     * fabricated zero would silently clear unrelated controller settings. */
-    if (config_valid) {
-        config |= 0x02;    /* enable the aux interrupt (IRQ 12) */
-        ps2_write_command(0x60);
-        (void)ps2_write_data(config);
+    /* Enable IRQ12 and clear the AUX-disable bit without changing unrelated
+     * keyboard, translation, or system flags. */
+    config = (u8)((config | 0x02) & (u8)~0x20);
+    if (!ps2_write_command(0x60) ||
+        !ps2_write_controller_data(config)) {
+        kprintf("Mouse: controller configuration write failed\n");
+        return;
     }
 
-    /* Defaults, then enable reporting on the auxiliary mouse device. */
-    u8 defaults_ack = ps2_write_aux_data(0xF6);
-    u8 enable_ack = ps2_write_aux_data(0xF4);
+    if (!ps2_write_aux_data(0xF6)) {
+        kprintf("Mouse: device did not ACK defaults command\n");
+        return;
+    }
+    if (!ps2_write_aux_data(0xF4)) {
+        kprintf("Mouse: device did not ACK enable-reporting command\n");
+        return;
+    }
 
-    /* Make sure IRQ 12 is unmasked in the PIC, in case anything masked it. */
     pic_unmask_irq(IRQ_MOUSE);
-
-    kprintf("Mouse: PS/2 enabled, config=0x%02x F6->0x%02x F4->0x%02x\n",
-            config, defaults_ack, enable_ack);
+    kprintf("Mouse: PS/2 enabled, config=0x%02x ACK(F6,F4)=yes\n", config);
 }
 
 void mouse_handler(void) {
