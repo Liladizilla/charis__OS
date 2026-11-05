@@ -14,6 +14,9 @@ static task_t task_pool[TASK_MAX_TASKS];
 static task_t* task_list = NULL;
 static u32 next_pid = 1;
 
+static void task_release_user_stack_pages(task_t* task, pml4_t* pml4);
+static void task_release_user_code_pages(task_t* task, pml4_t* pml4);
+
 
 void task_init(void) {
     for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
