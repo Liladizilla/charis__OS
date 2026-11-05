@@ -39,6 +39,18 @@ static void append_u32(char* out, u32 capacity, u32* pos, u32 value) {
     out[*pos] = 0;
 }
 
+static void append_compact_u32(char* out, u32 capacity, u32* pos, u32 value) {
+    if (value >= 1000000) {
+        append_u32(out, capacity, pos, value / 1000000);
+        append_text(out, capacity, pos, "m");
+    } else if (value >= 10000) {
+        append_u32(out, capacity, pos, value / 1000);
+        append_text(out, capacity, pos, "k");
+    } else {
+        append_u32(out, capacity, pos, value);
+    }
+}
+
 static void append_text(char* out, u32 capacity, u32* pos, const char* value) {
     while (value && *value && *pos + 1 < capacity) out[(*pos)++] = *value++;
     out[*pos] = 0;
@@ -93,8 +105,13 @@ static void draw_shortcuts(void) {
 
 static void draw_status_widget(u32* out_x, u32* out_y, u32* out_w, u32* out_h) {
     u32 sw = g_framebuffer.width;
+    /* Wider cards at large font sizes prevent status strings from escaping
+     * their panels. Clamp to the actual display width on compact modes. */
     u32 w = u(360);
-    if (w > sw - (sw > u(24) ? u(24) : 0)) w = sw > u(24) ? sw - u(24) : sw;
+    u32 font_width = text_h() * 12 + u(24);
+    if (w < font_width) w = font_width;
+    u32 max_width = sw > u(24) ? sw - u(24) : sw;
+    if (w > max_width) w = max_width;
     u32 gap = max_u32(u(30), text_h() + u(8));
     u32 title_h = max_u32(u(26), text_h() + u(12));
     u32 first_line = title_h + u(12);
@@ -152,22 +169,30 @@ static void draw_status_widget(u32* out_x, u32* out_y, u32* out_w, u32* out_h) {
     pos = 0; current_task[0] = 0;
     task_t* active_task = scheduler_current();
     append_text(current_task, sizeof(current_task), &pos, "Task ");
-    if (active_task && active_task->name[0])
-        append_text(current_task, sizeof(current_task), &pos, active_task->name);
-    else
+    if (active_task && active_task->name[0]) {
+        char short_name[13];
+        u32 name_len = 0;
+        while (active_task->name[name_len] && name_len < sizeof(short_name) - 1) {
+            short_name[name_len] = active_task->name[name_len];
+            name_len++;
+        }
+        short_name[name_len] = 0;
+        append_text(current_task, sizeof(current_task), &pos, short_name);
+    } else {
         append_text(current_task, sizeof(current_task), &pos, "idle");
+    }
     append_text(current_task, sizeof(current_task), &pos, " #");
     append_u32(current_task, sizeof(current_task), &pos,
                active_task ? active_task->pid : 0);
 
     char activity[64];
     pos = 0; activity[0] = 0;
-    append_text(activity, sizeof(activity), &pos, "CS ");
-    append_u32(activity, sizeof(activity), &pos, stats.context_switches);
-    append_text(activity, sizeof(activity), &pos, "  IRQ ");
-    append_u32(activity, sizeof(activity), &pos, stats.interrupts);
-    append_text(activity, sizeof(activity), &pos, "  SYS ");
-    append_u32(activity, sizeof(activity), &pos, stats.syscalls);
+    append_text(activity, sizeof(activity), &pos, "CS");
+    append_compact_u32(activity, sizeof(activity), &pos, stats.context_switches);
+    append_text(activity, sizeof(activity), &pos, " IRQ");
+    append_compact_u32(activity, sizeof(activity), &pos, stats.interrupts);
+    append_text(activity, sizeof(activity), &pos, " SYS");
+    append_compact_u32(activity, sizeof(activity), &pos, stats.syscalls);
 
     label(x + u(12), y + first_line, "Up", DS_MUTED);
     label(x + u(52), y + first_line, time, DS_WHITE);
@@ -175,7 +200,7 @@ static void draw_status_widget(u32* out_x, u32* out_y, u32* out_w, u32* out_h) {
     label(x + u(12), y + task_line, tasks, DS_WHITE);
     label(x + u(12), y + current_line, current_task, DS_MUTED);
     label(x + u(12), y + activity_line, activity, DS_MUTED);
-    label(x + u(12), y + foot_line, "Managed physical memory", DS_MUTED);
+    label(x + u(12), y + foot_line, "Managed RAM", DS_MUTED);
 
     u32 bar_x = x + u(12), bar_w = w > u(24) ? w - u(24) : 1;
     fb_fill_rect(bar_x, y + bar_y, bar_w, u(2), DS_LINE);
@@ -200,8 +225,8 @@ static void draw_notification_widget(u32 x, u32 y, u32 w) {
     label(x + u(12), y + (title_h > text_h() ? (title_h - text_h()) / 2 : 0),
           "NOTIFICATIONS", DS_WHITE);
     fb_fill_rect(x + u(12), y + title_h + u(6), u(3), body_gap * 2 - u(8), DS_BLUE);
-    label(x + u(24), y + title_h + u(4), "CharisOS is ready", DS_WHITE);
-    label(x + u(24), y + title_h + body_gap, "Your live session is active.", DS_MUTED);
+    label(x + u(24), y + title_h + u(4), "CharisOS ready", DS_WHITE);
+    label(x + u(24), y + title_h + body_gap, "Session active", DS_MUTED);
 }
 
 void desktop_surface_render(void) {
