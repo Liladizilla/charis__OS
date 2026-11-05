@@ -185,9 +185,18 @@ void task_block(task_t* task) {
     }
 }
 
+/* A blocked task may wake itself from STI;HLT while it is still the
+ * current CPU context. In that case it is already executing and must return
+ * to RUNNING, not remain marked READY while consuming the CPU. */
+static void task_mark_runnable(task_t* task) {
+    if (!task) return;
+    task->state = (task == scheduler_current())
+                ? TASK_STATE_RUNNING : TASK_STATE_READY;
+}
+
 void task_unblock(task_t* task) {
     if (task && task->state == TASK_STATE_BLOCKED) {
-        task->state = TASK_STATE_READY;
+        task_mark_runnable(task);
     }
 }
 
@@ -512,7 +521,7 @@ void task_wake_sleepers(u64 now_ms) {
         if (now_ms >= task->event_data) {
             task->waiting_event = 0;
             task->event_data = 0;
-            task->state = TASK_STATE_READY;
+            task_mark_runnable(task);
         }
     }
 }
@@ -525,7 +534,7 @@ void task_wake_keyboard_waiters(void) {
         if (task->state == TASK_STATE_BLOCKED &&
             task->waiting_event == TASK_WAITING_KEYBOARD) {
             task->waiting_event = 0;
-            task->state = TASK_STATE_READY;
+            task_mark_runnable(task);
         }
     }
 }
