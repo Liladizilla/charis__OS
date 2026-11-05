@@ -298,6 +298,8 @@ else
         || fail "ring-3 page-fault isolation probe did not run"
     grep -q 'USER PAGE FAULT:' "$LOG" \
         || fail "invalid ring-3 access was not contained as a user page fault"
+    grep -q 'RING3_SYSCALL_PTR_REJECT_OK' "$LOG" \
+        || fail "ring-3 syscall pointer validation did not reject untrusted addresses"
 fi
 
 if [ "$REQUIRE_VMM_TESTS" = "1" ]; then
