@@ -52,6 +52,31 @@ void pic_send_eoi(u8 irq) {
     outb(PIC1_COMMAND, PIC_EOI);
 }
 
+/* IRQ7 and IRQ15 can be reported spuriously by the 8259 when the
+ * request disappears after the PIC raises the interrupt. Their in-service
+ * bits distinguish a real interrupt from the spurious vector:
+ *   IRQ7  spurious: send no EOI
+ *   IRQ15 spurious: acknowledge only the master cascade (IRQ2)
+ */
+static bool pic_irq_is_spurious(u8 irq) {
+    if (irq == 7) {
+        outb(PIC1_COMMAND, 0x0B); /* OCW3: read master ISR */
+        return (inb(PIC1_COMMAND) & 0x80) == 0;
+    }
+
+    if (irq == 15) {
+        outb(PIC2_COMMAND, 0x0B); /* OCW3: read slave ISR */
+        if ((inb(PIC2_COMMAND) & 0x80) == 0) {
+            outb(PIC1_COMMAND, PIC_EOI);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+
 void pic_mask_irq(u8 irq) {
     u16 port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
     u8 value = inb(port);
@@ -92,6 +117,8 @@ void irq_register_handler(u8 irq, void (*handler)(reg_frame_t*)) {
 // Called from idt_dispatch_handler
 void irq_dispatch(u8 irq, reg_frame_t* frame) {
     if (irq >= 16) return;
+
+    if (pic_irq_is_spurious(irq)) return;
 
     void (*handler)(reg_frame_t*) = irq_handlers[irq];
     if (handler) {
