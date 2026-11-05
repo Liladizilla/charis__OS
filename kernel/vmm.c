@@ -88,7 +88,10 @@ void vmm_init(void) {
                           PTE_PRESENT | PTE_WRITABLE;
         for (u32 j = 0; j < 512; j++) {
             u64 physical = ((u64)i << 30) | ((u64)j << 21);
-            physmap_pd[i][j] = pmm_block_is_usable_ram(physical)
+            /* The first 2 MiB contains bootstrap page tables and low kernel data.
+             * It is excluded from PMM, but must remain addressable by the VMM. */
+            bool bootstrap_block = (physical == 0);
+            physmap_pd[i][j] = (bootstrap_block || pmm_block_is_usable_ram(physical))
                 ? (physical | PTE_PRESENT | PTE_WRITABLE | PTE_HUGE | PTE_NX)
                 : 0;
         }
