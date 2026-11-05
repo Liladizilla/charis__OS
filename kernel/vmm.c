@@ -173,8 +173,9 @@ void vmm_init(void) {
 // Walk the page table tree and return the PTE for a virtual address.
 // If create=true, allocate missing intermediate tables.
 pte_t* vmm_walk(pml4_t* pml4, u64 vaddr, bool create) {
+    if (!pml4) return NULL;
+
     u64* pml4_table = (u64*)pml4;
-    
     u16 i1 = PML4_INDEX(vaddr);
     u64 pml4e = pml4_table[i1];
     if (!(pml4e & PTE_PRESENT)) {
@@ -197,6 +198,11 @@ pte_t* vmm_walk(pml4_t* pml4, u64 vaddr, bool create) {
         pdpt[i2] = (phys & ~0xFFFULL) | PTE_PRESENT | PTE_WRITABLE;
         pdpte = pdpt[i2];
     }
+
+    /* A 1 GiB PDPTE is a leaf mapping, not a pointer to a page directory.
+     * This API returns a 4 KiB PTE pointer; refuse huge leaves rather than
+     * interpreting mapped data as a page-table page. */
+    if (pdpte & PTE_HUGE) return NULL;
     u64* pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
 
     u16 i3 = PD_INDEX(vaddr);
@@ -209,8 +215,11 @@ pte_t* vmm_walk(pml4_t* pml4, u64 vaddr, bool create) {
         pd[i3] = (phys & ~0xFFFULL) | PTE_PRESENT | PTE_WRITABLE;
         pde = pd[i3];
     }
-    u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
 
+    /* Likewise, a 2 MiB PDE is a leaf. Callers that need physical translation
+     * of huge mappings must use a huge-page-aware translator, not a PTE walk. */
+    if (pde & PTE_HUGE) return NULL;
+    u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
     return &pt[PT_INDEX(vaddr)];
 }
 
