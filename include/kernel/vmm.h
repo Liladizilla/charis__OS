@@ -32,6 +32,10 @@ void vmm_run_tests(void);
 
 pml4_t* vmm_create_address_space(void);
 bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src);
+/* Destroy an inactive process address space, freeing owned USER frames and
+ * its private lower-half page-table hierarchy. Shared kernel high-half tables
+ * and supervisor leaf frames are never freed. */
+void vmm_destroy_address_space(pml4_t* pml4);
 void vmm_switch(pml4_t* pml4);
 
 #endif
