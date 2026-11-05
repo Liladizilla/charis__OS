@@ -3,6 +3,7 @@
 #include <kernel/vga.h>
 #include <kernel/string.h>
 #include <kernel/memory.h>
+#include <kernel/bootmem.h>
 
 // Page table entry flags
 #define PTE_PRESENT     (1ULL << 0)
@@ -16,14 +17,36 @@
 #define PD_INDEX(virt)   (((virt) >> 21) & 0x1FF)
 #define PT_INDEX(virt)   (((virt) >> 12) & 0x1FF)
 
-// Physical-to-virtual mapping for page-table pages.
-// Boot.asm sets up identity mapping for first 1GB, so physical addresses equal virtual addresses.
-// This works for page tables allocated in low memory.
-static inline u64* phys_to_virt_pt(u64 phys) {
-    return (u64*)(phys);
+/*
+ * Static page-table storage permits the direct map to be installed before
+ * PMM allocations are used as pointers. All entries are supervisor-only.
+ */
+#define PHYSMAP_PDPT_ENTRIES (VMM_PHYSICAL_LIMIT >> 30)
+static u64 physmap_pdpt[512] __attribute__((aligned(PAGE_SIZE)));
+static u64 physmap_pd[PHYSMAP_PDPT_ENTRIES][512] __attribute__((aligned(PAGE_SIZE)));
+static u64 physmap_base = 0;
+static bool physmap_ready = false;
+static u64 kernel_cr3 = 0;
+
+void* vmm_phys_to_virt(u64 physical) {
+    if (physical >= VMM_PHYSICAL_LIMIT) return NULL;
+    /* Keep the first 2 MiB on the existing identity map. It contains legacy
+     * firmware regions as well as bootstrap tables, so do not add a second
+     * write-back alias for that mixed-purpose physical range. */
+    if (physical < 0x200000ULL) return (void*)(uintptr_t)physical;
+    if (physmap_ready) {
+        u32 pdpt_index = (u32)(physical >> 30);
+        u32 pd_index = (u32)((physical >> 21) & 0x1FF);
+        if (!(physmap_pd[pdpt_index][pd_index] & PTE_PRESENT)) return NULL;
+        return (void*)(uintptr_t)(physmap_base + physical);
+    }
+    if (physical < 0x100000000ULL) return (void*)(uintptr_t)physical;
+    return NULL;
 }
 
-static u64 kernel_cr3 = 0;
+static inline u64* phys_to_virt_pt(u64 phys) {
+    return (u64*)vmm_phys_to_virt(phys & ~0xFFFULL);
+}
 
 // Get current CR3
 static u64 get_cr3(void) {
@@ -38,78 +61,133 @@ static void flush_tlb(void) {
     asm volatile("mov %0, %%cr3" : : "r"(cr3));
 }
 
+void vmm_init(void) {
+    /* Bootstrap page tables and kernel image are identity mapped below 4 GiB.
+     * Install the high-half direct map before PMM frames are dereferenced. */
+    u64 boot_cr3 = get_cr3() & ~0xFFFULL;
+    if (boot_cr3 >= 0x100000000ULL ||
+        (u64)(uintptr_t)physmap_pdpt >= 0x100000000ULL ||
+        (u64)(uintptr_t)physmap_pd >= 0x100000000ULL) {
+        vga_puts("VMM: bootstrap structures outside 4 GiB identity map\n");
+        for (;;) asm volatile("cli; hlt" : : : "memory");
+    }
+
+    u64* pml4 = (u64*)(uintptr_t)boot_cr3;
+    s32 slot = -1;
+    for (s32 candidate = 510; candidate >= 256; candidate--) {
+        if (!(pml4[candidate] & PTE_PRESENT)) {
+            slot = candidate;
+            break;
+        }
+    }
+    if (slot < 0) {
+        vga_puts("VMM: no free high-half PML4 slot for physical map\n");
+        for (;;) asm volatile("cli; hlt" : : : "memory");
+    }
+
+    kmemset(physmap_pdpt, 0, sizeof(physmap_pdpt));
+    kmemset(physmap_pd, 0, sizeof(physmap_pd));
+    for (u32 i = 0; i < PHYSMAP_PDPT_ENTRIES; i++) {
+        physmap_pdpt[i] = (u64)(uintptr_t)&physmap_pd[i] |
+                          PTE_PRESENT | PTE_WRITABLE;
+        for (u32 j = 0; j < 512; j++) {
+            u64 physical = ((u64)i << 30) | ((u64)j << 21);
+            /* The first 2 MiB contains bootstrap page tables and low kernel data.
+             * It is excluded from PMM, but must remain addressable by the VMM. */
+            physmap_pd[i][j] = pmm_block_is_usable_ram(physical)
+                ? (physical | PTE_PRESENT | PTE_WRITABLE | PTE_HUGE | PTE_NX)
+                : 0;
+        }
+    }
+
+    physmap_base = 0xFFFF000000000000ULL | ((u64)slot << 39);
+    pml4[slot] = (u64)(uintptr_t)physmap_pdpt | PTE_PRESENT | PTE_WRITABLE;
+    kernel_cr3 = boot_cr3;
+    physmap_ready = true;
+    flush_tlb();
+
+    vga_printf("VMM: %u GiB RAM direct map at %p\n",
+               (u32)(VMM_PHYSICAL_LIMIT >> 30),
+               (void*)(uintptr_t)physmap_base);
+    vga_puts("VMM initialized\n");
+}
+
 // Get or create a lower-level page table
 static bool get_or_create_table(u64* parent_table, u16 idx, u64 flags) {
-    u64 entry = parent_table[idx];
-    if (entry & PTE_PRESENT) {
-        return true;
-    }
+    if (!parent_table) return false;
+    if (parent_table[idx] & PTE_PRESENT) return true;
 
     u64 phys = pmm_alloc_page();
     if (!phys) return false;
-
-    kmemset(phys_to_virt_pt(phys), 0, PAGE_SIZE);
-
-    parent_table[idx] = (phys & ~0xFFFULL) | PTE_PRESENT | (flags & PTE_USER) | PTE_WRITABLE;
+    u64* table = phys_to_virt_pt(phys);
+    if (!table) {
+        pmm_free_page(phys);
+        return false;
+    }
+    kmemset(table, 0, PAGE_SIZE);
+    parent_table[idx] = (phys & ~0xFFFULL) | PTE_PRESENT |
+                        (flags & PTE_USER) | PTE_WRITABLE;
     return true;
 }
 
 
 bool vmm_map_page(u64 virt, u64 phys, u64 flags) {
-    u64* pml4 = (u64*)get_cr3();
+    u64* pml4 = phys_to_virt_pt(get_cr3());
+    if (!pml4) return false;
 
     u16 i1 = PML4_INDEX(virt);
     if (!get_or_create_table(pml4, i1, 0)) return false;
     u64 pml4e = pml4[i1];
+    if (pml4e & PTE_HUGE) return false;
     u64* pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
+    if (!pdpt) return false;
 
     u16 i2 = PDPT_INDEX(virt);
     if (!get_or_create_table(pdpt, i2, 0)) return false;
     u64 pdpte = pdpt[i2];
+    if (pdpte & PTE_HUGE) return false;
     u64* pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
+    if (!pd) return false;
 
     u16 i3 = PD_INDEX(virt);
     if (!get_or_create_table(pd, i3, 0)) return false;
     u64 pde = pd[i3];
+    if (pde & PTE_HUGE) return false;
     u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
+    if (!pt) return false;
 
-    /* x86 checks the USER permission at every level, not only the leaf PTE.
-     * Propagate it through this path when a user mapping is requested. */
     if (flags & PTE_USER) {
         pml4[i1] |= PTE_USER;
         pdpt[i2] |= PTE_USER;
         pd[i3] |= PTE_USER;
     }
-
-    pt[PT_INDEX(virt)] = (phys & ~0xFFFULL) | PTE_PRESENT | (flags & (PTE_WRITABLE | PTE_USER | PTE_NX));
-
+    pt[PT_INDEX(virt)] = (phys & ~0xFFFULL) | PTE_PRESENT |
+        (flags & (PTE_WRITABLE | PTE_USER | PTE_NX | (1ULL << 3) | (1ULL << 4)));
     flush_tlb();
     return true;
 }
 
 void vmm_unmap_page(u64 virt) {
-    u64* pml4 = (u64*)get_cr3();
+    u64* pml4 = phys_to_virt_pt(get_cr3());
+    if (!pml4) return;
     u64 pml4e = pml4[PML4_INDEX(virt)];
-    if (!(pml4e & PTE_PRESENT)) return;
+    if (!(pml4e & PTE_PRESENT) || (pml4e & PTE_HUGE)) return;
 
     u64* pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
+    if (!pdpt) return;
     u64 pdpte = pdpt[PDPT_INDEX(virt)];
-    if (!(pdpte & PTE_PRESENT)) return;
+    if (!(pdpte & PTE_PRESENT) || (pdpte & PTE_HUGE)) return;
 
     u64* pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
+    if (!pd) return;
     u64 pde = pd[PD_INDEX(virt)];
-    if (!(pde & PTE_PRESENT)) return;
-
-    if (pde & (1ULL << 7)) {
-        return;
-    }
+    if (!(pde & PTE_PRESENT) || (pde & PTE_HUGE)) return;
 
     u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
+    if (!pt) return;
     pt[PT_INDEX(virt)] = 0;
-
     flush_tlb();
 }
-
 
 /* Remove a 4 KiB leaf mapping from a specified address space. This does not
  * free the mapped physical page or intermediate page-table pages; ownership
@@ -117,109 +195,96 @@ void vmm_unmap_page(u64 virt) {
  * address was not mapped as a 4 KiB page. */
 u64 vmm_unmap_page_pml4(pml4_t* pml4, u64 virt) {
     if (!pml4) return 0;
+    u64* pml4_table = phys_to_virt_pt((u64)pml4);
+    if (!pml4_table) return 0;
 
-    u64* pml4_table = (u64*)pml4;
     u64 pml4e = pml4_table[PML4_INDEX(virt)];
-    if (!(pml4e & PTE_PRESENT)) return 0;
-
+    if (!(pml4e & PTE_PRESENT) || (pml4e & PTE_HUGE)) return 0;
     u64* pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
+    if (!pdpt) return 0;
+
     u64 pdpte = pdpt[PDPT_INDEX(virt)];
-    if (!(pdpte & PTE_PRESENT) || (pdpte & (1ULL << 7))) return 0;
-
+    if (!(pdpte & PTE_PRESENT) || (pdpte & PTE_HUGE)) return 0;
     u64* pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
-    u64 pde = pd[PD_INDEX(virt)];
-    if (!(pde & PTE_PRESENT) || (pde & (1ULL << 7))) return 0;
+    if (!pd) return 0;
 
+    u64 pde = pd[PD_INDEX(virt)];
+    if (!(pde & PTE_PRESENT) || (pde & PTE_HUGE)) return 0;
     u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
+    if (!pt) return 0;
+
     u64* pte = &pt[PT_INDEX(virt)];
     if (!(*pte & PTE_PRESENT)) return 0;
-
     u64 phys = *pte & 0x000FFFFFFFFFF000ULL;
     *pte = 0;
-    if ((get_cr3() & ~0xFFFULL) == ((u64)pml4 & ~0xFFFULL)) {
+    if (get_cr3() == ((u64)pml4 & ~0xFFFULL)) {
         asm volatile("invlpg (%0)" : : "r"(virt) : "memory");
     }
     return phys;
 }
 
 u64 vmm_get_phys(u64 virt) {
-    u64* pml4 = (u64*)get_cr3();
+    u64* pml4 = phys_to_virt_pt(get_cr3());
+    if (!pml4) return 0;
     u64 pml4e = pml4[PML4_INDEX(virt)];
     if (!(pml4e & PTE_PRESENT)) return 0;
 
     u64* pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
+    if (!pdpt) return 0;
     u64 pdpte = pdpt[PDPT_INDEX(virt)];
     if (!(pdpte & PTE_PRESENT)) return 0;
+    if (pdpte & PTE_HUGE) {
+        return (pdpte & 0x000FFFFFC0000000ULL) | (virt & 0x3FFFFFFFULL);
+    }
 
     u64* pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
+    if (!pd) return 0;
     u64 pde = pd[PD_INDEX(virt)];
     if (!(pde & PTE_PRESENT)) return 0;
-
-    if (pde & (1ULL << 7)) {
-        return (pde & ~0x1FFFFFULL) | (virt & 0x1FFFFFULL);
+    if (pde & PTE_HUGE) {
+        return (pde & 0x000FFFFFFFE00000ULL) | (virt & 0x1FFFFFULL);
     }
 
     u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
+    if (!pt) return 0;
     u64 pte = pt[PT_INDEX(virt)];
     if (!(pte & PTE_PRESENT)) return 0;
-
     return (pte & 0x000FFFFFFFFFF000ULL) | (virt & 0xFFFULL);
-}
-
-void vmm_init(void) {
-    vga_puts("VMM initialized\n");
 }
 
 // Walk the page table tree and return the PTE for a virtual address.
 // If create=true, allocate missing intermediate tables.
 pte_t* vmm_walk(pml4_t* pml4, u64 vaddr, bool create) {
     if (!pml4) return NULL;
+    u64* pml4_table = phys_to_virt_pt((u64)pml4);
+    if (!pml4_table) return NULL;
 
-    u64* pml4_table = (u64*)pml4;
     u16 i1 = PML4_INDEX(vaddr);
-    u64 pml4e = pml4_table[i1];
-    if (!(pml4e & PTE_PRESENT)) {
-        if (!create) return NULL;
-        u64 phys = pmm_alloc_page();
-        if (!phys) return NULL;
-        kmemset(phys_to_virt_pt(phys), 0, PAGE_SIZE);
-        pml4_table[i1] = (phys & ~0xFFFULL) | PTE_PRESENT | PTE_WRITABLE;
-        pml4e = pml4_table[i1];
+    if (!(pml4_table[i1] & PTE_PRESENT)) {
+        if (!create || !get_or_create_table(pml4_table, i1, 0)) return NULL;
     }
+    u64 pml4e = pml4_table[i1];
+    if (pml4e & PTE_HUGE) return NULL;
     u64* pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
+    if (!pdpt) return NULL;
 
     u16 i2 = PDPT_INDEX(vaddr);
-    u64 pdpte = pdpt[i2];
-    if (!(pdpte & PTE_PRESENT)) {
-        if (!create) return NULL;
-        u64 phys = pmm_alloc_page();
-        if (!phys) return NULL;
-        kmemset(phys_to_virt_pt(phys), 0, PAGE_SIZE);
-        pdpt[i2] = (phys & ~0xFFFULL) | PTE_PRESENT | PTE_WRITABLE;
-        pdpte = pdpt[i2];
+    if (!(pdpt[i2] & PTE_PRESENT)) {
+        if (!create || !get_or_create_table(pdpt, i2, 0)) return NULL;
     }
-
-    /* A 1 GiB PDPTE is a leaf mapping, not a pointer to a page directory.
-     * This API returns a 4 KiB PTE pointer; refuse huge leaves rather than
-     * interpreting mapped data as a page-table page. */
+    u64 pdpte = pdpt[i2];
     if (pdpte & PTE_HUGE) return NULL;
     u64* pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
+    if (!pd) return NULL;
 
     u16 i3 = PD_INDEX(vaddr);
-    u64 pde = pd[i3];
-    if (!(pde & PTE_PRESENT)) {
-        if (!create) return NULL;
-        u64 phys = pmm_alloc_page();
-        if (!phys) return NULL;
-        kmemset(phys_to_virt_pt(phys), 0, PAGE_SIZE);
-        pd[i3] = (phys & ~0xFFFULL) | PTE_PRESENT | PTE_WRITABLE;
-        pde = pd[i3];
+    if (!(pd[i3] & PTE_PRESENT)) {
+        if (!create || !get_or_create_table(pd, i3, 0)) return NULL;
     }
-
-    /* Likewise, a 2 MiB PDE is a leaf. Callers that need physical translation
-     * of huge mappings must use a huge-page-aware translator, not a PTE walk. */
+    u64 pde = pd[i3];
     if (pde & PTE_HUGE) return NULL;
     u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
+    if (!pt) return NULL;
     return &pt[PT_INDEX(vaddr)];
 }
 
@@ -231,12 +296,14 @@ pte_t* vmm_walk(pml4_t* pml4, u64 vaddr, bool create) {
  */
 bool vmm_translate(pml4_t* pml4, u64 vaddr, u64* physical, u64* flags) {
     if (!pml4 || !physical || !flags) return false;
+    const u64* pml4_table = (const u64*)vmm_phys_to_virt((u64)pml4);
+    if (!pml4_table) return false;
 
-    const u64* pml4_table = (const u64*)pml4;
     u64 pml4e = pml4_table[PML4_INDEX(vaddr)];
     if (!(pml4e & PTE_PRESENT)) return false;
-
     const u64* pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
+    if (!pdpt) return false;
+
     u64 pdpte = pdpt[PDPT_INDEX(vaddr)];
     if (!(pdpte & PTE_PRESENT)) return false;
 
@@ -246,11 +313,11 @@ bool vmm_translate(pml4_t* pml4, u64 vaddr, u64* physical, u64* flags) {
     u64 translated;
 
     if (pdpte & PTE_HUGE) {
-        /* 1 GiB leaf: bits 51:30 contain the physical frame base. */
         translated = (pdpte & 0x000FFFFFC0000000ULL) |
                      (vaddr & 0x3FFFFFFFULL);
     } else {
         const u64* pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
+        if (!pd) return false;
         u64 pde = pd[PD_INDEX(vaddr)];
         if (!(pde & PTE_PRESENT)) return false;
 
@@ -259,11 +326,11 @@ bool vmm_translate(pml4_t* pml4, u64 vaddr, u64* physical, u64* flags) {
         nx = nx || ((pde & PTE_NX) != 0);
 
         if (pde & PTE_HUGE) {
-            /* 2 MiB leaf: bits 51:21 contain the physical frame base. */
             translated = (pde & 0x000FFFFFFFE00000ULL) |
                          (vaddr & 0x1FFFFFULL);
         } else {
             const u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
+            if (!pt) return false;
             u64 pte = pt[PT_INDEX(vaddr)];
             if (!(pte & PTE_PRESENT)) return false;
 
@@ -287,10 +354,12 @@ bool vmm_translate(pml4_t* pml4, u64 vaddr, u64* physical, u64* flags) {
 pml4_t* vmm_create_address_space(void) {
     u64 phys = pmm_alloc_page();
     if (!phys) return NULL;
-    
     u64* pml4 = phys_to_virt_pt(phys);
+    if (!pml4) {
+        pmm_free_page(phys);
+        return NULL;
+    }
     kmemset(pml4, 0, PAGE_SIZE);
-    
     return (pml4_t*)phys;
 }
 
@@ -299,8 +368,15 @@ pml4_t* vmm_create_address_space(void) {
 bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src) {
     if (!dst) return false;
 
-    u64* src_pml4 = src ? (u64*)src : (u64*)get_cr3();
-    for (u32 i = 256; i < 512; i++) ((u64*)dst)[i] = src_pml4[i];
+    u64* dst_pml4 = phys_to_virt_pt((u64)dst);
+    u64* src_pml4 = phys_to_virt_pt(src ? (u64)src : get_cr3());
+    if (!dst_pml4 || !src_pml4) return false;
+
+    /* Share all supervisor-only high-half mappings, including the direct map. */
+    for (u32 i = 256; i < 512; i++) dst_pml4[i] = src_pml4[i];
+
+    /* Clone the low identity-map table hierarchy so ring-3 mappings can
+     * change USER permissions without editing the kernel's page tables. */
     u64 pml4e = src_pml4[0];
     if (!(pml4e & PTE_PRESENT)) return true;
 
@@ -308,33 +384,36 @@ bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src) {
     if (!pdpt_phys) return false;
     u64* src_pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
     u64* dst_pdpt = phys_to_virt_pt(pdpt_phys);
+    if (!src_pdpt || !dst_pdpt) return false;
     for (u32 i = 0; i < 512; i++) dst_pdpt[i] = src_pdpt[i];
 
     for (u32 i = 0; i < 512; i++) {
         u64 pdpte = src_pdpt[i];
-        if (!(pdpte & PTE_PRESENT) || (pdpte & (1ULL << 7))) continue;
+        if (!(pdpte & PTE_PRESENT) || (pdpte & PTE_HUGE)) continue;
 
         u64 pd_phys = pmm_alloc_page();
         if (!pd_phys) return false;
         u64* src_pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
         u64* dst_pd = phys_to_virt_pt(pd_phys);
+        if (!src_pd || !dst_pd) return false;
         for (u32 j = 0; j < 512; j++) dst_pd[j] = src_pd[j];
         dst_pdpt[i] = pd_phys | (pdpte & 0x8000000000000FFFULL);
 
         for (u32 j = 0; j < 512; j++) {
             u64 pde = src_pd[j];
-            if (!(pde & PTE_PRESENT) || (pde & (1ULL << 7))) continue;
+            if (!(pde & PTE_PRESENT) || (pde & PTE_HUGE)) continue;
 
             u64 pt_phys = pmm_alloc_page();
             if (!pt_phys) return false;
             u64* src_pt = phys_to_virt_pt(pde & ~0xFFFULL);
             u64* dst_pt = phys_to_virt_pt(pt_phys);
+            if (!src_pt || !dst_pt) return false;
             for (u32 k = 0; k < 512; k++) dst_pt[k] = src_pt[k];
             dst_pd[j] = pt_phys | (pde & 0x8000000000000FFFULL);
         }
     }
 
-    ((u64*)dst)[0] = pdpt_phys | (pml4e & 0x8000000000000FFFULL);
+    dst_pml4[0] = pdpt_phys | (pml4e & 0x8000000000000FFFULL);
     return true;
 }
 
@@ -348,47 +427,57 @@ void vmm_switch(pml4_t* pml4) {
 // Map a page into a specific address space (not current)
 bool vmm_map_page_pml4(pml4_t* pml4, u64 virt, u64 phys, u64 flags) {
     if (!pml4) return false;
-    u64* pml4_table = (u64*)pml4;
-    
+    u64* pml4_table = phys_to_virt_pt((u64)pml4);
+    if (!pml4_table) return false;
+
     u16 i1 = PML4_INDEX(virt);
     if (!get_or_create_table(pml4_table, i1, 0)) return false;
     u64 pml4e = pml4_table[i1];
+    if (pml4e & PTE_HUGE) return false;
     u64* pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
+    if (!pdpt) return false;
 
     u16 i2 = PDPT_INDEX(virt);
     if (!get_or_create_table(pdpt, i2, 0)) return false;
     u64 pdpte = pdpt[i2];
+    if (pdpte & PTE_HUGE) return false; /* 1 GiB splitting is not implemented. */
     u64* pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
+    if (!pd) return false;
 
     u16 i3 = PD_INDEX(virt);
     if (!get_or_create_table(pd, i3, 0)) return false;
     u64 pde = pd[i3];
-    if (pde & (1ULL << 7)) {
+    if (pde & PTE_HUGE) {
         u64 pt_phys = pmm_alloc_page();
         if (!pt_phys) return false;
         u64* pt = phys_to_virt_pt(pt_phys);
+        if (!pt) {
+            pmm_free_page(pt_phys);
+            return false;
+        }
         u64 base = pde & 0x000FFFFFFFE00000ULL;
         u64 page_flags = pde & 0x8000000000000FFFULL;
-        page_flags &= ~(1ULL << 7);
+        page_flags &= ~PTE_HUGE;
         for (u32 i = 0; i < 512; i++) {
             pt[i] = (base + (u64)i * PAGE_SIZE) | page_flags;
         }
-        pde = pt_phys | (pde & 0x8000000000000FFFULL & ~(1ULL << 7));
+        pde = pt_phys | (pde & 0x8000000000000FFFULL & ~PTE_HUGE);
         pd[i3] = pde;
     }
+
     u64* pt = phys_to_virt_pt(pde & ~0xFFFULL);
+    if (!pt) return false;
 
     if (flags & VMM_FLAG_USER) {
         pml4_table[i1] |= PTE_USER;
         pdpt[i2] |= PTE_USER;
         pd[i3] |= PTE_USER;
     }
-    pt[PT_INDEX(virt)] = (phys & ~0xFFFULL) | PTE_PRESENT | (flags & (PTE_WRITABLE | PTE_USER | PTE_NX));
+    pt[PT_INDEX(virt)] = (phys & ~0xFFFULL) | PTE_PRESENT |
+        (flags & (PTE_WRITABLE | PTE_USER | PTE_NX | PTE_WRITETHROUGH | PTE_NOCACHE));
 
-    if ((get_cr3() & ~0xFFFULL) == ((u64)pml4 & ~0xFFFULL)) {
+    if (get_cr3() == ((u64)pml4 & ~0xFFFULL)) {
         asm volatile("invlpg (%0)" : : "r"(virt) : "memory");
     }
-
     return true;
 }
-
