@@ -136,30 +136,47 @@ void mouse_init(void) {
     pic_mask_irq(IRQ_MOUSE);
     ps2_drain_output();
 
+    /* Temporarily stop first-port traffic so the controller configuration
+     * reply cannot be confused with a keyboard byte on the shared output port.
+     * Pending keyboard bytes were drained and decoded immediately above. */
+    if (!ps2_write_command(0xAD)) {
+        kprintf("Mouse: controller timeout disabling keyboard port\n");
+        return;
+    }
     if (!ps2_write_command(0xA7)) {
+        (void)ps2_write_command(0xAE);
         kprintf("Mouse: controller timeout disabling AUX port\n");
         return;
     }
     ps2_drain_output();
 
     if (!ps2_write_command(0xA8)) {
+        (void)ps2_write_command(0xAE);
         kprintf("Mouse: controller timeout enabling AUX port\n");
         return;
     }
 
-    /* Controller command 0x20 returns one configuration byte, not an ACK. */
+    /* Controller command 0x20 returns one configuration byte, not an ACK.
+     * Keyboard traffic is paused, so a non-AUX response here is unambiguous. */
     u8 config = 0;
     if (!ps2_write_command(0x20) || !ps2_read_controller_data(&config)) {
+        (void)ps2_write_command(0xAE);
         kprintf("Mouse: controller configuration read failed\n");
         return;
     }
 
-    /* Enable IRQ12 and clear the AUX-disable bit without changing unrelated
-     * keyboard, translation, or system flags. */
-    config = (u8)((config | 0x02) & (u8)~0x20);
+    /* Explicitly enable both interrupt lines and both controller ports.
+     * Preserve translation and all unrelated configuration bits. */
+    config = (u8)((config | 0x03) & (u8)~0x30);
     if (!ps2_write_command(0x60) ||
         !ps2_write_controller_data(config)) {
+        (void)ps2_write_command(0xAE);
         kprintf("Mouse: controller configuration write failed\n");
+        return;
+    }
+
+    if (!ps2_write_command(0xAE)) {
+        kprintf("Mouse: controller timeout restoring keyboard port\n");
         return;
     }
 
