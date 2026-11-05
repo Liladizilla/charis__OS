@@ -205,8 +205,11 @@ static void draw_status_widget(u32* out_x, u32* out_y, u32* out_w, u32* out_h) {
     append_text(activity, sizeof(activity), &pos, " SYS");
     append_compact_u32(activity, sizeof(activity), &pos, stats.syscalls);
 
-    label(x + u(12), y + first_line, "Up", DS_MUTED);
-    label(x + u(52), y + first_line, time, DS_WHITE);
+    u32 up_width = 0;
+    gfx_text_size("Up", &up_width, NULL);
+    u32 up_x = x + u(24);
+    label(up_x, y + first_line, "Up", DS_MUTED);
+    label(up_x + up_width + u(12), y + first_line, time, DS_WHITE);
     label(x + u(12), y + ram_line, memory, DS_WHITE);
     label(x + u(12), y + task_line, tasks, DS_WHITE);
     label(x + u(12), y + current_line, current_task, DS_MUTED);
