@@ -44,7 +44,8 @@ static void append_text(char* out, u32 capacity, u32* pos, const char* value) {
 }
 
 static void draw_app_icon(u32 x, u32 y, u32 kind) {
-    u32 accent = kind == 0 ? DS_BLUE : kind == 1 ? DS_AMBER : DS_GREEN;
+    u32 accent = kind == 0 ? DS_BLUE : kind == 1 ? DS_AMBER :
+                 kind == 2 ? DS_GREEN : DS_AMBER;
     fb_fill_rect(x + u(2), y + u(3), u(34), u(34), 0xFF090F18u);
     fb_fill_rect(x, y, u(34), u(34), 0xFF202D3Eu);
     fb_draw_rect(x, y, u(34), u(34), DS_LINE);
@@ -58,11 +59,23 @@ static void draw_app_icon(u32 x, u32 y, u32 kind) {
         fb_fill_rect(x + u(6), y + u(8), u(22), u(4), 0xFFFFE7B3u);
         fb_fill_rect(x + u(10), y + u(15), u(14), u(2), 0xFF6B5120u);
         fb_fill_rect(x + u(10), y + u(20), u(10), u(2), 0xFF6B5120u);
-    } else {
+    } else if (kind == 2) {
         fb_draw_rect(x + u(7), y + u(6), u(20), u(22), accent);
         fb_fill_rect(x + u(11), y + u(11), u(12), u(2), accent);
         fb_fill_rect(x + u(11), y + u(16), u(12), u(2), accent);
         fb_fill_rect(x + u(11), y + u(21), u(8), u(2), accent);
+    } else {
+        /* Compact settings gear: solid teeth and a hollow centre. */
+        fb_fill_rect(x + u(14), y + u(5), u(6), u(5), accent);
+        fb_fill_rect(x + u(14), y + u(24), u(6), u(5), accent);
+        fb_fill_rect(x + u(5), y + u(14), u(5), u(6), accent);
+        fb_fill_rect(x + u(24), y + u(14), u(5), u(6), accent);
+        fb_fill_rect(x + u(8), y + u(8), u(5), u(5), accent);
+        fb_fill_rect(x + u(21), y + u(8), u(5), u(5), accent);
+        fb_fill_rect(x + u(8), y + u(21), u(5), u(5), accent);
+        fb_fill_rect(x + u(21), y + u(21), u(5), u(5), accent);
+        fb_draw_rect(x + u(11), y + u(11), u(12), u(12), accent);
+        fb_fill_rect(x + u(15), y + u(15), u(4), u(4), 0xFF202D3Eu);
     }
 }
 
@@ -205,6 +218,7 @@ void desktop_surface_draw_taskbar_icons(u32 y) {
     draw_app_icon(u(116), y + u(5), 0);
     draw_app_icon(u(160), y + u(5), 1);
     draw_app_icon(u(204), y + u(5), 2);
+    draw_app_icon(u(248), y + u(5), 3);
 }
 
 int desktop_surface_taskbar_hit_test(int mx, int my, u32 taskbar_y) {
@@ -212,5 +226,6 @@ int desktop_surface_taskbar_hit_test(int mx, int my, u32 taskbar_y) {
     if (mx >= (int)u(112) && mx < (int)u(154)) return 0;
     if (mx >= (int)u(156) && mx < (int)u(198)) return 1;
     if (mx >= (int)u(200) && mx < (int)u(242)) return 2;
+    if (mx >= (int)u(244) && mx < (int)u(286)) return 3;
     return -1;
 }
