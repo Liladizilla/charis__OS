@@ -1,4 +1,5 @@
 #include <kernel/irq.h>
+#include <kernel/diagnostics.h>
 #include <kernel/io.h>
 #include <kernel/vga.h>
 #include <kernel/mouse.h>
@@ -155,6 +156,7 @@ void irq_dispatch(u8 irq, reg_frame_t* frame) {
         return;
     }
 
+    diag_note_interrupt();
     void (*handler)(reg_frame_t*) = irq_handlers[irq];
     if (handler) {
         handler(frame);
