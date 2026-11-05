@@ -226,7 +226,7 @@ done:
         elf_rollback_segments(mm->pml4, phdrs, ehdr.e_phnum);
     if (phdrs) kfree(phdrs);
     fd_close(fd);
-    if (result < 0) vga_puts("ELF: invalid or unreadable executable\\n");
+    if (result < 0) vga_puts("ELF: invalid or unreadable executable\n");
     return result;
 }
 
