@@ -22,11 +22,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install dependencies
-        timeout-minutes: 12
+        timeout-minutes: 18
         run: |
-          # Keep dependency setup bounded and avoid pulling recommended desktop packages.
-          timeout 240s sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
-          timeout 480s sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends \
+          # Keep dependency setup bounded; firmware is optional because BIOS
+          # boot is the gating path and graphical capture uses SeaBIOS.
+          timeout 300s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          timeout 780s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends \
             build-essential \
             nasm \
             qemu-system-x86 \
@@ -34,8 +35,7 @@ jobs:
             grub-common \
             xorriso \
             mtools \
-            dosfstools \
-            ovmf
+            dosfstools
 
       - name: Verify build toolchain
         run: make check-tools
@@ -132,24 +132,9 @@ jobs:
         run: |
           set -u
           mkdir -p build
-          OVMF_CODE=""
-          for c in /usr/share/OVMF/OVMF_CODE_4M.fd /usr/share/OVMF/OVMF_CODE.fd /usr/share/edk2/ovmf/OVMF_CODE.fd /usr/share/edk2-ovmf/OVMF_CODE.fd /usr/share/qemu/OVMF.fd; do
-            if [ -f "$c" ]; then OVMF_CODE="$c"; break; fi
-          done
-          if [ -z "$OVMF_CODE" ]; then echo "No OVMF CODE image; screenshot skipped"; exit 0; fi
-          OVMF_VARS=""
-          for c in "${OVMF_CODE%_CODE*}_VARS_4M.fd" "${OVMF_CODE%_CODE*}_VARS.fd" /usr/share/OVMF/OVMF_VARS_4M.fd /usr/share/OVMF/OVMF_VARS.fd /usr/share/edk2/ovmf/OVMF_VARS.fd /usr/share/edk2-ovmf/OVMF_VARS.fd; do
-            if [ -f "$c" ]; then OVMF_VARS="$c"; break; fi
-          done
-          if [ -z "$OVMF_VARS" ]; then echo "No OVMF VARS image; screenshot skipped"; exit 0; fi
-          cp "$OVMF_VARS" build/desktop-capture-vars.fd
-
-          # Feed two QEMU monitor commands through a shell pipe. No helper
-          # language, generated code, or changes to the C/assembly OS sources.
+          # SeaBIOS capture avoids making OVMF an installation dependency.
+          # The kernel's framebuffer is captured directly from the guest.
           {
-            # Complete the seven-step first-run wizard using its real keyboard
-            # controls, so the artifact captures the desktop rather than the
-            # welcome screen. Enter advances each step and applies defaults.
             sleep 8
             for step in {1..7}; do
               printf 'sendkey ret\n'
@@ -161,9 +146,7 @@ jobs:
             printf 'quit\n'
           } | timeout 35s qemu-system-x86_64 \
             -machine q35 -m 512M -vga std -nic none -no-reboot \
-            -drive if=pflash,format=raw,readonly=on,file="$OVMF_CODE" \
-            -drive if=pflash,format=raw,file=build/desktop-capture-vars.fd \
-            -cdrom build/charisos-vm.iso -boot menu=off \
+            -cdrom build/charisos-vm.iso -boot order=d \
             -serial file:build/desktop-capture-serial.log \
             -monitor stdio -display none \
             >build/desktop-capture-qemu.log 2>&1 || true
