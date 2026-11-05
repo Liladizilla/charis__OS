@@ -21,19 +21,23 @@ void diag_collect_stats(system_stats_t* stats) {
     stats->uptime_ms = timer_get_ms();
     
     // Count active tasks
-    u32 active = 0, total = 0;
+    u32 active = 0, total = 0, blocked = 0;
     task_t* cur = scheduler_current();
-    task_t* t = cur;
-    do {
-        total++;
-        if (t->state == TASK_STATE_RUNNING || t->state == TASK_STATE_READY) {
-            active++;
-        }
-        t = t->next;
-    } while (t && t != cur);
-    
+    if (cur) {
+        task_t* t = cur;
+        do {
+            total++;
+            if (t->state == TASK_STATE_RUNNING || t->state == TASK_STATE_READY)
+                active++;
+            else if (t->state == TASK_STATE_BLOCKED)
+                blocked++;
+            t = t->next;
+        } while (t && t != cur);
+    }
+
     stats->processes_active = active;
     stats->processes_total = total;
+    stats->processes_blocked = blocked;
     
     // Memory stats from PMM
     stats->memory_used = pmm_used_pages() * 4; // KB
@@ -50,7 +54,7 @@ void diag_print_status(void) {
     
     kprintf("=== System Status ===\n");
     kprintf("Uptime: %llu seconds\n", stats.uptime_ms / 1000);
-    kprintf("Processes: %u active / %u total\n", stats.processes_active, stats.processes_total);
+    kprintf("Processes: %u active / %u total / %u blocked\n", stats.processes_active, stats.processes_total, stats.processes_blocked);
     kprintf("Memory: %u KB used / %u KB free\n", stats.memory_used, stats.memory_free);
     kprintf("Context switches: %u\n", stats.context_switches);
     kprintf("Interrupts: %u\n", stats.interrupts);
