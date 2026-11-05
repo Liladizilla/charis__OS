@@ -301,7 +301,7 @@ bool task_prepare_user_space(task_t* task, void* entry_point) {
     task->user_stack_base = user_stack_start;
     task->user_rsp = user_stack_top;
     task->mm.stack_top = user_stack_top;
-    ((u64*)task->rsp)[9] = user_stack_top;
+    ((u64*)task->rsp)[10] = user_stack_top;
     task->mm.pml4 = pml4;
     return true;
 }
@@ -357,13 +357,11 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
         *--stack_top = 0x202;
         *--stack_top = 0x1B;
         *--stack_top = (u64)func;
-        /* Six zeros, not five. context_switch pops six callee-saved registers
-         * (r15,r14,r13,r12,rbx,rbp) *before* it reaches the iretq, and iretq
-         * then consumes five more (RIP,CS,RFLAGS,RSP,SS). With only five zeros
-         * the frame was short by one slot, so iretq loaded RIP from the CS
-         * value and jumped to address 0x1B in ring 3 -- instant #GP, triple
-         * fault, reboot loop. The scheduler picked the user task first, so
-         * this fired before the shell ever got a chance to run. */
+        /* context_switch restores six callee-saved registers, then skips one
+         * synthetic kernel-RFLAGS slot before iretq consumes the five-word
+         * ring-3 frame (RIP, CS, RFLAGS, RSP, SS). Keep this slot separate from
+         * the user RFLAGS word: the latter is restored only by iretq. */
+        *--stack_top = 0x2; /* synthetic kernel RFLAGS; IF stays clear */
         *--stack_top = 0;
         *--stack_top = 0;
         *--stack_top = 0;
@@ -381,6 +379,7 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
         *--stack_top = (u64)arg;
         *--stack_top = (u64)func;
         *--stack_top = (u64)task_trampoline;
+        *--stack_top = 0x2; /* synthetic kernel RFLAGS, restored by context_switch */
         *--stack_top = 0;
         *--stack_top = 0;
         *--stack_top = 0;
@@ -445,6 +444,7 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
         *--stack_top = (u64)arg;
         *--stack_top = (u64)func;
         *--stack_top = (u64)task_trampoline;
+        *--stack_top = 0x2; /* synthetic kernel RFLAGS, restored by context_switch */
         *--stack_top = 0;
         *--stack_top = 0;
         *--stack_top = 0;
