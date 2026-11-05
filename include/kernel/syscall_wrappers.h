@@ -4,6 +4,7 @@
 // Process control
 #define sys_exit(code) syscall_invoke(SYS_EXIT, (code), 0, 0, 0, 0, 0)
 #define sys_yield() syscall_invoke(SYS_YIELD, 0, 0, 0, 0, 0, 0)
+#define sys_sleep(ms) syscall_invoke(SYS_SLEEP, (ms), 0, 0, 0, 0, 0)
 #define sys_getpid() syscall_invoke(SYS_GETPID, 0, 0, 0, 0, 0, 0)
 
 // I/O

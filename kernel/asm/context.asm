@@ -14,6 +14,12 @@ extern task_exit_handler
 ; ---------------------------------------------------------------------------
 global context_switch
 context_switch:
+    ; Each task keeps the interrupt state from its own call site. In particular,
+    ; int 0x80 enters through an interrupt gate with IF cleared; without saving
+    ; RFLAGS, a task resumed after that switch would inherit IF=0 and starve
+    ; the PIT. Disable interrupts while the register frame is being exchanged.
+    pushfq
+    cli
     push rbp
     push rbx
     push r12
@@ -31,11 +37,14 @@ context_switch:
     pop rbx
     pop rbp
 
-    ; Check if user task
-    cmp rdx, 1
+    ; A first-run user task has a synthetic kernel-RFLAGS slot in its frame.
+    ; Discard it and let iretq restore the user RFLAGS from the privilege frame.
+    cmp dl, 1
     je .iretq
+    popfq
     ret
 .iretq:
+    add rsp, 8
     iretq
 
 ; ---------------------------------------------------------------------------
