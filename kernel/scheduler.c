@@ -2,6 +2,7 @@
 #include <kernel/task.h>
 #include <kernel/signal.h>
 #include <kernel/vga.h>
+#include <kernel/serial.h>
 
 static task_t* ready_head = NULL;
 static task_t* ready_tail = NULL;
@@ -143,14 +144,20 @@ void scheduler_start(void) {
     current_task = next;
     current_task->state = TASK_STATE_RUNNING;
 
-    /* The first task switch must also load that task's address space. Without
-     * this, the CPU keeps running in the kernel's CR3 even though the task is
-     * already selected for ring-3 execution. */
+    /* Every privilege transition must land on the selected task's own kernel
+     * stack, never the single bootstrap stack left in TSS.RSP0 by assembly. */
+    bool use_iret = current_task->is_user && !current_task->started;
+    if (!task_set_tss_rsp0(current_task)) {
+        serial_puts("FATAL: unable to install task TSS.RSP0\\n");
+        for (;;) asm volatile("cli; hlt");
+    }
+    if (use_iret) serial_puts("TSS_RSP0_USER_STACK_OK\\n");
+
+    /* The first task switch must also load that task's address space. */
     if (current_task->address_space) {
         vmm_switch((pml4_t*)current_task->address_space);
     }
 
-    bool use_iret = current_task->is_user && !current_task->started;
     current_task->started = true;
     u64 bootstrap_rsp = 0;
     context_switch(&bootstrap_rsp, current_task->rsp, use_iret);
@@ -190,12 +197,18 @@ void scheduler_schedule(void) {
     current_task = next;
     current_task->state = TASK_STATE_RUNNING;
 
+    bool use_iret = current_task->is_user && !current_task->started;
+    if (!task_set_tss_rsp0(current_task)) {
+        serial_puts("FATAL: unable to install task TSS.RSP0\\n");
+        for (;;) asm volatile("cli; hlt");
+    }
+    if (use_iret) serial_puts("TSS_RSP0_USER_STACK_OK\\n");
+
     // Switch address space if needed (BUG-11 fix)
     if (previous && previous->address_space != current_task->address_space) {
         vmm_switch((pml4_t*)current_task->address_space);
     }
 
-    bool use_iret = current_task->is_user && !current_task->started;
     current_task->started = true;
     if (previous) {
         context_switch(&previous->rsp, current_task->rsp, use_iret);
