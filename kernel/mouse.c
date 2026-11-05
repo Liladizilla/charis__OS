@@ -2,127 +2,195 @@
 #include <kernel/io.h>
 #include <kernel/printf.h>
 #include <kernel/irq.h>
+#include <kernel/keyboard.h>
 #include <kernel/vga.h>
 
 mouse_state_t g_mouse = {50, 50, 0, 0, 0};
 static uint32_t mouse_screen_width = 800;
 static uint32_t mouse_screen_height = 600;
 
+static inline u64 mouse_irq_save(void) {
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) :: "memory");
+    return flags;
+}
+
+static inline void mouse_irq_restore(u64 flags) {
+    asm volatile("pushq %0; popfq" :: "r"(flags) : "memory", "cc");
+}
+
 void mouse_set_bounds(uint32_t width, uint32_t height) {
+    /* Coordinates are signed 32-bit values. Do not store a bound that cannot
+     * be represented by the cursor, or the IRQ path's comparisons wrap. */
+    if (width > 0x7FFFFFFFu) width = 0x7FFFFFFFu;
+    if (height > 0x7FFFFFFFu) height = 0x7FFFFFFFu;
+
+    u64 irq_flags = mouse_irq_save();
     mouse_screen_width = width;
     mouse_screen_height = height;
 
-    /* Clamp immediately when a video mode changes, not only after the next
-     * mouse packet. Avoid narrowing oversized unsigned dimensions to int. */
     if (!width) g_mouse.x = 0;
-    else if (width <= 0x7FFFFFFFu && g_mouse.x >= (s32)width)
-        g_mouse.x = (s32)(width - 1);
+    else if (g_mouse.x >= (s32)width) g_mouse.x = (s32)(width - 1);
     if (!height) g_mouse.y = 0;
-    else if (height <= 0x7FFFFFFFu && g_mouse.y >= (s32)height)
-        g_mouse.y = (s32)(height - 1);
+    else if (g_mouse.y >= (s32)height) g_mouse.y = (s32)(height - 1);
+    mouse_irq_restore(irq_flags);
 }
 
 /*
- * PS/2 controller handshake helpers.
- *
- * Controller commands are not all acknowledged like mouse-device commands.
- * In particular, writing 0x20 to port 0x64 returns the controller
- * configuration byte directly through port 0x60. The previous helper drained
- * the output buffer after every command, consuming that response before
- * mouse_init() could read it. Mouse-device commands sent through 0xD4 do
- * return ACK bytes, which ps2_write_aux_data() consumes separately.
+ * 8042 controller helpers. The status register's AUX bit distinguishes mouse
+ * replies from keyboard scancodes on the shared data port. Every wait is
+ * bounded, and no command is written after an input-buffer timeout.
  */
-static void ps2_wait_write(void) {
-    /* Wait for the input buffer to drain (IBF clear).
-     *
-     * The bound is small on purpose. Under KVM every inb() is a VM exit, so a
-     * long spin here is not slow, it is a boot that never finishes -- the same
-     * failure the ATA wait loop had. The controller answers within a few
-     * hundred microseconds or not at all, and either way the boot must
-     * continue. */
-    for (volatile int i = 0; i < 2000; i++) {
-        if (!(inb(0x64) & 0x02)) return;
-    }
-}
+#define PS2_STATUS_PORT       0x64
+#define PS2_COMMAND_PORT      0x64
+#define PS2_DATA_PORT         0x60
+#define PS2_STATUS_OUTPUT     0x01
+#define PS2_STATUS_INPUT      0x02
+#define PS2_STATUS_AUX        0x20
+#define PS2_REPLY_ACK         0xFA
+#define PS2_REPLY_RESEND      0xFE
+#define PS2_WAIT_LIMIT        4000
+#define PS2_DEVICE_RETRIES    3
 
-static void ps2_drain_output(void) {
-    /* Give the device a moment, then throw away whatever it queued. */
-    for (volatile int i = 0; i < 200; i++) io_delay();
-    if (inb(0x64) & 0x01) (void)inb(0x60);
-}
-
-static void ps2_write_command(u8 cmd) {
-    /* Do not drain after issuing a controller command: command 0x20 returns
-     * the configuration byte on the output buffer. Draining here consumed
-     * that response before mouse_init() could read it. Drain stale data before
-     * starting initialization instead. */
-    ps2_wait_write();
-    outb(0x64, cmd);
-}
-
-static bool ps2_wait_read(void) {
-    for (volatile int i = 0; i < 2000; i++) {
-        if (inb(0x64) & 0x01) return true;
+static bool ps2_wait_write(void) {
+    for (volatile u32 i = 0; i < PS2_WAIT_LIMIT; i++) {
+        if (!(inb(PS2_STATUS_PORT) & PS2_STATUS_INPUT)) return true;
     }
     return false;
 }
 
-static u8 ps2_write_data(u8 value) {
-    ps2_wait_write();
-    outb(0x60, value);
-    for (volatile int i = 0; i < 200; i++) io_delay();
-    if (inb(0x64) & 0x01) return inb(0x60);   /* the ACK, if any */
-    return 0xFF;                              /* timed out */
+static bool ps2_write_command(u8 cmd) {
+    if (!ps2_wait_write()) return false;
+    outb(PS2_COMMAND_PORT, cmd);
+    return true;
 }
 
-static u8 ps2_write_aux_data(u8 value) {
-    ps2_wait_write();
-    outb(0x64, 0xD4);                         /* route next byte to mouse */
-    return ps2_write_data(value);
+/* Controller data writes (such as the configuration byte) have no mouse ACK. */
+static bool ps2_write_controller_data(u8 value) {
+    if (!ps2_wait_write()) return false;
+    outb(PS2_DATA_PORT, value);
+    return true;
+}
+
+/* Before the controller replies, process any keyboard bytes already queued on
+ * the shared output port. AUX bytes are stale mouse data and can be discarded. */
+static bool ps2_read_controller_data(u8* out) {
+    if (!out) return false;
+    for (volatile u32 i = 0; i < PS2_WAIT_LIMIT; i++) {
+        u8 status = inb(PS2_STATUS_PORT);
+        if (!(status & PS2_STATUS_OUTPUT)) continue;
+        u8 value = inb(PS2_DATA_PORT);
+        if (status & PS2_STATUS_AUX) continue;
+        *out = value;
+        return true;
+    }
+    return false;
+}
+
+static void ps2_drain_output(void) {
+    for (volatile u32 i = 0; i < PS2_WAIT_LIMIT; i++) {
+        u8 status = inb(PS2_STATUS_PORT);
+        if (!(status & PS2_STATUS_OUTPUT)) return;
+        u8 value = inb(PS2_DATA_PORT);
+        if (status & PS2_STATUS_AUX) {
+            continue;
+        }
+        keyboard_process_scancode(value);
+    }
+}
+
+/* Mouse replies are read only when the controller marks the byte as AUX.
+ * Keyboard scancodes are decoded and preserved while waiting for the ACK. */
+static bool ps2_wait_aux_reply(u8* reply) {
+    if (!reply) return false;
+    for (volatile u32 i = 0; i < PS2_WAIT_LIMIT; i++) {
+        u8 status = inb(PS2_STATUS_PORT);
+        if (!(status & PS2_STATUS_OUTPUT)) continue;
+        u8 value = inb(PS2_DATA_PORT);
+        if (status & PS2_STATUS_AUX) {
+            *reply = value;
+            return true;
+        }
+        keyboard_process_scancode(value);
+    }
+    return false;
+}
+
+static bool ps2_write_aux_data(u8 value) {
+    for (u32 attempt = 0; attempt < PS2_DEVICE_RETRIES; attempt++) {
+        u8 reply = 0;
+        if (!ps2_write_command(0xD4) ||
+            !ps2_write_controller_data(value) ||
+            !ps2_wait_aux_reply(&reply)) {
+            return false;
+        }
+        if (reply == PS2_REPLY_ACK) return true;
+        if (reply != PS2_REPLY_RESEND) return false;
+    }
+    return false;
 }
 
 void mouse_init(void) {
-    /* Discard stale controller/device bytes before changing its state. */
+    /* IRQ12 must stay masked until both the controller and device have
+     * acknowledged setup. The handler is already registered by irq_init(). */
+    pic_mask_irq(IRQ_MOUSE);
     ps2_drain_output();
 
-    /* Disable the aux port while it is reconfigured, or stray bytes arrive
-     * mid-sequence and desynchronise the packet stream. */
-    ps2_write_command(0xA7);
-
-    /* Drain anything the controller was already holding. */
+    /* Temporarily stop first-port traffic so the controller configuration
+     * reply cannot be confused with a keyboard byte on the shared output port.
+     * Pending keyboard bytes were drained and decoded immediately above. */
+    if (!ps2_write_command(0xAD)) {
+        kprintf("Mouse: controller timeout disabling keyboard port\n");
+        return;
+    }
+    if (!ps2_write_command(0xA7)) {
+        (void)ps2_write_command(0xAE);
+        kprintf("Mouse: controller timeout disabling AUX port\n");
+        return;
+    }
     ps2_drain_output();
 
-    /* Enable the aux port. */
-    ps2_write_command(0xA8);
+    if (!ps2_write_command(0xA8)) {
+        (void)ps2_write_command(0xAE);
+        kprintf("Mouse: controller timeout enabling AUX port\n");
+        return;
+    }
 
-    /* Command 0x20 returns one configuration byte; it has no ACK byte. */
+    /* Controller command 0x20 returns one configuration byte, not an ACK.
+     * Keyboard traffic is paused, so a non-AUX response here is unambiguous. */
     u8 config = 0;
-    bool config_valid = false;
-    ps2_write_command(0x20);
-    if (ps2_wait_read()) {
-        config = inb(0x60);
-        config_valid = true;
-    } else {
-        kprintf("Mouse: controller config read timed out\n");
+    if (!ps2_write_command(0x20) || !ps2_read_controller_data(&config)) {
+        (void)ps2_write_command(0xAE);
+        kprintf("Mouse: controller configuration read failed\n");
+        return;
     }
 
-    /* Only write the configuration back when the read succeeded. Writing a
-     * fabricated zero would silently clear unrelated controller settings. */
-    if (config_valid) {
-        config |= 0x02;    /* enable the aux interrupt (IRQ 12) */
-        ps2_write_command(0x60);
-        (void)ps2_write_data(config);
+    /* Explicitly enable both interrupt lines and both controller ports.
+     * Preserve translation and all unrelated configuration bits. */
+    config = (u8)((config | 0x03) & (u8)~0x30);
+    if (!ps2_write_command(0x60) ||
+        !ps2_write_controller_data(config)) {
+        (void)ps2_write_command(0xAE);
+        kprintf("Mouse: controller configuration write failed\n");
+        return;
     }
 
-    /* Defaults, then enable reporting on the auxiliary mouse device. */
-    u8 defaults_ack = ps2_write_aux_data(0xF6);
-    u8 enable_ack = ps2_write_aux_data(0xF4);
+    if (!ps2_write_command(0xAE)) {
+        kprintf("Mouse: controller timeout restoring keyboard port\n");
+        return;
+    }
 
-    /* Make sure IRQ 12 is unmasked in the PIC, in case anything masked it. */
-    pic_unmask_irq(12);
+    if (!ps2_write_aux_data(0xF6)) {
+        kprintf("Mouse: device did not ACK defaults command\n");
+        return;
+    }
+    if (!ps2_write_aux_data(0xF4)) {
+        kprintf("Mouse: device did not ACK enable-reporting command\n");
+        return;
+    }
 
-        kprintf("Mouse: PS/2 enabled, config=0x%02x F6->0x%02x F4->0x%02x\n",
-            config, defaults_ack, enable_ack);
+    pic_unmask_irq(IRQ_MOUSE);
+    kprintf("Mouse: PS/2 enabled, config=0x%02x ACK(F6,F4)=yes\n", config);
 }
 
 void mouse_handler(void) {
@@ -156,35 +224,50 @@ void mouse_handler(void) {
     g_mouse.dx = (s32)(s8)packet[1];
     g_mouse.dy = (s32)(s8)packet[2];
 
-    g_mouse.x += g_mouse.dx;
-    g_mouse.y -= g_mouse.dy;   /* PS/2 Y grows upward; screen Y grows down */
+    /* Do the addition in 64 bits so a packet near INT32_MAX cannot trigger
+     * signed overflow before the screen clamp is applied. */
+    s64 next_x = (s64)g_mouse.x + (s64)g_mouse.dx;
+    s64 next_y = (s64)g_mouse.y - (s64)g_mouse.dy;
 
-    if (g_mouse.x < 0) g_mouse.x = 0;
-    if (g_mouse.y < 0) g_mouse.y = 0;
-    if (mouse_screen_width  && g_mouse.x >= (s32)mouse_screen_width)
-        g_mouse.x = mouse_screen_width - 1;
-    if (mouse_screen_height && g_mouse.y >= (s32)mouse_screen_height)
-        g_mouse.y = mouse_screen_height - 1;
+    if (!mouse_screen_width) next_x = 0;
+    else if (next_x < 0) next_x = 0;
+    else if (next_x >= (s64)mouse_screen_width)
+        next_x = (s64)mouse_screen_width - 1;
+
+    if (!mouse_screen_height) next_y = 0;
+    else if (next_y < 0) next_y = 0;
+    else if (next_y >= (s64)mouse_screen_height)
+        next_y = (s64)mouse_screen_height - 1;
+
+    g_mouse.x = (s32)next_x;
+    g_mouse.y = (s32)next_y;
 }
 
 bool mouse_has_input(void) {
-    return g_mouse.dx != 0 || g_mouse.dy != 0 || g_mouse.buttons != 0;
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    return mouse.dx != 0 || mouse.dy != 0 || mouse.buttons != 0;
 }
 
 int mouse_get_movement(int* dx, int* dy) {
+    u64 flags = mouse_irq_save();
     if (dx) *dx = g_mouse.dx;
     if (dy) *dy = g_mouse.dy;
     g_mouse.dx = 0;
     g_mouse.dy = 0;
+    mouse_irq_restore(flags);
     return 0;
 }
 
 int mouse_get_buttons(int* buttons) {
     if (buttons) {
+        u64 flags = mouse_irq_save();
         *buttons = g_mouse.buttons;
+        mouse_irq_restore(flags);
     }
     return 0;
 }
+
 /* Counters and accessors for the shell's input diagnostics. Without these,
  * "the pointer is stuck" is indistinguishable from "no packets ever arrived".
  */
@@ -197,14 +280,13 @@ u32 mouse_packet_count(void) { return g_mouse_packets; }
 void mouse_get_snapshot(mouse_state_t* out) {
     if (!out) return;
 
-    u64 flags;
-    asm volatile("pushfq; popq %0; cli" : "=r"(flags) :: "memory");
+    u64 flags = mouse_irq_save();
     out->x = g_mouse.x;
     out->y = g_mouse.y;
     out->dx = g_mouse.dx;
     out->dy = g_mouse.dy;
     out->buttons = g_mouse.buttons;
-    asm volatile("pushq %0; popfq" :: "r"(flags) : "memory", "cc");
+    mouse_irq_restore(flags);
 }
 
 mouse_state_t* mouse_get_state(void) { return &g_mouse; }
