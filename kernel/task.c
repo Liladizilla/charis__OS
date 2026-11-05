@@ -568,8 +568,8 @@ bool task_set_tss_rsp0(task_t* task) {
     u64 observed = 0;
     /* RSP0 is intentionally unaligned at TSS byte offset 4. Use explicit
      * x86 moves so the compiler cannot assume natural u64 alignment. */
-    asm volatile("movq %1, 4(%2)"
-                 : "=m"(*(volatile u64*)(void*)(tss + 4))
+    asm volatile("movq %0, 4(%1)"
+                 :
                  : "r"(stack_top), "r"(tss)
                  : "memory");
     asm volatile("movq 4(%1), %0"
