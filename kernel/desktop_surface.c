@@ -40,15 +40,17 @@ static void append_u32(char* out, u32 capacity, u32* pos, u32 value) {
 }
 
 static void append_compact_u32(char* out, u32 capacity, u32* pos, u32 value) {
+    char suffix = 0;
     if (value >= 1000000) {
-        append_u32(out, capacity, pos, value / 1000000);
-        append_text(out, capacity, pos, "m");
+        value /= 1000000;
+        suffix = 'm';
     } else if (value >= 10000) {
-        append_u32(out, capacity, pos, value / 1000);
-        append_text(out, capacity, pos, "k");
-    } else {
-        append_u32(out, capacity, pos, value);
+        value /= 1000;
+        suffix = 'k';
     }
+    append_u32(out, capacity, pos, value);
+    if (suffix && *pos + 1 < capacity) out[(*pos)++] = suffix;
+    out[*pos] = 0;
 }
 
 static void append_text(char* out, u32 capacity, u32* pos, const char* value) {
