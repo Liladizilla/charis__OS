@@ -348,6 +348,92 @@ static bool test_vmm_rejects_unaligned_pages(void) {
 }
 
 
+/* Exercise the complete input-validation boundary without allowing a rejected
+ * mapping to allocate or modify any page-table level. */
+static bool test_mapping_validation_matrix(void) {
+    u64 pml4_phys = pmm_alloc_page();
+    u64 frame_phys = pmm_alloc_page();
+    if (!pml4_phys || !frame_phys) {
+        if (pml4_phys) pmm_free_page(pml4_phys);
+        if (frame_phys) pmm_free_page(frame_phys);
+        return false;
+    }
+
+    u64* pml4 = (u64*)vmm_phys_to_virt(pml4_phys);
+    if (!pml4) {
+        pmm_free_page(frame_phys);
+        pmm_free_page(pml4_phys);
+        return false;
+    }
+    kmemset(pml4, 0, PAGE_SIZE);
+
+    struct mapping_case {
+        u64 virt;
+        u64 phys;
+        u64 flags;
+    };
+    const struct mapping_case cases[] = {
+        { 0x0000800000000000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x0000800000001000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0xFFFF000000000000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0xFFFF7FFFFFFFF000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x0000400000004001ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { UINT64_MAX, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x0000400000004000ULL, frame_phys + 1, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x0000400000004000ULL, 0x0010000000000000ULL, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x0000400000004000ULL, UINT64_MAX, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0xFFFF800000000000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0xFFFF900000001000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0xFFFFFFFFFFFFF000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x0000400000004000ULL, 0x000FFFFFFFFFF001ULL, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0xFFFF7FFFFFFFF001ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x00007FFFFFFFF001ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER }
+    };
+
+    bool rejected = true;
+    for (usize i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        u32 slot = (u32)((cases[i].virt >> 39) & 0x1FF);
+        u64 before = pml4[slot];
+        if (vmm_map_page_pml4((pml4_t*)pml4_phys, cases[i].virt,
+                              cases[i].phys, cases[i].flags) ||
+            pml4[slot] != before) {
+            rejected = false;
+            break;
+        }
+    }
+
+    /* The current-address-space entry point must reject invalid requests
+     * before touching its shared kernel page tables as well. */
+    u64 current_cr3;
+    asm volatile("mov %%cr3, %0" : "=r"(current_cr3));
+    u64* current_pml4 = (u64*)vmm_phys_to_virt(current_cr3 & ~0xFFFULL);
+    bool current_rejected = current_pml4 != NULL;
+    if (current_rejected) {
+        const u64 invalid_virtuals[] = {
+            0x0000800000000000ULL,
+            0xFFFF000000000000ULL,
+            0xFFFF900000001000ULL
+        };
+        for (usize i = 0; i < sizeof(invalid_virtuals) / sizeof(invalid_virtuals[0]); i++) {
+            u32 slot = (u32)((invalid_virtuals[i] >> 39) & 0x1FF);
+            u64 before = current_pml4[slot];
+            u64 flags = (i == 2)
+                ? VMM_FLAG_PRESENT | VMM_FLAG_USER
+                : VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE;
+            if (vmm_map_page(invalid_virtuals[i], frame_phys, flags) ||
+                current_pml4[slot] != before) {
+                current_rejected = false;
+                break;
+            }
+        }
+    }
+
+    pmm_free_page(frame_phys);
+    pmm_free_page(pml4_phys);
+    return rejected && current_rejected;
+}
+
+
 void vmm_run_tests(void) {
     report("map_existing", test_map_existing());
     report("map_missing", test_map_missing_page());
@@ -361,5 +447,6 @@ void vmm_run_tests(void) {
     report("pmm_reserved_frame_protected", test_pmm_cannot_free_reserved_frame());
     report("user_kernel_half_denied", test_user_mapping_rejects_kernel_half());
     report("unaligned_page_denied", test_vmm_rejects_unaligned_pages());
+    report("mapping_validation_matrix", test_mapping_validation_matrix());
 }
 
