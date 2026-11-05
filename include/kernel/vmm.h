@@ -6,6 +6,9 @@
 typedef u64 pte_t;
 typedef u64 pml4_t;
 
+/* PMM-managed RAM upper bound; MMIO mappings remain independent. */
+#define VMM_PHYSICAL_LIMIT (64ULL * 1024ULL * 1024ULL * 1024ULL)
+
 #define VMM_FLAG_PRESENT    (1ULL << 0)
 #define VMM_FLAG_WRITABLE   (1ULL << 1)
 #define VMM_FLAG_USER       (1ULL << 2)
@@ -22,6 +25,8 @@ void vmm_unmap_page(u64 virt);
 u64 vmm_unmap_page_pml4(pml4_t* pml4, u64 virt);
 u64 vmm_get_phys(u64 virt);
 void vmm_init(void);
+/* Kernel-only alias for a mapped, usable physical RAM address. */
+void* vmm_phys_to_virt(u64 physical);
 /* Present in RUN_VMM_TESTS builds; exercises page-table and permission paths. */
 void vmm_run_tests(void);
 
