@@ -165,6 +165,7 @@ u64 pmm_alloc_page(void) {
             if (!(bitmap[i] & (1U << bit))) {
                 bitmap[i] |= (u8)(1U << bit);
                 allocated_bitmap[i] |= (u8)(1U << bit);
+                if (free_page_count) free_page_count--;
                 last_free = i;
                 return PMM_BITMAP_BASE + page * 4096ULL;
             }
