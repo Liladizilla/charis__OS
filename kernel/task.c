@@ -420,13 +420,9 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
         *--stack_top = 0x202;
         *--stack_top = 0x1B;
         *--stack_top = (u64)func;
-        /* Six zeros, not five. context_switch pops six callee-saved registers
-         * (r15,r14,r13,r12,rbx,rbp) *before* it reaches the iretq, and iretq
-         * then consumes five more (RIP,CS,RFLAGS,RSP,SS). With only five zeros
-         * the frame was short by one slot, so iretq loaded RIP from the CS
-         * value and jumped to address 0x1B in ring 3 -- instant #GP, triple
-         * fault, reboot loop. The scheduler picked the user task first, so
-         * this fired before the shell ever got a chance to run. */
+        /* Keep the synthetic kernel-RFLAGS slot between the six saved
+         * registers and the five-word ring-3 iret frame. */
+        *--stack_top = 0x2; /* synthetic kernel RFLAGS; IF stays clear */
         *--stack_top = 0;
         *--stack_top = 0;
         *--stack_top = 0;
