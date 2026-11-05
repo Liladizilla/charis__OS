@@ -33,6 +33,11 @@ void irq_init(void);
 void irq_register_handler(u8 irq, void (*handler)(reg_frame_t*));
 void irq_dispatch(u8 irq, reg_frame_t* frame);
 
+/* PIC spurious/unhandled interrupt diagnostics. */
+u32 irq_spurious7_count(void);
+u32 irq_spurious15_count(void);
+u32 irq_unhandled_count(void);
+
 /* IRQ12 delivery count, separate from valid three-byte mouse packets. */
 u32 mouse_irq_count(void);
 
