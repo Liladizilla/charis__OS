@@ -163,8 +163,25 @@ void task_exit_with_status(u32 status) {
          * must not remain live for the lifetime of the zombie record. */
         fd_table_close_all(current->fd_table);
         if (current->is_user && current->mm.pml4) {
-            task_release_user_code_pages(current, current->mm.pml4);
-            task_release_user_stack_pages(current, current->mm.pml4);
+            /* Stop using the process CR3 before reclaiming any of its private
+             * page tables or USER frames. The kernel identity map remains
+             * available on the saved kernel CR3 while this exit path runs. */
+            pml4_t* dead_space = current->mm.pml4;
+            vmm_switch(NULL);
+            vmm_destroy_address_space(dead_space);
+            current->address_space = NULL;
+            current->mm.pml4 = NULL;
+            current->mm.heap_start = 0;
+            current->mm.heap_end = 0;
+            current->mm.stack_top = 0;
+            current->mm.vmas = NULL;
+            current->user_stack_base = 0;
+            current->user_rsp = 0;
+            current->user_stack_pages[0] = 0;
+            current->user_stack_pages[1] = 0;
+            current->user_code_page_count = 0;
+            for (u32 page = 0; page < TASK_USER_CODE_MAX_PAGES; page++)
+                current->user_code_pages[page] = 0;
             serial_puts("RING3_PRIVATE_PAGES_RELEASED\n");
         }
         /* Exited tasks are never scheduled again. Unlink the zombie before
