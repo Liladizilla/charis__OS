@@ -148,10 +148,10 @@ void scheduler_start(void) {
      * stack, never the single bootstrap stack left in TSS.RSP0 by assembly. */
     bool use_iret = current_task->is_user && !current_task->started;
     if (!task_set_tss_rsp0(current_task)) {
-        serial_puts("FATAL: unable to install task TSS.RSP0\\n");
+        serial_puts("FATAL: unable to install task TSS.RSP0\n");
         for (;;) asm volatile("cli; hlt");
     }
-    if (use_iret) serial_puts("TSS_RSP0_USER_STACK_OK\\n");
+    if (use_iret) serial_puts("TSS_RSP0_USER_STACK_OK\n");
 
     /* The first task switch must also load that task's address space. */
     if (current_task->address_space) {
@@ -199,10 +199,10 @@ void scheduler_schedule(void) {
 
     bool use_iret = current_task->is_user && !current_task->started;
     if (!task_set_tss_rsp0(current_task)) {
-        serial_puts("FATAL: unable to install task TSS.RSP0\\n");
+        serial_puts("FATAL: unable to install task TSS.RSP0\n");
         for (;;) asm volatile("cli; hlt");
     }
-    if (use_iret) serial_puts("TSS_RSP0_USER_STACK_OK\\n");
+    if (use_iret) serial_puts("TSS_RSP0_USER_STACK_OK\n");
 
     // Switch address space if needed (BUG-11 fix)
     if (previous && previous->address_space != current_task->address_space) {
