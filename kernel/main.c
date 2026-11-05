@@ -30,6 +30,7 @@
 #include <kernel/diagnostics.h>
 #include <kernel/display.h>
 #include <kernel/config.h>
+#include <kernel/gfx_text.h>
 #include <kernel/power.h>
 #include <kernel/security.h>
 #include <kernel/signal.h>
@@ -160,6 +161,7 @@ void kernel_main(u32 magic, u64 info_ptr) {
     config_init();
     BOOT_MARK('c');
     config_load("/etc/charisos.conf");
+    gfx_text_apply_preferences();
     BOOT_MARK('L');
     display_init();
     BOOT_MARK('D');
