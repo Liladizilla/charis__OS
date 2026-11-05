@@ -11,6 +11,7 @@ typedef u64 pml4_t;
 #define VMM_FLAG_USER       (1ULL << 2)
 #define VMM_FLAG_NX         (1ULL << 63)
 
+/* Returns a 4 KiB PTE pointer, or NULL for a missing/huge leaf. */
 pte_t* vmm_walk(pml4_t* pml4, u64 vaddr, bool create);
 bool vmm_map_page(u64 virt, u64 phys, u64 flags);
 bool vmm_map_page_pml4(pml4_t* pml4, u64 virt, u64 phys, u64 flags);
