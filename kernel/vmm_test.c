@@ -98,7 +98,13 @@ static bool test_map_user_page(void) {
 
     u64* pt = (u64*)(pde & ~0xFFFULL);
     u64 pte = pt[(virt >> 12) & 0x1FF];
-    return (pte & (1ULL << 2)) != 0;
+    if (!(pte & (1ULL << 2))) return false;
+
+    u64 translated = 0, effective = 0;
+    if (!vmm_translate((pml4_t*)pml4, virt, &translated, &effective)) return false;
+    return translated == (phys & ~0xFFFULL) &&
+           (effective & (VMM_FLAG_USER | VMM_FLAG_WRITABLE)) ==
+           (VMM_FLAG_USER | VMM_FLAG_WRITABLE);
 }
 
 static bool test_walk_rejects_huge_leaves(void) {
@@ -136,11 +142,61 @@ static bool test_walk_rejects_huge_leaves(void) {
     bool rejects_1g = vmm_walk((pml4_t*)pml4,
                                 0x0000008000001234ULL, false) == NULL;
 
+    u64 phys_2m = 0, flags_2m = 0;
+    u64 phys_1g = 0, flags_1g = 0;
+    bool translates_2m =
+        vmm_translate((pml4_t*)pml4, 0x1000, &phys_2m, &flags_2m) &&
+        phys_2m == 0x00201000ULL && !(flags_2m & VMM_FLAG_USER);
+    bool translates_1g =
+        vmm_translate((pml4_t*)pml4, 0x0000008000001234ULL,
+                      &phys_1g, &flags_1g) &&
+        phys_1g == 0x40001234ULL && !(flags_1g & VMM_FLAG_USER);
+
     pmm_free_page(pdpt_1g_phys);
     pmm_free_page(pd_2m_phys);
     pmm_free_page(pdpt_2m_phys);
     pmm_free_page(pml4_phys);
-    return rejects_2m && rejects_1g;
+    return rejects_2m && rejects_1g && translates_2m && translates_1g;
+}
+
+static bool test_translate_requires_user_at_every_level(void) {
+    u64 pml4_phys = pmm_alloc_page();
+    u64 pdpt_phys = pmm_alloc_page();
+    u64 pd_phys = pmm_alloc_page();
+    u64 pt_phys = pmm_alloc_page();
+    if (!pml4_phys || !pdpt_phys || !pd_phys || !pt_phys) {
+        if (pml4_phys) pmm_free_page(pml4_phys);
+        if (pdpt_phys) pmm_free_page(pdpt_phys);
+        if (pd_phys) pmm_free_page(pd_phys);
+        if (pt_phys) pmm_free_page(pt_phys);
+        return false;
+    }
+
+    u64* pml4 = (u64*)pml4_phys;
+    u64* pdpt = (u64*)pdpt_phys;
+    u64* pd = (u64*)pd_phys;
+    u64* pt = (u64*)pt_phys;
+    kmemset(pml4, 0, PAGE_SIZE);
+    kmemset(pdpt, 0, PAGE_SIZE);
+    kmemset(pd, 0, PAGE_SIZE);
+    kmemset(pt, 0, PAGE_SIZE);
+
+    /* The leaf and lower tables say USER, but the PML4 entry is supervisor. */
+    pml4[0] = pdpt_phys | PTE_PRESENT | PTE_WRITABLE;
+    pdpt[0] = pd_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
+    pd[0] = pt_phys | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
+    pt[1] = 0x00400000ULL | PTE_PRESENT | PTE_WRITABLE | PTE_USER;
+
+    u64 physical = 0, flags = 0;
+    bool translated = vmm_translate((pml4_t*)pml4, 0x1000, &physical, &flags);
+    bool denied_user = translated && physical == 0x00400000ULL &&
+                       !(flags & VMM_FLAG_USER);
+
+    pmm_free_page(pt_phys);
+    pmm_free_page(pd_phys);
+    pmm_free_page(pdpt_phys);
+    pmm_free_page(pml4_phys);
+    return denied_user;
 }
 
 void vmm_run_tests(void) {
@@ -150,5 +206,6 @@ void vmm_run_tests(void) {
     report("unmap_page", test_unmap_page());
     report("map_user_page", test_map_user_page());
     report("walk_rejects_huge", test_walk_rejects_huge_leaves());
+    report("translate_effective_user", test_translate_requires_user_at_every_level());
 }
 
