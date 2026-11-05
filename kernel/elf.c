@@ -5,6 +5,7 @@
 #include <kernel/vga.h>
 #include <kernel/string.h>
 #include <kernel/printf.h>
+#include <kernel/vmm.h>
 
 #define ELF_MAX_VECTOR_ENTRIES 16
 
@@ -17,7 +18,9 @@ static bool elf_write_user(pml4_t* pml4, u64 address, const void* source, usize 
         u64 phys = (*pte & 0x000FFFFFFFFFF000ULL) | (current & (PAGE_SIZE - 1));
         usize chunk = PAGE_SIZE - (usize)(current & (PAGE_SIZE - 1));
         if (chunk > size - copied) chunk = size - copied;
-        kmemcpy((void*)(uintptr_t)phys, (const u8*)source + copied, chunk);
+        void* destination_page = vmm_phys_to_virt(phys);
+        if (!destination_page) return false;
+        kmemcpy(destination_page, (const u8*)source + copied, chunk);
         copied += chunk;
     }
     return true;
@@ -56,7 +59,9 @@ static bool elf_load_segment(pml4_t* pml4, int fd, const elf64_phdr_t* phdr) {
     for (u64 addr = page_start; addr < page_end; addr += PAGE_SIZE) {
         u64 phys = pmm_alloc_page();
         if (!phys) return false;
-        kmemset((void*)(uintptr_t)phys, 0, PAGE_SIZE);
+        void* page_alias = vmm_phys_to_virt(phys);
+        if (!page_alias) { pmm_free_page(phys); return false; }
+        kmemset(page_alias, 0, PAGE_SIZE);
         if (!vmm_map_page_pml4(pml4, addr, phys, map_flags)) {
             pmm_free_page(phys);
             return false;
@@ -81,7 +86,9 @@ static bool elf_load_segment(pml4_t* pml4, int fd, const elf64_phdr_t* phdr) {
             usize page_bytes = PAGE_SIZE - (usize)(vaddr & (PAGE_SIZE - 1));
             usize bytes = chunk - written;
             if (bytes > page_bytes) bytes = page_bytes;
-            kmemcpy((void*)(uintptr_t)phys, buffer + written, bytes);
+            void* destination_page = vmm_phys_to_virt(phys);
+            if (!destination_page) return false;
+            kmemcpy(destination_page, buffer + written, bytes);
             written += bytes;
         }
         copied += chunk;
@@ -196,7 +203,9 @@ int elf_setup_stack(process_mm_t* mm, u64* user_rsp,
     for (u64 addr = stack_base; addr < stack_top; addr += PAGE_SIZE) {
         u64 phys = pmm_alloc_page();
         if (!phys) goto fail;
-        kmemset((void*)(uintptr_t)phys, 0, PAGE_SIZE);
+        void* page_alias = vmm_phys_to_virt(phys);
+        if (!page_alias) { pmm_free_page(phys); goto fail; }
+        kmemset(page_alias, 0, PAGE_SIZE);
         if (!vmm_map_page_pml4(mm->pml4, addr, phys,
                 VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER)) {
             pmm_free_page(phys);
