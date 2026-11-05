@@ -213,13 +213,12 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
         path[i] = 0;
     }
     
+    /* Validate the path before handing it to the filesystem parser. A
+     * rejected traversal must never reach fs_open()/finddir() first. */
+    if (!security_verify_path(path, task)) return (u64)-1;
+
     vfs_node_t* node = vfs_resolve(path);
-    if (!node) return -1;
-    
-    // Path traversal check
-    if (!security_verify_path(path, task)) {
-        return -1; // EPERM
-    }
+    if (!node) return (u64)-1;
     
     return fd_alloc(node, 0);
 }
