@@ -8,18 +8,31 @@ mouse_state_t g_mouse = {50, 50, 0, 0, 0};
 static uint32_t mouse_screen_width = 800;
 static uint32_t mouse_screen_height = 600;
 
+static inline u64 mouse_irq_save(void) {
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) :: "memory");
+    return flags;
+}
+
+static inline void mouse_irq_restore(u64 flags) {
+    asm volatile("pushq %0; popfq" :: "r"(flags) : "memory", "cc");
+}
+
 void mouse_set_bounds(uint32_t width, uint32_t height) {
+    /* Coordinates are signed 32-bit values. Do not store a bound that cannot
+     * be represented by the cursor, or the IRQ path's comparisons wrap. */
+    if (width > 0x7FFFFFFFu) width = 0x7FFFFFFFu;
+    if (height > 0x7FFFFFFFu) height = 0x7FFFFFFFu;
+
+    u64 irq_flags = mouse_irq_save();
     mouse_screen_width = width;
     mouse_screen_height = height;
 
-    /* Clamp immediately when a video mode changes, not only after the next
-     * mouse packet. Avoid narrowing oversized unsigned dimensions to int. */
     if (!width) g_mouse.x = 0;
-    else if (width <= 0x7FFFFFFFu && g_mouse.x >= (s32)width)
-        g_mouse.x = (s32)(width - 1);
+    else if (g_mouse.x >= (s32)width) g_mouse.x = (s32)(width - 1);
     if (!height) g_mouse.y = 0;
-    else if (height <= 0x7FFFFFFFu && g_mouse.y >= (s32)height)
-        g_mouse.y = (s32)(height - 1);
+    else if (g_mouse.y >= (s32)height) g_mouse.y = (s32)(height - 1);
+    mouse_irq_restore(irq_flags);
 }
 
 /*
@@ -119,9 +132,9 @@ void mouse_init(void) {
     u8 enable_ack = ps2_write_aux_data(0xF4);
 
     /* Make sure IRQ 12 is unmasked in the PIC, in case anything masked it. */
-    pic_unmask_irq(12);
+    pic_unmask_irq(IRQ_MOUSE);
 
-        kprintf("Mouse: PS/2 enabled, config=0x%02x F6->0x%02x F4->0x%02x\n",
+    kprintf("Mouse: PS/2 enabled, config=0x%02x F6->0x%02x F4->0x%02x\n",
             config, defaults_ack, enable_ack);
 }
 
@@ -156,35 +169,50 @@ void mouse_handler(void) {
     g_mouse.dx = (s32)(s8)packet[1];
     g_mouse.dy = (s32)(s8)packet[2];
 
-    g_mouse.x += g_mouse.dx;
-    g_mouse.y -= g_mouse.dy;   /* PS/2 Y grows upward; screen Y grows down */
+    /* Do the addition in 64 bits so a packet near INT32_MAX cannot trigger
+     * signed overflow before the screen clamp is applied. */
+    s64 next_x = (s64)g_mouse.x + (s64)g_mouse.dx;
+    s64 next_y = (s64)g_mouse.y - (s64)g_mouse.dy;
 
-    if (g_mouse.x < 0) g_mouse.x = 0;
-    if (g_mouse.y < 0) g_mouse.y = 0;
-    if (mouse_screen_width  && g_mouse.x >= (s32)mouse_screen_width)
-        g_mouse.x = mouse_screen_width - 1;
-    if (mouse_screen_height && g_mouse.y >= (s32)mouse_screen_height)
-        g_mouse.y = mouse_screen_height - 1;
+    if (!mouse_screen_width) next_x = 0;
+    else if (next_x < 0) next_x = 0;
+    else if (next_x >= (s64)mouse_screen_width)
+        next_x = (s64)mouse_screen_width - 1;
+
+    if (!mouse_screen_height) next_y = 0;
+    else if (next_y < 0) next_y = 0;
+    else if (next_y >= (s64)mouse_screen_height)
+        next_y = (s64)mouse_screen_height - 1;
+
+    g_mouse.x = (s32)next_x;
+    g_mouse.y = (s32)next_y;
 }
 
 bool mouse_has_input(void) {
-    return g_mouse.dx != 0 || g_mouse.dy != 0 || g_mouse.buttons != 0;
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    return mouse.dx != 0 || mouse.dy != 0 || mouse.buttons != 0;
 }
 
 int mouse_get_movement(int* dx, int* dy) {
+    u64 flags = mouse_irq_save();
     if (dx) *dx = g_mouse.dx;
     if (dy) *dy = g_mouse.dy;
     g_mouse.dx = 0;
     g_mouse.dy = 0;
+    mouse_irq_restore(flags);
     return 0;
 }
 
 int mouse_get_buttons(int* buttons) {
     if (buttons) {
+        u64 flags = mouse_irq_save();
         *buttons = g_mouse.buttons;
+        mouse_irq_restore(flags);
     }
     return 0;
 }
+
 /* Counters and accessors for the shell's input diagnostics. Without these,
  * "the pointer is stuck" is indistinguishable from "no packets ever arrived".
  */
@@ -197,14 +225,13 @@ u32 mouse_packet_count(void) { return g_mouse_packets; }
 void mouse_get_snapshot(mouse_state_t* out) {
     if (!out) return;
 
-    u64 flags;
-    asm volatile("pushfq; popq %0; cli" : "=r"(flags) :: "memory");
+    u64 flags = mouse_irq_save();
     out->x = g_mouse.x;
     out->y = g_mouse.y;
     out->dx = g_mouse.dx;
     out->dy = g_mouse.dy;
     out->buttons = g_mouse.buttons;
-    asm volatile("pushq %0; popfq" :: "r"(flags) : "memory", "cc");
+    mouse_irq_restore(flags);
 }
 
 mouse_state_t* mouse_get_state(void) { return &g_mouse; }
