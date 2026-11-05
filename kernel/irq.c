@@ -3,6 +3,7 @@
 #include <kernel/vga.h>
 #include <kernel/mouse.h>
 #include <kernel/input.h>
+#include <kernel/diagnostics.h>
 
 static void (*irq_handlers[16])(reg_frame_t*) = {0};
 static volatile u32 g_mouse_irq_count = 0;
