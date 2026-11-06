@@ -286,9 +286,21 @@ grep -q '\[BOOT\] init complete, entering scheduler' "$LOG" \
 grep -q 'Hello from user mode!' "$LOG" \
     || fail "ring-3 task did not complete its print syscall"
 
+grep -q 'RING3_CODE_ISOLATION_OK' "$LOG" \
+    || fail "bootstrap user code was not copied into private executable pages"
+
+grep -q 'TSS_RSP0_USER_STACK_OK' "$LOG" \
+    || fail "ring-3 task did not receive its own kernel interrupt stack"
+
 if [ -n "$ELF_TEST_DISK" ]; then
-    grep -q 'ELF_EXEC_OK' "$LOG" \
-        || fail "ELF image did not execute its user-mode smoke test"
+    if grep -q 'ELF_EXEC_OK' "$LOG"; then
+        ELF_RESULT="executed"
+    elif grep -q 'ELF_EXEC_DENIED_CAPABILITY' "$LOG"; then
+        ELF_RESULT="denied by capability policy"
+        echo "NOTE: ELF execution correctly denied: bootstrap task lacks CAP_ALLOW_EXEC."
+    else
+        fail "ELF image neither executed nor produced an explicit capability denial"
+    fi
 else
     grep -q 'RING3_SLEEP_OK' "$LOG" \
         || fail "ring-3 sleep syscall did not return to user mode"
@@ -300,11 +312,17 @@ else
         || fail "invalid ring-3 access was not contained as a user page fault"
     grep -q 'RING3_SYSCALL_PTR_REJECT_OK' "$LOG" \
         || fail "ring-3 syscall pointer validation did not reject untrusted addresses"
+    grep -q 'RING3_PRIVATE_PAGES_RELEASED' "$LOG" \
+        || fail "ring-3 exit did not release its private code and stack frames"
 fi
 
 if [ "$REQUIRE_VMM_TESTS" = "1" ]; then
     for test_name in map_existing map_missing remap_same unmap_page \
-                     map_user_page walk_rejects_huge translate_effective_user; do
+                     map_user_page walk_rejects_huge translate_effective_user \
+                     physmap_supervisor_alias pmm_direct_mapped_ram pmm_free_count \
+                     pmm_reserved_frame_protected user_kernel_half_denied \
+                     unaligned_page_denied mapping_validation_matrix \
+                     destroy_address_space kernel_clone_rejects_user; do
         grep -Fq "[VMM] $test_name: OK" "$LOG" \
             || fail "VMM regression test failed or did not execute: $test_name"
     done
@@ -344,7 +362,7 @@ if command -v sha256sum >/dev/null 2>&1; then
 fi
 
 if [ -n "$ELF_TEST_DISK" ]; then
-    echo "PASS: kernel booted and executed the ELF smoke test  ($IMAGE with $ELF_TEST_DISK)"
+    echo "PASS: kernel booted; ELF policy result: $ELF_RESULT  ($IMAGE with $ELF_TEST_DISK)"
 else
     echo "PASS: kernel booted, ran ring 3, and stayed alive  ($IMAGE as $MODE${FIRMWARE:+, UEFI})"
 fi

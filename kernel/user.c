@@ -6,7 +6,7 @@
  * general .rodata section. Keep syscall strings on that mapped stack instead
  * of passing pointers to kernel-linked string literals. Proper ELF-loaded
  * programs receive their own mapped read-only segments. */
-__attribute__((no_stack_protector, optimize("O0"), aligned(4096)))
+__attribute__((no_stack_protector, optimize("O0"), aligned(4096), section(".usertext")))
 void user_main(void) {
     char greeting[23];
     greeting[0] = 'H'; greeting[1] = 'e'; greeting[2] = 'l';
@@ -100,20 +100,42 @@ void user_main(void) {
         syscall_pointers_ok = false;
     }
     if (sys_open((const char*)bad_low) != (u64)-1) syscall_pointers_ok = false;
-    if (sys_ipc_create((const char*)bad_low) != (u64)-1) syscall_pointers_ok = false;
+    char traversal_path[13];
+    traversal_path[0] = '/'; traversal_path[1] = '.'; traversal_path[2] = '.';
+    traversal_path[3] = '/'; traversal_path[4] = 'T'; traversal_path[5] = 'E';
+    traversal_path[6] = 'S'; traversal_path[7] = 'T'; traversal_path[8] = '.';
+    traversal_path[9] = 'E'; traversal_path[10] = 'L'; traversal_path[11] = 'F';
+    traversal_path[12] = '\0';
+    if (sys_open(traversal_path) != (u64)-1) syscall_pointers_ok = false;
+
+    char backslash_path[15];
+    backslash_path[0] = '/'; backslash_path[1] = 'T'; backslash_path[2] = 'E';
+    backslash_path[3] = 'S'; backslash_path[4] = 'T'; backslash_path[5] = '\\';
+    backslash_path[6] = '.'; backslash_path[7] = '.'; backslash_path[8] = '\\';
+    backslash_path[9] = 'S'; backslash_path[10] = 'E'; backslash_path[11] = 'C';
+    backslash_path[12] = 'R'; backslash_path[13] = 'E'; backslash_path[14] = '\0';
+    if (sys_open(backslash_path) != (u64)-1) syscall_pointers_ok = false;
+
+    char relative_path[10];
+    relative_path[0] = 'T'; relative_path[1] = 'E'; relative_path[2] = 'S';
+    relative_path[3] = 'T'; relative_path[4] = '.'; relative_path[5] = 'E';
+    relative_path[6] = 'L'; relative_path[7] = 'F'; relative_path[8] = '\0';
+    if (sys_open(relative_path) != (u64)-1) syscall_pointers_ok = false;
+
+    if (syscall_invoke(SYS_WRITE, 1, bad_low, 1, 0, 0, 0) != (u64)-1 ||
+        syscall_invoke(SYS_WRITE, 1, bad_noncanonical, 1, 0, 0, 0) != (u64)-1) {
+        syscall_pointers_ok = false;
+    }
     if (syscall_invoke(SYS_DIAG_STATS, bad_low, 0, 0, 0, 0, 0) != (u64)-1 ||
         syscall_invoke(SYS_DIAG_STATS, bad_noncanonical, 0, 0, 0, 0, 0) != (u64)-1) {
         syscall_pointers_ok = false;
     }
 
-    char channel_name[10];
-    channel_name[0] = 'p'; channel_name[1] = 't'; channel_name[2] = 'r';
-    channel_name[3] = '-'; channel_name[4] = 't'; channel_name[5] = 'e';
-    channel_name[6] = 's'; channel_name[7] = 't';
-    channel_name[8] = '\0';
-    u64 channel = sys_ipc_create(channel_name);
-    if (channel == (u64)-1 ||
-        sys_ipc_send(channel, (const void*)bad_low, 1) != (u64)-1) {
+    /* IPC and networking remain unavailable to ring 3 until their global
+     * tables have per-process ownership and capability-backed handles. */
+    if (sys_ipc_create((const char*)bad_low) != (u64)-1 ||
+        sys_ipc_create("user-channel") != (u64)-1 ||
+        sys_ipc_send(0, (const void*)bad_low, 1) != (u64)-1) {
         syscall_pointers_ok = false;
     }
 

@@ -378,6 +378,72 @@ bool vmm_translate(pml4_t* pml4, u64 vaddr, u64* physical, u64* flags) {
 }
 
 // Create a new empty page table (for new processes).
+/* Caller must switch away from this address space before destroying it. */
+void vmm_destroy_address_space(pml4_t* pml4) {
+    if (!pml4) return;
+    u64 root_phys = (u64)(uintptr_t)pml4 & ~0xFFFULL;
+    if (root_phys == kernel_cr3) return;
+
+    u64* root = phys_to_virt_pt(root_phys);
+    if (!root) return;
+
+    /* Lower-half tables are private to the process. High-half entries are
+     * shared with the kernel and intentionally left untouched. */
+    for (u32 i = 0; i < 256; i++) {
+        u64 pml4e = root[i];
+        if (!(pml4e & PTE_PRESENT) || (pml4e & PTE_HUGE)) continue;
+        u64 pdpt_phys = pml4e & 0x000FFFFFFFFFF000ULL;
+        u64* pdpt = phys_to_virt_pt(pdpt_phys);
+        if (!pdpt) {
+            pmm_free_page(pdpt_phys);
+            root[i] = 0;
+            continue;
+        }
+
+        for (u32 j = 0; j < 512; j++) {
+            u64 pdpte = pdpt[j];
+            if (!(pdpte & PTE_PRESENT) || (pdpte & PTE_HUGE)) continue;
+            u64 pd_phys = pdpte & 0x000FFFFFFFFFF000ULL;
+            u64* pd = phys_to_virt_pt(pd_phys);
+            if (!pd) {
+                pmm_free_page(pd_phys);
+                pdpt[j] = 0;
+                continue;
+            }
+
+            for (u32 k = 0; k < 512; k++) {
+                u64 pde = pd[k];
+                if (!(pde & PTE_PRESENT) || (pde & PTE_HUGE)) continue;
+                u64 pt_phys = pde & 0x000FFFFFFFFFF000ULL;
+                u64* pt = phys_to_virt_pt(pt_phys);
+                if (!pt) {
+                    pmm_free_page(pt_phys);
+                    pd[k] = 0;
+                    continue;
+                }
+
+                /* Only USER leaf frames belong to the process. Supervisor
+                 * identity mappings are borrowed from the kernel and remain. */
+                for (u32 l = 0; l < 512; l++) {
+                    u64 pte = pt[l];
+                    if ((pte & (PTE_PRESENT | PTE_USER)) ==
+                        (PTE_PRESENT | PTE_USER)) {
+                        pmm_free_page(pte & 0x000FFFFFFFFFF000ULL);
+                    }
+                }
+                pmm_free_page(pt_phys);
+                pd[k] = 0;
+            }
+            pmm_free_page(pd_phys);
+            pdpt[j] = 0;
+        }
+        pmm_free_page(pdpt_phys);
+        root[i] = 0;
+    }
+
+    pmm_free_page(root_phys);
+}
+
 pml4_t* vmm_create_address_space(void) {
     u64 phys = pmm_alloc_page();
     if (!phys) return NULL;
@@ -399,48 +465,76 @@ bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src) {
     u64* src_pml4 = phys_to_virt_pt(src ? (u64)src : get_cr3());
     if (!dst_pml4 || !src_pml4) return false;
 
-    /* Share all supervisor-only high-half mappings, including the direct map. */
-    for (u32 i = 256; i < 512; i++) dst_pml4[i] = src_pml4[i];
+    /* Share only supervisor-only high-half mappings, including the direct
+     * map. A USER bit here would expose the kernel to every ring-3 process. */
+    for (u32 i = 256; i < 512; i++) {
+        if (src_pml4[i] & PTE_USER) return false;
+        dst_pml4[i] = src_pml4[i];
+    }
 
-    /* Clone the low identity-map table hierarchy so ring-3 mappings can
-     * change USER permissions without editing the kernel's page tables. */
+    /* Clone the low identity-map hierarchy. Build only private child tables:
+     * never leave pointers to source tables in a partially built destination.
+     * This makes vmm_destroy_address_space() safe on every failure path. */
     u64 pml4e = src_pml4[0];
     if (!(pml4e & PTE_PRESENT)) return true;
+    if (pml4e & PTE_USER) return false;
 
     u64 pdpt_phys = pmm_alloc_page();
     if (!pdpt_phys) return false;
     u64* src_pdpt = phys_to_virt_pt(pml4e & ~0xFFFULL);
     u64* dst_pdpt = phys_to_virt_pt(pdpt_phys);
-    if (!src_pdpt || !dst_pdpt) return false;
-    for (u32 i = 0; i < 512; i++) dst_pdpt[i] = src_pdpt[i];
+    if (!src_pdpt || !dst_pdpt) {
+        pmm_free_page(pdpt_phys);
+        return false;
+    }
+    kmemset(dst_pdpt, 0, PAGE_SIZE);
+    dst_pml4[0] = pdpt_phys | (pml4e & 0x8000000000000FFFULL);
 
     for (u32 i = 0; i < 512; i++) {
         u64 pdpte = src_pdpt[i];
-        if (!(pdpte & PTE_PRESENT) || (pdpte & PTE_HUGE)) continue;
+        if (!(pdpte & PTE_PRESENT)) continue;
+        if (pdpte & PTE_USER) return false;
+        if (pdpte & PTE_HUGE) {
+            dst_pdpt[i] = pdpte;
+            continue;
+        }
 
         u64 pd_phys = pmm_alloc_page();
         if (!pd_phys) return false;
         u64* src_pd = phys_to_virt_pt(pdpte & ~0xFFFULL);
         u64* dst_pd = phys_to_virt_pt(pd_phys);
-        if (!src_pd || !dst_pd) return false;
-        for (u32 j = 0; j < 512; j++) dst_pd[j] = src_pd[j];
+        if (!src_pd || !dst_pd) {
+            pmm_free_page(pd_phys);
+            return false;
+        }
+        kmemset(dst_pd, 0, PAGE_SIZE);
         dst_pdpt[i] = pd_phys | (pdpte & 0x8000000000000FFFULL);
 
         for (u32 j = 0; j < 512; j++) {
             u64 pde = src_pd[j];
-            if (!(pde & PTE_PRESENT) || (pde & PTE_HUGE)) continue;
+            if (!(pde & PTE_PRESENT)) continue;
+            if (pde & PTE_USER) return false;
+            if (pde & PTE_HUGE) {
+                dst_pd[j] = pde;
+                continue;
+            }
 
             u64 pt_phys = pmm_alloc_page();
             if (!pt_phys) return false;
             u64* src_pt = phys_to_virt_pt(pde & ~0xFFFULL);
             u64* dst_pt = phys_to_virt_pt(pt_phys);
-            if (!src_pt || !dst_pt) return false;
-            for (u32 k = 0; k < 512; k++) dst_pt[k] = src_pt[k];
+            if (!src_pt || !dst_pt) {
+                pmm_free_page(pt_phys);
+                return false;
+            }
+            kmemset(dst_pt, 0, PAGE_SIZE);
             dst_pd[j] = pt_phys | (pde & 0x8000000000000FFFULL);
+            for (u32 k = 0; k < 512; k++) {
+                if (src_pt[k] & PTE_USER) return false;
+                dst_pt[k] = src_pt[k];
+            }
         }
     }
-
-    dst_pml4[0] = pdpt_phys | (pml4e & 0x8000000000000FFFULL);
     return true;
 }
 

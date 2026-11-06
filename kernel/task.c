@@ -8,10 +8,14 @@
 #include <kernel/signal.h>
 #include <kernel/pmm.h>
 #include <kernel/string.h>
+#include <kernel/serial.h>
 
 static task_t task_pool[TASK_MAX_TASKS];
 static task_t* task_list = NULL;
 static u32 next_pid = 1;
+
+static void task_release_user_stack_pages(task_t* task, pml4_t* pml4);
+static void task_release_user_code_pages(task_t* task, pml4_t* pml4);
 
 
 void task_init(void) {
@@ -43,7 +47,10 @@ void task_init(void) {
         task_pool[i].user_rsp = 0;
         task_pool[i].user_stack_pages[0] = 0;
         task_pool[i].user_stack_pages[1] = 0;
-        
+        task_pool[i].user_code_page_count = 0;
+        for (u32 page = 0; page < TASK_USER_CODE_MAX_PAGES; page++)
+            task_pool[i].user_code_pages[page] = 0;
+
         // Initialize fd table
         for (int j = 0; j < MAX_FDS; j++) {
             task_pool[i].fd_table[j].node = NULL;
@@ -155,6 +162,28 @@ void task_exit_with_status(u32 status) {
          * The table slot remains available for waitpid(), but open descriptors
          * must not remain live for the lifetime of the zombie record. */
         fd_table_close_all(current->fd_table);
+        if (current->is_user && current->mm.pml4) {
+            /* Stop using the process CR3 before reclaiming any of its private
+             * page tables or USER frames. The kernel identity map remains
+             * available on the saved kernel CR3 while this exit path runs. */
+            pml4_t* dead_space = current->mm.pml4;
+            vmm_switch(NULL);
+            vmm_destroy_address_space(dead_space);
+            current->address_space = NULL;
+            current->mm.pml4 = NULL;
+            current->mm.heap_start = 0;
+            current->mm.heap_end = 0;
+            current->mm.stack_top = 0;
+            current->mm.vmas = NULL;
+            current->user_stack_base = 0;
+            current->user_rsp = 0;
+            current->user_stack_pages[0] = 0;
+            current->user_stack_pages[1] = 0;
+            current->user_code_page_count = 0;
+            for (u32 page = 0; page < TASK_USER_CODE_MAX_PAGES; page++)
+                current->user_code_pages[page] = 0;
+            serial_puts("RING3_PRIVATE_PAGES_RELEASED\n");
+        }
         /* Exited tasks are never scheduled again. Unlink the zombie before
          * parking its stack so the scheduler list only contains live tasks. */
         scheduler_remove_task(current);
@@ -230,6 +259,9 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->user_rsp = 0;
     task->user_stack_pages[0] = 0;
     task->user_stack_pages[1] = 0;
+    task->user_code_page_count = 0;
+    for (u32 page = 0; page < TASK_USER_CODE_MAX_PAGES; page++)
+        task->user_code_pages[page] = 0;
     task->event_data = 0;
     task->waiting_event = 0;
 
@@ -262,39 +294,93 @@ static void task_release_user_stack_pages(task_t* task, pml4_t* pml4) {
     task->user_rsp = 0;
 }
 
-bool task_prepare_user_space(task_t* task, void* entry_point) {
-    if (!task || !task->address_space || !entry_point) {
-        return false;
+/* Release only the private physical frames owned by this process's bootstrap
+ * user-code mapping. The kernel's original text pages are never freed. */
+static void task_release_user_code_pages(task_t* task, pml4_t* pml4) {
+    if (!task) return;
+    extern char _usertext_start[];
+    u64 start = (u64)(uintptr_t)_usertext_start;
+    for (u32 i = 0; i < TASK_USER_CODE_MAX_PAGES; i++) {
+        u64 phys = task->user_code_pages[i];
+        if (!phys) continue;
+        u64 mapped = pml4 ? vmm_unmap_page_pml4(pml4, start + ((u64)i * PAGE_SIZE)) : 0;
+        pmm_free_page(mapped ? mapped : phys);
+        task->user_code_pages[i] = 0;
     }
+    task->user_code_page_count = 0;
+}
 
+bool task_prepare_user_space(task_t* task, void* entry_point) {
+    if (!task || !task->address_space || !entry_point) return false;
+
+    extern char _usertext_start[];
+    extern char _usertext_end[];
     pml4_t* pml4 = (pml4_t*)task->address_space;
-    u64 entry = (u64)entry_point;
-    u64 user_start = entry & ~0xFFFULL;
-    u64 user_end = ((entry + 0x1000 + 0xFFFULL) & ~0xFFFULL);
+    u64 code_start = (u64)(uintptr_t)_usertext_start;
+    u64 code_end = (u64)(uintptr_t)_usertext_end;
+    u64 entry = (u64)(uintptr_t)entry_point;
 
-    for (u64 addr = user_start; addr < user_end; addr += PAGE_SIZE) {
-        if (!vmm_map_page_pml4(pml4, addr, addr,
+    /* The entry must live inside the dedicated linker section. Never grant
+     * USER access to the kernel's shared .text/.rodata pages. */
+    if (!code_start || code_end <= code_start ||
+        (code_start & (PAGE_SIZE - 1)) || (code_end & (PAGE_SIZE - 1)) ||
+        entry < code_start || entry >= code_end) return false;
+
+    u64 code_pages = (code_end - code_start) / PAGE_SIZE;
+    if (!code_pages || code_pages > TASK_USER_CODE_MAX_PAGES) return false;
+
+    task_release_user_code_pages(task, pml4);
+    for (u32 i = 0; i < (u32)code_pages; i++) {
+        u64 phys = pmm_alloc_page();
+        if (!phys) {
+            task_release_user_code_pages(task, pml4);
+            return false;
+        }
+
+        void* alias = vmm_phys_to_virt(phys);
+        if (!alias) {
+            pmm_free_page(phys);
+            task_release_user_code_pages(task, pml4);
+            return false;
+        }
+
+        /* The dedicated .usertext section contains only the bootstrap entry.
+         * Copy it into a zeroed private frame so adjacent kernel code/data is
+         * never disclosed by a user-readable identity-mapped page. */
+        kmemset(alias, 0, PAGE_SIZE);
+        const u8* source = (const u8*)(uintptr_t)(code_start + ((u64)i * PAGE_SIZE));
+        u8* destination = (u8*)alias;
+        for (u32 byte = 0; byte < PAGE_SIZE; byte++) destination[byte] = source[byte];
+
+        u64 user_page = code_start + ((u64)i * PAGE_SIZE);
+        if (!vmm_map_page_pml4(pml4, user_page, phys,
                 VMM_FLAG_PRESENT | VMM_FLAG_USER)) {
+            pmm_free_page(phys);
+            task_release_user_code_pages(task, pml4);
+            return false;
+        }
+        task->user_code_pages[i] = phys;
+        task->user_code_page_count++;
+
+        u64 mapped_phys = 0, mapped_flags = 0;
+        if (!vmm_translate(pml4, user_page, &mapped_phys, &mapped_flags) ||
+            (mapped_phys & ~(PAGE_SIZE - 1)) != phys ||
+            !(mapped_flags & VMM_FLAG_USER) ||
+            (mapped_flags & VMM_FLAG_WRITABLE) ||
+            (mapped_flags & VMM_FLAG_NX)) {
+            task_release_user_code_pages(task, pml4);
             return false;
         }
     }
 
-    /*
-     * Never map the kmalloc-backed kernel stack into ring 3. kmalloc only
-     * guarantees 16-byte alignment, so rounding its bounds to pages can
-     * expose neighboring heap blocks and allocator headers to user code.
-     *
-     * Give user mode two dedicated physical pages instead. Physical memory
-     * is identity mapped during current boot, so clear each page before it
-     * becomes visible in the user address space.
-     */
+    /* Give ring 3 two dedicated, zeroed, writable/NX stack pages. */
     const u64 user_stack_top = 0x00007FFFFFFFE000ULL;
     const u64 user_stack_start = user_stack_top - (2 * PAGE_SIZE);
-
     for (u32 i = 0; i < 2; i++) {
         u64 phys = pmm_alloc_page();
         if (!phys) {
             task_release_user_stack_pages(task, pml4);
+            task_release_user_code_pages(task, pml4);
             return false;
         }
         task->user_stack_pages[i] = phys;
@@ -303,13 +389,15 @@ bool task_prepare_user_space(task_t* task, void* entry_point) {
             task->user_stack_pages[i] = 0;
             pmm_free_page(phys);
             task_release_user_stack_pages(task, pml4);
+            task_release_user_code_pages(task, pml4);
             return false;
         }
         kmemset(page_alias, 0, PAGE_SIZE);
 
-        if (!vmm_map_page_pml4(pml4, user_stack_start + (i * PAGE_SIZE), phys,
+        if (!vmm_map_page_pml4(pml4, user_stack_start + ((u64)i * PAGE_SIZE), phys,
                 VMM_FLAG_PRESENT | VMM_FLAG_USER | VMM_FLAG_WRITABLE | VMM_FLAG_NX)) {
             task_release_user_stack_pages(task, pml4);
+            task_release_user_code_pages(task, pml4);
             return false;
         }
     }
@@ -319,6 +407,7 @@ bool task_prepare_user_space(task_t* task, void* entry_point) {
     task->mm.stack_top = user_stack_top;
     ((u64*)task->rsp)[10] = user_stack_top;
     task->mm.pml4 = pml4;
+    serial_puts("RING3_CODE_ISOLATION_OK\n");
     return true;
 }
 
@@ -467,6 +556,65 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
 
     task->rsp = (u64)stack_top;
     return task;
+}
+
+/* The CPU reads TSS.RSP0 on every CPL3 -> CPL0 transition. A single
+ * boot-stack value is unsafe once more than one user task exists. */
+extern u8 tss[];
+
+bool task_set_tss_rsp0(task_t* task) {
+    if (!task || !task->stack_base) return false;
+    u64 stack_top = task->stack_base + TASK_STACK_SIZE;
+    u64 observed = 0;
+    /* RSP0 is intentionally unaligned at TSS byte offset 4. Use explicit
+     * x86 moves so the compiler cannot assume natural u64 alignment. */
+    asm volatile("movq %0, 4(%1)"
+                 :
+                 : "r"(stack_top), "r"(tss)
+                 : "memory");
+    asm volatile("movq 4(%1), %0"
+                 : "=r"(observed)
+                 : "r"(tss)
+                 : "memory");
+    return observed == stack_top;
+}
+
+void task_discard_unstarted(task_t* task) {
+    if (!task || task->state == TASK_STATE_UNUSED ||
+        task->started || task->scheduler_queued) return;
+
+    if (task->guard_page_addr) kfree((void*)(uintptr_t)task->guard_page_addr);
+    task->state = TASK_STATE_UNUSED;
+    task->pid = 0;
+    task->parent_pid = 0;
+    task->exit_code = 0;
+    task->rsp = 0;
+    task->stack_base = 0;
+    task->guard_page_addr = 0;
+    task->stack_canary_addr = 0;
+    task->address_space = NULL;
+    task->is_user = false;
+    task->started = false;
+    task->capabilities = 0;
+    task->user_stack_base = 0;
+    task->user_rsp = 0;
+    task->user_stack_pages[0] = 0;
+    task->user_stack_pages[1] = 0;
+    task->user_code_page_count = 0;
+    for (u32 page = 0; page < TASK_USER_CODE_MAX_PAGES; page++)
+        task->user_code_pages[page] = 0;
+    task->mm.pml4 = NULL;
+    task->mm.heap_start = 0;
+    task->mm.heap_end = 0;
+    task->mm.stack_top = 0;
+    task->mm.vmas = NULL;
+    task->event_data = 0;
+    task->waiting_event = 0;
+    task->next = NULL;
+    task->prev = NULL;
+    task->ipc_wait_next = NULL;
+    task->name[0] = '\0';
+    kmemset(task->fd_table, 0, sizeof(task->fd_table));
 }
 
 void task_sleep_ms(u32 ms) {

@@ -6,6 +6,7 @@ typedef struct {
     u64 uptime_ms;
     u32 processes_active;
     u32 processes_total;
+    u32 processes_blocked;
     u32 memory_used;
     u32 memory_free;
     u32 context_switches;
@@ -15,5 +16,8 @@ typedef struct {
 
 void diag_init(void);
 void diag_collect_stats(system_stats_t* stats);
+void diag_note_context_switch(void);
+void diag_note_interrupt(void);
+void diag_note_syscall(void);
 void diag_print_status(void);
 void diag_dump_tasks(void);

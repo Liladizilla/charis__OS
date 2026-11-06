@@ -20,95 +20,128 @@ static void report(const char* name, bool ok) {
 static bool test_map_existing(void) {
     u64 phys = pmm_alloc_page();
     if (!phys) return false;
-
     u64 virt = 0xFFFFB00000000000ULL;
+    bool ok = false;
 
-    if (!vmm_map_page(virt, phys, PTE_WRITABLE)) return false;
-    u64 phys2 = vmm_get_phys(virt);
-    if (phys2 != (phys & ~0xFFFULL)) return false;
-
-    // map same page again
-    return vmm_map_page(virt, phys, PTE_WRITABLE);
+    if (vmm_map_page(virt, phys, PTE_WRITABLE)) {
+        u64 phys2 = vmm_get_phys(virt);
+        ok = phys2 == (phys & ~0xFFFULL) &&
+             vmm_map_page(virt, phys, PTE_WRITABLE);
+        vmm_unmap_page(virt);
+    }
+    pmm_free_page(phys);
+    return ok;
 }
 
 static bool test_map_missing_page(void) {
     u64 phys = pmm_alloc_page();
     if (!phys) return false;
-
     u64 virt = 0xFFFFB00000001000ULL;
+    bool ok = false;
 
-    // Should create missing tables and then map
-    if (!vmm_map_page(virt, phys, PTE_WRITABLE)) return false;
-
-    u64 phys2 = vmm_get_phys(virt);
-    return phys2 == (phys & ~0xFFFULL);
+    if (vmm_map_page(virt, phys, PTE_WRITABLE)) {
+        ok = vmm_get_phys(virt) == (phys & ~0xFFFULL);
+        vmm_unmap_page(virt);
+    }
+    pmm_free_page(phys);
+    return ok;
 }
 
 static bool test_remap_same_page(void) {
     u64 phys1 = pmm_alloc_page();
     u64 phys2 = pmm_alloc_page();
-    if (!phys1 || !phys2) return false;
+    if (!phys1 || !phys2) {
+        if (phys1) pmm_free_page(phys1);
+        if (phys2) pmm_free_page(phys2);
+        return false;
+    }
 
     u64 virt = 0xFFFFB00000002000ULL;
-
-    if (!vmm_map_page(virt, phys1, PTE_WRITABLE)) return false;
-    if (!vmm_map_page(virt, phys2, PTE_WRITABLE)) return false;
-
-    u64 phys2_ret = vmm_get_phys(virt);
-    return phys2_ret == (phys2 & ~0xFFFULL);
+    bool mapped = false, ok = false;
+    if (vmm_map_page(virt, phys1, PTE_WRITABLE)) {
+        mapped = true;
+        if (vmm_map_page(virt, phys2, PTE_WRITABLE))
+            ok = vmm_get_phys(virt) == (phys2 & ~0xFFFULL);
+    }
+    if (mapped) vmm_unmap_page(virt);
+    pmm_free_page(phys1);
+    pmm_free_page(phys2);
+    return ok;
 }
 
 static bool test_unmap_page(void) {
     u64 phys = pmm_alloc_page();
     if (!phys) return false;
-
     u64 virt = 0xFFFFB00000003000ULL;
+    bool ok = false;
 
-    if (!vmm_map_page(virt, phys, PTE_WRITABLE)) return false;
-
-    vmm_unmap_page(virt);
-    return vmm_get_phys(virt) == 0;
+    if (vmm_map_page(virt, phys, PTE_WRITABLE)) {
+        vmm_unmap_page(virt);
+        ok = vmm_get_phys(virt) == 0;
+    }
+    pmm_free_page(phys);
+    return ok;
 }
 
 static bool test_map_user_page(void) {
+    /* Exercise USER permissions in an isolated temporary PML4. Never leave a
+     * USER leaf in the kernel CR3 where later process tables could inherit it. */
+    u64 pml4_phys = pmm_alloc_page();
     u64 phys = pmm_alloc_page();
-    if (!phys) return false;
+    if (!pml4_phys || !phys) {
+        if (pml4_phys) pmm_free_page(pml4_phys);
+        if (phys) pmm_free_page(phys);
+        return false;
+    }
 
-    /* Use an unused lower-half PML4 slot. Testing a USER mapping in the
-     * kernel's shared high-half slot would unnecessarily relax upper-level
-     * permissions for the kernel mapping tree. */
-    u64 virt = 0x0000400000004000ULL;
+    u64* pml4 = (u64*)vmm_phys_to_virt(pml4_phys);
+    if (!pml4) {
+        pmm_free_page(phys);
+        pmm_free_page(pml4_phys);
+        return false;
+    }
+    kmemset(pml4, 0, PAGE_SIZE);
+    const u64 virt = 0x0000400000004000ULL;
+    bool ok = vmm_map_page_pml4((pml4_t*)pml4_phys, virt, phys,
+                                VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE | VMM_FLAG_USER);
 
-    if (!vmm_map_page(virt, phys, PTE_WRITABLE | PTE_USER)) return false;
-    if (vmm_get_phys(virt) != (phys & ~0xFFFULL)) return false;
+    u64 pdpt_phys = 0, pd_phys = 0, pt_phys = 0;
+    if (ok) {
+        u64 pml4e = pml4[(virt >> 39) & 0x1FF];
+        u64* pdpt = (u64*)vmm_phys_to_virt(pml4e & ~0xFFFULL);
+        ok = (pml4e & PTE_USER) && pdpt;
+        if (ok) {
+            u64 pdpte = pdpt[(virt >> 30) & 0x1FF];
+            pdpt_phys = pml4e & ~0xFFFULL;
+            u64* pd = (u64*)vmm_phys_to_virt(pdpte & ~0xFFFULL);
+            ok = (pdpte & PTE_USER) && pd;
+            if (ok) {
+                u64 pde = pd[(virt >> 21) & 0x1FF];
+                pd_phys = pdpte & ~0xFFFULL;
+                u64* pt = (u64*)vmm_phys_to_virt(pde & ~0xFFFULL);
+                ok = (pde & PTE_USER) && pt;
+                if (ok) {
+                    pt_phys = pde & ~0xFFFULL;
+                    u64 pte = pt[(virt >> 12) & 0x1FF];
+                    u64 translated = 0, effective = 0;
+                    ok = (pte & PTE_USER) &&
+                         vmm_translate((pml4_t*)pml4_phys, virt,
+                                       &translated, &effective) &&
+                         translated == (phys & ~0xFFFULL) &&
+                         (effective & (VMM_FLAG_USER | VMM_FLAG_WRITABLE)) ==
+                         (VMM_FLAG_USER | VMM_FLAG_WRITABLE);
+                }
+            }
+        }
+    }
 
-    u64 cr3;
-    asm volatile("mov %%cr3, %0" : "=r"(cr3));
-    u64* pml4 = (u64*)vmm_phys_to_virt(cr3 & ~0xFFFULL);
-    if (!pml4) return false;
-    u64 pml4e = pml4[(virt >> 39) & 0x1FF];
-    if (!(pml4e & (1ULL << 2))) return false;
-
-    u64* pdpt = (u64*)vmm_phys_to_virt(pml4e & ~0xFFFULL);
-    if (!pdpt) return false;
-    u64 pdpte = pdpt[(virt >> 30) & 0x1FF];
-    if (!(pdpte & (1ULL << 2))) return false;
-
-    u64* pd = (u64*)vmm_phys_to_virt(pdpte & ~0xFFFULL);
-    if (!pd) return false;
-    u64 pde = pd[(virt >> 21) & 0x1FF];
-    if (!(pde & (1ULL << 2))) return false;
-
-    u64* pt = (u64*)vmm_phys_to_virt(pde & ~0xFFFULL);
-    if (!pt) return false;
-    u64 pte = pt[(virt >> 12) & 0x1FF];
-    if (!(pte & (1ULL << 2))) return false;
-
-    u64 translated = 0, effective = 0;
-    if (!vmm_translate((pml4_t*)(cr3 & ~0xFFFULL), virt, &translated, &effective)) return false;
-    return translated == (phys & ~0xFFFULL) &&
-           (effective & (VMM_FLAG_USER | VMM_FLAG_WRITABLE)) ==
-           (VMM_FLAG_USER | VMM_FLAG_WRITABLE);
+    u64 mapped = vmm_unmap_page_pml4((pml4_t*)pml4_phys, virt);
+    pmm_free_page(mapped ? mapped : phys);
+    if (pt_phys) pmm_free_page(pt_phys);
+    if (pd_phys) pmm_free_page(pd_phys);
+    if (pdpt_phys) pmm_free_page(pdpt_phys);
+    pmm_free_page(pml4_phys);
+    return ok;
 }
 
 static bool test_walk_rejects_huge_leaves(void) {
@@ -273,6 +306,17 @@ static bool test_pmm_returns_direct_mapped_ram(void) {
 }
 
 
+static bool test_pmm_free_count_is_constant_time_consistent(void) {
+    u32 before = pmm_free_pages();
+    u64 page = pmm_alloc_page();
+    if (!page) return false;
+    bool decremented = pmm_free_pages() + 1 == before;
+    pmm_free_page(page);
+    bool restored = pmm_free_pages() == before;
+    pmm_free_page(page); /* A duplicate free must not inflate the cached count. */
+    return decremented && restored && pmm_free_pages() == before;
+}
+
 static bool test_pmm_cannot_free_reserved_frame(void) {
     u32 used_before = pmm_used_pages();
     pmm_free_page(0x00100000ULL); /* kernel image reservation */
@@ -348,6 +392,164 @@ static bool test_vmm_rejects_unaligned_pages(void) {
 }
 
 
+/* Exercise the complete input-validation boundary without allowing a rejected
+ * mapping to allocate or modify any page-table level. */
+static bool test_mapping_validation_matrix(void) {
+    u64 pml4_phys = pmm_alloc_page();
+    u64 frame_phys = pmm_alloc_page();
+    if (!pml4_phys || !frame_phys) {
+        if (pml4_phys) pmm_free_page(pml4_phys);
+        if (frame_phys) pmm_free_page(frame_phys);
+        return false;
+    }
+
+    u64* pml4 = (u64*)vmm_phys_to_virt(pml4_phys);
+    if (!pml4) {
+        pmm_free_page(frame_phys);
+        pmm_free_page(pml4_phys);
+        return false;
+    }
+    kmemset(pml4, 0, PAGE_SIZE);
+
+    struct mapping_case {
+        u64 virt;
+        u64 phys;
+        u64 flags;
+    };
+    const struct mapping_case cases[] = {
+        { 0x0000800000000000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x0000800000001000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0xFFFF000000000000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0xFFFF7FFFFFFFF000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x0000400000004001ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { UINT64_MAX, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x0000400000004000ULL, frame_phys + 1, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x0000400000004000ULL, 0x0010000000000000ULL, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x0000400000004000ULL, UINT64_MAX, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0xFFFF800000000000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0xFFFF900000001000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0xFFFFFFFFFFFFF000ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x0000400000004000ULL, 0x000FFFFFFFFFF001ULL, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0xFFFF7FFFFFFFF001ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER },
+        { 0x00007FFFFFFFF001ULL, frame_phys, VMM_FLAG_PRESENT | VMM_FLAG_USER }
+    };
+
+    bool rejected = true;
+    for (usize i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        u32 slot = (u32)((cases[i].virt >> 39) & 0x1FF);
+        u64 before = pml4[slot];
+        if (vmm_map_page_pml4((pml4_t*)pml4_phys, cases[i].virt,
+                              cases[i].phys, cases[i].flags) ||
+            pml4[slot] != before) {
+            rejected = false;
+            break;
+        }
+    }
+
+    /* The current-address-space entry point must reject invalid requests
+     * before touching its shared kernel page tables as well. */
+    u64 current_cr3;
+    asm volatile("mov %%cr3, %0" : "=r"(current_cr3));
+    u64* current_pml4 = (u64*)vmm_phys_to_virt(current_cr3 & ~0xFFFULL);
+    bool current_rejected = current_pml4 != NULL;
+    if (current_rejected) {
+        const u64 invalid_virtuals[] = {
+            0x0000800000000000ULL,
+            0xFFFF000000000000ULL,
+            0xFFFF900000001000ULL
+        };
+        for (usize i = 0; i < sizeof(invalid_virtuals) / sizeof(invalid_virtuals[0]); i++) {
+            u32 slot = (u32)((invalid_virtuals[i] >> 39) & 0x1FF);
+            u64 before = current_pml4[slot];
+            u64 flags = (i == 2)
+                ? VMM_FLAG_PRESENT | VMM_FLAG_USER
+                : VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE;
+            if (vmm_map_page(invalid_virtuals[i], frame_phys, flags) ||
+                current_pml4[slot] != before) {
+                current_rejected = false;
+                break;
+            }
+        }
+    }
+
+    pmm_free_page(frame_phys);
+    pmm_free_page(pml4_phys);
+    return rejected && current_rejected;
+}
+
+
+static bool test_destroy_address_space_reclaims_owned_pages(void) {
+    u32 free_before = pmm_free_pages();
+    u64 pml4_phys = pmm_alloc_page();
+    u64 user_phys = pmm_alloc_page();
+    u64 supervisor_phys = pmm_alloc_page();
+    if (!pml4_phys || !user_phys || !supervisor_phys) {
+        if (pml4_phys) pmm_free_page(pml4_phys);
+        if (user_phys) pmm_free_page(user_phys);
+        if (supervisor_phys) pmm_free_page(supervisor_phys);
+        return false;
+    }
+
+    u64* pml4 = (u64*)vmm_phys_to_virt(pml4_phys);
+    if (!pml4) {
+        pmm_free_page(supervisor_phys);
+        pmm_free_page(user_phys);
+        pmm_free_page(pml4_phys);
+        return false;
+    }
+    kmemset(pml4, 0, PAGE_SIZE);
+
+    const u64 user_va = 0x0000400000004000ULL;
+    const u64 supervisor_va = 0x0000400000005000ULL;
+    bool user_mapped = vmm_map_page_pml4((pml4_t*)pml4_phys, user_va, user_phys,
+        VMM_FLAG_PRESENT | VMM_FLAG_USER | VMM_FLAG_WRITABLE);
+    bool supervisor_mapped = vmm_map_page_pml4((pml4_t*)pml4_phys,
+        supervisor_va, supervisor_phys, VMM_FLAG_PRESENT | VMM_FLAG_WRITABLE);
+
+    /* Destroy must free user-owned leaves and every private table, but must
+     * leave supervisor leaf frames alone even when an ancestor has USER set. */
+    vmm_destroy_address_space((pml4_t*)pml4_phys);
+    pmm_free_page(user_phys);       /* harmless if the destroy path freed it */
+    pmm_free_page(supervisor_phys); /* destroy must not free this frame */
+    bool reclaimed = pmm_free_pages() == free_before;
+    return user_mapped && supervisor_mapped && reclaimed;
+}
+
+static bool test_kernel_mapping_clone_rejects_user_leaves(void) {
+    u32 free_before = pmm_free_pages();
+    u64 src_phys = pmm_alloc_page();
+    u64 dst_phys = pmm_alloc_page();
+    if (!src_phys || !dst_phys) {
+        if (src_phys) pmm_free_page(src_phys);
+        if (dst_phys) pmm_free_page(dst_phys);
+        return false;
+    }
+    u64* src = (u64*)vmm_phys_to_virt(src_phys);
+    u64* dst = (u64*)vmm_phys_to_virt(dst_phys);
+    if (!src || !dst) {
+        pmm_free_page(src_phys);
+        pmm_free_page(dst_phys);
+        return false;
+    }
+    kmemset(src, 0, PAGE_SIZE);
+    kmemset(dst, 0, PAGE_SIZE);
+
+    /* The source is deliberately malformed: neither high-half nor low-half
+     * kernel mappings may carry USER permissions into a new process. */
+    src[256] = 0x1000ULL | PTE_PRESENT | PTE_USER;
+    bool high_rejected = !vmm_copy_kernel_mappings((pml4_t*)dst_phys,
+                                                    (pml4_t*)src_phys);
+    kmemset(dst, 0, PAGE_SIZE);
+    src[256] = 0;
+    src[0] = 0x1000ULL | PTE_PRESENT | PTE_USER;
+    bool low_rejected = !vmm_copy_kernel_mappings((pml4_t*)dst_phys,
+                                                   (pml4_t*)src_phys);
+
+    vmm_destroy_address_space((pml4_t*)dst_phys);
+    pmm_free_page(src_phys);
+    return high_rejected && low_rejected && pmm_free_pages() == free_before;
+}
+
 void vmm_run_tests(void) {
     report("map_existing", test_map_existing());
     report("map_missing", test_map_missing_page());
@@ -358,8 +560,12 @@ void vmm_run_tests(void) {
     report("translate_effective_user", test_translate_requires_user_at_every_level());
     report("physmap_supervisor_alias", test_supervisor_direct_map_above_4g());
     report("pmm_direct_mapped_ram", test_pmm_returns_direct_mapped_ram());
+    report("pmm_free_count", test_pmm_free_count_is_constant_time_consistent());
     report("pmm_reserved_frame_protected", test_pmm_cannot_free_reserved_frame());
     report("user_kernel_half_denied", test_user_mapping_rejects_kernel_half());
     report("unaligned_page_denied", test_vmm_rejects_unaligned_pages());
+    report("mapping_validation_matrix", test_mapping_validation_matrix());
+    report("destroy_address_space", test_destroy_address_space_reclaims_owned_pages());
+    report("kernel_clone_rejects_user", test_kernel_mapping_clone_rejects_user_leaves());
 }
 

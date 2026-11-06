@@ -15,6 +15,7 @@ void pmm_reserve_range(u64 addr, u64 len);
 
 u32 pmm_used_pages(void);
 u32 pmm_free_pages(void);
+u32 pmm_total_pages(void);
 /* True only for complete 2 MiB blocks safe for a write-back RAM direct map. */
 bool pmm_block_is_usable_ram(u64 block_base);
 

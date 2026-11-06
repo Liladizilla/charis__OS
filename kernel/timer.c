@@ -56,6 +56,8 @@ u64 timer_get_ticks(void) {
 }
 
 u64 timer_get_ms(void) {
+    /* Early boot and weak-entropy fallback may query time before PIT setup. */
+    if (!timer_frequency_hz) return 0;
     // Fixed formula: divide by frequency_hz, not PIT_FREQ/1000
     return timer_ticks * 1000ULL / timer_frequency_hz;
 }

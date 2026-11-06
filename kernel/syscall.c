@@ -17,6 +17,7 @@
 #include <kernel/string.h>
 #include <kernel/elf.h>
 #include <kernel/security.h>
+#include <kernel/serial.h>
 
 extern u64 isr_table[256];
 
@@ -26,6 +27,13 @@ static syscall_handler_t syscall_table[SYSCALL_MAX];
 static bool syscall_copy_user_string(task_t* task, u64 user_address, char* destination, usize capacity);
 static bool syscall_copy_user_data(task_t* task, u64 user_address, void* destination, usize size);
 static bool syscall_copy_to_user_data(task_t* task, u64 user_address, const void* source, usize size);
+/* Global service tables are not safe to expose to ring 3 until they have
+ * per-process ownership, opaque handles and capability enforcement. */
+static bool syscall_kernel_only(void) {
+    task_t* task = scheduler_current();
+    return !task || !task->is_user;
+}
+
 
 static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a4; (void)a5; (void)a6;
@@ -206,13 +214,12 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
         path[i] = 0;
     }
     
+    /* Validate the path before handing it to the filesystem parser. A
+     * rejected traversal must never reach fs_open()/finddir() first. */
+    if (!security_verify_path(path, task)) return (u64)-1;
+
     vfs_node_t* node = vfs_resolve(path);
-    if (!node) return -1;
-    
-    // Path traversal check
-    if (!security_verify_path(path, task)) {
-        return -1; // EPERM
-    }
+    if (!node) return (u64)-1;
     
     return fd_alloc(node, 0);
 }
@@ -252,6 +259,7 @@ static u64 syscall_shm_free_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 
 }
 
 static u64 syscall_ipc_create_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     if (!a1) return (u64)-1;
     char name[32];
@@ -268,6 +276,7 @@ static u64 syscall_ipc_create_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u6
 }
 
 static u64 syscall_ipc_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a4; (void)a5; (void)a6;
     task_t* task = scheduler_current();
     if (task && task->is_user) {
@@ -286,6 +295,7 @@ static u64 syscall_ipc_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 
 }
 
 static u64 syscall_ipc_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a4; (void)a5; (void)a6;
     task_t* task = scheduler_current();
     if (task && task->is_user) {
@@ -405,8 +415,16 @@ bool syscall_exec_from_frame(reg_frame_t* frame) {
     if (!frame || (frame->cs & 3) != 3) return false;
     task_t* task = scheduler_current();
     if (!task || !task->is_user || !task->mm.pml4 ||
-        task->address_space != task->mm.pml4 ||
-        !security_check_capability(task, CAP_SPAWN)) return false;
+        task->address_space != task->mm.pml4) return false;
+
+    /* Explicitly report the safe default so boot tests can distinguish a
+     * deliberate policy denial from a broken ELF loader. */
+    if (!security_check_capability(task, CAP_SPAWN) ||
+        !security_check_capability(task, CAP_ALLOW_EXEC)) {
+        serial_puts("ELF_EXEC_DENIED_CAPABILITY\n");
+        security_audit("exec-denied-capability", task);
+        return false;
+    }
 
     char path[256];
     if (!syscall_copy_user_string(task, frame->rdi, path, sizeof(path)) ||
@@ -464,31 +482,37 @@ bool syscall_exec_from_frame(reg_frame_t* frame) {
 }
 
 static u64 syscall_socket_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a3; (void)a4; (void)a5; (void)a6;
     return socket_create((int)a1, (int)a2);
 }
 
 static u64 syscall_connect_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a3; (void)a4; (void)a5; (void)a6;
     return socket_connect((int)a1, (u32)a2, (u16)a3);
 }
 
 static u64 syscall_bind_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a3; (void)a4; (void)a5; (void)a6;
     return socket_bind((int)a1, (u16)a2);
 }
 
 static u64 syscall_listen_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     return socket_listen((int)a1);
 }
 
 static u64 syscall_accept_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     return socket_accept((int)a1);
 }
 
 static u64 syscall_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a4; (void)a5; (void)a6;
     task_t* task = scheduler_current();
     if (task && task->is_user) {
@@ -507,6 +531,7 @@ static u64 syscall_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
 }
 
 static u64 syscall_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a4; (void)a5; (void)a6;
     task_t* task = scheduler_current();
     if (task && task->is_user) {
@@ -525,18 +550,21 @@ static u64 syscall_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
 }
 
 static u64 syscall_socket_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     socket_close((int)a1);
     return 0;
 }
 
 static u64 syscall_beep_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a3; (void)a4; (void)a5; (void)a6;
     audio_beep((u32)a1, (u32)a2);
     return 0;
 }
 
 static u64 syscall_diag_stats_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     if (!a1) return (u64)-1;
     task_t* task = scheduler_current();
@@ -550,6 +578,7 @@ static u64 syscall_diag_stats_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u6
 }
 
 static u64 syscall_diag_tasks_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     diag_dump_tasks();
     return 0;
@@ -562,6 +591,7 @@ static u64 syscall_game_init_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64
 }
 
 static u64 syscall_game_clear_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     fb_clear((u32)a1);
     return 0;
@@ -687,6 +717,7 @@ void syscall_init(void) {
 }
 
 u64 syscall_dispatch(u64 num, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    diag_note_syscall();
     if (num >= SYSCALL_MAX || !syscall_table[num]) {
         vga_puts("Bad syscall\n");
         return (u64)-1;

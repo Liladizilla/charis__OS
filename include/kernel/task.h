@@ -14,6 +14,7 @@
 #define TASK_NAME_MAX           32
 #define TASK_STACK_SIZE         8192
 #define TASK_MAX_TASKS          32
+#define TASK_USER_CODE_MAX_PAGES 4
 #define TASK_DEFAULT_QUANTUM    10
 #define TASK_WAITING_SLEEP       0x534C4550U /* 'SLEP': blocked until event_data deadline */
 #define TASK_WAITING_KEYBOARD    0x4B455942U /* 'KEYB': waiting for keyboard input */
@@ -62,6 +63,9 @@ typedef struct task {
     u64 user_rsp;
     /* Dedicated zeroed physical pages mapped only into this task as user stack. */
     u64 user_stack_pages[2];
+    /* Private executable copies of the page-aligned bootstrap user text. */
+    u64 user_code_pages[TASK_USER_CODE_MAX_PAGES];
+    u32 user_code_page_count;
     process_mm_t mm;
     fd_entry_t fd_table[MAX_FDS];
     void* address_space;
@@ -84,6 +88,9 @@ void scheduler_yield(void);
 void task_init(void);
 task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user);
 task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user, pml4_t* pml4);
+void task_discard_unstarted(task_t* task);
+/* Point the CPU's privilege-transition stack at this task's private kernel stack. */
+bool task_set_tss_rsp0(task_t* task);
 task_t* task_allocate(void);
 u32 task_next_pid(void);
 void task_exit(void);
