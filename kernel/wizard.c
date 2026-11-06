@@ -255,7 +255,7 @@ static void draw_mode(void) {
          "There is no installer yet; this session runs from the boot medium.",
          W_HINT);
     text(cx + 40, cy + 230,
-         "Setup persists only when an existing writable config file is present.",
+         "Setup saves to CHARISOS.CFG when writable FAT32 storage is available.",
          W_HINT);
 }
 
