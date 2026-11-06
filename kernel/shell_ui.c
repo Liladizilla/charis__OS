@@ -26,6 +26,7 @@
 #include <kernel/wallpaper.h>
 #include <kernel/config.h>
 #include <kernel/wizard.h>
+#include <kernel/terminal_ui.h>
 
 /* Native desktop widgets and launcher hit-testing. */
 extern void desktop_surface_render(void);
@@ -429,6 +430,7 @@ static void redraw_all(void) {
     draw_menu();
     draw_notice();
     draw_settings();
+    terminal_render();
     ui_draw_cursor();
 }
 
@@ -481,6 +483,16 @@ static void handle_event(const input_event_t* e) {
         bool extended = (code & 0x80) != 0;
         u8 base = code & 0x7F;
 
+        /* The terminal is modal. ASCII characters are consumed from the
+         * keyboard ring after event dispatch; Escape closes the window. */
+        if (terminal_is_open()) {
+            if (e->type == INPUT_KEY_DOWN && !extended && base == KEY_ESCAPE) {
+                terminal_close();
+                ui.needs_redraw = true;
+            }
+            return;
+        }
+
         /* Super is 0x5B/0x5C, both extended. */
         if (extended && (base == 0x5B || base == 0x5C)) {
             super_held = (e->type == INPUT_KEY_DOWN);
@@ -530,6 +542,12 @@ static void handle_event(const input_event_t* e) {
     case INPUT_MOUSE_DOWN: {
         int mx = e->mouse.x, my = e->mouse.y;
 
+        if (terminal_is_open()) {
+            terminal_handle_mouse(mx, my);
+            ui.needs_redraw = true;
+            return;
+        }
+
         if (browser_is_open()) {
             browser_handle_mouse(mx, my);
             ui.needs_redraw = true;
@@ -563,10 +581,17 @@ static void handle_event(const input_event_t* e) {
                 ui.needs_redraw = true;
                 return;
             }
-            if (pinned == 1 || pinned == 2) {
+            if (pinned == 1) {
                 ui.menu_open = false;
-                notice_item = pinned == 1 ? 2 : 1;
+                notice_item = 2;
                 notice_open = true;
+                ui.needs_redraw = true;
+                return;
+            }
+            if (pinned == 2) {
+                ui.menu_open = false;
+                notice_open = false;
+                terminal_open();
                 ui.needs_redraw = true;
                 return;
             }
@@ -591,8 +616,11 @@ static void handle_event(const input_event_t* e) {
             ui.menu_open = false;
             if (shortcut == 0) {
                 browser_open();
+            } else if (shortcut == 2) {
+                notice_open = false;
+                terminal_open();
             } else {
-                notice_item = shortcut == 1 ? 2 : 1;
+                notice_item = 2;
                 notice_open = true;
             }
             ui.needs_redraw = true;
@@ -606,6 +634,9 @@ static void handle_event(const input_event_t* e) {
             if (hit == 0) {
                 notice_open = false;
                 browser_open();
+            } else if (hit == 1) {
+                notice_open = false;
+                terminal_open();
             } else if (hit == 4) {
                 settings_open = true;
                 notice_open = false;
@@ -647,6 +678,13 @@ void shell_ui_main(void* arg) {
         while (input_pop_event(&e)) {
             handle_event(&e);
             had_event = true;
+        }
+        if (terminal_is_open()) {
+            char key;
+            while (keyboard_get_key(&key)) {
+                terminal_handle_char(key);
+                had_event = true;
+            }
         }
         if (had_event) ui.needs_redraw = true;
 
