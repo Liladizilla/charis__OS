@@ -717,6 +717,7 @@ void syscall_init(void) {
 }
 
 u64 syscall_dispatch(u64 num, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    diag_note_syscall();
     if (num >= SYSCALL_MAX || !syscall_table[num]) {
         vga_puts("Bad syscall\n");
         return (u64)-1;

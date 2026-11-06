@@ -18,34 +18,44 @@ void wallpaper_draw(u32 style) {
     u32 base = CHARIS_UI_BACKGROUND;
     u32 plane = 0xFF121A26u;
     u32 edge = 0xFF1B2A40u;
+    bool show_plane = false;
 
     switch (style) {
     case WALLPAPER_EMBER:
         base = 0xFF140B10u; plane = 0xFF21131Au; edge = 0xFF38201Fu;
+        show_plane = true;
         break;
     case WALLPAPER_FOREST:
         base = 0xFF0C1713u; plane = 0xFF12231Cu; edge = 0xFF1B352Au;
+        show_plane = true;
         break;
     case WALLPAPER_DUSK:
         base = 0xFF120D1Cu; plane = 0xFF1C1530u; edge = 0xFF2B2144u;
+        show_plane = true;
         break;
     case WALLPAPER_MONO:
         base = 0xFF101114u; plane = 0xFF17191Eu; edge = 0xFF22262Du;
+        show_plane = true;
         break;
     case WALLPAPER_CHARIS:
     case WALLPAPER_COUNT:
     default:
+        /* Charis is intentionally a clean graphite field, not an empty
+         * giant panel competing with the desktop widgets. */
         break;
     }
 
     fb_clear(base);
     if (w >= 8 && h >= 8) {
-        /* A quiet, right-aligned plane gives the desktop depth without
-         * competing with text or pretending to be a photographed wallpaper. */
-        u32 plane_x = (w * 2) / 3;
-        fb_fill_rect(plane_x, h / 8, w - plane_x, (h * 3) / 4, plane);
-        fb_fill_rect(0, h - 6, w, 6, edge);
-        fb_fill_rect(plane_x, h / 8, 2, (h * 3) / 4, edge);
+        if (show_plane) {
+            u32 plane_x = (w * 3) / 4;
+            u32 plane_y = h / 3;
+            u32 plane_h = h / 3;
+            fb_fill_rect(plane_x, plane_y, w - plane_x, plane_h, plane);
+            fb_fill_rect(plane_x, plane_y, 2, plane_h, edge);
+            fb_fill_rect(plane_x, plane_y + plane_h - 2, w - plane_x, 2, edge);
+        }
+        fb_fill_rect(0, h - 2, w, 2, edge);
     }
 }
 
