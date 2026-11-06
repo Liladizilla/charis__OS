@@ -182,9 +182,9 @@ bool config_save(const char* path) {
 
     config_persistent = saved;
     if (saved) {
-        vga_printf("Config: Saved %d entries to %s\\n", config_count, path);
+        vga_printf("Config: Saved %d entries to %s\n", config_count, path);
     } else {
-        vga_puts("Config: No writable FAT32 config storage; settings remain session-only\\n");
+        vga_puts("Config: No writable FAT32 config storage; settings remain session-only\n");
     }
     return saved;
 }
