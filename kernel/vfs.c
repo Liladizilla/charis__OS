@@ -70,6 +70,12 @@ static int fat32_vfs_write(vfs_node_t* node, u64 offset, u64 size, const u8* buf
     return ret;
 }
 
+/* FAT lookup creates one heap-backed VFS node per successful open. The node
+ * belongs to its descriptor and must be released on close/task exit. */
+static void fat32_vfs_close(vfs_node_t* node) {
+    if (node) kfree(node);
+}
+
 static vfs_node_t* fat32_vfs_finddir(vfs_node_t* node, const char* name) {
     (void)node;
     
@@ -86,7 +92,7 @@ static vfs_node_t* fat32_vfs_finddir(vfs_node_t* node, const char* name) {
             child->write = fat32_vfs_write;
             /* kmalloc is not guaranteed to return zero-filled memory. */
             child->open = NULL;
-            child->close = NULL;
+            child->close = fat32_vfs_close;
             child->readdir = NULL;
             child->finddir = NULL;
             return child;

@@ -220,8 +220,10 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
 
     vfs_node_t* node = vfs_resolve(path);
     if (!node) return (u64)-1;
-    
-    return fd_alloc(node, 0);
+
+    int fd = fd_alloc(node, 0);
+    if (fd < 0 && node->close) node->close(node);
+    return fd < 0 ? (u64)-1 : (u64)fd;
 }
 
 static u64 syscall_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
