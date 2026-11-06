@@ -135,7 +135,7 @@ next_line:
     }
 
     vga_printf("Config: Loaded %d entries from %s\n", config_count, path);
-    serial_printf("CONFIG_LOADED entries=%d font_style=%d font_scale=%d ui_scale=%d\\n",
+    serial_printf("CONFIG_LOADED entries=%d font_style=%d font_scale=%d ui_scale=%d\n",
                   config_count, config_get_int("font_style", 0),
                   config_get_int("font_scale", 1), config_get_int("ui_scale", 100));
 }
@@ -185,7 +185,7 @@ bool config_save(const char* path) {
     if (node && node->close) node->close(node);
 
     config_persistent = saved;
-    serial_printf("CONFIG_SAVE %s font_style=%d font_scale=%d ui_scale=%d\\n",
+    serial_printf("CONFIG_SAVE %s font_style=%d font_scale=%d ui_scale=%d\n",
                   saved ? "OK" : "UNAVAILABLE",
                   config_get_int("font_style", 0),
                   config_get_int("font_scale", 1), config_get_int("ui_scale", 100));
