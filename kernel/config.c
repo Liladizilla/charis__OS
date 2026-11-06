@@ -1,11 +1,14 @@
 #include <kernel/config.h>
 #include <kernel/vfs.h>
+#include <kernel/fs.h>
 #include <kernel/string.h>
 #include <kernel/vga.h>
 #include <kernel/printf.h>
+#include <kernel/serial.h>
 
 static config_entry_t config_entries[CONFIG_MAX_ENTRIES];
 static int config_count = 0;
+static bool config_persistent = false;
 
 // Helper: trim whitespace
 static char* trim(char* str) {
@@ -53,6 +56,7 @@ static void parse_value(config_entry_t* entry, char* value_str) {
 
 void config_init(void) {
     config_count = 0;
+    config_persistent = false;
     vga_puts("Config: Initialized\n");
 }
 
@@ -63,7 +67,12 @@ void config_load(const char* path) {
     config_set_bool("boot_sound", true);
     config_set_int("screen_brightness", 100);
     config_set_bool("net_enabled", true);
+    config_set_int("font_style", 0);
+    config_set_int("font_scale", 1);
+    config_set_int("ui_scale", 100);
+    config_set_int("wallpaper", 0);
 
+    config_persistent = false;
     vfs_node_t* node = vfs_resolve(path);
     if (!node) {
         vga_puts("Config: No config file found, using defaults\n");
@@ -71,11 +80,13 @@ void config_load(const char* path) {
     }
 
     u8 buf[4096];
-    int n = node->read(node, 0, sizeof(buf) - 1, buf);
+    int n = node->read ? node->read(node, 0, sizeof(buf) - 1, buf) : -1;
+    if (node->close) node->close(node);
     if (n <= 0) {
-        vga_puts("Config: Empty config file\n");
+        vga_puts("Config: Empty or unreadable config file\n");
         return;
     }
+    config_persistent = true;
     buf[n] = 0;
 
     // Parse line by line
@@ -124,20 +135,28 @@ next_line:
     }
 
     vga_printf("Config: Loaded %d entries from %s\n", config_count, path);
+    serial_printf("CONFIG_LOADED entries=%d font_style=%d font_scale=%d ui_scale=%d\n",
+                  config_count, config_get_int("font_style", 0),
+                  config_get_int("font_scale", 1), config_get_int("ui_scale", 100));
 }
 
-void config_save(const char* path) {
-    // Build config file content
+bool config_save(const char* path) {
+    /* The current FAT32 implementation supports root-directory 8.3 files,
+     * not nested directories. Refuse paths it cannot safely represent. */
+    if (!path || path[0] != '/' || !path[1]) return false;
+    for (const char* p = path + 1; *p; p++) {
+        if (*p == '/' || *p == '\\') return false;
+    }
+
     char buf[4096];
     int pos = 0;
-    
+
     for (int i = 0; i < config_count; i++) {
-        // Copy key
         char* k = config_entries[i].key;
         while (*k && pos < 4000) buf[pos++] = *k++;
         if (pos >= 4000) break;
         buf[pos++] = '=';
-        
+
         if (config_entries[i].type == CONFIG_TYPE_BOOL) {
             const char* val = *(bool*)config_entries[i].value ? "true" : "false";
             while (*val && pos < 4000) buf[pos++] = *val++;
@@ -154,18 +173,32 @@ void config_save(const char* path) {
         buf[pos++] = '\n';
     }
 
-    // Write to file - must exist already (read-only FS for now)
     vfs_node_t* node = vfs_resolve(path);
-    if (node && node->write) {
-        int written = node->write(node, 0, pos, (u8*)buf);
-        if (written == pos) {
-            vga_printf("Config: Saved %d entries to %s\n", config_count, path);
-        } else {
-            vga_puts("Config: Failed to write config file (write failed)\n");
-        }
-    } else {
-        vga_puts("Config: Config file not found or not writable (read-only FS)\n");
+    if (!node) {
+        /* Create the configuration file on a writable, mounted FAT32 volume.
+         * fs_create() safely fails when no supported disk is available. */
+        if (fs_create(path) == 0) node = vfs_resolve(path);
     }
+
+    bool saved = node && node->write &&
+                 node->write(node, 0, (u64)pos, (const u8*)buf) == pos;
+    if (node && node->close) node->close(node);
+
+    config_persistent = saved;
+    serial_printf("CONFIG_SAVE %s font_style=%d font_scale=%d ui_scale=%d\n",
+                  saved ? "OK" : "UNAVAILABLE",
+                  config_get_int("font_style", 0),
+                  config_get_int("font_scale", 1), config_get_int("ui_scale", 100));
+    if (saved) {
+        vga_printf("Config: Saved %d entries to %s\n", config_count, path);
+    } else {
+        vga_puts("Config: No writable FAT32 config storage; settings remain session-only\n");
+    }
+    return saved;
+}
+
+bool config_is_persistent(void) {
+    return config_persistent;
 }
 
 int config_get_int(const char* key, int default_value) {

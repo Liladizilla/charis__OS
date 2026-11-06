@@ -255,7 +255,7 @@ static void draw_mode(void) {
          "There is no installer yet; this session runs from the boot medium.",
          W_HINT);
     text(cx + 40, cy + 230,
-         "Setup persists only when an existing writable config file is present.",
+         "Setup saves to CHARISOS.CFG when writable FAT32 storage is available.",
          W_HINT);
 }
 
@@ -384,10 +384,10 @@ static void draw_done(void) {
     text(cx + 40, cy + 172, w.install ? "install to disk" : "run from device", W_FG);
 
     text(cx + 40, cy + 200,
-         "Config can update an existing writable file, but cannot create",
+         "Preferences are saved to CHARISOS.CFG when writable FAT32",
          W_HINT);
     text(cx + 40, cy + 220,
-         "a missing config file. Persistence depends on that file existing.",
+         "storage is mounted; otherwise this session uses defaults.",
          W_HINT);
 }
 
@@ -418,7 +418,7 @@ static void apply_and_save(void) {
     config_set_bool("net_dhcp", !w.network_static);
     config_set_bool("net_enabled", true);
     config_set_bool("setup_complete", true);
-    config_save("/etc/charisos.conf");
+    config_save(CONFIG_FILE_PATH);
 }
 
 static void step_leave(wizard_step_t from) {

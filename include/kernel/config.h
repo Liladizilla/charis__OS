@@ -5,6 +5,7 @@
 #define CONFIG_MAX_ENTRIES 64
 #define CONFIG_KEY_MAX     32
 #define CONFIG_VALUE_MAX   256
+#define CONFIG_FILE_PATH    "/CHARISOS.CFG"
 
 typedef enum {
     CONFIG_TYPE_INT,
@@ -20,7 +21,8 @@ typedef struct {
 
 void config_init(void);
 void config_load(const char* path);
-void config_save(const char* path);
+bool config_save(const char* path);
+bool config_is_persistent(void);
 
 int config_get_int(const char* key, int default_value);
 const char* config_get_string(const char* key, const char* default_value);

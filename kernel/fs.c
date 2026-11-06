@@ -1,5 +1,6 @@
 #include <kernel/fs.h>
 #include <kernel/ata.h>
+#include <kernel/serial.h>
 #include <kernel/memory.h>
 #include <kernel/string.h>
 #include <kernel/vga.h>
@@ -137,12 +138,14 @@ void fs_init(void) {
 
     if (!ata_read_sector(0, sector_buffer)) {
         vga_puts("FS: Failed to read boot sector\n");
+        serial_puts("FS: failed to read primary disk boot sector");
         return;
     }
     kmemcpy(&boot_sector, sector_buffer, sizeof(boot_sector));
 
     if (kstrncmp(boot_sector.fs_type, "FAT32", 5) != 0) {
         vga_puts("FS: Not FAT32 (no FAT32 volume found)\n");
+        serial_puts("FS: primary disk is not FAT32");
         return;
     }
 
@@ -187,6 +190,7 @@ void fs_init(void) {
 
     fs_mounted = true;
     vga_puts("FAT32 initialized\n");
+    serial_puts("FS: writable FAT32 volume mounted");
 }
 
 int fs_open(const char* path, file_t* file) {
