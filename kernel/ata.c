@@ -2,6 +2,7 @@
 #include <kernel/vga.h>
 #include <kernel/io.h>
 #include <kernel/timer.h>
+#include <kernel/serial.h>
 
 #define ATA_SECTOR_SIZE 512
 
@@ -125,6 +126,7 @@ void ata_init(void) {
     u8 status = inb(ATA_STATUS);
     if (!ready || status == 0 || status == 0xFF || (status & ATA_STATUS_ERR)) {
         vga_puts("ATA: No drive detected\n");
+        serial_puts("ATA: no primary-master drive detected");
         return;
     }
 
@@ -136,4 +138,5 @@ void ata_init(void) {
 
     ata_present = true;
     vga_puts("ATA initialized\n");
+    serial_puts("ATA: primary-master drive detected");
 }
