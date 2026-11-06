@@ -195,7 +195,13 @@ void pmm_free_page(u64 addr) {
 }
 
 u32 pmm_used_pages(void) {
-    return (u32)PMM_PAGE_COUNT - free_page_count;
+    /* Only count frames inside firmware-approved managed RAM. PMM_PAGE_COUNT
+     * spans the allocator's 64 GiB address window, including holes and
+     * unavailable physical ranges; subtracting free pages from it falsely
+     * reports every unmanaged frame as occupied RAM. */
+    return managed_page_count >= free_page_count
+        ? managed_page_count - free_page_count
+        : 0;
 }
 
 u32 pmm_free_pages(void) {
