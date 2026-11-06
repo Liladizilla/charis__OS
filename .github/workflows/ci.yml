@@ -180,7 +180,7 @@ jobs:
             sleep 2
             printf 'quit\n'
           } | timeout 45s qemu-system-x86_64 \
-            -machine q35 -m 512M -vga std -nic none -no-reboot \
+            -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
             -serial file:build/desktop-capture-serial.log \
@@ -217,7 +217,7 @@ jobs:
             sleep 1
             printf 'quit\n'
           } | timeout 35s qemu-system-x86_64 \
-            -machine q35 -m 512M -vga std -nic none -no-reboot \
+            -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
             -serial file:build/desktop-reboot-serial.log \
