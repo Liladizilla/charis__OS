@@ -418,7 +418,7 @@ static void apply_and_save(void) {
     config_set_bool("net_dhcp", !w.network_static);
     config_set_bool("net_enabled", true);
     config_set_bool("setup_complete", true);
-    config_save("/etc/charisos.conf");
+    config_save(CONFIG_FILE_PATH);
 }
 
 static void step_leave(wizard_step_t from) {
