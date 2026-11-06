@@ -160,7 +160,7 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('b');
     config_init();
     BOOT_MARK('c');
-    config_load("/etc/charisos.conf");
+    config_load(CONFIG_FILE_PATH);
     gfx_text_apply_preferences();
     BOOT_MARK('L');
     display_init();
