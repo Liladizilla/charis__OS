@@ -124,14 +124,17 @@ jobs:
           make images-vmm-test
           BUILD_DIR=build/vmm-test ./tools/verify-boot.sh build/vmm-test/charisos-vm.iso --require-vmm-tests
 
-      - name: Capture real graphical desktop screenshot
+      - name: Capture desktop and verify persistent settings
         if: always()
-        continue-on-error: true
-        timeout-minutes: 1
+        timeout-minutes: 2
         shell: bash
         run: |
-          set -u
+          set -eu
           mkdir -p build
+          # Give the guest a real writable primary-master FAT32 disk. The
+          # ISO-only capture cannot prove preferences survive a reboot.
+          dd if=/dev/zero of=build/config-test-disk.img bs=1M count=128 status=none
+          mkfs.fat -F 32 build/config-test-disk.img >/dev/null
           # SeaBIOS capture avoids making OVMF an installation dependency.
           # The kernel's framebuffer is captured directly from the guest.
           {
@@ -178,17 +181,50 @@ jobs:
             printf 'quit\n'
           } | timeout 45s qemu-system-x86_64 \
             -machine q35 -m 512M -vga std -nic none -no-reboot \
+            -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
             -serial file:build/desktop-capture-serial.log \
             -monitor stdio -display none \
             >build/desktop-capture-qemu.log 2>&1 || true
 
-          if [ -s build/charisos-desktop-preview.ppm ]; then
-            file build/charisos-desktop-preview.ppm
-            echo "Guest display dump captured as PPM."
-          else
-            echo "QEMU did not produce a screenshot; inspect desktop-capture-qemu.log."
-          fi
+          test -s build/charisos-desktop-preview.ppm
+          test -s build/charisos-settings-preview.ppm
+          test -s build/charisos-settings-adjusted-preview.ppm
+
+          # Read the actual FAT32 file back from the disk image. The two
+          # settings changes exercised above must have reached persistent media.
+          mcopy -i build/config-test-disk.img ::CHARISOS.CFG build/CHARISOS.CFG
+          grep -qx 'font_scale=2' build/CHARISOS.CFG
+          grep -qx 'ui_scale=120' build/CHARISOS.CFG
+
+          # Reboot against the same disk and verify the kernel reloads the
+          # exact saved values, then capture Settings after that reboot.
+          {
+            sleep 10
+            printf 'mouse_move -500 1000\\n'
+            sleep 1
+            printf 'mouse_button 1\\n'
+            sleep 1
+            printf 'mouse_button 0\\n'
+            sleep 1
+            printf 'mouse_move 100 -110\\n'
+            sleep 1
+            printf 'mouse_button 1\\n'
+            sleep 1
+            printf 'mouse_button 0\\n'
+            sleep 2
+            printf 'screendump build/charisos-settings-reloaded-preview.ppm\\n'
+            sleep 1
+            printf 'quit\\n'
+          } | timeout 35s qemu-system-x86_64 \\
+            -machine q35 -m 512M -vga std -nic none -no-reboot \\
+            -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \\
+            -cdrom build/charisos-vm.iso -boot order=d \\
+            -serial file:build/desktop-reboot-serial.log \\
+            -monitor stdio -display none \\
+            >build/desktop-reboot-qemu.log 2>&1
+          grep -q 'CONFIG_LOADED .*font_scale=2 ui_scale=120' build/desktop-reboot-serial.log
+          test -s build/charisos-settings-reloaded-preview.ppm
 
       - name: Upload desktop preview
         if: always()
@@ -199,8 +235,11 @@ jobs:
             build/charisos-desktop-preview.ppm
             build/charisos-settings-preview.ppm
             build/charisos-settings-adjusted-preview.ppm
+            build/charisos-settings-reloaded-preview.ppm
             build/desktop-capture-serial.log
             build/desktop-capture-qemu.log
+            build/desktop-reboot-serial.log
+            build/desktop-reboot-qemu.log
           if-no-files-found: warn
           retention-days: 14
 
