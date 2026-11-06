@@ -21,7 +21,7 @@ The current controls are:
 | Font size | 1x, 2x, 3x | Changes text scale |
 | UI scale | 80%, 100%, 120% | Changes desktop geometry and control sizes |
 
-Changes apply immediately. They are session-only until the OS has a writable configuration store; the current /etc/charisos.conf loader can read existing settings but does not create a persistent file.
+Changes apply immediately and are saved to the root FAT32 file `/CHARISOS.CFG`. If a writable FAT32 volume is mounted, the kernel creates the file when needed and reloads it on the next boot. Without writable FAT32 storage, the Settings panel explicitly reports that the current session is not persistent.
 
 ## Input
 
@@ -41,6 +41,6 @@ The desktop is a kernel task. User processes use private user code and stack fra
 ## Known limitations
 
 - Browser opens, but Files and Terminal are still status notices rather than complete applications.
-- The Settings panel does not yet persist changes across reboot.
+- Preferences persist only when a writable FAT32 volume is mounted; the current VFS supports root-directory 8.3 filenames, not nested configuration directories.
 - ELF execution is denied to untrusted tasks until the loader and process-image lifecycle are fully enabled.
 - Manual keyboard/mouse testing on physical hardware and UEFI boot validation remain outstanding.
