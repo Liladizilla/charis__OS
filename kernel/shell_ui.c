@@ -331,8 +331,10 @@ static void draw_settings(void) {
                         by + (button_h - text_height()) / 2,
                         "+", T_FG, FB_TRANSPARENT);
     }
+    const char* storage_status = config_is_persistent()
+        ? "Saved to CHARISOS.CFG" : "Session only: no writable disk";
     gfx_draw_string(x + ui_px(20), y + ch - text_height() - ui_px(10),
-                    "Session only", T_FG_DIM, FB_TRANSPARENT);
+                    storage_status, T_FG_DIM, FB_TRANSPARENT);
 }
 
 static bool settings_handle_click(int mx, int my) {
@@ -373,6 +375,7 @@ static bool settings_handle_click(int mx, int my) {
         config_set_int("ui_scale", value);
     }
     gfx_text_apply_preferences();
+    config_save(CONFIG_FILE_PATH);
     return true;
 }
 
