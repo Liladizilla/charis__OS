@@ -264,6 +264,21 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
         task->user_code_pages[page] = 0;
     task->event_data = 0;
     task->waiting_event = 0;
+    task->ipc_wait_next = NULL;
+
+    /* Task slots are reused after an unstarted task is discarded. Rebuild
+     * their descriptor table here so no stale handles survive and the
+     * standard streams are present for every new task. */
+    extern vfs_node_t dev_kbd;
+    extern vfs_node_t dev_vga;
+    for (int i = 0; i < MAX_FDS; i++) {
+        task->fd_table[i].node = NULL;
+        task->fd_table[i].offset = 0;
+        task->fd_table[i].flags = 0;
+    }
+    task->fd_table[FD_STDIN].node = &dev_kbd;
+    task->fd_table[FD_STDOUT].node = &dev_vga;
+    task->fd_table[FD_STDERR].node = &dev_vga;
 
     for (u32 i = 0; i < TASK_NAME_MAX - 1 && name && name[i]; i++) {
         task->name[i] = name[i];
@@ -498,6 +513,12 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
 }
 
 task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user, pml4_t* pml4) {
+    /* A ring-3 task must always own a valid, page-aligned address-space root.
+     * Kernel tasks use the shared kernel CR3 and must not receive a private
+     * process root through this constructor. */
+    if ((is_user && (!pml4 || ((u64)(uintptr_t)pml4 & (PAGE_SIZE - 1)))) ||
+        (!is_user && pml4)) return NULL;
+
     task_t* task = task_allocate();
     if (!task) {
         vga_puts("Failed to allocate task\n");
