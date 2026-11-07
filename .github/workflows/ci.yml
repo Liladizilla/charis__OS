@@ -226,18 +226,33 @@ jobs:
           grep -q 'CONFIG_LOADED .*font_scale=2 ui_scale=120' build/desktop-reboot-serial.log
           test -s build/charisos-settings-reloaded-preview.ppm
 
-          # Close Settings, open the pinned Terminal app, execute help,
-          # and capture the actual framebuffer window.
+          # Open the pinned Terminal taskbar launcher, execute help,
+          # and capture the actual framebuffer window. The earlier desktop
+          # shortcut was intentionally removed by the Calm Precision redesign.
           {
-            # Fresh QEMU invocation: pointer starts at (50,50). PS/2
-            # reports positive Y upward, while the desktop uses screen Y
-            # downward. Reach the Terminal shortcut at (38,298) with bounded
-            # relative packets: dx=-12, dy=-248.
-            printf 'mouse_move -6 -100\n'
-            sleep 0.5
-            printf 'mouse_move -6 -100\n'
-            sleep 0.5
-            printf 'mouse_move 0 -48\n'
+            # Fresh QEMU invocation: PS/2 cursor starts at (50,50). With the
+            # persisted 120% UI scale, Terminal's hit target is centered near
+            # (265,739). PS/2 positive Y moves up, so reach it with dx=215,
+            # dy=-689 using signed-byte-safe relative packets.
+            printf 'mouse_move 70 0\n'
+            sleep 0.25
+            printf 'mouse_move 70 0\n'
+            sleep 0.25
+            printf 'mouse_move 75 0\n'
+            sleep 0.25
+            printf 'mouse_move 0 -100\n'
+            sleep 0.25
+            printf 'mouse_move 0 -100\n'
+            sleep 0.25
+            printf 'mouse_move 0 -100\n'
+            sleep 0.25
+            printf 'mouse_move 0 -100\n'
+            sleep 0.25
+            printf 'mouse_move 0 -100\n'
+            sleep 0.25
+            printf 'mouse_move 0 -100\n'
+            sleep 0.25
+            printf 'mouse_move 0 -89\n'
             sleep 1
             printf 'mouse_button 1\n'
             sleep 1
