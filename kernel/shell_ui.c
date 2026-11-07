@@ -281,11 +281,14 @@ static void draw_settings(void) {
     fb_fill_rect(x, y+title_h, cw, ui_px(1), CHARIS_UI_BORDER);
     gfx_draw_string(x+ui_px(22), y+(title_h-text_height())/2u,
                     "Settings", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    fb_set_clip(x+ui_px(104), y,
-                cw>ui_px(168) ? cw-ui_px(168) : 1, title_h);
-    gfx_draw_string(x+ui_px(104), y+(title_h-text_height())/2u,
-                    "SYSTEM PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
-    fb_reset_clip();
+    /* The secondary title collides with "Settings" when text is enlarged. */
+    if (text_height() <= ui_px(16)) {
+        fb_set_clip(x+ui_px(104), y,
+                    cw>ui_px(168) ? cw-ui_px(168) : 1, title_h);
+        gfx_draw_string(x+ui_px(104), y+(title_h-text_height())/2u,
+                        "SYSTEM PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
+        fb_reset_clip();
+    }
     fb_fill_rect(x+cw-ui_px(42), y+ui_px(12), ui_px(26), ui_px(26),
                  CHARIS_UI_SURFACE);
     fb_draw_rect(x+cw-ui_px(42), y+ui_px(12), ui_px(26), ui_px(26),
@@ -298,7 +301,11 @@ static void draw_settings(void) {
                  ch-title_h-ui_px(2), CHARIS_UI_PANEL_RAISED);
     gfx_draw_string(x+ui_px(18), y+title_h+ui_px(24),
                     "PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
-    const char* nav[] = { "Display", "Personalization", "System" };
+    const char* nav[] = {
+        "Display",
+        text_height() > ui_px(16) ? "Personal" : "Personalization",
+        "System"
+    };
     for (u32 i=0; i<3; i++) {
         u32 ny = y+title_h+ui_px(54)+i*ui_px(42);
         if (i==0) {
