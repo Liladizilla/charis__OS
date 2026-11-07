@@ -30,9 +30,19 @@ static u32 wh(void) {
 static u32 title_h(void) { return px(42); }
 static u32 toolbar_y(void) { return wy()+title_h()+px(10); }
 static u32 content_y(void) { return toolbar_y()+px(52); }
-static u32 list_y(void) { return content_y()+px(48); }
-static u32 row_h(void) { return px(42); }
-static u32 sidebar_w(void) { return px(150); }
+static u32 list_y(void) {
+    return content_y()+px(16)+text_h()*3u+px(30);
+}
+static u32 row_h(void) {
+    u32 minimum=px(42), readable=text_h()+px(18);
+    return readable>minimum ? readable : minimum;
+}
+static u32 sidebar_w(void) {
+    u32 label=0;
+    gfx_text_size("FAT32 volume",&label,NULL);
+    u32 needed=label+px(52), minimum=px(150);
+    return needed>minimum ? needed : minimum;
+}
 
 static void files_refresh(void) {
     files_count=fs_list_root(files_entries,FILES_CAPACITY);
@@ -152,13 +162,14 @@ void files_render(void) {
     card(main_x,cy,list_w,foot-cy-px(12));
     gfx_draw_string(main_x+px(18),cy+px(16),"Root directory",
                     CHARIS_UI_TEXT,FB_TRANSPARENT);
-    gfx_draw_string(main_x+px(18),cy+px(40),"FAT32  /  8.3 NAMES",
+    gfx_draw_string(main_x+px(18),cy+px(16)+th+px(8),"FAT32  /  8.3 NAMES",
                     CHARIS_UI_MUTED,FB_TRANSPARENT);
-    fb_fill_rect(main_x+px(12),list_y()-px(8),list_w-px(24),px(1),
+    u32 header_y=list_y()-th-px(12);
+    fb_fill_rect(main_x+px(12),header_y+th+px(6),list_w-px(24),px(1),
                  CHARIS_UI_BORDER);
-    gfx_draw_string(main_x+px(20),list_y()-px(26),"NAME",
+    gfx_draw_string(main_x+px(20),header_y,"NAME",
                     CHARIS_UI_MUTED,FB_TRANSPARENT);
-    gfx_draw_string(main_x+list_w-px(92),list_y()-px(26),"SIZE",
+    gfx_draw_string(main_x+list_w-px(92),header_y,"SIZE",
                     CHARIS_UI_MUTED,FB_TRANSPARENT);
 
     if(!files_available) {
