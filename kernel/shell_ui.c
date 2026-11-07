@@ -492,6 +492,17 @@ static void handle_event(const input_event_t* e) {
             return;
         }
 
+        /* F10 opens Files without requiring a working pointer device. */
+        if (e->type == INPUT_KEY_DOWN && !extended && base == 0x44) {
+            ui.menu_open = false;
+            ui.hover_item = -1;
+            notice_open = false;
+            settings_open = false;
+            files_open();
+            ui.needs_redraw = true;
+            return;
+        }
+
         /* F12 is a reliable keyboard-only Terminal shortcut. It also
          * gives headless systems and accessibility setups a way to open the
          * command surface without depending on pointer hardware. */
