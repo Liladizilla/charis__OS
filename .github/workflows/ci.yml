@@ -230,14 +230,16 @@ jobs:
           # and capture the actual framebuffer window. The earlier desktop
           # shortcut was intentionally removed by the Calm Precision redesign.
           {
-            # The guest pointer starts near (52,50). The PS/2 input path
-            # scales raw deltas to roughly one third of framebuffer pixels.
-            # Terminal's taskbar hit target is centered near (218,743).
-            # Move +500 raw X and +2100 raw Y in bounded packets.
-            for step in {1..5}; do
+            # The guest pointer starts near (52,50). The prior capture
+            # landed on Browser, so the observed X travel was short of the
+            # Terminal target. Increase horizontal travel while retaining
+            # bounded PS/2-sized packets; keep the measured vertical travel.
+            for step in {1..10}; do
               printf 'mouse_move 100 0\n'
               sleep 0.1
             done
+            printf 'mouse_move 50 0\n'
+            sleep 0.1
             for step in {1..21}; do
               printf 'mouse_move 0 100\n'
               sleep 0.1
