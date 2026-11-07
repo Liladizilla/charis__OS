@@ -252,7 +252,7 @@ void terminal_render(void) {
     }
 
     /* Prompt is a distinct input control, not another line in the transcript. */
-    u32 prompt_y = y + h - prompt_h - term_px(12);
+    u32 prompt_y = y + h - prompt_h - term_px(38);
     fb_fill_rect(x + term_px(12), prompt_y, w - term_px(24),
                  prompt_h, CHARIS_UI_PANEL_RAISED);
     fb_draw_rect(x + term_px(12), prompt_y, w - term_px(24),
