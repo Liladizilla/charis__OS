@@ -95,9 +95,11 @@ static int notice_item = -1;
 static bool settings_open = false;
 
 static const char* const NOTICE_LINE_1[] = {
+    "", "", "", "",
     "CharisOS is a from-scratch x86_64 kernel.",
 };
 static const char* const NOTICE_LINE_2[] = {
+    "", "", "", "",
     "The desktop and built-in apps are still evolving.",
 };
 #define MENU_ITEM_COUNT ((u32)(sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0])))
