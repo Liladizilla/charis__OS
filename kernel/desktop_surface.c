@@ -14,20 +14,6 @@
 static u32 u(u32 v) { return gfx_ui_scale(v); }
 static u32 th(void) { return (u32)font_cell_h * gfx_text_get_scale(); }
 
-static void number(char* out, u32 value) {
-    char rev[10]; u32 n = 0, p = 0;
-    do { rev[n++] = (char)('0' + value % 10u); value /= 10u; }
-    while (value && n < sizeof(rev));
-    while (n) out[p++] = rev[--n];
-    out[p] = 0;
-}
-
-static void panel(u32 x, u32 y, u32 w, u32 h, u32 fill) {
-    fb_fill_rect(x + u(3), y + u(4), w, h, CHARIS_UI_SHADOW);
-    fb_fill_rect(x, y, w, h, fill);
-    fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER);
-}
-
 static void app_icon(u32 x, u32 y, u32 kind, u32 size) {
     u32 ink = kind == 0 ? 0xFF86B9E8u :
               kind == 1 ? 0xFFF0C674u :
