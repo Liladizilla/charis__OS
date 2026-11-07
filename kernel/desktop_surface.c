@@ -32,6 +32,7 @@ typedef struct {
     u32 margin, usable, top, hero_y, hero_h;
     u32 left_w, right_x, right_w;
     u32 section_y, tile_y, tile_h, tile_gap, tile_w;
+    u32 tile_columns, tile_rows, tile_row_gap;
 } desktop_layout_t;
 
 static desktop_layout_t desktop_layout(void) {
@@ -40,6 +41,7 @@ static desktop_layout_t desktop_layout(void) {
     u32 text_h = th();
     d.margin = u(36);
     d.tile_gap = u(14);
+    d.tile_row_gap = u(14);
     d.usable = sw > d.margin * 2u ? sw - d.margin * 2u : sw;
     d.top = u(28);
     d.hero_y = d.top + u(84);
@@ -63,8 +65,14 @@ static desktop_layout_t desktop_layout(void) {
     d.tile_y = d.section_y + u(28);
     u32 tile_need = u(16) + text_h + u(8) + text_h + u(12);
     d.tile_h = u(88) > tile_need ? u(88) : tile_need;
-    d.tile_w = d.usable > d.tile_gap * 3u
-             ? (d.usable - d.tile_gap * 3u) / 4u : d.usable / 4u;
+    /* Large text needs real room, not four tiny cards with clipped labels.
+     * Reflow to two columns once the configured glyph height exceeds the
+     * normal desktop scale. Keep render and hit-test on this same geometry. */
+    d.tile_columns = text_h > u(16) ? 2u : 4u;
+    d.tile_rows = (4u + d.tile_columns - 1u) / d.tile_columns;
+    u32 gaps = d.tile_gap * (d.tile_columns - 1u);
+    d.tile_w = d.usable > gaps
+             ? (d.usable - gaps) / d.tile_columns : d.usable / d.tile_columns;
     return d;
 }
 
@@ -172,26 +180,31 @@ void desktop_surface_render(void) {
         "Web workspace", "Browse volumes", "Command line", "System controls"
     };
     for (u32 i=0; i<4; i++) {
-        u32 tx = d.margin+i*(d.tile_w+d.tile_gap);
-        panel(tx, d.tile_y, d.tile_w, d.tile_h, CHARIS_UI_PANEL);
-        app_icon(tx+u(16), d.tile_y+(d.tile_h-u(42))/2u, i, u(42));
+        u32 col = i % d.tile_columns;
+        u32 row = i / d.tile_columns;
+        u32 tx = d.margin+col*(d.tile_w+d.tile_gap);
+        u32 ty = d.tile_y+row*(d.tile_h+d.tile_row_gap);
+        panel(tx, ty, d.tile_w, d.tile_h, CHARIS_UI_PANEL);
+        app_icon(tx+u(16), ty+(d.tile_h-u(42))/2u, i, u(42));
         u32 label_x = tx+u(72);
         u32 label_w = d.tile_w > u(88) ? d.tile_w-u(88) : 1;
-        fb_set_clip(label_x, d.tile_y, label_w, d.tile_h);
-        u32 title_y = d.tile_y+u(16);
+        fb_set_clip(label_x, ty, label_w, d.tile_h);
+        u32 title_y = ty+u(16);
         gfx_draw_string(label_x, title_y, names[i],
                         CHARIS_UI_TEXT, FB_TRANSPARENT);
         gfx_draw_string(label_x, title_y+text_h+u(8), desc[i],
                         CHARIS_UI_MUTED, FB_TRANSPARENT);
         fb_reset_clip();
-        fb_fill_rect(tx+d.tile_w-u(4), d.tile_y+u(12), u(2),
+        fb_fill_rect(tx+d.tile_w-u(4), ty+u(12), u(2),
                      d.tile_h > u(24) ? d.tile_h-u(24) : 1,
                      i == 0 ? 0xFF86B9E8u :
                      i == 1 ? 0xFFF0C674u :
                      i == 2 ? 0xFF83D6B0u : 0xFFB7A0F5u);
     }
 
-    u32 footer_y = d.tile_y+d.tile_h+u(28);
+    u32 grid_h = d.tile_rows*d.tile_h +
+                 (d.tile_rows-1u)*d.tile_row_gap;
+    u32 footer_y = d.tile_y+grid_h+u(28);
     if (g_framebuffer.height > footer_y+text_h+u(18)) {
         fb_fill_rect(d.margin, footer_y, d.usable, u(1), CHARIS_UI_BORDER);
         gfx_draw_string(d.margin, footer_y+u(12),
@@ -202,10 +215,14 @@ void desktop_surface_render(void) {
 
 int desktop_surface_hit_test(int mx, int my) {
     desktop_layout_t d = desktop_layout();
-    if (my < (int)d.tile_y || my >= (int)(d.tile_y+d.tile_h)) return -1;
+    if (my < (int)d.tile_y) return -1;
     for (u32 i=0; i<4; i++) {
-        u32 x = d.margin+i*(d.tile_w+d.tile_gap);
-        if (mx >= (int)x && mx < (int)(x+d.tile_w)) return (int)i;
+        u32 col = i % d.tile_columns;
+        u32 row = i / d.tile_columns;
+        u32 x = d.margin+col*(d.tile_w+d.tile_gap);
+        u32 y = d.tile_y+row*(d.tile_h+d.tile_row_gap);
+        if (mx >= (int)x && mx < (int)(x+d.tile_w) &&
+            my >= (int)y && my < (int)(y+d.tile_h)) return (int)i;
     }
     return -1;
 }
