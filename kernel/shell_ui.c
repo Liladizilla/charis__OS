@@ -281,7 +281,8 @@ static void draw_settings(void) {
     fb_fill_rect(x, y+title_h, cw, ui_px(1), CHARIS_UI_BORDER);
     gfx_draw_string(x+ui_px(22), y+(title_h-text_height())/2u,
                     "Settings", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    fb_set_clip(x+ui_px(104), y, cw-ui_px(168), title_h);
+    fb_set_clip(x+ui_px(104), y,
+                cw>ui_px(168) ? cw-ui_px(168) : 1, title_h);
     gfx_draw_string(x+ui_px(104), y+(title_h-text_height())/2u,
                     "SYSTEM PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
     fb_reset_clip();
@@ -306,9 +307,12 @@ static void draw_settings(void) {
             fb_fill_rect(x+ui_px(8), ny-ui_px(8), ui_px(3),
                          ui_px(34), CHARIS_UI_ACCENT);
         }
+        fb_set_clip(x+ui_px(18), ny-ui_px(4),
+                    rail_w>ui_px(28) ? rail_w-ui_px(28) : 1, ui_px(42));
         gfx_draw_string(x+ui_px(22), ny, nav[i],
                         i==0 ? CHARIS_UI_TEXT : CHARIS_UI_MUTED,
                         FB_TRANSPARENT);
+        fb_reset_clip();
     }
 
     /* Display page. */
@@ -334,7 +338,7 @@ static void draw_settings(void) {
     };
     for (u32 i=0; i<3; i++) {
         u32 ry = y+title_h+ui_px(82)+i*row_h;
-        u32 row_w = cw-rail_w-ui_px(30);
+        u32 row_w = cw>rail_w+ui_px(30) ? cw-rail_w-ui_px(30) : 1;
         fb_fill_rect(content_x-ui_px(10), ry, row_w,
                      row_h-ui_px(10), CHARIS_UI_SURFACE);
         fb_draw_rect(content_x-ui_px(10), ry, row_w,
@@ -370,7 +374,8 @@ static void draw_settings(void) {
 
     u32 footer_y = y+ch-ui_px(34);
     fb_fill_rect(x+rail_w+ui_px(18), footer_y-ui_px(12),
-                 cw-rail_w-ui_px(36), ui_px(1), CHARIS_UI_BORDER);
+                 cw>rail_w+ui_px(36) ? cw-rail_w-ui_px(36) : 1,
+                 ui_px(1), CHARIS_UI_BORDER);
     gfx_draw_string(content_x, footer_y,
                     config_is_persistent() ? "All changes saved"
                                            : "Session only  |  No writable configuration volume",
