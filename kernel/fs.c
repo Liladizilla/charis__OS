@@ -579,5 +579,75 @@ void fs_self_test(void) {
         kprintf("FS: WRITE OK [%s]\n", buf);
     } else {
         kprintf("FS: WRITE MISMATCH [got:%s expected:%s]\n", buf, msg);
+        return;
     }
+
+    bool found_write_file = false;
+    for (u32 i = 0; i < 128; i++) {
+        fs_dirent_t entry;
+        if (fs_readdir(i, &entry) != 0) break;
+        if (kstrcmp(entry.name, "WRITE.TXT") == 0 &&
+            !(entry.attributes & 0x10u) && entry.size == kstrlen(msg)) {
+            found_write_file = true;
+            break;
+        }
+    }
+    kprintf(found_write_file ? "FS: READDIR OK\n" : "FS: READDIR FAIL\n");
+}
+
+/* Enumerate the root FAT32 directory by visible-entry index. Long-file-name
+ * fragments, deleted entries and volume labels are skipped. The caller owns
+ * the output buffer; no filesystem pointers escape this function. */
+int fs_readdir(u32 index, fs_dirent_t* entry) {
+    if (!fs_mounted || !entry) return -1;
+
+    u32 cluster = boot_sector.root_cluster;
+    u8 buffer[FAT32_SECTOR_SIZE];
+    u32 visible_index = 0;
+
+    for (u32 visited = 0; visited < total_clusters && cluster_valid(cluster); visited++) {
+        u32 sector = cluster_to_sector(cluster);
+        if (sector == 0xFFFFFFFF || sector >= boot_sector.total_sectors_32 ||
+            boot_sector.sectors_per_cluster > boot_sector.total_sectors_32 - sector)
+            return -1;
+
+        for (u32 s = 0; s < boot_sector.sectors_per_cluster; s++) {
+            if (!ata_read_sector(sector + s, buffer)) return -1;
+            fat32_dir_entry_t* entries = (fat32_dir_entry_t*)buffer;
+            for (u32 i = 0; i < 16; i++) {
+                fat32_dir_entry_t* item = &entries[i];
+                if (item->name[0] == 0x00) return -1;
+                if ((u8)item->name[0] == 0xE5) continue;
+                if (item->attr == 0x0F || (item->attr & 0x08)) continue;
+
+                if (visible_index++ != index) continue;
+
+                usize out = 0;
+                for (u32 n = 0; n < 8 && item->name[n] != ' '; n++) {
+                    if (out + 1 >= sizeof(entry->name)) return -1;
+                    entry->name[out++] = item->name[n];
+                }
+                bool has_extension = false;
+                for (u32 n = 8; n < 11; n++) {
+                    if (item->name[n] != ' ') has_extension = true;
+                }
+                if (has_extension) {
+                    if (out + 1 >= sizeof(entry->name)) return -1;
+                    entry->name[out++] = '.';
+                    for (u32 n = 8; n < 11 && item->name[n] != ' '; n++) {
+                        if (out + 1 >= sizeof(entry->name)) return -1;
+                        entry->name[out++] = item->name[n];
+                    }
+                }
+                entry->name[out] = 0;
+                entry->attributes = item->attr;
+                entry->cluster = ((u32)item->cluster_high << 16) | item->cluster_low;
+                entry->size = item->size;
+                return 0;
+            }
+        }
+        cluster = next_cluster(cluster);
+        if (cluster == 0x0FFFFFFF) break;
+    }
+    return -1;
 }

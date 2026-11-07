@@ -4,6 +4,13 @@
 #include <kernel/types.h>
 
 typedef struct {
+    char name[13];
+    u8 attributes;
+    u32 cluster;
+    u32 size;
+} fs_dirent_t;
+
+typedef struct {
     u32 cluster;
     u32 size;
     u32 pos;
@@ -15,6 +22,7 @@ typedef struct {
 
 void fs_init(void);
 int fs_open(const char* path, file_t* file);
+int fs_readdir(u32 index, fs_dirent_t* entry);
 int fs_read(file_t* file, void* buffer, usize size);
 int fs_write(file_t* file, const void* buffer, usize size);
 int fs_close(file_t* file);
