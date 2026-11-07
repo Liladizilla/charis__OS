@@ -83,7 +83,6 @@ typedef struct {
 } menu_entry_t;
 
 static const menu_entry_t MENU_ITEMS[] = {
-    { "Browser" },
     { "Terminal" },
     { "Files" },
     { "Settings" },
@@ -95,12 +94,12 @@ static int notice_item = -1;
 static bool settings_open = false;
 
 static const char* const NOTICE_LINE_1[] = {
-    "", "", "", "",
-    "CharisOS is a from-scratch x86_64 kernel.",
+    "", "", "",
+    "CharisOS is an independent x86_64 operating system.",
 };
 static const char* const NOTICE_LINE_2[] = {
-    "", "", "", "",
-    "The desktop and built-in apps are still evolving.",
+    "", "", "",
+    "Built from scratch in C and NASM.",
 };
 #define MENU_ITEM_COUNT ((u32)(sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0])))
 
@@ -203,7 +202,7 @@ static void draw_menu(void) {
         bool hovered = (ui.hover_item == (int)i);
         fb_fill_rect(x + ui_px(2), iy, MENU_W - ui_px(4), MENU_ITEM_H,
                      hovered ? T_MENU_HOVER : T_MENU_ITEM);
-        draw_app_icon(i, x + ui_px(12), iy + ui_px(7));
+        draw_app_icon(i + 1u, x + ui_px(12), iy + ui_px(7));
         gfx_draw_string(x + ui_px(44), iy + (MENU_ITEM_H > text_height() ? (MENU_ITEM_H - text_height()) / 2 : 0),
                         MENU_ITEMS[i].label, T_FG, FB_TRANSPARENT);
     }
@@ -706,12 +705,6 @@ static void handle_event(const input_event_t* e) {
 
         if (on_taskbar) {
             int pinned = desktop_surface_taskbar_hit_test(mx, my, bar_top);
-            if (pinned == 0) {
-                ui.menu_open = false;
-                browser_open();
-                ui.needs_redraw = true;
-                return;
-            }
             if (pinned == 1) {
                 ui.menu_open = false;
                 notice_open = false;
@@ -743,13 +736,10 @@ static void handle_event(const input_event_t* e) {
         }
 
         int shortcut = desktop_surface_hit_test(mx, my);
-        if (shortcut >= 0) {
+        if (shortcut == 0) {
             ui.menu_open = false;
             notice_open = false;
-            if (shortcut == 0) browser_open();
-            else if (shortcut == 1) files_open();
-            else if (shortcut == 2) terminal_open();
-            else if (shortcut == 3) settings_open = true;
+            files_open();
             ui.needs_redraw = true;
             return;
         }
@@ -760,14 +750,11 @@ static void handle_event(const input_event_t* e) {
             ui.hover_item = -1;
             if (hit == 0) {
                 notice_open = false;
-                browser_open();
+                terminal_open();
             } else if (hit == 1) {
                 notice_open = false;
-                terminal_open();
-            } else if (hit == 2) {
-                notice_open = false;
                 files_open();
-            } else if (hit == 3) {
+            } else if (hit == 2) {
                 settings_open = true;
                 notice_open = false;
             } else {
