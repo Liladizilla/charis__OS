@@ -205,7 +205,9 @@ void desktop_surface_render(void) {
     u32 grid_h = d.tile_rows*d.tile_h +
                  (d.tile_rows-1u)*d.tile_row_gap;
     u32 footer_y = d.tile_y+grid_h+u(28);
-    if (g_framebuffer.height > footer_y+text_h+u(18)) {
+    u32 safe_bottom = g_framebuffer.height > u(48)
+                    ? g_framebuffer.height-u(48) : g_framebuffer.height;
+    if (safe_bottom > footer_y+text_h+u(18)) {
         fb_fill_rect(d.margin, footer_y, d.usable, u(1), CHARIS_UI_BORDER);
         gfx_draw_string(d.margin, footer_y+u(12),
                         "CHARISOS  |  LOCAL SESSION  |  X86_64",
