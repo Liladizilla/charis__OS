@@ -282,8 +282,11 @@ int fs_open(const char* path, file_t* file) {
                 if ((u8)entries[i].name[0] == 0xE5) continue; // Deleted
                 if (entries[i].attr & 0x18) continue; // Directory or volume label
                 if (fat32_name_matches(path, entries[i].name)) {
-                    file->cluster = (entries[i].cluster_high << 16) | entries[i].cluster_low;
+                    file->cluster = ((u32)entries[i].cluster_high << 16) | entries[i].cluster_low;
                     file->size = entries[i].size;
+                    /* Empty files may have no data cluster. Non-empty files
+                     * must begin on a valid data cluster before being exposed. */
+                    if (file->size && !cluster_valid(file->cluster)) return -1;
                     file->pos = 0;
                     file->dir_cluster = cluster;
                     file->dir_sector = s;
@@ -292,8 +295,10 @@ int fs_open(const char* path, file_t* file) {
                 }
             }
         }
-        cluster = next_cluster(cluster);
-        if (cluster == 0x0FFFFFFF) break;
+        u32 next = next_cluster(cluster);
+        if (next >= 0x0FFFFFF8u) break;
+        if (!cluster_valid(next)) return -1;
+        cluster = next;
     }
     return -1;
 }
@@ -311,7 +316,7 @@ int fs_read(file_t* file, void* buffer, usize size) {
     u32 clusters_to_skip = file->pos / cluster_size;
     while (clusters_to_skip--) {
         cluster = next_cluster(cluster);
-        if (cluster < 2 || cluster >= 0x0FFFFFF8) return -1;
+        if (!cluster_valid(cluster)) return -1;
     }
 
     u32 offset = file->pos % cluster_size;
@@ -339,9 +344,15 @@ int fs_read(file_t* file, void* buffer, usize size) {
         offset += to_read;
 
         if (offset >= cluster_size) {
-            cluster = next_cluster(cluster);
             offset = 0;
             sector_offset = 0;
+            /* Do not turn a truncated/corrupt FAT chain into a successful
+             * short read when the directory entry promised more bytes. */
+            if (bytes_read < size) {
+                u32 next = next_cluster(cluster);
+                if (!cluster_valid(next)) return -1;
+                cluster = next;
+            }
         } else {
             sector_offset = offset / FAT32_SECTOR_SIZE;
         }
