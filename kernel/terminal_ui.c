@@ -199,6 +199,11 @@ void terminal_render(void) {
 
     u32 x, y, w, h, title_h;
     term_geometry(&x, &y, &w, &h, &title_h);
+
+    /* Text and controls must never paint over the desktop or taskbar.
+     * The framebuffer clip is reset before returning to the shell renderer. */
+    fb_set_clip(x, y, w, h);
+
     u32 text_h = term_text_h();
     u32 line_h = text_h + term_px(10);
     u32 prompt_h = text_h + term_px(22);
@@ -283,4 +288,6 @@ void terminal_render(void) {
                     "READY", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
     term_draw(x + term_px(78), status_y,
                     "Kernel command environment", CHARIS_UI_MUTED, FB_TRANSPARENT);
+
+    fb_reset_clip();
 }
