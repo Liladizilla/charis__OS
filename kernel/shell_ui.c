@@ -384,15 +384,18 @@ static bool settings_handle_click(int mx, int my) {
     if (!direction) return true;
     if (row==0) {
         int value=config_get_int("font_style",0)+direction;
-        if (value<0) value=2; if (value>2) value=0;
+        if (value<0) value=2;
+        if (value>2) value=0;
         config_set_int("font_style",value);
     } else if (row==1) {
         int value=config_get_int("font_scale",1)+direction;
-        if (value<1) value=1; if (value>3) value=3;
+        if (value<1) value=1;
+        if (value>3) value=3;
         config_set_int("font_scale",value);
     } else {
         int value=config_get_int("ui_scale",100)+direction*20;
-        if (value<80) value=80; if (value>120) value=120;
+        if (value<80) value=80;
+        if (value>120) value=120;
         config_set_int("ui_scale",value);
     }
     gfx_text_apply_preferences();
