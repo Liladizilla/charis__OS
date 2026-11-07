@@ -46,7 +46,7 @@ static u32 files_row_height(void) {
     return files_px(30);
 }
 static u32 files_list_y(void) {
-    return files_window_y() + files_title_height() + files_px(64);
+    return files_window_y() + files_title_height() + files_px(10 + 38 + 54 + 24) + files_text_h();
 }
 
 static void files_refresh(void) {
