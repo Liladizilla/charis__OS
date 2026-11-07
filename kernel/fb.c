@@ -19,6 +19,30 @@
 
 framebuffer_t g_framebuffer = {0};
 
+static bool fb_clip_enabled;
+static u32 fb_clip_x, fb_clip_y, fb_clip_w, fb_clip_h;
+
+void fb_set_clip(u32 x, u32 y, u32 w, u32 h) {
+    if (!g_framebuffer.initialized || !w || !h ||
+        x >= g_framebuffer.width || y >= g_framebuffer.height) {
+        fb_clip_enabled = true;
+        fb_clip_x = fb_clip_y = fb_clip_w = fb_clip_h = 0;
+        return;
+    }
+    if (w > g_framebuffer.width - x) w = g_framebuffer.width - x;
+    if (h > g_framebuffer.height - y) h = g_framebuffer.height - y;
+    fb_clip_x = x;
+    fb_clip_y = y;
+    fb_clip_w = w;
+    fb_clip_h = h;
+    fb_clip_enabled = true;
+}
+
+void fb_reset_clip(void) {
+    fb_clip_enabled = false;
+    fb_clip_x = fb_clip_y = fb_clip_w = fb_clip_h = 0;
+}
+
 /* Build a mask of `bits` bits positioned at `pos`. */
 static u32 mask_at(u8 pos, u8 bits) {
     if (bits == 0 || bits >= 32) return 0;
@@ -215,6 +239,9 @@ void fb_put_pixel(u32 x, u32 y, u32 argb) {
     framebuffer_t* fb = &g_framebuffer;
     if (!fb->initialized) return;
     if (x >= fb->width || y >= fb->height) return;
+    if (fb_clip_enabled &&
+        (x < fb_clip_x || y < fb_clip_y ||
+         x - fb_clip_x >= fb_clip_w || y - fb_clip_y >= fb_clip_h)) return;
     if (argb == FB_TRANSPARENT) return;
 
     u8* base = (u8*)(uintptr_t)(FB_VIRT_BASE + (fb->phys_addr & (PAGE_SIZE - 1)));
@@ -244,8 +271,23 @@ void fb_fill_rect(u32 x, u32 y, u32 w, u32 h, u32 argb) {
     if (w > max_w) w = max_w;
     if (h > max_h) h = max_h;
 
-    u32 end_x = x + w; /* Safe after clipping against width - x. */
-    u32 end_y = y + h; /* Safe after clipping against height - y. */
+    if (fb_clip_enabled) {
+        if (!fb_clip_w || !fb_clip_h) return;
+        u32 right = x + w;
+        u32 bottom = y + h;
+        u32 clip_right = fb_clip_x + fb_clip_w;
+        u32 clip_bottom = fb_clip_y + fb_clip_h;
+        if (x < fb_clip_x) x = fb_clip_x;
+        if (y < fb_clip_y) y = fb_clip_y;
+        if (right > clip_right) right = clip_right;
+        if (bottom > clip_bottom) bottom = clip_bottom;
+        if (right <= x || bottom <= y) return;
+        w = right - x;
+        h = bottom - y;
+    }
+
+    u32 end_x = x + w; /* Safe after framebuffer and clip intersection. */
+    u32 end_y = y + h; /* Safe after framebuffer and clip intersection. */
     for (u32 py = y; py < end_y; py++) {
         for (u32 px = x; px < end_x; px++) {
             fb_put_pixel(px, py, argb);
