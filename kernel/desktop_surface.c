@@ -28,6 +28,31 @@ static void panel(u32 x, u32 y, u32 w, u32 h, u32 fill) {
     fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER);
 }
 
+static void app_icon(u32 x, u32 y, u32 kind, u32 size) {
+    u32 ink = kind == 0 ? 0xFF86B9E8u :
+              kind == 1 ? 0xFFF0C674u :
+              kind == 2 ? 0xFF83D6B0u : CHARIS_UI_ACCENT;
+    fb_fill_rect(x, y, size, size, CHARIS_UI_SURFACE);
+    fb_draw_rect(x, y, size, size, CHARIS_UI_BORDER_STRONG);
+    u32 p = size / 5u, inner = size - p * 2u;
+    if (kind == 0) {
+        fb_draw_rect(x+p, y+p, inner, inner, ink);
+        fb_fill_rect(x+p, y+size/2u, inner, u(1), ink);
+        fb_fill_rect(x+size/2u, y+p, u(1), inner, ink);
+    } else if (kind == 1) {
+        fb_fill_rect(x+p, y+p+u(2), inner/2u, u(5), ink);
+        fb_fill_rect(x+p, y+p+u(6), inner, inner-u(5), ink);
+    } else if (kind == 2) {
+        fb_draw_rect(x+p, y+p, inner, inner, ink);
+        gfx_draw_string_scaled(x+p+u(3), y+size/2u-th(), ">_", ink,
+                               CHARIS_UI_SURFACE, gfx_text_get_scale());
+    } else {
+        fb_draw_rect(x+p+u(3), y+p+u(3), inner-u(6), inner-u(6), ink);
+        fb_fill_rect(x+size/2u-u(2), y+p, u(4), inner, ink);
+        fb_fill_rect(x+p, y+size/2u-u(2), inner, u(4), ink);
+    }
+}
+
 /* A desktop is a place for icons, not a second application dashboard.
  * The taskbar and launcher own application discovery; the workspace stays
  * quiet and leaves room for real windows. */
