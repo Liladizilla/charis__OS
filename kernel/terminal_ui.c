@@ -178,50 +178,103 @@ bool terminal_handle_mouse(int mx, int my) {
     return true;
 }
 
+static u32 terminal_line_color(const char* line) {
+    if (!line) return CHARIS_UI_TEXT;
+    if (kstrncmp(line, "charisos> ", 10) == 0) return CHARIS_UI_SUCCESS;
+    if (kstrncmp(line, "Command not found", 17) == 0) return CHARIS_UI_WARNING;
+    if (kstrncmp(line, "CharisOS", 8) == 0) return CHARIS_UI_ACCENT;
+    if (kstrncmp(line, "Managed RAM", 11) == 0 ||
+        kstrncmp(line, "Tasks ", 6) == 0 ||
+        kstrncmp(line, "Context switches", 16) == 0 ||
+        kstrncmp(line, "Uptime:", 7) == 0) return 0xFFB8C7D8u;
+    return CHARIS_UI_TEXT;
+}
+
 void terminal_render(void) {
     if (!term_visible || !g_framebuffer.initialized) return;
 
     u32 x, y, w, h, title_h;
     term_geometry(&x, &y, &w, &h, &title_h);
     u32 text_h = term_text_h();
-    u32 line_h = text_h + term_px(8);
-    u32 prompt_h = text_h + term_px(20);
-    u32 content_top = y + title_h + term_px(12);
-    u32 content_bottom = y + h - prompt_h - term_px(12);
+    u32 line_h = text_h + term_px(10);
+    u32 prompt_h = text_h + term_px(22);
+    u32 content_top = y + title_h + term_px(44);
+    u32 content_bottom = y + h - prompt_h - term_px(38);
     u32 rows = content_bottom > content_top ? (content_bottom - content_top) / line_h : 1;
     if (!rows) rows = 1;
 
-    fb_fill_rect(x + term_px(5), y + term_px(5), w, h, CHARIS_UI_SHADOW);
+    /* Window frame and application chrome. */
+    fb_fill_rect(x + term_px(5), y + term_px(6), w, h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, w, h, CHARIS_UI_PANEL);
-    fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER);
+    fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER_STRONG);
     fb_fill_rect(x, y, w, title_h, CHARIS_UI_PANEL_RAISED);
-    gfx_draw_string(x + term_px(16), y + (title_h - text_h) / 2,
-                    "TERMINAL", CHARIS_UI_TEXT, FB_TRANSPARENT);
+    fb_fill_rect(x, y + title_h, w, term_px(1), CHARIS_UI_BORDER);
 
-    u32 close_w = term_px(28);
-    fb_fill_rect(x + w - close_w - term_px(4), y + term_px(4),
-                 close_w, title_h - term_px(8), CHARIS_UI_SURFACE);
-    fb_draw_rect(x + w - close_w - term_px(4), y + term_px(4),
-                 close_w, title_h - term_px(8), CHARIS_UI_BORDER);
-    gfx_draw_string(x + w - close_w + term_px(5),
-                    y + (title_h - text_h) / 2, "x",
-                    CHARIS_UI_TEXT, FB_TRANSPARENT);
+    /* Three restrained window controls and a real session title. */
+    u32 dot_y = y + title_h / 2;
+    fb_fill_rect(x + term_px(16), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_DANGER);
+    fb_fill_rect(x + term_px(32), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_WARNING);
+    fb_fill_rect(x + term_px(48), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_SUCCESS);
+    gfx_draw_string(x + term_px(72), y + (title_h - text_h) / 2,
+                    "Terminal", CHARIS_UI_TEXT, FB_TRANSPARENT);
+    gfx_draw_string(x + w - term_px(132), y + (title_h - text_h) / 2,
+                    "LOCAL SESSION", CHARIS_UI_MUTED, FB_TRANSPARENT);
+
+    /* Session strip separates app identity from command output. */
+    u32 strip_y = y + title_h + term_px(1);
+    fb_fill_rect(x, strip_y, w, term_px(32), CHARIS_UI_PANEL_RAISED);
+    fb_fill_rect(x + term_px(16), strip_y + term_px(8), term_px(3), term_px(16),
+                 CHARIS_UI_ACCENT);
+    gfx_draw_string(x + term_px(28), strip_y + (term_px(32) - text_h) / 2,
+                    "charisos  /  shell", CHARIS_UI_MUTED, FB_TRANSPARENT);
+    gfx_draw_string(x + w - term_px(116), strip_y + (term_px(32) - text_h) / 2,
+                    "UTF-8  |  x86_64", CHARIS_UI_MUTED, FB_TRANSPARENT);
+
+    /* Console canvas with a line-number gutter. */
+    u32 canvas_y = content_top - term_px(6);
+    u32 canvas_h = content_bottom > canvas_y ? content_bottom - canvas_y : term_px(40);
+    fb_fill_rect(x + term_px(10), canvas_y, w - term_px(20), canvas_h,
+                 0xFF0B1016u);
+    fb_fill_rect(x + term_px(54), canvas_y + term_px(8), term_px(1),
+                 canvas_h > term_px(16) ? canvas_h - term_px(16) : canvas_h,
+                 0xFF27313Du);
 
     u32 first = term_line_count > rows ? term_line_count - rows : 0;
     for (u32 i = first; i < term_line_count; i++) {
         u32 row = i - first;
-        gfx_draw_string(x + term_px(18), content_top + row * line_h,
-                        term_lines[i], CHARIS_UI_TEXT, FB_TRANSPARENT);
+        u32 line_y = content_top + row * line_h;
+        char line_no[8];
+        term_number(line_no, i + 1);
+        gfx_draw_string(x + term_px(20), line_y, line_no,
+                        0xFF667383u, FB_TRANSPARENT);
+        gfx_draw_string(x + term_px(68), line_y, term_lines[i],
+                        terminal_line_color(term_lines[i]), FB_TRANSPARENT);
     }
 
-    u32 prompt_y = y + h - prompt_h - term_px(8);
+    /* Prompt is a distinct input control, not another line in the transcript. */
+    u32 prompt_y = y + h - prompt_h - term_px(12);
     fb_fill_rect(x + term_px(12), prompt_y, w - term_px(24),
-                 prompt_h, CHARIS_UI_SURFACE);
-    gfx_draw_string(x + term_px(20), prompt_y + (prompt_h - text_h) / 2,
-                    "charisos> ", CHARIS_UI_ACCENT, FB_TRANSPARENT);
-    u32 prompt_width = 0;
-    gfx_text_size("charisos> ", &prompt_width, NULL);
-    gfx_draw_string(x + term_px(20) + prompt_width,
-                    prompt_y + (prompt_h - text_h) / 2,
+                 prompt_h, CHARIS_UI_PANEL_RAISED);
+    fb_draw_rect(x + term_px(12), prompt_y, w - term_px(24),
+                 prompt_h, CHARIS_UI_BORDER);
+    gfx_draw_string(x + term_px(24), prompt_y + (prompt_h - text_h) / 2,
+                    "charisos", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
+    u32 prefix_w = 0;
+    gfx_text_size("charisos", &prefix_w, NULL);
+    gfx_draw_string(x + term_px(24) + prefix_w, prompt_y + (prompt_h - text_h) / 2,
+                    ">", CHARIS_UI_ACCENT, FB_TRANSPARENT);
+    u32 prompt_x = x + term_px(24) + prefix_w + term_px(14);
+    gfx_draw_string(prompt_x, prompt_y + (prompt_h - text_h) / 2,
                     term_input, CHARIS_UI_TEXT, FB_TRANSPARENT);
+    u32 input_w = 0;
+    gfx_text_size(term_input, &input_w, NULL);
+    fb_fill_rect(prompt_x + input_w + term_px(2),
+                 prompt_y + (prompt_h - text_h) / 2,
+                 term_px(2), text_h, CHARIS_UI_ACCENT);
+
+    u32 status_y = y + h - term_px(25);
+    gfx_draw_string(x + term_px(18), status_y,
+                    "READY", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
+    gfx_draw_string(x + term_px(78), status_y,
+                    "Kernel command environment", CHARIS_UI_MUTED, FB_TRANSPARENT);
 }
