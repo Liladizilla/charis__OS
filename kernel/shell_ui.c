@@ -246,88 +246,101 @@ static void draw_notice(void) {
     gfx_draw_string(bx + ui_px(24), by + ui_px(6), "Close", T_FG, FB_TRANSPARENT);
 }
 
-/* Native settings surface: font family, text size and global interface scale. */
-static u32 settings_title_height(void) {
-    u32 base = ui_px(36), needed = text_height() + ui_px(12);
-    return base > needed ? base : needed;
-}
-static u32 settings_row_height(void) {
-    u32 base = ui_px(48), needed = text_height() + ui_px(16);
-    return base > needed ? base : needed;
-}
-static u32 settings_button_width(void) {
-    u32 base = ui_px(30), needed = text_height() + ui_px(8);
-    return base > needed ? base : needed;
-}
-static u32 settings_panel_width(void) {
-    /* Reserve enough value-column width for the widest 3x setting (120%). */
-    return ui_px(500) + (text_height() * 2) + ui_px(8);
-}
+/* Native Settings application: a structured appearance workspace. */
+static u32 settings_title_height(void) { return ui_px(48); }
+static u32 settings_row_height(void) { return ui_px(78); }
+static u32 settings_button_width(void) { return ui_px(34); }
+static u32 settings_panel_width(void) { return ui_px(660); }
 static u32 settings_panel_height(void) {
-    return settings_title_height() + ui_px(12) +
-           (3 * settings_row_height()) + text_height() + ui_px(24);
+    return settings_title_height() + ui_px(30) +
+           (3 * settings_row_height()) + text_height() + ui_px(54);
 }
 
 static void draw_settings(void) {
     if (!settings_open) return;
-    static const char* const styles[] = { "Prop", "Mono", "Serif" };
-    static const char* const scales[] = { "1x", "2x", "3x" };
+    static const char* const styles[] = { "Proportional", "Monospace", "Bitmap serif" };
+    static const char* const scales[] = { "100%", "200%", "300%" };
     static const char* const ui_scales[] = { "80%", "100%", "120%" };
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
     u32 cw = settings_panel_width(), ch = settings_panel_height();
     u32 x = sw > cw ? (sw - cw) / 2 : 0;
     u32 y = sh > ch ? (sh - ch) / 2 : 0;
     u32 title_h = settings_title_height(), row_h = settings_row_height();
-    u32 control_x = x + ui_px(340);
-    u32 button_w = settings_button_width(), button_h = button_w;
-    u32 plus_x = x + cw - button_w - ui_px(14);
+    u32 content_x = x + ui_px(24);
+    u32 control_x = x + ui_px(448);
+    u32 button_w = settings_button_width(), button_h = ui_px(34);
+    u32 plus_x = x + cw - button_w - ui_px(22);
 
-    fb_fill_rect(x + ui_px(5), y + ui_px(5), cw, ch, CHARIS_UI_SHADOW);
-    fb_fill_rect(x, y, cw, ch, T_MENU);
-    fb_draw_rect(x, y, cw, ch, T_BORDER);
-    fb_fill_rect(x, y, cw, title_h, T_START_BTN);
-    gfx_draw_string(x + ui_px(18), y + (title_h - text_height()) / 2,
-                    "SETTINGS", T_FG, FB_TRANSPARENT);
+    fb_fill_rect(x + ui_px(6), y + ui_px(7), cw, ch, CHARIS_UI_SHADOW);
+    fb_fill_rect(x, y, cw, ch, CHARIS_UI_PANEL);
+    fb_draw_rect(x, y, cw, ch, CHARIS_UI_BORDER_STRONG);
+    fb_fill_rect(x, y, cw, title_h, CHARIS_UI_PANEL_RAISED);
+    fb_fill_rect(x, y + title_h, cw, ui_px(1), CHARIS_UI_BORDER);
+    gfx_draw_string(x + ui_px(22), y + (title_h - text_height()) / 2,
+                    "Settings", T_FG, FB_TRANSPARENT);
+    gfx_draw_string(x + cw - ui_px(118), y + (title_h - text_height()) / 2,
+                    "CHARISOS", CHARIS_UI_ACCENT, FB_TRANSPARENT);
 
-    const char* values[3];
+    gfx_draw_string(content_x, y + title_h + ui_px(18),
+                    "Appearance", T_FG, FB_TRANSPARENT);
+    gfx_draw_string(content_x, y + title_h + ui_px(42),
+                    "Personalize the interface and reading experience.",
+                    T_FG_DIM, FB_TRANSPARENT);
+
     int style = config_get_int("font_style", 0);
     int font_scale = config_get_int("font_scale", 1);
     int global_scale = config_get_int("ui_scale", 100);
     if (style < 0 || style > 2) style = 0;
     if (font_scale < 1 || font_scale > 3) font_scale = 1;
     int scale_index = global_scale <= 80 ? 0 : global_scale >= 120 ? 2 : 1;
-    values[0] = styles[style];
-    values[1] = scales[font_scale - 1];
-    values[2] = ui_scales[scale_index];
-    const char* labels[3] = { "Font family", "Font size", "UI scale" };
+    const char* values[3] = { styles[style], scales[font_scale - 1], ui_scales[scale_index] };
+    const char* labels[3] = { "Font family", "Text size", "Interface scale" };
+    const char* hints[3] = {
+        "Choose the typeface used throughout the desktop.",
+        "Adjust the size of text in native applications.",
+        "Scale windows and controls for your display."
+    };
 
     for (u32 i = 0; i < 3; i++) {
-        u32 ry = y + title_h + ui_px(12) + i * row_h;
-        fb_fill_rect(x + ui_px(12), ry, cw - ui_px(24), row_h - ui_px(4), T_MENU_ITEM);
-        gfx_draw_string(x + ui_px(24), ry + (row_h - text_height()) / 2,
+        u32 ry = y + title_h + ui_px(72) + i * row_h;
+        fb_fill_rect(x + ui_px(16), ry, cw - ui_px(32), row_h - ui_px(8),
+                     CHARIS_UI_SURFACE);
+        fb_draw_rect(x + ui_px(16), ry, cw - ui_px(32), row_h - ui_px(8),
+                     CHARIS_UI_BORDER);
+        gfx_draw_string(content_x + ui_px(10), ry + ui_px(14),
                         labels[i], T_FG, FB_TRANSPARENT);
-        u32 by = ry + (row_h - button_h) / 2;
-        fb_fill_rect(control_x, by, button_w, button_h, CHARIS_UI_PANEL_RAISED);
-        fb_draw_rect(control_x, by, button_w, button_h, T_BORDER);
+        gfx_draw_string(content_x + ui_px(10), ry + ui_px(40),
+                        hints[i], T_FG_DIM, FB_TRANSPARENT);
+
+        u32 by = ry + (row_h - button_h) / 2 - ui_px(4);
+        fb_fill_rect(control_x, by, button_w, button_h,
+                     CHARIS_UI_PANEL_RAISED);
+        fb_draw_rect(control_x, by, button_w, button_h, CHARIS_UI_BORDER);
+        fb_fill_rect(plus_x, by, button_w, button_h,
+                     CHARIS_UI_ACCENT_SURFACE);
+        fb_draw_rect(plus_x, by, button_w, button_h, CHARIS_UI_BORDER_STRONG);
         u32 glyph_w = 0;
         gfx_text_size("-", &glyph_w, NULL);
         gfx_draw_string(control_x + (button_w - glyph_w) / 2,
                         by + (button_h - text_height()) / 2,
                         "-", T_FG, FB_TRANSPARENT);
-        gfx_draw_string(control_x + button_w + ui_px(12),
-                        by + (button_h - text_height()) / 2,
-                        values[i], T_FG, FB_TRANSPARENT);
-        fb_fill_rect(plus_x, by, button_w, button_h, CHARIS_UI_ACCENT_SURFACE);
-        fb_draw_rect(plus_x, by, button_w, button_h, CHARIS_UI_BORDER_STRONG);
         gfx_text_size("+", &glyph_w, NULL);
         gfx_draw_string(plus_x + (button_w - glyph_w) / 2,
                         by + (button_h - text_height()) / 2,
                         "+", T_FG, FB_TRANSPARENT);
+        gfx_draw_string(control_x + button_w + ui_px(12),
+                        by + (button_h - text_height()) / 2,
+                        values[i], T_FG, FB_TRANSPARENT);
     }
-    const char* storage_status = config_is_persistent()
-        ? "Saved to CHARISOS.CFG" : "Session only: no writable disk";
-    gfx_draw_string(x + ui_px(20), y + ch - text_height() - ui_px(10),
-                    storage_status, T_FG_DIM, FB_TRANSPARENT);
+
+    u32 footer_y = y + ch - ui_px(38);
+    fb_fill_rect(x + ui_px(18), footer_y - ui_px(10),
+                 cw - ui_px(36), ui_px(1), CHARIS_UI_BORDER);
+    gfx_draw_string(x + ui_px(24), footer_y,
+                    config_is_persistent() ? "Changes saved to CHARISOS.CFG"
+                                           : "Session only  |  No writable configuration volume",
+                    config_is_persistent() ? CHARIS_UI_SUCCESS : CHARIS_UI_WARNING,
+                    FB_TRANSPARENT);
 }
 
 static bool settings_handle_click(int mx, int my) {
@@ -336,15 +349,17 @@ static bool settings_handle_click(int mx, int my) {
     u32 cw = settings_panel_width(), ch = settings_panel_height();
     u32 x = sw > cw ? (sw - cw) / 2 : 0;
     u32 y = sh > ch ? (sh - ch) / 2 : 0;
-    if (mx < (int)x || mx >= (int)(x + cw) || my < (int)y || my >= (int)(y + ch)) {
+    if (mx < (int)x || mx >= (int)(x + cw) ||
+        my < (int)y || my >= (int)(y + ch)) {
         settings_open = false;
         return true;
     }
     u32 title_h = settings_title_height(), row_h = settings_row_height();
-    u32 control_x = x + ui_px(340), button_w = settings_button_width();
-    u32 plus_x = x + cw - button_w - ui_px(14);
-    if (my < (int)(y + title_h + ui_px(12))) return true;
-    u32 row = (u32)(my - (int)(y + title_h + ui_px(12))) / row_h;
+    u32 control_x = x + ui_px(448), button_w = settings_button_width();
+    u32 plus_x = x + cw - button_w - ui_px(22);
+    u32 first_row_y = y + title_h + ui_px(72);
+    if (my < (int)first_row_y) return true;
+    u32 row = (u32)(my - (int)first_row_y) / row_h;
     if (row >= 3) return true;
     int direction = mx >= (int)plus_x && mx < (int)(plus_x + button_w) ? 1 :
                     mx >= (int)control_x && mx < (int)(control_x + button_w) ? -1 : 0;
@@ -361,8 +376,7 @@ static bool settings_handle_click(int mx, int my) {
         if (value > 3) value = 3;
         config_set_int("font_scale", value);
     } else {
-        int value = config_get_int("ui_scale", 100);
-        value += direction * 20;
+        int value = config_get_int("ui_scale", 100) + direction * 20;
         if (value < 80) value = 80;
         if (value > 120) value = 120;
         config_set_int("ui_scale", value);
