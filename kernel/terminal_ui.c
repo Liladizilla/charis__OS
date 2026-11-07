@@ -27,7 +27,7 @@ static u32 term_input_len;
 static char term_lines[TERM_HISTORY][TERM_LINE_MAX];
 static u32 term_line_count;
 
-#define TERM_TEXT_SCALE 2u
+#define TERM_TEXT_SCALE 1u
 static u32 term_px(u32 logical) { return gfx_ui_scale(logical); }
 static u32 term_text_h(void) { return font_cell_h * gfx_text_get_scale() * TERM_TEXT_SCALE; }
 static void term_draw(u32 x, u32 y, const char* s, u32 fg, u32 bg) {
