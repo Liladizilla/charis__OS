@@ -230,29 +230,18 @@ jobs:
           # and capture the actual framebuffer window. The earlier desktop
           # shortcut was intentionally removed by the Calm Precision redesign.
           {
-            # Fresh QEMU invocation: PS/2 cursor starts at (50,50). With the
-            # persisted 120% UI scale, Terminal's hit target is centered near
-            # (265,739). PS/2 positive Y moves up, so reach it with dx=215,
-            # dy=-689 using signed-byte-safe relative packets.
-            printf 'mouse_move 70 0\n'
-            sleep 0.25
-            printf 'mouse_move 70 0\n'
-            sleep 0.25
-            printf 'mouse_move 75 0\n'
-            sleep 0.25
-            printf 'mouse_move 0 -100\n'
-            sleep 0.25
-            printf 'mouse_move 0 -100\n'
-            sleep 0.25
-            printf 'mouse_move 0 -100\n'
-            sleep 0.25
-            printf 'mouse_move 0 -100\n'
-            sleep 0.25
-            printf 'mouse_move 0 -100\n'
-            sleep 0.25
-            printf 'mouse_move 0 -100\n'
-            sleep 0.25
-            printf 'mouse_move 0 -89\n'
+            # The guest pointer starts near (52,50). The PS/2 input path
+            # scales raw deltas to roughly one third of framebuffer pixels.
+            # Terminal's taskbar hit target is centered near (218,743).
+            # Move +500 raw X and +2100 raw Y in bounded packets.
+            for step in {1..5}; do
+              printf 'mouse_move 100 0\n'
+              sleep 0.1
+            done
+            for step in {1..21}; do
+              printf 'mouse_move 0 100\n'
+              sleep 0.1
+            done
             sleep 1
             printf 'mouse_button 1\n'
             sleep 1
