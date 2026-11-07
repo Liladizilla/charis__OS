@@ -656,12 +656,11 @@ static void handle_event(const input_event_t* e) {
         int shortcut = desktop_surface_hit_test(mx, my);
         if (shortcut >= 0) {
             ui.menu_open = false;
-            if (shortcut == 0) {
-                browser_open();
-            } else {
-                notice_open = false;
-                files_open();
-            }
+            notice_open = false;
+            if (shortcut == 0) browser_open();
+            else if (shortcut == 1) files_open();
+            else if (shortcut == 2) terminal_open();
+            else if (shortcut == 3) settings_open = true;
             ui.needs_redraw = true;
             return;
         }
