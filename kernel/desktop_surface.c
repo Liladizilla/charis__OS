@@ -28,220 +28,46 @@ static void panel(u32 x, u32 y, u32 w, u32 h, u32 fill) {
     fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER);
 }
 
-typedef struct {
-    u32 margin, usable, top, hero_y, hero_h;
-    u32 left_w, right_x, right_w;
-    u32 section_y, tile_y, tile_h, tile_gap, tile_w;
-    u32 tile_columns, tile_rows, tile_row_gap;
-} desktop_layout_t;
-
-static desktop_layout_t desktop_layout(void) {
-    desktop_layout_t d;
-    u32 sw = g_framebuffer.width;
-    u32 text_h = th();
-    d.margin = u(36);
-    d.tile_gap = u(14);
-    d.tile_row_gap = u(14);
-    d.usable = sw > d.margin * 2u ? sw - d.margin * 2u : sw;
-    d.top = u(28);
-    d.hero_y = d.top + u(84);
-    d.left_w = d.usable > u(380) ? d.usable - u(380) - u(16)
-                                 : d.usable * 2u / 3u;
-    d.right_x = d.margin + d.left_w + u(16);
-    d.right_w = d.usable > d.left_w + u(16)
-              ? d.usable - d.left_w - u(16) : 0;
-
-    u32 brand_y = u(20) + text_h + u(12);
-    u32 line_one_y = brand_y + text_h * 2u + u(10);
-    u32 line_two_y = line_one_y + text_h + u(8);
-    u32 left_need = line_two_y + text_h + u(18);
-    u32 right_need = u(18) + text_h + u(18) + u(1) +
-                     u(14) + text_h + u(18) + text_h + u(18);
-    d.hero_h = u(184);
-    if (d.hero_h < left_need) d.hero_h = left_need;
-    if (d.hero_h < right_need) d.hero_h = right_need;
-
-    d.section_y = d.hero_y + d.hero_h + u(28);
-    d.tile_y = d.section_y + u(28);
-    u32 tile_need = u(16) + text_h + u(8) + text_h + u(12);
-    d.tile_h = u(88) > tile_need ? u(88) : tile_need;
-    /* Large text needs real room, not four tiny cards with clipped labels.
-     * Reflow to two columns once the configured glyph height exceeds the
-     * normal desktop scale. Keep render and hit-test on this same geometry. */
-    d.tile_columns = text_h > u(16) ? 2u : 4u;
-    d.tile_rows = (4u + d.tile_columns - 1u) / d.tile_columns;
-    u32 gaps = d.tile_gap * (d.tile_columns - 1u);
-    d.tile_w = d.usable > gaps
-             ? (d.usable - gaps) / d.tile_columns : d.usable / d.tile_columns;
-    return d;
-}
-
-static void app_icon(u32 x, u32 y, u32 kind, u32 size) {
-    u32 ink = kind == 0 ? 0xFF86B9E8u :
-              kind == 1 ? 0xFFF0C674u :
-              kind == 2 ? 0xFF83D6B0u : 0xFFB7A0F5u;
-    fb_fill_rect(x, y, size, size, CHARIS_UI_SURFACE);
-    fb_draw_rect(x, y, size, size, CHARIS_UI_BORDER_STRONG);
-    u32 p = size / 5u, inner = size - p * 2u;
-    if (kind == 0) {
-        fb_draw_rect(x+p, y+p, inner, inner, ink);
-        fb_fill_rect(x+p, y+size/2u, inner, u(1), ink);
-        fb_fill_rect(x+size/2u, y+p, u(1), inner, ink);
-    } else if (kind == 1) {
-        fb_fill_rect(x+p, y+p+u(2), inner/2u, u(5), ink);
-        fb_fill_rect(x+p, y+p+u(6), inner, inner-u(5), ink);
-    } else if (kind == 2) {
-        fb_draw_rect(x+p, y+p, inner, inner, ink);
-        gfx_draw_string_scaled(x+p+u(3), y+size/2u-th(), ">_", ink,
-                               CHARIS_UI_SURFACE, gfx_text_get_scale());
-    } else {
-        fb_draw_rect(x+p+u(3), y+p+u(3), inner-u(6), inner-u(6), ink);
-        fb_fill_rect(x+size/2u-u(2), y+p, u(4), inner, ink);
-        fb_fill_rect(x+p, y+size/2u-u(2), inner, u(4), ink);
-    }
-}
+/* A desktop is a place for icons, not a second application dashboard.
+ * The taskbar and launcher own application discovery; the workspace stays
+ * quiet and leaves room for real windows. */
+static const u32 FILES_ICON_X = 56;
+static const u32 FILES_ICON_Y = 64;
+static const u32 FILES_CELL_W = 96;
+static const u32 FILES_CELL_H = 104;
 
 void desktop_surface_render(void) {
     if (!g_framebuffer.initialized) return;
-    desktop_layout_t d = desktop_layout();
-    u32 text_h = th();
-
-    fb_fill_rect(d.margin, d.top+u(2), u(4), u(20), CHARIS_UI_ACCENT);
-    gfx_draw_string(d.margin+u(14), d.top, "CHARISOS  /  DESKTOP",
-                    CHARIS_UI_ACCENT, FB_TRANSPARENT);
-    gfx_draw_string(d.margin, d.top+u(32), "Your workspace.",
+    u32 x = u(FILES_ICON_X);
+    u32 y = u(FILES_ICON_Y);
+    u32 size = u(48);
+    app_icon(x + (u(FILES_CELL_W)-size)/2u, y, 1, size);
+    u32 label_w = 0;
+    gfx_text_size("Files", &label_w, NULL);
+    gfx_draw_string(x + (u(FILES_CELL_W)-label_w)/2u,
+                    y + size + u(12), "Files",
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(d.margin, d.top+u(58), "A focused environment built around your work.",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-
-    panel(d.margin, d.hero_y, d.left_w, d.hero_h, CHARIS_UI_PANEL);
-    fb_fill_rect(d.margin, d.hero_y, u(4), d.hero_h, CHARIS_UI_ACCENT);
-    gfx_draw_string(d.margin+u(22), d.hero_y+u(20), "WELCOME BACK",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    u32 brand_y = d.hero_y + u(20) + text_h + u(12);
-    gfx_draw_string_scaled(d.margin+u(22), brand_y, "CharisOS",
-                           CHARIS_UI_TEXT, FB_TRANSPARENT, 2);
-    u32 line_one_y = brand_y + text_h * 2u + u(10);
-    u32 line_two_y = line_one_y + text_h + u(8);
-    u32 text_right = d.margin + d.left_w - u(126);
-    u32 text_x = d.margin + u(22);
-    if (text_right > text_x) fb_set_clip(text_x, d.hero_y, text_right-text_x, d.hero_h);
-    gfx_draw_string(text_x, line_one_y,
-                    "A native x86_64 desktop environment.",
-                    CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(text_x, line_two_y,
-                    "Open an application to get started.",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    fb_reset_clip();
-
-    fb_fill_rect(d.margin+d.left_w-u(112), d.hero_y+u(24), u(84), u(84),
-                 CHARIS_UI_ACCENT_SURFACE);
-    fb_draw_rect(d.margin+d.left_w-u(112), d.hero_y+u(24), u(84), u(84),
-                 CHARIS_UI_BORDER_STRONG);
-    fb_fill_rect(d.margin+d.left_w-u(92), d.hero_y+u(44), u(44), u(44),
-                 CHARIS_UI_ACCENT);
-    fb_fill_rect(d.margin+d.left_w-u(82), d.hero_y+u(54), u(24), u(24),
-                 CHARIS_UI_PANEL);
-
-    panel(d.right_x, d.hero_y, d.right_w, d.hero_h, CHARIS_UI_PANEL);
-    gfx_draw_string(d.right_x+u(18), d.hero_y+u(18), "SYSTEM STATUS",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    system_stats_t stats;
-    diag_collect_stats(&stats);
-    char value[16];
-    number(value, pmm_free_pages()/256u);
-    gfx_draw_string(d.right_x+u(18), d.hero_y+u(48), value,
-                    CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(d.right_x+u(68), d.hero_y+u(48), "MiB FREE RAM",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    u32 divider_y = d.hero_y+u(76);
-    fb_fill_rect(d.right_x+u(18), divider_y,
-                 d.right_w > u(36) ? d.right_w-u(36) : 1, u(1),
-                 CHARIS_UI_BORDER);
-    u32 stat_two_y = divider_y+u(14)+text_h;
-    number(value, stats.processes_active);
-    gfx_draw_string(d.right_x+u(18), stat_two_y, value,
-                    CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(d.right_x+u(68), stat_two_y, "ACTIVE TASKS",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    u32 stat_three_y = stat_two_y+text_h+u(18);
-    number(value, (u32)(timer_get_ms()/60000u));
-    gfx_draw_string(d.right_x+u(18), stat_three_y, value,
-                    CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(d.right_x+u(68), stat_three_y, "MINUTES UPTIME",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-
-    gfx_draw_string(d.margin, d.section_y, "APPLICATIONS",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    static const char* const names[4] = {
-        "Browser", "Files", "Terminal", "Settings"
-    };
-    static const char* const desc[4] = {
-        "Web workspace", "Browse volumes", "Command line", "System controls"
-    };
-    for (u32 i=0; i<4; i++) {
-        u32 col = i % d.tile_columns;
-        u32 row = i / d.tile_columns;
-        u32 tx = d.margin+col*(d.tile_w+d.tile_gap);
-        u32 ty = d.tile_y+row*(d.tile_h+d.tile_row_gap);
-        panel(tx, ty, d.tile_w, d.tile_h, CHARIS_UI_PANEL);
-        app_icon(tx+u(16), ty+(d.tile_h-u(42))/2u, i, u(42));
-        u32 label_x = tx+u(72);
-        u32 label_w = d.tile_w > u(88) ? d.tile_w-u(88) : 1;
-        fb_set_clip(label_x, ty, label_w, d.tile_h);
-        u32 title_y = ty+u(16);
-        gfx_draw_string(label_x, title_y, names[i],
-                        CHARIS_UI_TEXT, FB_TRANSPARENT);
-        gfx_draw_string(label_x, title_y+text_h+u(8), desc[i],
-                        CHARIS_UI_MUTED, FB_TRANSPARENT);
-        fb_reset_clip();
-        fb_fill_rect(tx+d.tile_w-u(4), ty+u(12), u(2),
-                     d.tile_h > u(24) ? d.tile_h-u(24) : 1,
-                     i == 0 ? 0xFF86B9E8u :
-                     i == 1 ? 0xFFF0C674u :
-                     i == 2 ? 0xFF83D6B0u : 0xFFB7A0F5u);
-    }
-
-    u32 grid_h = d.tile_rows*d.tile_h +
-                 (d.tile_rows-1u)*d.tile_row_gap;
-    u32 footer_y = d.tile_y+grid_h+u(28);
-    u32 safe_bottom = g_framebuffer.height > u(48)
-                    ? g_framebuffer.height-u(48) : g_framebuffer.height;
-    if (safe_bottom > footer_y+text_h+u(18)) {
-        fb_fill_rect(d.margin, footer_y, d.usable, u(1), CHARIS_UI_BORDER);
-        gfx_draw_string(d.margin, footer_y+u(12),
-                        "CHARISOS  |  LOCAL SESSION  |  X86_64",
-                        CHARIS_UI_MUTED, FB_TRANSPARENT);
-    }
 }
 
 int desktop_surface_hit_test(int mx, int my) {
-    desktop_layout_t d = desktop_layout();
-    if (my < (int)d.tile_y) return -1;
-    for (u32 i=0; i<4; i++) {
-        u32 col = i % d.tile_columns;
-        u32 row = i / d.tile_columns;
-        u32 x = d.margin+col*(d.tile_w+d.tile_gap);
-        u32 y = d.tile_y+row*(d.tile_h+d.tile_row_gap);
-        if (mx >= (int)x && mx < (int)(x+d.tile_w) &&
-            my >= (int)y && my < (int)(y+d.tile_h)) return (int)i;
-    }
+    u32 x = u(FILES_ICON_X), y = u(FILES_ICON_Y);
+    u32 w = u(FILES_CELL_W), h = u(FILES_CELL_H);
+    if (mx >= (int)x && mx < (int)(x+w) &&
+        my >= (int)y && my < (int)(y+h)) return 0;
     return -1;
 }
 
 void desktop_surface_draw_taskbar_icons(u32 y) {
     u32 size = u(28), center = u(44)>size ? (u(44)-size)/2u : 0;
-    app_icon(u(116), y+center, 0, size);
-    app_icon(u(160), y+center, 1, size);
-    app_icon(u(204), y+center, 2, size);
-    app_icon(u(248), y+center, 3, size);
+    app_icon(u(112), y+center, 1, size); /* Files */
+    app_icon(u(156), y+center, 2, size); /* Terminal */
+    app_icon(u(200), y+center, 3, size); /* Settings */
 }
 
 int desktop_surface_taskbar_hit_test(int mx, int my, u32 taskbar_y) {
     if (my < (int)taskbar_y) return -1;
-    if (mx >= (int)u(112) && mx < (int)u(154)) return 0;
-    if (mx >= (int)u(156) && mx < (int)u(198)) return 1;
-    if (mx >= (int)u(200) && mx < (int)u(242)) return 2;
-    if (mx >= (int)u(244) && mx < (int)u(286)) return 3;
+    if (mx >= (int)u(108) && mx < (int)u(150)) return 1;
+    if (mx >= (int)u(152) && mx < (int)u(194)) return 2;
+    if (mx >= (int)u(196) && mx < (int)u(238)) return 3;
     return -1;
 }
