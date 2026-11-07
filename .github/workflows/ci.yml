@@ -229,13 +229,14 @@ jobs:
           # Close Settings, open the pinned Terminal app, execute help,
           # and capture the actual framebuffer window.
           {
-            # QEMU PS/2 relative mouse packets are clamped per event.
-            # Move in bounded increments to the Terminal desktop icon.
-            for step in {1..6}; do
-              printf 'mouse_move -4 50\n'
-              sleep 0.2
-            done
-            printf 'mouse_move -4 20\n'
+            # Fresh QEMU invocation: pointer starts at the desktop's
+            # top-left default position (50,50). Click Terminal shortcut
+            # at its center (38,298), using bounded relative PS/2 packets.
+            printf 'mouse_move -6 100\n'
+            sleep 0.5
+            printf 'mouse_move -6 100\n'
+            sleep 0.5
+            printf 'mouse_move 0 48\n'
             sleep 1
             printf 'mouse_button 1\n'
             sleep 1
