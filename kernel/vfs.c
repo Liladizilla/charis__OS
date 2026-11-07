@@ -14,6 +14,8 @@ typedef struct {
 static mount_t mounts[MAX_MOUNTS];
 static int mount_count = 0;
 
+static vfs_node_t* fat32_vfs_readdir(vfs_node_t* node, u32 index);
+
 // Root filesystem (FAT32 on disk)
 static vfs_node_t fat32_root = {
     .flags = VFS_DIR,
@@ -78,7 +80,7 @@ static void fat32_vfs_close(vfs_node_t* node) {
 }
 
 static vfs_node_t* fat32_vfs_readdir(vfs_node_t* node, u32 index) {
-    if (!node || !(node->flags & VFS_DIR)) return NULL;
+    if (node != &fat32_root) return NULL;
     fs_dirent_t entry;
     if (fs_readdir(index, &entry) != 0) return NULL;
 
@@ -93,10 +95,8 @@ static vfs_node_t* fat32_vfs_readdir(vfs_node_t* node, u32 index) {
     child->read = fat32_vfs_read;
     child->write = (child->flags & VFS_DIR) ? NULL : fat32_vfs_write;
     child->close = fat32_vfs_close;
-    if (child->flags & VFS_DIR) {
-        child->readdir = fat32_vfs_readdir;
-        child->finddir = NULL;
-    }
+    child->readdir = NULL;
+    child->finddir = NULL;
     return child;
 }
 
