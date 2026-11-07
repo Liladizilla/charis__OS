@@ -20,7 +20,7 @@ static vfs_node_t fat32_root = {
     .size = 0,
     .inode = 0,
     .data = NULL,
-    .readdir = NULL,
+    .readdir = fat32_vfs_readdir,
     .finddir = NULL
 };
 
@@ -51,6 +51,7 @@ vfs_node_t dev_vga = {
 
 // FAT32 wrapper implementations
 static int fat32_vfs_read(vfs_node_t* node, u64 offset, u64 size, u8* buf) {
+    if (!node || (node->flags & VFS_DIR)) return -1;
     file_t file;
     file.cluster = (u32)(uintptr_t)node->data;
     file.size = node->size;
@@ -74,6 +75,29 @@ static int fat32_vfs_write(vfs_node_t* node, u64 offset, u64 size, const u8* buf
  * belongs to its descriptor and must be released on close/task exit. */
 static void fat32_vfs_close(vfs_node_t* node) {
     if (node) kfree(node);
+}
+
+static vfs_node_t* fat32_vfs_readdir(vfs_node_t* node, u32 index) {
+    if (!node || !(node->flags & VFS_DIR)) return NULL;
+    fs_dirent_t entry;
+    if (fs_readdir(index, &entry) != 0) return NULL;
+
+    vfs_node_t* child = (vfs_node_t*)kmalloc(sizeof(vfs_node_t));
+    if (!child) return NULL;
+    kmemset(child, 0, sizeof(*child));
+    kstrncpy(child->name, entry.name, sizeof(child->name) - 1);
+    child->flags = (entry.attributes & 0x10u) ? VFS_DIR : VFS_FILE;
+    child->size = entry.size;
+    child->inode = entry.cluster;
+    child->data = (void*)(uintptr_t)entry.cluster;
+    child->read = fat32_vfs_read;
+    child->write = (child->flags & VFS_DIR) ? NULL : fat32_vfs_write;
+    child->close = fat32_vfs_close;
+    if (child->flags & VFS_DIR) {
+        child->readdir = fat32_vfs_readdir;
+        child->finddir = NULL;
+    }
+    return child;
 }
 
 static vfs_node_t* fat32_vfs_finddir(vfs_node_t* node, const char* name) {
