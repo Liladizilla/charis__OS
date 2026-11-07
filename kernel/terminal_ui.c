@@ -388,12 +388,14 @@ void terminal_render(void) {
     const char* status_label = "Kernel command environment";
     u32 ready_width = term_measure("READY");
     u32 status_width = term_measure(status_label);
-    u32 status_x = x + w > status_width + term_px(18)
-                 ? x + w - status_width - term_px(18)
-                 : x + term_px(18) + ready_width + term_px(12);
-    if (status_x > x + term_px(18) + ready_width + term_px(8))
+    u32 footer_need = term_px(18) + ready_width +
+                      term_px(12) + status_width + term_px(18);
+    /* Omit the secondary status rather than letting it collide with READY. */
+    if (w > footer_need) {
+        u32 status_x = x + w - status_width - term_px(18);
         term_draw(status_x, status_y, status_label,
                   CHARIS_UI_MUTED, FB_TRANSPARENT);
+    }
 
     fb_reset_clip();
 }
