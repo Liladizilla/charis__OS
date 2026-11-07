@@ -252,8 +252,8 @@ static u32 settings_row_height(void) { return ui_px(78); }
 static u32 settings_button_width(void) { return ui_px(34); }
 static u32 settings_panel_width(void) { return ui_px(660); }
 static u32 settings_panel_height(void) {
-    return settings_title_height() + ui_px(30) +
-           (3 * settings_row_height()) + text_height() + ui_px(54);
+    return settings_title_height() + ui_px(72) +
+           (3 * settings_row_height()) + ui_px(54);
 }
 
 static void draw_settings(void) {
