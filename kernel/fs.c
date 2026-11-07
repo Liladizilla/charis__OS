@@ -296,6 +296,9 @@ int fs_open(const char* path, file_t* file) {
             }
         }
         u32 next = next_cluster(cluster);
+        /* The internal I/O/corruption sentinel is 0xFFFFFFFF, which is
+         * numerically above FAT32's EOC range. Reject it before EOC tests. */
+        if (next == 0xFFFFFFFFu) return -1;
         if (next >= 0x0FFFFFF8u) break;
         if (!cluster_valid(next)) return -1;
         cluster = next;
