@@ -332,9 +332,9 @@ static void draw_settings(void) {
     const char* values[3] = { styles[style], scales[font_scale-1], ui_scales[scale_index] };
     const char* labels[3] = { "Font family", "Text size", "Interface scale" };
     const char* hints[3] = {
-        "Typeface used by native applications",
-        "Adjust text legibility across the desktop",
-        "Resize windows, controls and spacing"
+        "Native app typeface",
+        "Desktop text size",
+        "Window and control size"
     };
     for (u32 i=0; i<3; i++) {
         u32 ry = y+title_h+ui_px(82)+i*row_h;
@@ -347,10 +347,14 @@ static void draw_settings(void) {
         u32 label_w = value_x > label_x+ui_px(12)
                     ? value_x-label_x-ui_px(12) : 1;
         fb_set_clip(label_x, ry, label_w, row_h-ui_px(10));
-        gfx_draw_string(label_x, ry+ui_px(14),
+        u32 label_y = font_scale > 1
+                    ? ry+(row_h-text_height())/2u
+                    : ry+ui_px(14);
+        gfx_draw_string(label_x, label_y,
                         labels[i], CHARIS_UI_TEXT, FB_TRANSPARENT);
-        gfx_draw_string(label_x, ry+ui_px(14)+text_height()+ui_px(6),
-                        hints[i], CHARIS_UI_MUTED, FB_TRANSPARENT);
+        if (font_scale == 1)
+            gfx_draw_string(label_x, label_y+text_height()+ui_px(6),
+                            hints[i], CHARIS_UI_MUTED, FB_TRANSPARENT);
         fb_reset_clip();
         u32 by = ry+(row_h-button_h)/2u;
         fb_fill_rect(control_x, by, button_w, button_h,
