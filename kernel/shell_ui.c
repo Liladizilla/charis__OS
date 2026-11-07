@@ -239,9 +239,18 @@ static void draw_notice(void) {
 
 /* Native Settings application: navigation rail plus a focused settings page. */
 static u32 settings_title_height(void) { return ui_px(52); }
-static u32 settings_row_height(void) { return ui_px(100); }
+static u32 settings_row_height(void) {
+    u32 minimum = ui_px(100);
+    u32 readable = text_height() * 2u + ui_px(28);
+    return minimum > readable ? minimum : readable;
+}
 static u32 settings_button_width(void) { return ui_px(32); }
-static u32 settings_panel_width(void) { return ui_px(760); }
+static u32 settings_panel_width(void) {
+    u32 desired = ui_px(760);
+    u32 available = g_framebuffer.width > ui_px(24)
+                  ? g_framebuffer.width-ui_px(24) : g_framebuffer.width;
+    return desired > available ? available : desired;
+}
 static u32 settings_panel_height(void) {
     return settings_title_height() + ui_px(90) +
            (3 * settings_row_height()) + ui_px(58);
@@ -256,9 +265,14 @@ static void draw_settings(void) {
     u32 cw = settings_panel_width(), ch = settings_panel_height();
     u32 x = sw > cw ? (sw-cw)/2u : 0, y = sh > ch ? (sh-ch)/2u : 0;
     u32 title_h = settings_title_height(), row_h = settings_row_height();
-    u32 rail_w = ui_px(164), content_x = x+rail_w+ui_px(28);
-    u32 control_x = x+ui_px(548), button_w = settings_button_width();
-    u32 plus_x = x+cw-button_w-ui_px(24), button_h = ui_px(34);
+    u32 rail_w = ui_px(164);
+    if (rail_w > cw/3u) rail_w = cw/3u;
+    u32 content_x = x+rail_w+ui_px(28);
+    u32 button_w = settings_button_width();
+    u32 plus_x = x+cw-button_w-ui_px(24);
+    u32 control_x = plus_x-button_w-ui_px(8);
+    u32 value_x = content_x + (control_x-content_x)/2u;
+    u32 button_h = ui_px(34);
 
     fb_fill_rect(x+ui_px(7), y+ui_px(8), cw, ch, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, cw, ch, CHARIS_UI_PANEL);
@@ -267,8 +281,10 @@ static void draw_settings(void) {
     fb_fill_rect(x, y+title_h, cw, ui_px(1), CHARIS_UI_BORDER);
     gfx_draw_string(x+ui_px(22), y+(title_h-text_height())/2u,
                     "Settings", CHARIS_UI_TEXT, FB_TRANSPARENT);
+    fb_set_clip(x+ui_px(104), y, cw-ui_px(168), title_h);
     gfx_draw_string(x+ui_px(104), y+(title_h-text_height())/2u,
                     "SYSTEM PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
+    fb_reset_clip();
     fb_fill_rect(x+cw-ui_px(42), y+ui_px(12), ui_px(26), ui_px(26),
                  CHARIS_UI_SURFACE);
     fb_draw_rect(x+cw-ui_px(42), y+ui_px(12), ui_px(26), ui_px(26),
@@ -296,9 +312,10 @@ static void draw_settings(void) {
     }
 
     /* Display page. */
-    gfx_draw_string(content_x, y+title_h+ui_px(22),
+    u32 page_heading_y = y+title_h+ui_px(18);
+    gfx_draw_string(content_x, page_heading_y,
                     "Display", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(content_x, y+title_h+ui_px(48),
+    gfx_draw_string(content_x, page_heading_y+text_height()+ui_px(6),
                     "Control the way CharisOS looks and reads.",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
 
@@ -317,15 +334,21 @@ static void draw_settings(void) {
     };
     for (u32 i=0; i<3; i++) {
         u32 ry = y+title_h+ui_px(82)+i*row_h;
-        fb_fill_rect(content_x-ui_px(10), ry, cw-rail_w-ui_px(30),
+        u32 row_w = cw-rail_w-ui_px(30);
+        fb_fill_rect(content_x-ui_px(10), ry, row_w,
                      row_h-ui_px(10), CHARIS_UI_SURFACE);
-        fb_draw_rect(content_x-ui_px(10), ry, cw-rail_w-ui_px(30),
+        fb_draw_rect(content_x-ui_px(10), ry, row_w,
                      row_h-ui_px(10), CHARIS_UI_BORDER);
-        gfx_draw_string(content_x+ui_px(8), ry+ui_px(22),
+        u32 label_x = content_x+ui_px(8);
+        u32 label_w = value_x > label_x+ui_px(12)
+                    ? value_x-label_x-ui_px(12) : 1;
+        fb_set_clip(label_x, ry, label_w, row_h-ui_px(10));
+        gfx_draw_string(label_x, ry+ui_px(14),
                         labels[i], CHARIS_UI_TEXT, FB_TRANSPARENT);
-        gfx_draw_string(content_x+ui_px(8), ry+ui_px(52),
+        gfx_draw_string(label_x, ry+ui_px(14)+text_height()+ui_px(6),
                         hints[i], CHARIS_UI_MUTED, FB_TRANSPARENT);
-        u32 by = ry+(row_h-button_h)/2u-ui_px(4);
+        fb_reset_clip();
+        u32 by = ry+(row_h-button_h)/2u;
         fb_fill_rect(control_x, by, button_w, button_h,
                      CHARIS_UI_PANEL_RAISED);
         fb_draw_rect(control_x, by, button_w, button_h, CHARIS_UI_BORDER);
@@ -337,9 +360,12 @@ static void draw_settings(void) {
                         "-", CHARIS_UI_TEXT, FB_TRANSPARENT);
         gfx_draw_string(plus_x+ui_px(11), by+(button_h-text_height())/2u,
                         "+", CHARIS_UI_TEXT, FB_TRANSPARENT);
-        gfx_draw_string(control_x+button_w+ui_px(12),
-                        by+(button_h-text_height())/2u,
+        u32 value_w = control_x > value_x+ui_px(8)
+                    ? control_x-value_x-ui_px(8) : 1;
+        fb_set_clip(value_x, by, value_w, button_h);
+        gfx_draw_string(value_x, by+(button_h-text_height())/2u,
                         values[i], CHARIS_UI_ACCENT, FB_TRANSPARENT);
+        fb_reset_clip();
     }
 
     u32 footer_y = y+ch-ui_px(34);
@@ -363,9 +389,12 @@ static bool settings_handle_click(int mx, int my) {
     if (mx >= (int)(x+cw-ui_px(48)) && my < (int)(y+settings_title_height())) {
         settings_open=false; return true;
     }
-    u32 rail_w=ui_px(164), row_h=settings_row_height();
-    u32 control_x=x+ui_px(548), button_w=settings_button_width();
+    u32 rail_w=ui_px(164);
+    if (rail_w > cw/3u) rail_w = cw/3u;
+    u32 row_h=settings_row_height();
+    u32 button_w=settings_button_width();
     u32 plus_x=x+cw-button_w-ui_px(24);
+    u32 control_x=plus_x-button_w-ui_px(8);
     u32 first_y=y+settings_title_height()+ui_px(82);
     if (mx < (int)(x+rail_w) || my < (int)first_y) return true;
     u32 row=(u32)(my-(int)first_y)/row_h;
