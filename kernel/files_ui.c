@@ -74,7 +74,7 @@ bool files_handle_mouse(int mx, int my) {
         files_close();
         return true;
     }
-    u32 list_y = y + title_h + files_px(48);
+    u32 list_y = y + title_h + files_px(42);
     u32 row_h = files_px(30);
     if (my >= (int)list_y && row_h) {
         u32 row = (u32)(my - (int)list_y) / row_h;
