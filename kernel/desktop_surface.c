@@ -93,18 +93,6 @@ static void app_icon(u32 x, u32 y, u32 kind, u32 size) {
     }
 }
 
-static void app_tile(u32 x, u32 y, u32 w, u32 h, u32 kind,
-                     const char* title, const char* detail) {
-    panel(x, y, w, h, CHARIS_UI_PANEL);
-    app_icon(x+u(16), y+(h-u(42))/2u, kind, u(42));
-    gfx_draw_string(x+u(72), y+u(26), title, CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(x+u(72), y+u(52), detail, CHARIS_UI_MUTED, FB_TRANSPARENT);
-    fb_fill_rect(x+w-u(4), y+u(12), u(2), h-u(24),
-                 kind == 0 ? 0xFF86B9E8u :
-                 kind == 1 ? 0xFFF0C674u :
-                 kind == 2 ? 0xFF83D6B0u : 0xFFB7A0F5u);
-}
-
 void desktop_surface_render(void) {
     if (!g_framebuffer.initialized) return;
     desktop_layout_t d = desktop_layout();
