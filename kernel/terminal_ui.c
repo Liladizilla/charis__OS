@@ -27,8 +27,63 @@ static u32 term_input_len;
 static char term_lines[TERM_HISTORY][TERM_LINE_MAX];
 static u32 term_line_count;
 
+#define TERM_TEXT_SCALE 1u
 static u32 term_px(u32 logical) { return gfx_ui_scale(logical); }
-static u32 term_text_h(void) { return font_cell_h * gfx_text_get_scale(); }
+static u32 term_text_h(void) { return font_cell_h * gfx_text_get_scale() * TERM_TEXT_SCALE; }
+static void term_draw(u32 x, u32 y, const char* s, u32 fg, u32 bg) {
+    gfx_draw_string_scaled(x, y, s, fg, bg, TERM_TEXT_SCALE);
+}
+
+static u32 term_measure(const char* s) {
+    u32 width = 0;
+    gfx_text_size(s, &width, NULL);
+    return width * TERM_TEXT_SCALE;
+}
+
+/* Return one visual line of text without splitting a word unless the word
+ * itself is wider than the available canvas. */
+static void term_next_segment(const char* line, u32 start, u32 max_width,
+                              u32* end_out, u32* next_out) {
+    u32 i = start, width = 0, last_space = start, width_at_space = 0;
+    while (line[i]) {
+        char one[2] = { line[i], 0 };
+        u32 char_width = term_measure(one);
+        if (width + char_width > max_width) break;
+        width += char_width;
+        if (line[i] == ' ') {
+            last_space = i;
+            width_at_space = width - char_width;
+        }
+        i++;
+    }
+    if (!line[i]) {
+        *end_out = i;
+        *next_out = i;
+        return;
+    }
+    if (i == start) i++;
+    if (last_space > start) {
+        *end_out = last_space;
+        *next_out = last_space + 1;
+    } else {
+        *end_out = i;
+        *next_out = i;
+    }
+    (void)width_at_space;
+}
+
+static u32 term_wrapped_rows(const char* line, u32 max_width) {
+    u32 rows = 0, pos = 0;
+    if (!line || !line[0]) return 1;
+    while (line[pos]) {
+        u32 end = pos, next = pos;
+        term_next_segment(line, pos, max_width, &end, &next);
+        if (next <= pos) break;
+        rows++;
+        pos = next;
+    }
+    return rows ? rows : 1;
+}
 
 static void term_number(char* out, u32 value) {
     char reversed[10];
@@ -178,50 +233,169 @@ bool terminal_handle_mouse(int mx, int my) {
     return true;
 }
 
+static u32 terminal_line_color(const char* line) {
+    if (!line) return CHARIS_UI_TEXT;
+    if (kstrncmp(line, "charisos> ", 10) == 0) return CHARIS_UI_SUCCESS;
+    if (kstrncmp(line, "Command not found", 17) == 0) return CHARIS_UI_WARNING;
+    if (kstrncmp(line, "CharisOS", 8) == 0) return CHARIS_UI_ACCENT;
+    if (kstrncmp(line, "Managed RAM", 11) == 0 ||
+        kstrncmp(line, "Tasks ", 6) == 0 ||
+        kstrncmp(line, "Context switches", 16) == 0 ||
+        kstrncmp(line, "Uptime:", 7) == 0) return 0xFFB8C7D8u;
+    return CHARIS_UI_TEXT;
+}
+
 void terminal_render(void) {
     if (!term_visible || !g_framebuffer.initialized) return;
 
     u32 x, y, w, h, title_h;
     term_geometry(&x, &y, &w, &h, &title_h);
+
+    /* Text and controls must never paint over the desktop or taskbar.
+     * The framebuffer clip is reset before returning to the shell renderer. */
+    fb_set_clip(x, y, w, h);
+
     u32 text_h = term_text_h();
-    u32 line_h = text_h + term_px(8);
-    u32 prompt_h = text_h + term_px(20);
-    u32 content_top = y + title_h + term_px(12);
-    u32 content_bottom = y + h - prompt_h - term_px(12);
+    u32 line_h = text_h + term_px(10);
+    u32 prompt_h = text_h + term_px(22);
+    u32 content_top = y + title_h + term_px(44);
+    u32 content_bottom = y + h - prompt_h - term_px(38);
     u32 rows = content_bottom > content_top ? (content_bottom - content_top) / line_h : 1;
     if (!rows) rows = 1;
 
-    fb_fill_rect(x + term_px(5), y + term_px(5), w, h, CHARIS_UI_SHADOW);
+    /* Window frame and application chrome. */
+    fb_fill_rect(x + term_px(5), y + term_px(6), w, h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, w, h, CHARIS_UI_PANEL);
-    fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER);
+    fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER_STRONG);
     fb_fill_rect(x, y, w, title_h, CHARIS_UI_PANEL_RAISED);
-    gfx_draw_string(x + term_px(16), y + (title_h - text_h) / 2,
-                    "TERMINAL", CHARIS_UI_TEXT, FB_TRANSPARENT);
+    fb_fill_rect(x, y + title_h, w, term_px(1), CHARIS_UI_BORDER);
 
-    u32 close_w = term_px(28);
-    fb_fill_rect(x + w - close_w - term_px(4), y + term_px(4),
-                 close_w, title_h - term_px(8), CHARIS_UI_SURFACE);
-    fb_draw_rect(x + w - close_w - term_px(4), y + term_px(4),
-                 close_w, title_h - term_px(8), CHARIS_UI_BORDER);
-    gfx_draw_string(x + w - close_w + term_px(5),
-                    y + (title_h - text_h) / 2, "x",
-                    CHARIS_UI_TEXT, FB_TRANSPARENT);
+    /* Three restrained window controls and a real session title. */
+    u32 dot_y = y + title_h / 2;
+    fb_fill_rect(x + term_px(16), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_DANGER);
+    fb_fill_rect(x + term_px(32), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_WARNING);
+    fb_fill_rect(x + term_px(48), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_SUCCESS);
+    term_draw(x + term_px(72), y + (title_h - text_h) / 2,
+                    "Terminal", CHARIS_UI_TEXT, FB_TRANSPARENT);
+    const char* session_label = "LOCAL SESSION";
+    u32 session_width = term_measure(session_label);
+    u32 session_x = x + w > session_width + term_px(16)
+                  ? x + w - session_width - term_px(16) : x + term_px(72);
+    term_draw(session_x, y + (title_h - text_h) / 2,
+              session_label, CHARIS_UI_MUTED, FB_TRANSPARENT);
 
-    u32 first = term_line_count > rows ? term_line_count - rows : 0;
-    for (u32 i = first; i < term_line_count; i++) {
-        u32 row = i - first;
-        gfx_draw_string(x + term_px(18), content_top + row * line_h,
-                        term_lines[i], CHARIS_UI_TEXT, FB_TRANSPARENT);
+    /* Session strip separates app identity from command output. */
+    u32 strip_y = y + title_h + term_px(1);
+    fb_fill_rect(x, strip_y, w, term_px(32), CHARIS_UI_PANEL_RAISED);
+    fb_fill_rect(x + term_px(16), strip_y + term_px(8), term_px(3), term_px(16),
+                 CHARIS_UI_ACCENT);
+    term_draw(x + term_px(28), strip_y + (term_px(32) - text_h) / 2,
+                    "charisos  /  shell", CHARIS_UI_MUTED, FB_TRANSPARENT);
+    const char* platform_label = "UTF-8  |  x86_64";
+    u32 platform_width = term_measure(platform_label);
+    u32 platform_x = x + w > platform_width + term_px(16)
+                   ? x + w - platform_width - term_px(16) : x + term_px(28);
+    term_draw(platform_x, strip_y + (term_px(32) - text_h) / 2,
+              platform_label, CHARIS_UI_MUTED, FB_TRANSPARENT);
+
+    /* Console canvas with a line-number gutter. */
+    u32 canvas_y = content_top - term_px(6);
+    u32 canvas_h = content_bottom > canvas_y ? content_bottom - canvas_y : term_px(40);
+    fb_fill_rect(x + term_px(10), canvas_y, w - term_px(20), canvas_h,
+                 0xFF0B1016u);
+    fb_fill_rect(x + term_px(54), canvas_y + term_px(8), term_px(1),
+                 canvas_h > term_px(16) ? canvas_h - term_px(16) : canvas_h,
+                 0xFF27313Du);
+
+    u32 text_x = x + term_px(68);
+    u32 text_right = x + w - term_px(24);
+    u32 text_width = text_right > text_x ? text_right - text_x : 1;
+    u32 total_rows = 0;
+    for (u32 i = 0; i < term_line_count; i++)
+        total_rows += term_wrapped_rows(term_lines[i], text_width);
+    u32 skip_rows = total_rows > rows ? total_rows - rows : 0;
+    fb_set_clip(text_x, canvas_y, text_width, canvas_h);
+    u32 drawn_rows = 0;
+    for (u32 i = 0; i < term_line_count; i++) {
+        const char* line = term_lines[i];
+        u32 pos = 0;
+        do {
+            u32 end = pos, next = pos;
+            term_next_segment(line, pos, text_width, &end, &next);
+            if (skip_rows) {
+                skip_rows--;
+            } else if (drawn_rows < rows) {
+                u32 line_y = content_top + drawn_rows * line_h;
+                if (pos == 0) {
+                    char line_no[8];
+                    term_number(line_no, i + 1);
+                    term_draw(x + term_px(20), line_y, line_no,
+                              0xFF667383u, FB_TRANSPARENT);
+                }
+                char segment[TERM_LINE_MAX];
+                u32 count = end - pos;
+                if (count >= sizeof(segment)) count = sizeof(segment) - 1;
+                for (u32 j = 0; j < count; j++) segment[j] = line[pos + j];
+                segment[count] = 0;
+                term_draw(text_x, line_y, segment,
+                          terminal_line_color(line), FB_TRANSPARENT);
+                drawn_rows++;
+            }
+            if (next <= pos || !line[next]) break;
+            pos = next;
+        } while (drawn_rows < rows || skip_rows);
+    }
+    fb_set_clip(x, y, w, h);
+
+    /* Prompt is a distinct input control, not another line in the transcript. */
+    u32 prompt_y = y + h - prompt_h - term_px(38);
+    fb_fill_rect(x + term_px(12), prompt_y, w - term_px(24),
+                 prompt_h, CHARIS_UI_PANEL_RAISED);
+    fb_draw_rect(x + term_px(12), prompt_y, w - term_px(24),
+                 prompt_h, CHARIS_UI_BORDER);
+    term_draw(x + term_px(24), prompt_y + (prompt_h - text_h) / 2,
+                    "charisos", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
+    u32 prefix_w = 0;
+    gfx_text_size("charisos", &prefix_w, NULL);
+    prefix_w *= TERM_TEXT_SCALE;
+    term_draw(x + term_px(24) + prefix_w, prompt_y + (prompt_h - text_h) / 2,
+                    ">", CHARIS_UI_ACCENT, FB_TRANSPARENT);
+    u32 prompt_x = x + term_px(24) + prefix_w + term_px(14);
+    u32 prompt_right = x + w - term_px(28);
+    u32 input_available = prompt_right > prompt_x
+                        ? prompt_right - prompt_x : 1;
+    u32 input_start = 0;
+    u32 input_width = term_measure(term_input);
+    while (input_width > input_available && term_input[input_start]) {
+        input_start++;
+        input_width = term_measure(term_input + input_start);
+    }
+    char visible_input[TERM_INPUT_MAX];
+    kstrncpy(visible_input, term_input + input_start,
+             sizeof(visible_input) - 1);
+    visible_input[sizeof(visible_input) - 1] = 0;
+    fb_set_clip(prompt_x, prompt_y, input_available, prompt_h);
+    term_draw(prompt_x, prompt_y + (prompt_h - text_h) / 2,
+              visible_input, CHARIS_UI_TEXT, FB_TRANSPARENT);
+    fb_fill_rect(prompt_x + input_width + term_px(2),
+                 prompt_y + (prompt_h - text_h) / 2,
+                 term_px(2), text_h, CHARIS_UI_ACCENT);
+    fb_set_clip(x, y, w, h);
+
+    u32 status_y = y + h - term_px(25);
+    term_draw(x + term_px(18), status_y,
+                    "READY", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
+    const char* status_label = "Kernel command environment";
+    u32 ready_width = term_measure("READY");
+    u32 status_width = term_measure(status_label);
+    u32 footer_need = term_px(18) + ready_width +
+                      term_px(12) + status_width + term_px(18);
+    /* Omit the secondary status rather than letting it collide with READY. */
+    if (w > footer_need) {
+        u32 status_x = x + w - status_width - term_px(18);
+        term_draw(status_x, status_y, status_label,
+                  CHARIS_UI_MUTED, FB_TRANSPARENT);
     }
 
-    u32 prompt_y = y + h - prompt_h - term_px(8);
-    fb_fill_rect(x + term_px(12), prompt_y, w - term_px(24),
-                 prompt_h, CHARIS_UI_SURFACE);
-    gfx_draw_string(x + term_px(20), prompt_y + (prompt_h - text_h) / 2,
-                    "charisos> ", CHARIS_UI_ACCENT, FB_TRANSPARENT);
-    u32 prompt_width = 0;
-    gfx_text_size("charisos> ", &prompt_width, NULL);
-    gfx_draw_string(x + term_px(20) + prompt_width,
-                    prompt_y + (prompt_h - text_h) / 2,
-                    term_input, CHARIS_UI_TEXT, FB_TRANSPARENT);
+    fb_reset_clip();
 }

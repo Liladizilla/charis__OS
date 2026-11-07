@@ -1,103 +1,84 @@
-/* desktop_surface.c - Calm Precision desktop composition.
- *
- * Keep the working desktop quiet: one useful Files shortcut, no permanent
- * diagnostics cards, no duplicate wordmark, and a consistent icon family.
- * System diagnostics belong in System Monitor, not on the wallpaper.
+/* desktop_surface.c - CharisOS desktop workspace.
+ * The framebuffer desktop uses a restrained graphite/amber visual system:
+ * clear hierarchy, useful system status, and application launch surfaces.
  */
 #include <kernel/fb.h>
 #include <kernel/gfx_text.h>
 #include <kernel/font.h>
 #include <kernel/ui_theme.h>
+#include <kernel/diagnostics.h>
+#include <kernel/pmm.h>
+#include <kernel/timer.h>
+#include <kernel/string.h>
 
-static u32 u(u32 value) { return gfx_ui_scale(value); }
-static u32 text_h(void) { return (u32)font_cell_h * gfx_text_get_scale(); }
+static u32 u(u32 v) { return gfx_ui_scale(v); }
+static u32 th(void) { return (u32)font_cell_h * gfx_text_get_scale(); }
 
-static void draw_app_icon(u32 x, u32 y, u32 kind, u32 size) {
-    u32 inset = u(1);
-    u32 plate = CHARIS_UI_SURFACE;
-    u32 border = CHARIS_UI_BORDER;
-    u32 ink = CHARIS_UI_TEXT;
-    if (kind == 0) { plate = 0xFF283B50u; ink = CHARIS_UI_ACCENT; }
-    if (kind == 1) { plate = 0xFF3A3021u; ink = 0xFFF0C674u; }
-    if (kind == 2) { plate = 0xFF20372Fu; ink = 0xFF83D6B0u; }
-    if (kind == 3) { plate = 0xFF29313Bu; ink = CHARIS_UI_TEXT; }
-
-    fb_fill_rect(x + u(2), y + u(2), size, size, CHARIS_UI_SHADOW);
-    fb_fill_rect(x, y, size, size, plate);
-    fb_draw_rect(x, y, size, size, border);
-
-    u32 pad = size / 5;
-    u32 inner = size - pad * 2;
+static void app_icon(u32 x, u32 y, u32 kind, u32 size) {
+    u32 ink = kind == 0 ? 0xFF86B9E8u :
+              kind == 1 ? 0xFFF0C674u :
+              kind == 2 ? 0xFF83D6B0u : CHARIS_UI_ACCENT;
+    fb_fill_rect(x, y, size, size, CHARIS_UI_SURFACE);
+    fb_draw_rect(x, y, size, size, CHARIS_UI_BORDER_STRONG);
+    u32 p = size / 5u, inner = size - p * 2u;
     if (kind == 0) {
-        /* Browser: simple globe. */
-        fb_draw_rect(x + pad, y + pad, inner, inner, ink);
-        fb_fill_rect(x + pad, y + size / 2, inner, u(1), ink);
-        fb_fill_rect(x + size / 2, y + pad, u(1), inner, ink);
+        fb_draw_rect(x+p, y+p, inner, inner, ink);
+        fb_fill_rect(x+p, y+size/2u, inner, u(1), ink);
+        fb_fill_rect(x+size/2u, y+p, u(1), inner, ink);
     } else if (kind == 1) {
-        /* Files: folder silhouette with a distinct tab. */
-        fb_fill_rect(x + pad, y + pad + u(2), inner / 2, u(4), ink);
-        fb_fill_rect(x + pad, y + pad + u(5), inner, inner - u(4), ink);
-        fb_fill_rect(x + pad + u(4), y + pad + u(10), inner - u(8), u(2), plate);
+        fb_fill_rect(x+p, y+p+u(2), inner/2u, u(5), ink);
+        fb_fill_rect(x+p, y+p+u(6), inner, inner-u(5), ink);
     } else if (kind == 2) {
-        /* Terminal: prompt glyph and baseline. */
-        fb_draw_rect(x + pad, y + pad, inner, inner, ink);
-        fb_fill_rect(x + pad + u(3), y + pad + inner / 2, inner - u(6), u(1), ink);
-        fb_fill_rect(x + pad + u(3), y + pad + inner / 2 + u(4), inner / 2, u(1), ink);
+        fb_draw_rect(x+p, y+p, inner, inner, ink);
+        gfx_draw_string_scaled(x+p+u(3), y+size/2u-th(), ">_", ink,
+                               CHARIS_UI_SURFACE, gfx_text_get_scale());
     } else {
-        /* Settings: compact mechanical gear. */
-        u32 c = x + size / 2, cy = y + size / 2;
-        fb_fill_rect(c - u(2), y + pad, u(4), u(5), ink);
-        fb_fill_rect(c - u(2), y + size - pad - u(5), u(4), u(5), ink);
-        fb_fill_rect(x + pad, cy - u(2), u(5), u(4), ink);
-        fb_fill_rect(x + size - pad - u(5), cy - u(2), u(5), u(4), ink);
-        fb_draw_rect(c - u(5), cy - u(5), u(10), u(10), ink);
-        fb_fill_rect(c - u(2), cy - u(2), u(4), u(4), plate);
+        fb_draw_rect(x+p+u(3), y+p+u(3), inner-u(6), inner-u(6), ink);
+        fb_fill_rect(x+size/2u-u(2), y+p, u(4), inner, ink);
+        fb_fill_rect(x+p, y+size/2u-u(2), inner, u(4), ink);
     }
-    (void)inset;
 }
+
+/* A desktop is a place for icons, not a second application dashboard.
+ * The taskbar and launcher own application discovery; the workspace stays
+ * quiet and leaves room for real windows. */
+static const u32 FILES_ICON_X = 56;
+static const u32 FILES_ICON_Y = 64;
+static const u32 FILES_CELL_W = 96;
+static const u32 FILES_CELL_H = 104;
 
 void desktop_surface_render(void) {
     if (!g_framebuffer.initialized) return;
-
-    /* A single home shortcut keeps the wallpaper useful and uncluttered.
-     * App launchers live in the taskbar and Start menu. */
-    u32 icon = u(48);
-    u32 x = u(24);
-    u32 y = u(28);
-    draw_app_icon(x, y, 1, icon);
-
-    u32 label_width = 0;
-    gfx_text_size("Files", &label_width, NULL);
-    u32 label_x = x + (icon > label_width ? (icon - label_width) / 2 : 0);
-    gfx_draw_string(label_x, y + icon + u(10), "Files",
+    u32 x = u(FILES_ICON_X);
+    u32 y = u(FILES_ICON_Y);
+    u32 size = u(48);
+    app_icon(x + (u(FILES_CELL_W)-size)/2u, y, 1, size);
+    u32 label_w = 0;
+    gfx_text_size("Files", &label_w, NULL);
+    gfx_draw_string(x + (u(FILES_CELL_W)-label_w)/2u,
+                    y + size + u(12), "Files",
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
 }
 
-/* Desktop shortcut hit-test: 1 is the Files shortcut. */
 int desktop_surface_hit_test(int mx, int my) {
-    u32 x = u(24), y = u(28), icon = u(48);
-    u32 label_h = text_h();
-    u32 width = icon > u(64) ? icon : u(64);
-    u32 left = x > (width - icon) / 2 ? x - (width - icon) / 2 : 0;
-    if (mx < (int)left || mx >= (int)(left + width)) return -1;
-    if (my < (int)y || my >= (int)(y + icon + u(10) + label_h)) return -1;
-    return 1;
+    u32 x = u(FILES_ICON_X), y = u(FILES_ICON_Y);
+    u32 w = u(FILES_CELL_W), h = u(FILES_CELL_H);
+    if (mx >= (int)x && mx < (int)(x+w) &&
+        my >= (int)y && my < (int)(y+h)) return 0;
+    return -1;
 }
 
-/* Four taskbar launchers share the same 28 px app plate and geometry. */
 void desktop_surface_draw_taskbar_icons(u32 y) {
-    u32 size = u(28);
-    draw_app_icon(u(116), y + (u(44) > size ? (u(44) - size) / 2 : 0), 0, size);
-    draw_app_icon(u(160), y + (u(44) > size ? (u(44) - size) / 2 : 0), 1, size);
-    draw_app_icon(u(204), y + (u(44) > size ? (u(44) - size) / 2 : 0), 2, size);
-    draw_app_icon(u(248), y + (u(44) > size ? (u(44) - size) / 2 : 0), 3, size);
+    u32 size = u(28), center = u(44)>size ? (u(44)-size)/2u : 0;
+    app_icon(u(112), y+center, 1, size); /* Files */
+    app_icon(u(156), y+center, 2, size); /* Terminal */
+    app_icon(u(200), y+center, 3, size); /* Settings */
 }
 
 int desktop_surface_taskbar_hit_test(int mx, int my, u32 taskbar_y) {
     if (my < (int)taskbar_y) return -1;
-    if (mx >= (int)u(112) && mx < (int)u(154)) return 0;
-    if (mx >= (int)u(156) && mx < (int)u(198)) return 1;
-    if (mx >= (int)u(200) && mx < (int)u(242)) return 2;
-    if (mx >= (int)u(244) && mx < (int)u(286)) return 3;
+    if (mx >= (int)u(108) && mx < (int)u(150)) return 1;
+    if (mx >= (int)u(152) && mx < (int)u(194)) return 2;
+    if (mx >= (int)u(196) && mx < (int)u(238)) return 3;
     return -1;
 }

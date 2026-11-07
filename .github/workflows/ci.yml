@@ -146,40 +146,36 @@ jobs:
             sleep 4
             printf 'screendump build/charisos-desktop-preview.ppm\n'
             sleep 2
-            # Open Start, then the Settings entry, and capture the real
-            # interactive typography/scaling panel as a second image.
-            printf 'mouse_move -500 1000\n'
+            # Exercise the native Files launcher through its keyboard path.
+            printf 'sendkey f10\n'
+            sleep 2
+            printf 'screendump build/charisos-files-preview.ppm\n'
             sleep 1
-            printf 'mouse_button 1\n'
+            printf 'sendkey f5\n'
             sleep 1
-            printf 'mouse_button 0\n'
-            sleep 1
-            printf 'mouse_move 100 -110\n'
-            sleep 1
-            printf 'mouse_button 1\n'
-            sleep 1
-            printf 'mouse_button 0\n'
+            printf 'sendkey esc\n'
+            sleep 2
+            # Open Settings through its keyboard shortcut, capture it,
+            # then exercise the text-size and interface-scale controls.
+            printf 'sendkey f11\n'
             sleep 2
             printf 'screendump build/charisos-settings-preview.ppm\n'
-            sleep 2
-            # Exercise font-size and global-scale plus controls, then capture
-            # the resized settings panel to prove the controls are live.
-            printf 'mouse_move 649 -269\n'
             sleep 1
-            printf 'mouse_button 1\n'
+            printf 'sendkey f6\n'
             sleep 1
-            printf 'mouse_button 0\n'
+            printf 'sendkey f7\n'
             sleep 1
-            printf 'mouse_move 15 44\n'
-            sleep 1
-            printf 'mouse_button 1\n'
-            sleep 1
-            printf 'mouse_button 0\n'
-            sleep 2
             printf 'screendump build/charisos-settings-adjusted-preview.ppm\n'
-            sleep 2
+            sleep 1
+            # Close Settings and capture the actual desktop with the saved
+            # enlarged typography. This catches launcher overflow that a
+            # Settings-only screenshot cannot reveal.
+            printf 'sendkey esc\n'
+            sleep 3
+            printf 'screendump build/charisos-desktop-scaled-preview.ppm\n'
+            sleep 1
             printf 'quit\n'
-          } | timeout 45s qemu-system-x86_64 \
+          } | timeout 70s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
@@ -188,8 +184,14 @@ jobs:
             >build/desktop-capture-qemu.log 2>&1 || true
 
           test -s build/charisos-desktop-preview.ppm
+          test -s build/charisos-files-preview.ppm
+          grep -q 'FILES_OPEN' build/desktop-capture-serial.log
+          grep -Eq 'FILES_ROOT_COUNT=[1-9][0-9]*' build/desktop-capture-serial.log
+          grep -q 'FILES_REFRESH' build/desktop-capture-serial.log
+          grep -q 'FILES_CLOSE' build/desktop-capture-serial.log
           test -s build/charisos-settings-preview.ppm
           test -s build/charisos-settings-adjusted-preview.ppm
+          test -s build/charisos-desktop-scaled-preview.ppm
 
           # Read the actual FAT32 file back from the disk image. The two
           # settings changes exercised above must have reached persistent media.
@@ -201,17 +203,7 @@ jobs:
           # exact saved values, then capture Settings after that reboot.
           {
             sleep 10
-            printf 'mouse_move -500 1000\n'
-            sleep 1
-            printf 'mouse_button 1\n'
-            sleep 1
-            printf 'mouse_button 0\n'
-            sleep 1
-            printf 'mouse_move 100 -110\n'
-            sleep 1
-            printf 'mouse_button 1\n'
-            sleep 1
-            printf 'mouse_button 0\n'
+            printf 'sendkey f11\n'
             sleep 2
             printf 'screendump build/charisos-settings-reloaded-preview.ppm\n'
             sleep 1
@@ -265,8 +257,10 @@ jobs:
           name: charisos-desktop-preview
           path: |
             build/charisos-desktop-preview.ppm
+            build/charisos-files-preview.ppm
             build/charisos-settings-preview.ppm
             build/charisos-settings-adjusted-preview.ppm
+            build/charisos-desktop-scaled-preview.ppm
             build/charisos-settings-reloaded-preview.ppm
             build/charisos-terminal-preview.ppm
             build/desktop-capture-serial.log

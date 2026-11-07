@@ -50,6 +50,10 @@ void fb_draw_rect(u32 x, u32 y, u32 w, u32 h, u32 argb);
 void fb_clear(u32 argb);
 void fb_swap(void);
 
+/* Restrict subsequent framebuffer drawing to a bounded rectangle. */
+void fb_set_clip(u32 x, u32 y, u32 w, u32 h);
+void fb_reset_clip(void);
+
 /* Pixel format helpers: colours are always handled as 0xAARRGGBB. */
 u32 fb_pack(u32 argb);
 u32 fb_unpack(u32 native);
