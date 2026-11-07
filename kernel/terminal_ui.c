@@ -221,7 +221,7 @@ void terminal_render(void) {
     fb_fill_rect(x + term_px(48), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_SUCCESS);
     term_draw(x + term_px(72), y + (title_h - text_h) / 2,
                     "Terminal", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(x + w - term_px(132), y + (title_h - text_h) / 2,
+    term_draw(x + w - term_px(132), y + (title_h - text_h) / 2,
                     "LOCAL SESSION", CHARIS_UI_MUTED, FB_TRANSPARENT);
 
     /* Session strip separates app identity from command output. */
@@ -229,9 +229,9 @@ void terminal_render(void) {
     fb_fill_rect(x, strip_y, w, term_px(32), CHARIS_UI_PANEL_RAISED);
     fb_fill_rect(x + term_px(16), strip_y + term_px(8), term_px(3), term_px(16),
                  CHARIS_UI_ACCENT);
-    gfx_draw_string(x + term_px(28), strip_y + (term_px(32) - text_h) / 2,
+    term_draw(x + term_px(28), strip_y + (term_px(32) - text_h) / 2,
                     "charisos  /  shell", CHARIS_UI_MUTED, FB_TRANSPARENT);
-    gfx_draw_string(x + w - term_px(116), strip_y + (term_px(32) - text_h) / 2,
+    term_draw(x + w - term_px(116), strip_y + (term_px(32) - text_h) / 2,
                     "UTF-8  |  x86_64", CHARIS_UI_MUTED, FB_TRANSPARENT);
 
     /* Console canvas with a line-number gutter. */
@@ -249,9 +249,9 @@ void terminal_render(void) {
         u32 line_y = content_top + row * line_h;
         char line_no[8];
         term_number(line_no, i + 1);
-        gfx_draw_string(x + term_px(20), line_y, line_no,
+        term_draw(x + term_px(20), line_y, line_no,
                         0xFF667383u, FB_TRANSPARENT);
-        gfx_draw_string(x + term_px(68), line_y, term_lines[i],
+        term_draw(x + term_px(68), line_y, term_lines[i],
                         terminal_line_color(term_lines[i]), FB_TRANSPARENT);
     }
 
@@ -261,24 +261,26 @@ void terminal_render(void) {
                  prompt_h, CHARIS_UI_PANEL_RAISED);
     fb_draw_rect(x + term_px(12), prompt_y, w - term_px(24),
                  prompt_h, CHARIS_UI_BORDER);
-    gfx_draw_string(x + term_px(24), prompt_y + (prompt_h - text_h) / 2,
+    term_draw(x + term_px(24), prompt_y + (prompt_h - text_h) / 2,
                     "charisos", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
     u32 prefix_w = 0;
     gfx_text_size("charisos", &prefix_w, NULL);
-    gfx_draw_string(x + term_px(24) + prefix_w, prompt_y + (prompt_h - text_h) / 2,
+    prefix_w *= TERM_TEXT_SCALE;
+    term_draw(x + term_px(24) + prefix_w, prompt_y + (prompt_h - text_h) / 2,
                     ">", CHARIS_UI_ACCENT, FB_TRANSPARENT);
     u32 prompt_x = x + term_px(24) + prefix_w + term_px(14);
-    gfx_draw_string(prompt_x, prompt_y + (prompt_h - text_h) / 2,
+    term_draw(prompt_x, prompt_y + (prompt_h - text_h) / 2,
                     term_input, CHARIS_UI_TEXT, FB_TRANSPARENT);
     u32 input_w = 0;
     gfx_text_size(term_input, &input_w, NULL);
+    input_w *= TERM_TEXT_SCALE;
     fb_fill_rect(prompt_x + input_w + term_px(2),
                  prompt_y + (prompt_h - text_h) / 2,
                  term_px(2), text_h, CHARIS_UI_ACCENT);
 
     u32 status_y = y + h - term_px(25);
-    gfx_draw_string(x + term_px(18), status_y,
+    term_draw(x + term_px(18), status_y,
                     "READY", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
-    gfx_draw_string(x + term_px(78), status_y,
+    term_draw(x + term_px(78), status_y,
                     "Kernel command environment", CHARIS_UI_MUTED, FB_TRANSPARENT);
 }
