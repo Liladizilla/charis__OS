@@ -579,7 +579,20 @@ void fs_self_test(void) {
         kprintf("FS: WRITE OK [%s]\n", buf);
     } else {
         kprintf("FS: WRITE MISMATCH [got:%s expected:%s]\n", buf, msg);
+        return;
     }
+
+    bool found_write_file = false;
+    for (u32 i = 0; i < 128; i++) {
+        fs_dirent_t entry;
+        if (fs_readdir(i, &entry) != 0) break;
+        if (kstrcmp(entry.name, "WRITE.TXT") == 0 &&
+            !(entry.attributes & 0x10u) && entry.size == kstrlen(msg)) {
+            found_write_file = true;
+            break;
+        }
+    }
+    kprintf(found_write_file ? "FS: READDIR OK\n" : "FS: READDIR FAIL\n");
 }
 
 /* Enumerate the root FAT32 directory by visible-entry index. Long-file-name
