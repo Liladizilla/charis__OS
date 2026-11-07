@@ -229,14 +229,15 @@ jobs:
           # Close Settings, open the pinned Terminal app, execute help,
           # and capture the actual framebuffer window.
           {
-            # Fresh QEMU invocation: pointer starts at the desktop's
-            # top-left default position (50,50). Click Terminal shortcut
-            # at its center (38,298), using bounded relative PS/2 packets.
-            printf 'mouse_move -6 100\n'
+            # Fresh QEMU invocation: pointer starts at (50,50). PS/2
+            # reports positive Y upward, while the desktop uses screen Y
+            # downward. Reach the Terminal shortcut at (38,298) with bounded
+            # relative packets: dx=-12, dy=-248.
+            printf 'mouse_move -6 -100\n'
             sleep 0.5
-            printf 'mouse_move -6 100\n'
+            printf 'mouse_move -6 -100\n'
             sleep 0.5
-            printf 'mouse_move 0 48\n'
+            printf 'mouse_move 0 -48\n'
             sleep 1
             printf 'mouse_button 1\n'
             sleep 1
