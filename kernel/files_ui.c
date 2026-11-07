@@ -70,9 +70,11 @@ bool files_handle_key(u8 scancode, bool pressed) {
 bool files_handle_mouse(int mx, int my) {
     if (!files_visible) return false;
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    u32 x = files_px(36), y = files_px(28);
-    u32 w = sw > files_px(72) ? sw - files_px(72) : sw;
-    u32 h = sh > files_px(100) ? sh - files_px(100) : sh;
+    u32 margin_x = files_px(24), margin_y = files_px(24);
+    u32 x = sw > margin_x * 2u ? margin_x : 0;
+    u32 y = sh > margin_y * 2u ? margin_y : 0;
+    u32 w = sw > x * 2u ? sw - x * 2u : sw;
+    u32 h = sh > y + margin_y ? sh - y - margin_y : sh;
     u32 title_h = files_px(40);
     if (mx < (int)x || mx >= (int)(x + w) ||
         my < (int)y || my >= (int)(y + h)) {
@@ -83,7 +85,7 @@ bool files_handle_mouse(int mx, int my) {
         files_close();
         return true;
     }
-    u32 list_y = y + title_h + files_px(42);
+    u32 list_y = y + title_h + files_px(64);
     u32 row_h = files_px(30);
     if (my >= (int)list_y && row_h) {
         u32 row = (u32)(my - (int)list_y) / row_h;
@@ -123,9 +125,12 @@ void files_render(void) {
                     "x", CHARIS_UI_TEXT, FB_TRANSPARENT);
     gfx_draw_string(x + files_px(18), y + title_h + files_px(14),
                     "ROOT VOLUME", CHARIS_UI_ACCENT, FB_TRANSPARENT);
-    gfx_draw_string(x + w - files_px(170), y + title_h + files_px(14),
-                    "NAME                                      SIZE",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+    /* Keep column headings independent. A padded monospaced pseudo-table
+     * overflowed narrow framebuffers and was visible outside the window. */
+    gfx_draw_string(x + files_px(20), y + title_h + files_px(42),
+                    "NAME", CHARIS_UI_MUTED, FB_TRANSPARENT);
+    gfx_draw_string(x + w - files_px(120), y + title_h + files_px(42),
+                    "SIZE", CHARIS_UI_MUTED, FB_TRANSPARENT);
 
     if (!files_available) {
         gfx_draw_string(x + files_px(20), y + title_h + files_px(64),
@@ -146,11 +151,11 @@ void files_render(void) {
                          CHARIS_UI_ACCENT_SURFACE);
         gfx_draw_string(x + files_px(20), ry + (row_h - text_h) / 2,
                         files_entries[i].name, CHARIS_UI_TEXT, FB_TRANSPARENT);
-        files_draw_size(x + w - files_px(120), ry + (row_h - text_h) / 2,
-                        files_entries[i].size);
         if (files_entries[i].directory)
             gfx_draw_string(x + w - files_px(72), ry + (row_h - text_h) / 2,
                             "DIR", CHARIS_UI_ACCENT, FB_TRANSPARENT);
+        files_draw_size(x + w - files_px(120), ry + (row_h - text_h) / 2,
+                        files_entries[i].size);
     }
     gfx_draw_string(x + files_px(18), y + h - text_h - files_px(10),
                     "Read-only root listing | F5 refresh | Esc close | FAT32 8.3 names",
