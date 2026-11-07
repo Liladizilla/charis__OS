@@ -484,6 +484,19 @@ static void handle_event(const input_event_t* e) {
             return;
         }
 
+        /* F12 is a reliable keyboard-only Terminal shortcut. It also
+         * gives headless systems and accessibility setups a way to open the
+         * command surface without depending on pointer hardware. */
+        if (e->type == INPUT_KEY_DOWN && !extended && base == 0x58) {
+            ui.menu_open = false;
+            ui.hover_item = -1;
+            notice_open = false;
+            settings_open = false;
+            terminal_open();
+            ui.needs_redraw = true;
+            return;
+        }
+
         /* Super is 0x5B/0x5C, both extended. */
         if (extended && (base == 0x5B || base == 0x5C)) {
             super_held = (e->type == INPUT_KEY_DOWN);
