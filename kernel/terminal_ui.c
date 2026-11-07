@@ -361,14 +361,26 @@ void terminal_render(void) {
     term_draw(x + term_px(24) + prefix_w, prompt_y + (prompt_h - text_h) / 2,
                     ">", CHARIS_UI_ACCENT, FB_TRANSPARENT);
     u32 prompt_x = x + term_px(24) + prefix_w + term_px(14);
+    u32 prompt_right = x + w - term_px(28);
+    u32 input_available = prompt_right > prompt_x
+                        ? prompt_right - prompt_x : 1;
+    u32 input_start = 0;
+    u32 input_width = term_measure(term_input);
+    while (input_width > input_available && term_input[input_start]) {
+        input_start++;
+        input_width = term_measure(term_input + input_start);
+    }
+    char visible_input[TERM_INPUT_MAX];
+    kstrncpy(visible_input, term_input + input_start,
+             sizeof(visible_input) - 1);
+    visible_input[sizeof(visible_input) - 1] = 0;
+    fb_set_clip(prompt_x, prompt_y, input_available, prompt_h);
     term_draw(prompt_x, prompt_y + (prompt_h - text_h) / 2,
-                    term_input, CHARIS_UI_TEXT, FB_TRANSPARENT);
-    u32 input_w = 0;
-    gfx_text_size(term_input, &input_w, NULL);
-    input_w *= TERM_TEXT_SCALE;
-    fb_fill_rect(prompt_x + input_w + term_px(2),
+              visible_input, CHARIS_UI_TEXT, FB_TRANSPARENT);
+    fb_fill_rect(prompt_x + input_width + term_px(2),
                  prompt_y + (prompt_h - text_h) / 2,
                  term_px(2), text_h, CHARIS_UI_ACCENT);
+    fb_set_clip(x, y, w, h);
 
     u32 status_y = y + h - term_px(25);
     term_draw(x + term_px(18), status_y,
