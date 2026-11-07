@@ -193,6 +193,59 @@ void fs_init(void) {
     serial_puts("FS: writable FAT32 volume mounted");
 }
 
+int fs_list_root(fs_dirent_t* output, u32 capacity) {
+    if (!fs_mounted || (!output && capacity)) return -1;
+    if (!capacity) return 0;
+
+    u32 count = 0;
+    u32 cluster = boot_sector.root_cluster;
+    u8 buffer[FAT32_SECTOR_SIZE];
+
+    /* Directory chains are untrusted media data. Bound traversal and validate
+     * every sector range before reading it. */
+    for (u32 visited = 0; visited < total_clusters && cluster_valid(cluster); visited++) {
+        u32 first_sector = cluster_to_sector(cluster);
+        if (first_sector == 0xFFFFFFFFu ||
+            first_sector >= boot_sector.total_sectors_32 ||
+            boot_sector.sectors_per_cluster > boot_sector.total_sectors_32 - first_sector)
+            return -1;
+
+        for (u32 sector_index = 0; sector_index < boot_sector.sectors_per_cluster; sector_index++) {
+            if (!ata_read_sector(first_sector + sector_index, buffer)) return -1;
+            fat32_dir_entry_t* entries = (fat32_dir_entry_t*)buffer;
+            for (u32 i = 0; i < 16; i++) {
+                fat32_dir_entry_t* entry = &entries[i];
+                if (entry->name[0] == 0x00) return (int)count;
+                if ((u8)entry->name[0] == 0xE5) continue;
+                if (entry->attr == 0x0F || (entry->attr & 0x08)) continue;
+
+                fs_dirent_t* item = &output[count];
+                usize pos = 0;
+                for (usize n = 0; n < 8 && entry->name[n] != ' '; n++)
+                    item->name[pos++] = entry->name[n];
+                usize ext = 0;
+                while (ext < 3 && entry->name[8 + ext] != ' ') ext++;
+                if (ext) {
+                    item->name[pos++] = '.';
+                    for (usize n = 0; n < ext; n++)
+                        item->name[pos++] = entry->name[8 + n];
+                }
+                item->name[pos] = 0;
+                item->size = entry->size;
+                item->directory = (entry->attr & 0x10u) != 0;
+                count++;
+                if (count >= capacity) return (int)count;
+            }
+        }
+
+        u32 next = next_cluster(cluster);
+        if (next >= 0x0FFFFFF8u) break;
+        if (!cluster_valid(next)) return -1;
+        cluster = next;
+    }
+    return (int)count;
+}
+
 int fs_open(const char* path, file_t* file) {
     if (!fs_mounted) return -1;
     if (!path || !file) return -1;
