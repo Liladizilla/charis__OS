@@ -28,6 +28,46 @@ static void panel(u32 x, u32 y, u32 w, u32 h, u32 fill) {
     fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER);
 }
 
+typedef struct {
+    u32 margin, usable, top, hero_y, hero_h;
+    u32 left_w, right_x, right_w;
+    u32 section_y, tile_y, tile_h, tile_gap, tile_w;
+} desktop_layout_t;
+
+static desktop_layout_t desktop_layout(void) {
+    desktop_layout_t d;
+    u32 sw = g_framebuffer.width;
+    u32 text_h = th();
+    d.margin = u(36);
+    d.tile_gap = u(14);
+    d.usable = sw > d.margin * 2u ? sw - d.margin * 2u : sw;
+    d.top = u(28);
+    d.hero_y = d.top + u(84);
+    d.left_w = d.usable > u(380) ? d.usable - u(380) - u(16)
+                                 : d.usable * 2u / 3u;
+    d.right_x = d.margin + d.left_w + u(16);
+    d.right_w = d.usable > d.left_w + u(16)
+              ? d.usable - d.left_w - u(16) : 0;
+
+    u32 brand_y = u(20) + text_h + u(12);
+    u32 line_one_y = brand_y + text_h * 2u + u(10);
+    u32 line_two_y = line_one_y + text_h + u(8);
+    u32 left_need = line_two_y + text_h + u(18);
+    u32 right_need = u(18) + text_h + u(18) + u(1) +
+                     u(14) + text_h + u(18) + text_h + u(18);
+    d.hero_h = u(184);
+    if (d.hero_h < left_need) d.hero_h = left_need;
+    if (d.hero_h < right_need) d.hero_h = right_need;
+
+    d.section_y = d.hero_y + d.hero_h + u(28);
+    d.tile_y = d.section_y + u(28);
+    u32 tile_need = u(16) + text_h + u(8) + text_h + u(12);
+    d.tile_h = u(88) > tile_need ? u(88) : tile_need;
+    d.tile_w = d.usable > d.tile_gap * 3u
+             ? (d.usable - d.tile_gap * 3u) / 4u : d.usable / 4u;
+    return d;
+}
+
 static void app_icon(u32 x, u32 y, u32 kind, u32 size) {
     u32 ink = kind == 0 ? 0xFF86B9E8u :
               kind == 1 ? 0xFFF0C674u :
@@ -67,112 +107,117 @@ static void app_tile(u32 x, u32 y, u32 w, u32 h, u32 kind,
 
 void desktop_surface_render(void) {
     if (!g_framebuffer.initialized) return;
-    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    u32 m = u(36), gap = u(16);
-    u32 usable = sw > m*2u ? sw-m*2u : sw;
-    u32 top = u(28), hero_h = u(184);
-    u32 left_w = usable > u(380) ? usable-u(380)-gap : usable*2u/3u;
-    u32 right_x = m+left_w+gap;
-    u32 right_w = usable > left_w+gap ? usable-left_w-gap : 0;
+    desktop_layout_t d = desktop_layout();
+    u32 text_h = th();
 
-    /* Header mark and product identity. */
-    fb_fill_rect(m, top+u(2), u(4), u(20), CHARIS_UI_ACCENT);
-    gfx_draw_string(m+u(14), top, "CHARISOS  /  DESKTOP",
+    fb_fill_rect(d.margin, d.top+u(2), u(4), u(20), CHARIS_UI_ACCENT);
+    gfx_draw_string(d.margin+u(14), d.top, "CHARISOS  /  DESKTOP",
                     CHARIS_UI_ACCENT, FB_TRANSPARENT);
-    gfx_draw_string(m, top+u(32), "Your workspace.",
+    gfx_draw_string(d.margin, d.top+u(32), "Your workspace.",
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(m, top+u(58), "A focused environment built around your work.",
+    gfx_draw_string(d.margin, d.top+u(58), "A focused environment built around your work.",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
 
-    /* Primary welcome surface. */
-    u32 hero_y = top+u(84);
-    panel(m, hero_y, left_w, hero_h, CHARIS_UI_PANEL);
-    fb_fill_rect(m, hero_y, u(4), hero_h, CHARIS_UI_ACCENT);
-    gfx_draw_string(m+u(22), hero_y+u(20), "WELCOME BACK",
+    panel(d.margin, d.hero_y, d.left_w, d.hero_h, CHARIS_UI_PANEL);
+    fb_fill_rect(d.margin, d.hero_y, u(4), d.hero_h, CHARIS_UI_ACCENT);
+    gfx_draw_string(d.margin+u(22), d.hero_y+u(20), "WELCOME BACK",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
-    gfx_draw_string_scaled(m+u(22), hero_y+u(54), "CharisOS",
+    u32 brand_y = d.hero_y + u(20) + text_h + u(12);
+    gfx_draw_string_scaled(d.margin+u(22), brand_y, "CharisOS",
                            CHARIS_UI_TEXT, FB_TRANSPARENT, 2);
-    gfx_draw_string(m+u(22), hero_y+u(100),
+    u32 line_one_y = brand_y + text_h * 2u + u(10);
+    u32 line_two_y = line_one_y + text_h + u(8);
+    u32 text_right = d.margin + d.left_w - u(126);
+    u32 text_x = d.margin + u(22);
+    if (text_right > text_x) fb_set_clip(text_x, d.hero_y, text_right-text_x, d.hero_h);
+    gfx_draw_string(text_x, line_one_y,
                     "A native x86_64 desktop environment.",
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(m+u(22), hero_y+u(130),
+    gfx_draw_string(text_x, line_two_y,
                     "Open an application to get started.",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
-    fb_fill_rect(m+left_w-u(112), hero_y+u(24), u(84), u(84),
+    fb_reset_clip();
+
+    fb_fill_rect(d.margin+d.left_w-u(112), d.hero_y+u(24), u(84), u(84),
                  CHARIS_UI_ACCENT_SURFACE);
-    fb_draw_rect(m+left_w-u(112), hero_y+u(24), u(84), u(84),
+    fb_draw_rect(d.margin+d.left_w-u(112), d.hero_y+u(24), u(84), u(84),
                  CHARIS_UI_BORDER_STRONG);
-    fb_fill_rect(m+left_w-u(92), hero_y+u(44), u(44), u(44),
+    fb_fill_rect(d.margin+d.left_w-u(92), d.hero_y+u(44), u(44), u(44),
                  CHARIS_UI_ACCENT);
-    fb_fill_rect(m+left_w-u(82), hero_y+u(54), u(24), u(24),
+    fb_fill_rect(d.margin+d.left_w-u(82), d.hero_y+u(54), u(24), u(24),
                  CHARIS_UI_PANEL);
 
-    /* Live system card. */
-    panel(right_x, hero_y, right_w, hero_h, CHARIS_UI_PANEL);
-    gfx_draw_string(right_x+u(18), hero_y+u(18), "SYSTEM STATUS",
+    panel(d.right_x, d.hero_y, d.right_w, d.hero_h, CHARIS_UI_PANEL);
+    gfx_draw_string(d.right_x+u(18), d.hero_y+u(18), "SYSTEM STATUS",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
     system_stats_t stats;
     diag_collect_stats(&stats);
     char value[16];
     number(value, pmm_free_pages()/256u);
-    gfx_draw_string(right_x+u(18), hero_y+u(48), value,
+    gfx_draw_string(d.right_x+u(18), d.hero_y+u(48), value,
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(right_x+u(68), hero_y+u(48), "MiB FREE RAM",
+    gfx_draw_string(d.right_x+u(68), d.hero_y+u(48), "MiB FREE RAM",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
-    fb_fill_rect(right_x+u(18), hero_y+u(76), right_w-u(36), u(1),
+    u32 divider_y = d.hero_y+u(76);
+    fb_fill_rect(d.right_x+u(18), divider_y,
+                 d.right_w > u(36) ? d.right_w-u(36) : 1, u(1),
                  CHARIS_UI_BORDER);
+    u32 stat_two_y = divider_y+u(14)+text_h;
     number(value, stats.processes_active);
-    gfx_draw_string(right_x+u(18), hero_y+u(92), value,
+    gfx_draw_string(d.right_x+u(18), stat_two_y, value,
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(right_x+u(68), hero_y+u(92), "ACTIVE TASKS",
+    gfx_draw_string(d.right_x+u(68), stat_two_y, "ACTIVE TASKS",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
+    u32 stat_three_y = stat_two_y+text_h+u(18);
     number(value, (u32)(timer_get_ms()/60000u));
-    gfx_draw_string(right_x+u(18), hero_y+u(136), value,
+    gfx_draw_string(d.right_x+u(18), stat_three_y, value,
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(right_x+u(68), hero_y+u(136), "MINUTES UPTIME",
+    gfx_draw_string(d.right_x+u(68), stat_three_y, "MINUTES UPTIME",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
 
-    /* Consistent application tiles with real launch hit targets. */
-    u32 section_y = hero_y+hero_h+u(28);
-    gfx_draw_string(m, section_y, "APPLICATIONS",
+    gfx_draw_string(d.margin, d.section_y, "APPLICATIONS",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
-    u32 tile_y = section_y+u(28), tile_h = u(88);
-    u32 tile_gap = u(14), tile_w = usable > tile_gap*3u
-        ? (usable-tile_gap*3u)/4u : usable/4u;
     static const char* const names[4] = {
         "Browser", "Files", "Terminal", "Settings"
     };
     static const char* const desc[4] = {
         "Web workspace", "Browse volumes", "Command line", "System controls"
     };
-    for (u32 i=0; i<4; i++)
-        app_tile(m+i*(tile_w+tile_gap), tile_y, tile_w, tile_h,
-                 i, names[i], desc[i]);
+    for (u32 i=0; i<4; i++) {
+        u32 tx = d.margin+i*(d.tile_w+d.tile_gap);
+        panel(tx, d.tile_y, d.tile_w, d.tile_h, CHARIS_UI_PANEL);
+        app_icon(tx+u(16), d.tile_y+(d.tile_h-u(42))/2u, i, u(42));
+        u32 label_x = tx+u(72);
+        u32 label_w = d.tile_w > u(88) ? d.tile_w-u(88) : 1;
+        fb_set_clip(label_x, d.tile_y, label_w, d.tile_h);
+        u32 title_y = d.tile_y+u(16);
+        gfx_draw_string(label_x, title_y, names[i],
+                        CHARIS_UI_TEXT, FB_TRANSPARENT);
+        gfx_draw_string(label_x, title_y+text_h+u(8), desc[i],
+                        CHARIS_UI_MUTED, FB_TRANSPARENT);
+        fb_reset_clip();
+        fb_fill_rect(tx+d.tile_w-u(4), d.tile_y+u(12), u(2),
+                     d.tile_h > u(24) ? d.tile_h-u(24) : 1,
+                     i == 0 ? 0xFF86B9E8u :
+                     i == 1 ? 0xFFF0C674u :
+                     i == 2 ? 0xFF83D6B0u : 0xFFB7A0F5u);
+    }
 
-    /* A restrained footer keeps the canvas intentional without fake widgets. */
-    u32 footer_y = tile_y+tile_h+u(28);
-    if (sh > footer_y+u(18)) {
-        fb_fill_rect(m, footer_y, usable, u(1), CHARIS_UI_BORDER);
-        gfx_draw_string(m, footer_y+u(12),
+    u32 footer_y = d.tile_y+d.tile_h+u(28);
+    if (g_framebuffer.height > footer_y+text_h+u(18)) {
+        fb_fill_rect(d.margin, footer_y, d.usable, u(1), CHARIS_UI_BORDER);
+        gfx_draw_string(d.margin, footer_y+u(12),
                         "CHARISOS  |  LOCAL SESSION  |  X86_64",
                         CHARIS_UI_MUTED, FB_TRANSPARENT);
     }
 }
 
 int desktop_surface_hit_test(int mx, int my) {
-    u32 sw = g_framebuffer.width, m = u(36), gap = u(14);
-    u32 usable = sw > m*2u ? sw-m*2u : sw;
-    u32 left_w = usable > u(380) ? usable-u(380)-u(16) : usable*2u/3u;
-    u32 hero_y = u(28)+u(84);
-    u32 tile_y = hero_y+u(184)+u(28)+u(28);
-    u32 tile_h = u(88), tile_gap = gap;
-    u32 tile_w = usable > tile_gap*3u
-        ? (usable-tile_gap*3u)/4u : usable/4u;
-    (void)left_w;
-    if (my < (int)tile_y || my >= (int)(tile_y+tile_h)) return -1;
+    desktop_layout_t d = desktop_layout();
+    if (my < (int)d.tile_y || my >= (int)(d.tile_y+d.tile_h)) return -1;
     for (u32 i=0; i<4; i++) {
-        u32 x = m+i*(tile_w+tile_gap);
-        if (mx >= (int)x && mx < (int)(x+tile_w)) return (int)i;
+        u32 x = d.margin+i*(d.tile_w+d.tile_gap);
+        if (mx >= (int)x && mx < (int)(x+d.tile_w)) return (int)i;
     }
     return -1;
 }
