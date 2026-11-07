@@ -138,49 +138,95 @@ void files_render(void) {
     u32 w = files_window_width(), h = files_window_height();
     u32 title_h = files_title_height(), text_h = files_text_h();
     u32 row_h = files_row_height();
-    fb_fill_rect(x + files_px(4), y + files_px(4), w, h, CHARIS_UI_SHADOW);
+
+    fb_fill_rect(x + files_px(5), y + files_px(6), w, h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, w, h, CHARIS_UI_PANEL);
-    fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER);
+    fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER_STRONG);
+
+    /* Application title bar. */
     fb_fill_rect(x, y, w, title_h, CHARIS_UI_PANEL_RAISED);
-    gfx_draw_string(x + files_px(16), y + (title_h - text_h) / 2,
-                    "FILES", CHARIS_UI_TEXT, FB_TRANSPARENT);
+    fb_fill_rect(x, y + title_h, w, files_px(1), CHARIS_UI_BORDER);
+    gfx_draw_string(x + files_px(18), y + (title_h - text_h) / 2,
+                    "Files", CHARIS_UI_TEXT, FB_TRANSPARENT);
     gfx_draw_string(x + w - files_px(28), y + (title_h - text_h) / 2,
-                    "x", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(x + files_px(18), y + title_h + files_px(14),
-                    "ROOT VOLUME", CHARIS_UI_ACCENT, FB_TRANSPARENT);
-    gfx_draw_string(x + files_px(20), y + title_h + files_px(42),
-                    "NAME", CHARIS_UI_MUTED, FB_TRANSPARENT);
-    gfx_draw_string(x + w - files_px(120), y + title_h + files_px(42),
-                    "SIZE", CHARIS_UI_MUTED, FB_TRANSPARENT);
+                    "x", CHARIS_UI_MUTED, FB_TRANSPARENT);
+
+    /* Location and action toolbar. */
+    u32 toolbar_y = y + title_h + files_px(10);
+    fb_fill_rect(x + files_px(12), toolbar_y, w - files_px(24), files_px(38),
+                 CHARIS_UI_SURFACE);
+    fb_draw_rect(x + files_px(12), toolbar_y, w - files_px(24), files_px(38),
+                 CHARIS_UI_BORDER);
+    gfx_draw_string(x + files_px(26), toolbar_y + (files_px(38) - text_h) / 2,
+                    "VOLUMES  /  ROOT", CHARIS_UI_ACCENT, FB_TRANSPARENT);
+    gfx_draw_string(x + w - files_px(104), toolbar_y + (files_px(38) - text_h) / 2,
+                    "F5  Refresh", CHARIS_UI_MUTED, FB_TRANSPARENT);
+
+    /* Column header and divider. */
+    u32 header_y = toolbar_y + files_px(54);
+    gfx_draw_string(x + files_px(56), header_y, "NAME",
+                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+    gfx_draw_string(x + w - files_px(154), header_y, "SIZE",
+                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+    fb_fill_rect(x + files_px(16), header_y + text_h + files_px(8),
+                 w - files_px(32), files_px(1), CHARIS_UI_BORDER);
 
     if (!files_available) {
-        gfx_draw_string(x + files_px(20), y + title_h + files_px(80),
-                        "No readable FAT32 root volume is mounted.",
+        gfx_draw_string(x + files_px(24), header_y + files_px(42),
+                        "No readable FAT32 volume is mounted.",
                         CHARIS_UI_WARNING, FB_TRANSPARENT);
-        return;
-    }
-    if (!files_count) {
-        gfx_draw_string(x + files_px(20), y + title_h + files_px(80),
+        gfx_draw_string(x + files_px(24), header_y + files_px(68),
+                        "Connect a supported volume and refresh the view.",
+                        CHARIS_UI_MUTED, FB_TRANSPARENT);
+    } else if (!files_count) {
+        gfx_draw_string(x + files_px(24), header_y + files_px(42),
                         "This directory is empty.", CHARIS_UI_MUTED, FB_TRANSPARENT);
     }
 
-    /* Leave a full gap below the column labels before the first entry. */
-    u32 list_y = files_list_y();
+    u32 list_y = header_y + text_h + files_px(24);
     for (int i = 0; i < files_count && i < (int)FILES_CAPACITY; i++) {
         u32 ry = list_y + (u32)i * row_h;
-        if (ry + row_h > y + h - files_px(34)) break;
+        if (ry + row_h > y + h - files_px(42)) break;
         if (i == files_selected)
-            fb_fill_rect(x + files_px(10), ry, w - files_px(20), row_h,
+            fb_fill_rect(x + files_px(12), ry, w - files_px(24), row_h,
                          CHARIS_UI_ACCENT_SURFACE);
-        gfx_draw_string(x + files_px(20), ry + (row_h - text_h) / 2,
+
+        /* Compact file glyph with a folded-corner cue. */
+        u32 ix = x + files_px(24), iy = ry + files_px(6);
+        fb_fill_rect(ix, iy, files_px(16), files_px(18),
+                     files_entries[i].directory ? 0xFF3A3021u : CHARIS_UI_SURFACE);
+        fb_draw_rect(ix, iy, files_px(16), files_px(18), CHARIS_UI_BORDER_STRONG);
+        fb_fill_rect(ix + files_px(4), iy + files_px(6), files_px(8), files_px(1),
+                     files_entries[i].directory ? CHARIS_UI_WARNING : CHARIS_UI_MUTED);
+        fb_fill_rect(ix + files_px(4), iy + files_px(10), files_px(7), files_px(1),
+                     files_entries[i].directory ? CHARIS_UI_WARNING : CHARIS_UI_MUTED);
+
+        gfx_draw_string(x + files_px(56), ry + (row_h - text_h) / 2,
                         files_entries[i].name, CHARIS_UI_TEXT, FB_TRANSPARENT);
         if (files_entries[i].directory)
-            gfx_draw_string(x + w - files_px(72), ry + (row_h - text_h) / 2,
-                            "DIR", CHARIS_UI_ACCENT, FB_TRANSPARENT);
-        files_draw_size(x + w - files_px(120), ry + (row_h - text_h) / 2,
-                        files_entries[i].size);
+            gfx_draw_string(x + w - files_px(154), ry + (row_h - text_h) / 2,
+                            "Folder", CHARIS_UI_ACCENT, FB_TRANSPARENT);
+        else
+            files_draw_size(x + w - files_px(154), ry + (row_h - text_h) / 2,
+                            files_entries[i].size);
     }
-    gfx_draw_string(x + files_px(18), y + h - text_h - files_px(10),
-                    "Read-only root listing | F5 refresh | Esc close | FAT32 8.3 names",
+
+    /* Persistent footer reports real capability instead of implying write access. */
+    u32 footer_y = y + h - files_px(30);
+    fb_fill_rect(x + files_px(12), footer_y - files_px(8),
+                 w - files_px(24), files_px(1), CHARIS_UI_BORDER);
+    char count_text[24];
+    u32 count = (u32)files_count, n = 0;
+    char rev[10];
+    do { rev[n++] = (char)('0' + count % 10u); count /= 10u; }
+    while (count && n < sizeof(rev));
+    u32 p = 0;
+    while (n) count_text[p++] = rev[--n];
+    count_text[p++] = ' '; count_text[p++] = 'i';
+    count_text[p++] = 't'; count_text[p++] = 'e';
+    count_text[p++] = 'm'; count_text[p] = 0;
+    gfx_draw_string(x + files_px(18), footer_y, count_text,
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
+    gfx_draw_string(x + w - files_px(270), footer_y,
+                    "Read-only  |  FAT32 8.3", CHARIS_UI_MUTED, FB_TRANSPARENT);
 }
