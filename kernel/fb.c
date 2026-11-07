@@ -145,7 +145,7 @@ int fb_init(void) {
 
     u64 fb_phys_base = boot_info.framebuffer_addr & ~(PAGE_SIZE - 1);
     if (fb_phys_base > (~0ULL) - fb_span) {
-        kprintf("FB: physical framebuffer range wraps\\n");
+        kprintf("FB: physical framebuffer range wraps\n");
         return -1;
     }
     u64 pages = (fb_span + PAGE_SIZE - 1) / PAGE_SIZE;
