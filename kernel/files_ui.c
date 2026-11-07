@@ -9,6 +9,7 @@
 #include <kernel/gfx_text.h>
 #include <kernel/font.h>
 #include <kernel/ui_theme.h>
+#include <kernel/serial.h>
 
 #define FILES_CAPACITY 24u
 
@@ -32,11 +33,14 @@ static void files_refresh(void) {
 void files_open(void) {
     files_refresh();
     files_visible = true;
+    serial_puts("FILES_OPEN");
+    serial_printf("FILES_ROOT_COUNT=%d", files_count);
 }
 
 void files_close(void) {
     files_visible = false;
     files_selected = -1;
+    serial_puts("FILES_CLOSE");
 }
 
 bool files_is_open(void) { return files_visible; }
@@ -45,7 +49,12 @@ bool files_handle_key(u8 scancode, bool pressed) {
     if (!files_visible || !pressed) return false;
     u8 code = scancode & 0x7Fu;
     if (code == 0x01u) { files_close(); return true; }
-    if (code == 0x3Fu) { files_refresh(); return true; }
+    if (code == 0x3Fu) {
+        files_refresh();
+        serial_puts("FILES_REFRESH");
+        serial_printf("FILES_ROOT_COUNT=%d", files_count);
+        return true;
+    }
     if (code == 0x48u && files_count > 0) {
         if (files_selected > 0) files_selected--;
         else if (files_selected < 0) files_selected = 0;
