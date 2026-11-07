@@ -224,7 +224,7 @@ int fs_list_root(fs_dirent_t* output, u32 capacity) {
 
                 if (count >= capacity) return (int)count;
                 /* Ignore malformed entries with no printable 8.3 basename. */
-                if (entry->name[0] == ' ' || entry->name[0] == 0x05) continue;
+                if (entry->name[0] == ' ') continue;
                 fs_dirent_t* item = &output[count];
                 usize pos = 0;
                 for (usize n = 0; n < 8 && entry->name[n] != ' '; n++)
