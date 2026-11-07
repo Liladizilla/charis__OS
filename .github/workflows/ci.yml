@@ -146,6 +146,15 @@ jobs:
             sleep 4
             printf 'screendump build/charisos-desktop-preview.ppm\n'
             sleep 2
+            # Exercise the native Files launcher through its keyboard path.
+            printf 'sendkey f10\n'
+            sleep 2
+            printf 'screendump build/charisos-files-preview.ppm\n'
+            sleep 1
+            printf 'sendkey f5\n'
+            sleep 1
+            printf 'sendkey esc\n'
+            sleep 2
             # Open Start, then the Settings entry, and capture the real
             # interactive typography/scaling panel as a second image.
             printf 'mouse_move -500 1000\n'
@@ -188,6 +197,11 @@ jobs:
             >build/desktop-capture-qemu.log 2>&1 || true
 
           test -s build/charisos-desktop-preview.ppm
+          test -s build/charisos-files-preview.ppm
+          grep -q 'FILES_OPEN' build/desktop-capture-serial.log
+          grep -Eq 'FILES_ROOT_COUNT=[1-9][0-9]*' build/desktop-capture-serial.log
+          grep -q 'FILES_REFRESH' build/desktop-capture-serial.log
+          grep -q 'FILES_CLOSE' build/desktop-capture-serial.log
           test -s build/charisos-settings-preview.ppm
           test -s build/charisos-settings-adjusted-preview.ppm
 
@@ -265,6 +279,7 @@ jobs:
           name: charisos-desktop-preview
           path: |
             build/charisos-desktop-preview.ppm
+            build/charisos-files-preview.ppm
             build/charisos-settings-preview.ppm
             build/charisos-settings-adjusted-preview.ppm
             build/charisos-settings-reloaded-preview.ppm
