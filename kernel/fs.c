@@ -113,22 +113,25 @@ static u32 cluster_to_sector(u32 cluster) {
 }
 
 static u32 next_cluster(u32 cluster) {
-    if (!fs_mounted || !cluster_valid(cluster)) return 0x0FFFFFFF;
+    /* 0xFFFFFFFF is an internal I/O/corruption sentinel. Keep it distinct
+     * from FAT32's valid end-of-chain range (0x0FFFFFF8..0x0FFFFFFF). */
+    if (!fs_mounted || !cluster_valid(cluster)) return 0xFFFFFFFFu;
     u32 fat_entry_offset = cluster * 4;
     u32 fat_sector_index = fat_entry_offset / FAT32_SECTOR_SIZE;
-    if (fat_sector_index >= boot_sector.fat_size_32) return 0x0FFFFFFF;
+    if (fat_sector_index >= boot_sector.fat_size_32) return 0xFFFFFFFFu;
 
     u32 fat_sector = fat_start + fat_sector_index;
     u32 offset = fat_entry_offset % FAT32_SECTOR_SIZE;
     u8 buffer[FAT32_SECTOR_SIZE];
-    if (!ata_read_sector(fat_sector, buffer)) return 0x0FFFFFFF;
+    if (!ata_read_sector(fat_sector, buffer)) return 0xFFFFFFFFu;
 
     u32 next;
     kmemcpy(&next, buffer + offset, sizeof(next));
     next &= 0x0FFFFFFF;
+    if (next >= 0x0FFFFFF8u) return next; /* End of chain. */
     /* Reject free, reserved, bad and out-of-volume cluster references. */
-    if (next < 2 || next >= 0x0FFFFFF0 || !cluster_valid(next))
-        return 0x0FFFFFFF;
+    if (next < 2 || next >= 0x0FFFFFF0u || !cluster_valid(next))
+        return 0xFFFFFFFFu;
     return next;
 }
 
@@ -245,6 +248,7 @@ int fs_list_root(fs_dirent_t* output, u32 capacity) {
         }
 
         u32 next = next_cluster(cluster);
+        if (next == 0xFFFFFFFFu) return -1;
         if (next >= 0x0FFFFFF8u) { chain_ended = true; break; }
         if (!cluster_valid(next)) return -1;
         cluster = next;
