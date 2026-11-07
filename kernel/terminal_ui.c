@@ -27,8 +27,12 @@ static u32 term_input_len;
 static char term_lines[TERM_HISTORY][TERM_LINE_MAX];
 static u32 term_line_count;
 
+#define TERM_TEXT_SCALE 2u
 static u32 term_px(u32 logical) { return gfx_ui_scale(logical); }
-static u32 term_text_h(void) { return font_cell_h * gfx_text_get_scale(); }
+static u32 term_text_h(void) { return font_cell_h * gfx_text_get_scale() * TERM_TEXT_SCALE; }
+static void term_draw(u32 x, u32 y, const char* s, u32 fg, u32 bg) {
+    gfx_draw_string_scaled(x, y, s, fg, bg, TERM_TEXT_SCALE);
+}
 
 static void term_number(char* out, u32 value) {
     char reversed[10];
@@ -215,7 +219,7 @@ void terminal_render(void) {
     fb_fill_rect(x + term_px(16), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_DANGER);
     fb_fill_rect(x + term_px(32), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_WARNING);
     fb_fill_rect(x + term_px(48), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_SUCCESS);
-    gfx_draw_string(x + term_px(72), y + (title_h - text_h) / 2,
+    term_draw(x + term_px(72), y + (title_h - text_h) / 2,
                     "Terminal", CHARIS_UI_TEXT, FB_TRANSPARENT);
     gfx_draw_string(x + w - term_px(132), y + (title_h - text_h) / 2,
                     "LOCAL SESSION", CHARIS_UI_MUTED, FB_TRANSPARENT);
