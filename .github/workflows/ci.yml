@@ -226,30 +226,15 @@ jobs:
           grep -q 'CONFIG_LOADED .*font_scale=2 ui_scale=120' build/desktop-reboot-serial.log
           test -s build/charisos-settings-reloaded-preview.ppm
 
-          # Open the pinned Terminal taskbar launcher, execute help,
-          # and capture the actual framebuffer window. The earlier desktop
-          # shortcut was intentionally removed by the Calm Precision redesign.
+          # Open Terminal through its keyboard shortcut, then execute help.
+          # This exercises the real keyboard IRQ and shell event path without
+          # relying on QEMU's emulated pointer device or guessed mouse deltas.
           {
-            # The guest pointer starts near (52,50). The prior capture
-            # landed on Browser, so the observed X travel was short of the
-            # Terminal target. Increase horizontal travel while retaining
-            # bounded PS/2-sized packets; keep the measured vertical travel.
-            for step in {1..10}; do
-              printf 'mouse_move 100 0\n'
-              sleep 0.1
-            done
-            printf 'mouse_move 50 0\n'
-            sleep 0.1
-            for step in {1..21}; do
-              printf 'mouse_move 0 100\n'
-              sleep 0.1
-            done
-            sleep 1
-            printf 'mouse_button 1\n'
-            sleep 1
-            printf 'mouse_button 0\n'
-            sleep 1
+            sleep 2
+            printf 'sendkey f12\n'
+            sleep 2
             printf 'sendkey h\n'
+            sleep 1
             sleep 1
             printf 'sendkey e\n'
             sleep 1
