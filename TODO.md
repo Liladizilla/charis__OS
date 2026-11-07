@@ -71,17 +71,20 @@
 - [ ] RX packet handling (net_recv_packet returns 0)
 - [ ] IRQ-driven network processing
 
-## Phase 9: Desktop Environment (PARTIAL)
-- [x] Desktop with icons and taskbar (desktop.c)
-- [x] Window decorations (titlebar, borders, drag/move)
-- [ ] Settings app does not actually persist settings (wires to config.c but no UI)
-- [ ] File Manager app - UI only, no VFS operations wired
-- [ ] Text Editor app - UI only
-- [ ] Calculator app - UI only
+## Phase 9: Desktop Environment (PARTIAL, ACTIVE)
+- [x] Desktop surface with application icons, taskbar, system overview and notifications
+- [x] Settings surface: font family, font size and global UI scale controls
+- [x] Save preferences to root FAT32 config and reload them after reboot (QEMU CI round trip)
+- [ ] File Manager: root-directory enumeration and safe VFS operations
+- [ ] Text Editor: bounded file open/edit/save workflow
+- [ ] Calculator: functional arithmetic UI
 
-## Phase 10: User Applications (UI STUBS ONLY)
-- [ ] Built-in apps (Terminal, File Manager, Text Editor, Calculator, Settings) - all create windows but have no functional implementation
-- [ ] Game SDK with graphics/audio syscalls - headers exist, syscalls registered, but no actual games
+## Phase 10: User Applications (ACTIVE)
+- [x] Native framebuffer Terminal window and desktop/Start-menu launch integration (PR #97; regression test pending)
+- [x] Read-only commands: help, clear, echo, uname, version, uptime, mem, tasks, settings
+- [ ] Terminal launcher, keyboard input and close interaction regression must pass CI
+- [ ] File Manager, Text Editor and Calculator implementations
+- [ ] Game SDK with graphics/audio syscalls; no actual games yet
 
 ## Phase 11: Hardware Abstraction (PARTIAL)
 - [x] HDA audio driver with PCI binding (hda.c) - probe logic fixed
@@ -104,23 +107,22 @@
 - [x] SYS_GAME_* syscalls for graphics/audio - registered but minimal impl
 - [ ] Actual game demo
 
-## Phase 14: Security & Capabilities (PARTIAL - NOW ENFORCED)
+## Phase 14: Security & Capabilities (PARTIAL - ENFORCEMENT IN PROGRESS)
 - [x] Capability bitmask per task (CAP_FS_READ, CAP_FS_WRITE, CAP_SPAWN, etc.)
 - [x] Capability inheritance on fork
 - [x] Capability enforcement in sys_open() and sys_exec() (NEW)
 - [x] Path traversal blocking in security_verify_path() (NEW)
 - [ ] Capability enforcement in VFS write/read paths
 - [ ] Capability enforcement in socket/net syscalls
-- [ ] Real entropy for security_generate_token() (currently predictable XOR)
+- [ ] Cryptographically secure entropy source; token generation remains disabled when RDRAND is unavailable
 - [ ] Persistent audit log
 
-## Phase 15: Configuration & Persistence (PARTIAL - NOW WORKING)
-- [x] In-memory config store (config.c) - typed get/set
-- [x] config_load() - parses /etc/charisos.conf via VFS (NEW)
-- [x] config_save() - writes to /etc/charisos.conf via VFS (NEW)
-- [x] Default settings: theme, volume, boot_sound, brightness, net_enabled
-- [ ] Settings UI that calls config_save()
-- [ ] Config file creation if missing
+## Phase 15: Configuration & Persistence (PARTIAL, QEMU VERIFIED)
+- [x] In-memory typed config store
+- [x] Root FAT32 config file /CHARISOS.CFG created when a writable primary ATA volume is mounted
+- [x] Settings UI saves font family, font scale and UI scale immediately
+- [x] CI reads the saved file, reboots with the same disk and verifies the values reload
+- [ ] Persistence on non-ATA storage and filesystems beyond current FAT32 support
 
 ## Phase 16: Build & Quality (IN PROGRESS)
 - [x] Kernel compiles cleanly (all 7 errors fixed)

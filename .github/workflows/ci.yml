@@ -226,6 +226,45 @@ jobs:
           grep -q 'CONFIG_LOADED .*font_scale=2 ui_scale=120' build/desktop-reboot-serial.log
           test -s build/charisos-settings-reloaded-preview.ppm
 
+          # Close Settings, open the pinned Terminal app, execute help,
+          # and capture the actual framebuffer window.
+          {
+            # QEMU PS/2 relative mouse packets are clamped per event.
+            # Move in bounded increments to the Terminal desktop icon.
+            for step in {1..6}; do
+              printf 'mouse_move -4 50\n'
+              sleep 0.2
+            done
+            printf 'mouse_move -4 20\n'
+            sleep 1
+            printf 'mouse_button 1\n'
+            sleep 1
+            printf 'mouse_button 0\n'
+            sleep 1
+            printf 'sendkey h\n'
+            sleep 1
+            printf 'sendkey e\n'
+            sleep 1
+            printf 'sendkey l\n'
+            sleep 1
+            printf 'sendkey p\n'
+            sleep 1
+            printf 'sendkey ret\n'
+            sleep 3
+            printf 'screendump build/charisos-terminal-preview.ppm\n'
+            sleep 1
+            printf 'quit\n'
+          } | timeout 25s qemu-system-x86_64 \
+            -machine pc -m 512M -vga std -nic none -no-reboot \
+            -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
+            -cdrom build/charisos-vm.iso -boot order=d \
+            -serial file:build/terminal-capture-serial.log \
+            -monitor stdio -display none \
+            >build/terminal-capture-qemu.log 2>&1
+          grep -q 'TERMINAL_OPEN' build/terminal-capture-serial.log
+          grep -q 'TERMINAL_CMD help' build/terminal-capture-serial.log
+          test -s build/charisos-terminal-preview.ppm
+
       - name: Upload desktop preview
         if: always()
         uses: actions/upload-artifact@v4
@@ -236,10 +275,13 @@ jobs:
             build/charisos-settings-preview.ppm
             build/charisos-settings-adjusted-preview.ppm
             build/charisos-settings-reloaded-preview.ppm
+            build/charisos-terminal-preview.ppm
             build/desktop-capture-serial.log
             build/desktop-capture-qemu.log
             build/desktop-reboot-serial.log
             build/desktop-reboot-qemu.log
+            build/terminal-capture-serial.log
+            build/terminal-capture-qemu.log
           if-no-files-found: warn
           retention-days: 14
 

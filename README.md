@@ -2,7 +2,7 @@
 
 # ⚙️ CharisOS
 
-**A from-scratch x86_64 operating system kernel — written in C & NASM, with no libc and no host OS**
+**A from-scratch x86_64 operating system with a native framebuffer desktop, written in C & NASM**
 
 ![Arch](https://img.shields.io/badge/arch-x86__64-blue?style=flat-square)
 ![Lang](https://img.shields.io/badge/lang-C%20%2B%20NASM-purple?style=flat-square)
@@ -11,7 +11,7 @@
 ![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
 ![Stars](https://img.shields.io/github/stars/Liladizilla/charis__OS?style=flat-square&color=yellow)
 
-*Built and maintained by **Charis Chara** · Nairobi, Kenya*
+*Built and maintained by **Charis Chara***
 
 </div>
 
@@ -26,16 +26,19 @@
 ║    ████ █   █ █   █ █   █ █████ ████   ███  ████    ║
 ║                                                      ║
 ║  x86_64 kernel  //  built from scratch in C & NASM   ║
-║               v1.0  -  Nairobi, Kenya                ║
+║             x86_64  -  C + NASM  -  WIP               ║
 ╚═════════════════════════════════════════════════════╝
 ```
 
 ---
 
-## 📽️ Demo
+## 📸 Current desktop
 
-- [Boot demo — part 1](https://file.kiwi/67a1f9ef#LIVXxNmocS8L9P13rQx1CQ)
-- [Boot demo — part 2](https://file.kiwi/7d8484fd#TjQmPCrzKGcYy7rqvSBifQ)
+The framebuffer desktop, system diagnostics and taskbar were captured from a passing QEMU build. The linked workflow also contains the Settings captures and the FAT32 save/reboot verification.
+
+[Open the verified desktop and Settings screenshots in the CI artifacts](https://github.com/Liladizilla/charis__OS/actions/runs/42244060806)
+
+> The native Terminal is under integration. Its launcher/input regression must pass before it is described as validated.
 
 ---
 
@@ -50,7 +53,7 @@ framebuffer graphics/window-manager stack.
 There is no standard library, no runtime, and no host-OS dependency. The kernel
 compiles with `gcc -ffreestanding` and links with a hand-written `link.ld`.
 
-**Scale:** ~9,100 lines of C across 107 files, ~720 lines of NASM across 6 files.
+**Implementation:** freestanding C and NASM, with BIOS/QEMU boot validation and a framebuffer desktop. Exact file counts are omitted while the active branch is changing.
 
 ### Project status
 
@@ -72,13 +75,13 @@ merely compiled.
 | Interactive shell | ✅ Working |
 | DPL3 `int 0x80` syscall path | ✅ Used by the ring-3 bootstrap and tested in QEMU |
 | SYSCALL/SYSRET fast path | ⚠️ Configured, but not yet validated from user mode |
-| VFS + FAT32 (read path) | ✅ Working |
+| VFS + FAT32 | ⚠️ Read path plus config create/write on supported primary ATA FAT32; root-directory 8.3 names only |
 | ELF loader (`sys_exec`) | ✅ Static x86-64 `ET_EXEC` loaded from FAT32 and entered in ring 3 (QEMU smoke test) |
-| **Ring-3 bootstrap** | ✅ Kernel-embedded task enters, syscalls, yields, and resumes |
+| **Ring-3 bootstrap** | ✅ Kernel task enters, syscalls, yields and resumes; invalid user access is rejected and private pages reclaimed |
 | **libc / userland build** | ❌ Not started |
-| Framebuffer, window manager, desktop | ⚠️ Partial |
-| Capability-based security | ⚠️ Partial — enforced on `open`/`exec` only |
-| Config persistence (`/etc/charisos.conf`) | ⚠️ Read path works; no file creation yet |
+| Framebuffer, window manager, desktop | ✅ QEMU framebuffer capture; desktop, taskbar and diagnostics render |
+| Capability-based security | ⚠️ Partial — syscall open/exec gates and path validation; broader VFS/network enforcement remains |
+| Desktop preferences | ✅ Font family, font size and UI scale persist in `/CHARISOS.CFG` on writable primary ATA FAT32; reboot round-trip verified |
 | RTL8139 networking | ⚠️ TX wired; no TCP/IP or RX |
 | USB, audio, gamepad | ⚠️ Stubs |
 
@@ -107,7 +110,7 @@ merely compiled.
 | **Loader** | `sys_exec` — validates ELF64 `ET_EXEC`, copies `PT_LOAD` contents, zeros BSS, maps permissions, and enters through IRET |
 | **Graphics** | Framebuffer driver · PSF2 bitmap font renderer · 2D primitives (line/rect/circle) · window manager with drag, focus and z-order · desktop with taskbar |
 | **Drivers** | VGA text · PS/2 keyboard and mouse · PIT · PCI enumeration with a probe/remove driver framework · HDA audio · RTL8139 Ethernet |
-| **Shell** | Built-in interpreter: `help`, `ls`, `echo`, `net`, `uptime`, `clear` |
+| **Shell** | Built-in interpreter: `help`, `ls`, `echo`, `net`, `uptime`, `clear`; graphical Terminal is being integrated with a restricted read-only command set |
 
 ---
 
@@ -140,7 +143,7 @@ kernel/main.c :: kernel_main()
    ├─ task_init → scheduler_init → syscall_init
    ├─ graphics_init → wm_init → input_init → ipc_init → audio_init
    ├─ signal_init → pipe_init → driver_init → pci_scan → driver_scan_and_bind
-   ├─ config_init → config_load("/etc/charisos.conf")
+   ├─ config_init → config_load("/CHARISOS.CFG")
    ├─ display_init → desktop_init → services_init → diag_init
    ├─ power_init → security_init
    ├─ net_init  (gated on config "net_enabled")
