@@ -85,8 +85,7 @@ typedef struct {
 static const menu_entry_t MENU_ITEMS[] = {
     { "Browser" },
     { "Terminal" },
-    { "File Manager" },
-    { "Text Editor" },
+    { "Files" },
     { "Settings" },
     { "About CharisOS" },
 };
@@ -96,20 +95,10 @@ static int notice_item = -1;
 static bool settings_open = false;
 
 static const char* const NOTICE_LINE_1[] = {
-    "Local pages work; remote web transport is not ready.",
-    "A graphical terminal is not wired up yet.",
-    "The VFS exists, but the graphical browser is",
-    "No graphical editor is implemented yet.",
-    "A graphical settings panel is not wired up.",
     "CharisOS is a from-scratch x86_64 kernel.",
 };
 static const char* const NOTICE_LINE_2[] = {
-    "TCP/IP, DNS, TLS/HTTP and HTML rendering remain future work.",
-    "Kernel output remains on the text/serial console.",
-    "not connected to file operations yet.",
-    "This screen will not pretend to show source code.",
-    "Persistence needs an existing writable config file.",
-    "The desktop and built-in apps are still partial.",
+    "The desktop and built-in apps are still evolving.",
 };
 #define MENU_ITEM_COUNT ((u32)(sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0])))
 
@@ -695,7 +684,7 @@ static void handle_event(const input_event_t* e) {
             } else if (hit == 2) {
                 notice_open = false;
                 files_open();
-            } else if (hit == 4) {
+            } else if (hit == 3) {
                 settings_open = true;
                 notice_open = false;
             } else {
