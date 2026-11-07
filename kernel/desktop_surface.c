@@ -10,6 +10,7 @@
 #include <kernel/diagnostics.h>
 #include <kernel/pmm.h>
 #include <kernel/timer.h>
+#include <kernel/string.h>
 
 static u32 u(u32 value) { return gfx_ui_scale(value); }
 static u32 text_h(void) { return (u32)font_cell_h * gfx_text_get_scale(); }
