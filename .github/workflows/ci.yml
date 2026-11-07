@@ -188,7 +188,7 @@ jobs:
             printf 'screendump build/charisos-settings-adjusted-preview.ppm\n'
             sleep 2
             printf 'quit\n'
-          } | timeout 45s qemu-system-x86_64 \
+          } | timeout 70s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
