@@ -124,7 +124,10 @@ int fb_init(void) {
         kprintf("FB: refusing %ux%u at %u bpp\n", width, height, bpp);
         return -1;
     }
-    if (pitch < width * (bpp / 8)) {
+    /* Width comes from firmware. Promote before multiplying so the
+     * minimum scanline size cannot wrap in 32-bit arithmetic. */
+    u64 min_pitch = (u64)width * (u64)(bpp / 8u);
+    if (min_pitch > 0xFFFFFFFFULL || (u64)pitch < min_pitch) {
         kprintf("FB: pitch smaller than one scanline\n");
         return -1;
     }
@@ -141,6 +144,10 @@ int fb_init(void) {
     }
 
     u64 fb_phys_base = boot_info.framebuffer_addr & ~(PAGE_SIZE - 1);
+    if (fb_phys_base > (~0ULL) - fb_span) {
+        kprintf("FB: physical framebuffer range wraps\\n");
+        return -1;
+    }
     u64 pages = (fb_span + PAGE_SIZE - 1) / PAGE_SIZE;
     u64 map_flags = PTE_PRESENT | PTE_WRITABLE | PTE_NOCACHE;
     u64 current_cr3;
