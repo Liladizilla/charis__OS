@@ -126,6 +126,7 @@ static ui_state_t ui = { false, -1, false, 0, 0, true };
 /* ── Chrome ───────────────────────────────────────────────────────── */
 
 static void draw_taskbar(void) {
+    u32 w = g_framebuffer.width;
     u32 h = g_framebuffer.height;
     u32 bar_h = taskbar_height();
     u32 y = h > bar_h ? h - bar_h : 0;
