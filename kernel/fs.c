@@ -199,11 +199,14 @@ int fs_list_root(fs_dirent_t* output, u32 capacity) {
 
     u32 count = 0;
     u32 cluster = boot_sector.root_cluster;
+    if (!cluster_valid(cluster)) return -1;
+    bool chain_ended = false;
     u8 buffer[FAT32_SECTOR_SIZE];
 
     /* Directory chains are untrusted media data. Bound traversal and validate
      * every sector range before reading it. */
-    for (u32 visited = 0; visited < total_clusters && cluster_valid(cluster); visited++) {
+    for (u32 visited = 0; visited < total_clusters; visited++) {
+        if (!cluster_valid(cluster)) return -1;
         u32 first_sector = cluster_to_sector(cluster);
         if (first_sector == 0xFFFFFFFFu ||
             first_sector >= boot_sector.total_sectors_32 ||
@@ -219,6 +222,9 @@ int fs_list_root(fs_dirent_t* output, u32 capacity) {
                 if ((u8)entry->name[0] == 0xE5) continue;
                 if (entry->attr == 0x0F || (entry->attr & 0x08)) continue;
 
+                if (count >= capacity) return (int)count;
+                /* Ignore malformed entries with no printable 8.3 basename. */
+                if (entry->name[0] == ' ' || entry->name[0] == 0x05) continue;
                 fs_dirent_t* item = &output[count];
                 usize pos = 0;
                 for (usize n = 0; n < 8 && entry->name[n] != ' '; n++)
@@ -239,10 +245,13 @@ int fs_list_root(fs_dirent_t* output, u32 capacity) {
         }
 
         u32 next = next_cluster(cluster);
-        if (next >= 0x0FFFFFF8u) break;
+        if (next >= 0x0FFFFFF8u) { chain_ended = true; break; }
         if (!cluster_valid(next)) return -1;
         cluster = next;
     }
+    /* A full-volume traversal without an end-of-chain marker means a cycle
+     * or corrupt chain. Do not report a partial listing as complete. */
+    if (!chain_ended) return -1;
     return (int)count;
 }
 
