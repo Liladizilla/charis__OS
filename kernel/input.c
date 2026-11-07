@@ -66,16 +66,17 @@ bool input_pop_event(input_event_t* evt) {
 }
 
 void input_process_events(void) {
-    /* The raw-scancode hook is the authoritative graphical keyboard path.
-     * The legacy ASCII ring is still filled by the IRQ handler, though, so
-     * consume it even while the hook is active. Leaving it unread eventually
-     * saturates the ring and silently drops future input for any later reader. */
-    char c;
-    bool raw_hook = keyboard_has_key_hook();
-    u32 drained = 0;
-    while (drained < 64 && keyboard_get_key(&c)) {
-        drained++;
-        if (!raw_hook) {
+    /* With a raw-scancode hook installed, the graphical shell owns the legacy
+     * ASCII ring as a second channel: it drains printable characters after
+     * dispatching key events so a just-opened modal can receive the same
+     * keystroke batch. Draining it here steals those characters before the
+     * terminal can read them. Without a raw hook, translate the ring into
+     * ordinary input events as before. */
+    if (!keyboard_has_key_hook()) {
+        char c;
+        u32 drained = 0;
+        while (drained < 64 && keyboard_get_key(&c)) {
+            drained++;
             input_event_t evt;
             evt.type = INPUT_KEY_DOWN;
             evt.key.keycode = (int)c;
@@ -111,7 +112,7 @@ void input_process_events(void) {
         for (int btn = 0; btn < 3; btn++) {
             bool was_down = (prev >> btn) & 1;
             bool is_down = (cur >> btn) & 1;
-            
+
             if (!was_down && is_down) {
                 /* Button pressed */
                 evt.type = INPUT_MOUSE_DOWN;
@@ -124,7 +125,7 @@ void input_process_events(void) {
                 input_push_event(&evt);
             }
         }
-        
+
         last_x = mouse.x;
         last_y = mouse.y;
         last_buttons = mouse.buttons;

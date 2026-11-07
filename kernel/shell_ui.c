@@ -37,13 +37,13 @@ extern int desktop_surface_taskbar_hit_test(int mx, int my, u32 taskbar_y);
 static u32 ui_px(u32 logical) { return gfx_ui_scale(logical); }
 static u32 text_height(void) { return font_cell_h * gfx_text_get_scale(); }
 static u32 taskbar_height(void) {
-    u32 base = ui_px(44), needed = text_height() + ui_px(12);
+    u32 base = ui_px(48), needed = text_height() + ui_px(12);
     return base > needed ? base : needed;
 }
 static u32 start_button_width(void) {
     u32 width = 0;
     gfx_text_size("Charis", &width, NULL);
-    u32 needed = width + ui_px(28), base = ui_px(96);
+    u32 needed = width + ui_px(28), base = ui_px(64);
     return base > needed ? base : needed;
 }
 static u32 menu_width(void) {
@@ -141,29 +141,20 @@ static void draw_taskbar(void) {
     fb_fill_rect(0, y, START_BTN_W, bar_h, bg);
     fb_draw_rect(0, y, START_BTN_W, bar_h, T_BORDER);
 
-    /* "Charis" label, vertically centred in the cell. */
-    u32 line_h = text_height();
-    u32 ty = y + (bar_h > line_h ? (bar_h - line_h) / 2 : 0);
-    gfx_draw_string(ui_px(14), ty, "Charis", T_FG, FB_TRANSPARENT);
+    /* Flat CharisOS mark. The wordmark belongs on boot and About screens,
+     * not inside the running desktop. */
+    u32 mark_size = ui_px(24);
+    u32 mark_x = (START_BTN_W > mark_size ? (START_BTN_W - mark_size) / 2 : 0);
+    u32 mark_y = y + (bar_h > mark_size ? (bar_h - mark_size) / 2 : 0);
+    fb_fill_rect(mark_x, mark_y, mark_size, mark_size, CHARIS_UI_ACCENT);
+    fb_fill_rect(mark_x + ui_px(5), mark_y + ui_px(5), ui_px(14), ui_px(14), T_START_BTN);
+    fb_fill_rect(mark_x + ui_px(5), mark_y + ui_px(5), ui_px(4), ui_px(14), CHARIS_UI_ACCENT);
+    fb_fill_rect(mark_x + ui_px(5), mark_y + ui_px(5), ui_px(14), ui_px(4), CHARIS_UI_ACCENT);
+    fb_fill_rect(mark_x + ui_px(5), mark_y + ui_px(15), ui_px(14), ui_px(4), CHARIS_UI_ACCENT);
     desktop_surface_draw_taskbar_icons(y);
 
-    /* The timer provides uptime, not wall-clock time. Label it explicitly
-     * and use one unambiguous HH:MM:SS format. */
-    u64 secs = timer_get_ms() / 1000;
-    char clock[12];
-    clock[0] = 'U'; clock[1] = 'P'; clock[2] = ' ';
-    clock[3] = '0' + (char)((secs / 36000) % 10);
-    clock[4] = '0' + (char)((secs / 3600) % 10);
-    clock[5] = ':';
-    clock[6] = '0' + (char)((secs / 600) % 10);
-    clock[7] = '0' + (char)((secs / 60) % 10);
-    clock[8] = ':';
-    clock[9] = '0' + (char)((secs / 10) % 10);
-    clock[10] = '0' + (char)(secs % 10);
-    clock[11] = 0;
-    u32 cw = 0;
-    gfx_text_size(clock, &cw, NULL);
-    gfx_draw_string(w > cw + ui_px(16) ? w - cw - ui_px(16) : 0, ty, clock, T_FG_DIM, FB_TRANSPARENT);
+    /* Do not label uptime as a clock. A real wall clock will be added with
+     * the RTC/timezone service; the taskbar stays clear until then. */
 }
 
 /* Every launcher entry gets a small, high-contrast icon drawn from
@@ -490,6 +481,19 @@ static void handle_event(const input_event_t* e) {
                 terminal_close();
                 ui.needs_redraw = true;
             }
+            return;
+        }
+
+        /* F12 is a reliable keyboard-only Terminal shortcut. It also
+         * gives headless systems and accessibility setups a way to open the
+         * command surface without depending on pointer hardware. */
+        if (e->type == INPUT_KEY_DOWN && !extended && base == 0x58) {
+            ui.menu_open = false;
+            ui.hover_item = -1;
+            notice_open = false;
+            settings_open = false;
+            terminal_open();
+            ui.needs_redraw = true;
             return;
         }
 
