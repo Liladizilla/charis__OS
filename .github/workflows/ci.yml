@@ -155,36 +155,16 @@ jobs:
             sleep 1
             printf 'sendkey esc\n'
             sleep 2
-            # Open Start, then the Settings entry, and capture the real
-            # interactive typography/scaling panel as a second image.
-            printf 'mouse_move -500 1000\n'
-            sleep 1
-            printf 'mouse_button 1\n'
-            sleep 1
-            printf 'mouse_button 0\n'
-            sleep 1
-            printf 'mouse_move 100 -110\n'
-            sleep 1
-            printf 'mouse_button 1\n'
-            sleep 1
-            printf 'mouse_button 0\n'
+            # Open Settings through its keyboard shortcut, capture it,
+            # then exercise the text-size and interface-scale controls.
+            printf 'sendkey f11\n'
             sleep 2
             printf 'screendump build/charisos-settings-preview.ppm\n'
-            sleep 2
-            # Exercise font-size and global-scale plus controls, then capture
-            # the resized settings panel to prove the controls are live.
-            printf 'mouse_move 649 -269\n'
             sleep 1
-            printf 'mouse_button 1\n'
+            printf 'sendkey f6\n'
             sleep 1
-            printf 'mouse_button 0\n'
+            printf 'sendkey f7\n'
             sleep 1
-            printf 'mouse_move 15 44\n'
-            sleep 1
-            printf 'mouse_button 1\n'
-            sleep 1
-            printf 'mouse_button 0\n'
-            sleep 2
             printf 'screendump build/charisos-settings-adjusted-preview.ppm\n'
             sleep 2
             printf 'quit\n'
@@ -215,17 +195,7 @@ jobs:
           # exact saved values, then capture Settings after that reboot.
           {
             sleep 10
-            printf 'mouse_move -500 1000\n'
-            sleep 1
-            printf 'mouse_button 1\n'
-            sleep 1
-            printf 'mouse_button 0\n'
-            sleep 1
-            printf 'mouse_move 100 -110\n'
-            sleep 1
-            printf 'mouse_button 1\n'
-            sleep 1
-            printf 'mouse_button 0\n'
+            printf 'sendkey f11\n'
             sleep 2
             printf 'screendump build/charisos-settings-reloaded-preview.ppm\n'
             sleep 1
