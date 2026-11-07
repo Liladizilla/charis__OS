@@ -27,6 +27,7 @@
 #include <kernel/config.h>
 #include <kernel/wizard.h>
 #include <kernel/terminal_ui.h>
+#include <kernel/files_ui.h>
 
 /* Native desktop widgets and launcher hit-testing. */
 extern void desktop_surface_render(void);
@@ -422,6 +423,7 @@ static void redraw_all(void) {
     draw_notice();
     draw_settings();
     terminal_render();
+    files_render();
     ui_draw_cursor();
 }
 
@@ -481,6 +483,12 @@ static void handle_event(const input_event_t* e) {
                 terminal_close();
                 ui.needs_redraw = true;
             }
+            return;
+        }
+        if (files_is_open()) {
+            if (e->type == INPUT_KEY_DOWN)
+                files_handle_key((u8)(base | (extended ? 0x80u : 0u)), true);
+            ui.needs_redraw = true;
             return;
         }
 
@@ -551,6 +559,11 @@ static void handle_event(const input_event_t* e) {
             ui.needs_redraw = true;
             return;
         }
+        if (files_is_open()) {
+            files_handle_mouse(mx, my);
+            ui.needs_redraw = true;
+            return;
+        }
 
         if (browser_is_open()) {
             browser_handle_mouse(mx, my);
@@ -587,8 +600,8 @@ static void handle_event(const input_event_t* e) {
             }
             if (pinned == 1) {
                 ui.menu_open = false;
-                notice_item = 2;
-                notice_open = true;
+                notice_open = false;
+                files_open();
                 ui.needs_redraw = true;
                 return;
             }
@@ -620,12 +633,9 @@ static void handle_event(const input_event_t* e) {
             ui.menu_open = false;
             if (shortcut == 0) {
                 browser_open();
-            } else if (shortcut == 2) {
-                notice_open = false;
-                terminal_open();
             } else {
-                notice_item = 2;
-                notice_open = true;
+                notice_open = false;
+                files_open();
             }
             ui.needs_redraw = true;
             return;
@@ -641,6 +651,9 @@ static void handle_event(const input_event_t* e) {
             } else if (hit == 1) {
                 notice_open = false;
                 terminal_open();
+            } else if (hit == 2) {
+                notice_open = false;
+                files_open();
             } else if (hit == 4) {
                 settings_open = true;
                 notice_open = false;
