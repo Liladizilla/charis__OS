@@ -19,7 +19,7 @@ Files uses a three-part layout: volume locations, the root-directory list and a 
 
 ### Terminal
 
-Terminal is a native framebuffer command environment with a session title bar, local-session strip, dark console canvas, line gutter, differentiated prompt/output colours and a dedicated input row. Its text is rendered at a dedicated 2x scale for readability. Commands currently supported:
+Terminal is a native framebuffer command environment with a session title bar, local-session strip, dark console canvas, line gutter, differentiated prompt/output colours and a dedicated input row. Its text follows the configured system font family and text scale, with wrapped output and a horizontally scrolling prompt. Commands currently supported:
 - `help`, `clear`, `echo TEXT`
 - `uname`, `version`, `uptime`
 - `mem`, `tasks`, `settings`
