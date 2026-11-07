@@ -514,6 +514,42 @@ static void handle_event(const input_event_t* e) {
             return;
         }
 
+        /* Settings is keyboard-accessible: F11 opens it, F6 increases
+         * text size, and F7 increases interface scale. */
+        if (settings_open) {
+            if (e->type == INPUT_KEY_DOWN && !extended) {
+                if (base == KEY_ESCAPE) {
+                    settings_open = false;
+                } else if (base == 0x40) {
+                    int value = config_get_int("font_scale", 1) + 1;
+                    if (value > 3) value = 3;
+                    config_set_int("font_scale", value);
+                    gfx_text_apply_preferences();
+                    config_save(CONFIG_FILE_PATH);
+                } else if (base == 0x41) {
+                    int value = config_get_int("ui_scale", 100) + 20;
+                    if (value > 120) value = 120;
+                    config_set_int("ui_scale", value);
+                    gfx_text_apply_preferences();
+                    config_save(CONFIG_FILE_PATH);
+                }
+            }
+            ui.needs_redraw = true;
+            return;
+        }
+
+        if (e->type == INPUT_KEY_DOWN && !extended && base == 0x57) {
+            ui.menu_open = false;
+            ui.hover_item = -1;
+            notice_open = false;
+            browser_close();
+            terminal_close();
+            files_close();
+            settings_open = true;
+            ui.needs_redraw = true;
+            return;
+        }
+
         /* F10 opens Files without requiring a working pointer device. */
         if (e->type == INPUT_KEY_DOWN && !extended && base == 0x44) {
             ui.menu_open = false;
