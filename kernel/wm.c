@@ -74,7 +74,8 @@ void wm_init(void) {
     fb_clear(CHARIS_UI_BACKGROUND);
 }
 
-window_t* wm_create_window(const char* title, int x, int y, int w, int h) {
+static window_t* wm_create_window_internal(const char* title, int x, int y,
+                                              int w, int h, bool allocate_buffer) {
     if (w <= 0 || h <= 0 || (u32)w > WM_MAX_DIMENSION ||
         (u32)h > WM_MAX_DIMENSION || wm_count() >= MAX_WINDOWS) return NULL;
 
@@ -82,21 +83,26 @@ window_t* wm_create_window(const char* title, int x, int y, int w, int h) {
         ((u32)w > g_framebuffer.width ||
          (u64)(u32)h + WINDOW_TITLEBAR_HEIGHT > g_framebuffer.height)) return NULL;
 
-    u64 pixels = (u64)(u32)w * (u64)(u32)h;
-    if (pixels > WM_MAX_BUFFER_BYTES / sizeof(u32)) return NULL;
-    u64 bytes = pixels * sizeof(u32);
-    if (bytes > (u64)(usize)-1) return NULL;
+    u64 bytes = 0;
+    if (allocate_buffer) {
+        u64 pixels = (u64)(u32)w * (u64)(u32)h;
+        if (pixels > WM_MAX_BUFFER_BYTES / sizeof(u32)) return NULL;
+        bytes = pixels * sizeof(u32);
+        if (bytes > (u64)(usize)-1) return NULL;
+    }
 
     window_t* win = (window_t*)kmalloc(sizeof(window_t));
     if (!win) return NULL;
     kmemset(win, 0, sizeof(window_t));
 
-    win->buffer = (u32*)kmalloc((usize)bytes);
-    if (!win->buffer) {
-        kfree(win);
-        return NULL;
+    if (allocate_buffer) {
+        win->buffer = (u32*)kmalloc((usize)bytes);
+        if (!win->buffer) {
+            kfree(win);
+            return NULL;
+        }
+        kmemset(win->buffer, 0, (usize)bytes);
     }
-    kmemset(win->buffer, 0, (usize)bytes);
 
     win->x = x;
     win->y = y;
@@ -109,7 +115,7 @@ window_t* wm_create_window(const char* title, int x, int y, int w, int h) {
 
     /* Bound the title and sanitize control bytes before drawing it. */
     kstrncpy(win->title, title, WM_MAX_TITLE_LENGTH);
-    win->title[sizeof(win->title) - 1] = '\0';
+    win->title[sizeof(win->title) - 1] = '\\0';
     for (u32 i = 0; i < sizeof(win->title) - 1 && win->title[i]; i++)
         if ((u8)win->title[i] < 0x20u || (u8)win->title[i] == 0x7Fu)
             win->title[i] = ' ';
@@ -119,6 +125,16 @@ window_t* wm_create_window(const char* title, int x, int y, int w, int h) {
     wm_windows = win;
     wm_focus_window(win);
     return win;
+}
+
+window_t* wm_create_window(const char* title, int x, int y, int w, int h) {
+    return wm_create_window_internal(title, x, y, w, h, true);
+}
+
+window_t* wm_create_surface_window(const char* title, int x, int y, int w, int h) {
+    /* Shell applications paint their own native surfaces. This registers
+     * lifecycle, focus and z-order without allocating a redundant pixel buffer. */
+    return wm_create_window_internal(title, x, y, w, h, false);
 }
 
 void wm_destroy_window(window_t* win) {
