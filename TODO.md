@@ -8,7 +8,7 @@
 - [x] vmm_map_page_pml4() - map into specific PML4
 - [x] PMM safety: double-free check, next-fit cursor
 
-## Phase 2: Syscall Interface & User Space (COMPLETE)
+## Phase 2: Syscall Interface & User Space (PARTIAL)
 - [x] SYSCALL/SYSRET assembly entry and MSR setup (user bootstrap wrappers currently use DPL3 `int 0x80`)
 - [x] sys_exit(), sys_getpid(), sys_yield(), sys_sleep()
 - [x] sys_read()/sys_write() with fd-based I/O
@@ -17,7 +17,7 @@
 - [x] task_create_with_pml4() - create task with custom address space
 - [x] Per-process fd table (stdin/stdout/stderr pre-opened)
 
-## Phase 3: Filesystem (COMPLETE)
+## Phase 3: Filesystem (PARTIAL)
 - [x] VFS layer (vfs.h, vfs.c) - vfs_node_t, mount points
 - [x] Device nodes: /dev/null, /dev/zero, /dev/kbd, /dev/vga
 - [x] Per-task fd table with fd_alloc(), fd_get(), fd_close()
@@ -48,8 +48,8 @@
 - [x] PS/2 mouse input and pointer-driven shell interaction
 - [ ] General desktop window lifecycle and independent per-window surfaces
 - [ ] Consistent titlebar controls, focus/z-order, minimize/restore and Alt+Tab
-- [ ] Per-window clipping/compositing and resize handling
-- [ ] Stress tests for task/window limits and repeated open/close cycles
+- [ ] Integrate the bounded WM clipping/compositing path into the active desktop shell and add resize handling
+- [ ] Automated stress tests for window limits, allocation failures and repeated create/focus/destroy cycles
 
 The current desktop uses modal native app surfaces and a shell redraw path. The
 presence of WM/compositor source files does not mean a complete multi-window
@@ -146,9 +146,9 @@ desktop is available.
 - [x] Repo hygiene: .gitattributes, .gitignore, CRLF→LF fixed
 - [x] Boot debug markers fixed (no collisions, full coverage)
 - [ ] vmm_test.c wired into make test (compiles, but RUN_VMM_TESTS only for vmm_test.o)
-- [ ] Dead code removed (disk.c deleted)
-- [ ] Add -Werror to Makefile
-- [ ] Automated regression test suite
+- [x] Removed obsolete `disk.c` implementation
+- [x] Enable `-Werror` for kernel compilation
+- [ ] Expand automated regression coverage beyond current boot, ring-3, ELF and VMM gates
 
 ## Phase 17: Process Management (IN PROGRESS)
 - [x] Bootstrap user task enters ring 3 with a private address-space branch and mapped user stack
@@ -171,7 +171,7 @@ desktop is available.
 | 2 | CI workflow | ✅ ADDED (now greps a post-init sentinel) |
 | 3 | Repo hygiene (node_modules, CRLF, logs) | ✅ FIXED |
 | 4 | Boot debug markers (collisions, gaps) | ✅ FIXED |
-| 5 | Dead code (disk.c, vmm_test.c) | ✅ FIXED (disk.c removed, vmm_test.c wired) |
+| 5 | Dead code and VMM test coverage | ⚠️ `disk.c` removed; VMM tests compile and run in a dedicated QEMU CI image |
 | 6 | Config persistence | ✅ IMPLEMENTED |
 | 7 | Capability enforcement + PCI wildcard | ✅ IMPLEMENTED |
 | 8 | Networking (net_init, socket_send) | ✅ ENABLED (RTL8139 TX wired, RX/TCP stubs) |
@@ -192,7 +192,7 @@ initialised after the hang point had never actually executed** — so several
 | `u8 bus` compared `< 256` | `kernel/pci.c:12` | `pci_scan()` looped forever. GCC emitted `-Wtype-limits` and the warning was ignored. Everything after `pci_scan()` in `kernel_main()` — config, desktop, services, diagnostics, power, security, net_init, task creation, `scheduler_start()` — never ran. | Widen the loop variable to `u16`. |
 | FAT32 walk with no volume | `kernel/fs.c` | `fs_init()` bails with "Not FAT32" when no disk is attached, but set no validity flag. `fs_open()` then walked a garbage FAT chain from an uninitialised boot sector and hung inside `config_load()`. This is the common case: booting from CD-ROM with no hard disk. | Added an `fs_mounted` flag plus geometry validation (non-zero `sectors_per_cluster`/`num_fats`/`fat_size_32`, sane `data_start` and `root_cluster`); `fs_open`/`fs_read` now return `-1` immediately when unmounted. |
 | Multiboot2 magic clobbered | `boot/boot.asm` | The debug output at the top of `start:` wrote to `AL` and `AH` before `EAX` was saved, so `mb_magic` stored corrupted data. The kernel then rejected its own boot. | Save `EAX`/`EBX` as the first two instructions of `start:`, before any debug output. |
-| `char c` compared `> 127` | `kernel/psf.c:30,62` | `char` is signed on x86, so `c > 127` is always false. Latin-1/high-byte characters are never skipped and index out of the intended glyph range. | Cast to `unsigned char`, or compare `(u8)c > 127`. *(not yet fixed)* |
+| `char c` compared `> 127` | `kernel/psf.c:30,62` | `char` is signed on x86, so `c > 127` is always false. Latin-1/high-byte characters are never skipped and index out of the intended glyph range. | Cast input to `unsigned char` before range checks. Fixed in `kernel/psf.c`. |
 | Wrong initial return address | `kernel/task.c` | `task_create()` pushed `task_exit_handler` where `context_switch`'s `ret` lands. The task's entry function was never called; `task_exit_handler` ran instead and `kfree`'d the stack it was executing on. Triple fault the instant the scheduler started. | Push `task_trampoline`, which pops `func` and `arg` off the same stack and calls them. |
 | Ring-3 frame one slot short | `kernel/task.c` | `context_switch` pops six callee-saved registers before reaching `iretq`, which then consumes five more. Only five zeros were pushed, so `iretq` loaded RIP from the CS value and jumped to address `0x1B` in ring 3. | Push six zeros so the frame is 6 register slots + the 5-slot `iretq` frame. |
 | Boot gate could not see a crash | `tools/verify-boot.sh` | The gate only checked that init printed a line, so a kernel that completed init and then faulted passed. The two bugs above were invisible to CI. | Also assert liveness: QEMU exiting before the timeout fires, or a second firmware banner, both mean the guest reset. |
@@ -229,11 +229,11 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 
 1. **Implement TCP/IP stack** - ARP, ICMP, TCP state machine in net.c
 2. **Add wait()/waitpid()** - validate child ownership, copy status safely, and reap address spaces only after mapping ownership is tracked
-3. **Wire Settings app** - call config_set_* + config_save()
-4. **Add -Werror to Makefile** - prevent future compile regressions
-5. **Wire vmm_run_tests() at boot** - with RUN_VMM_TESTS=1 build target
-6. **Implement sys_read/sys_write capability checks** - VFS path
-7. **Add DHCP client** - for net_enabled=true to get real IP
+3. **Finish Files write support** - implement safe FAT32 mutation and validate cluster-chain updates
+4. **Complete process reaping** - implement wait()/waitpid() with ownership-safe teardown
+5. **Expand regression coverage** - add WM lifecycle tests and malformed filesystem/input cases
+6. **Extend capability checks** - enforce read/write and network permissions in the VFS and socket paths
+7. **Add network receive path and DHCP** - only after RTL8139 RX and TCP/IP foundations are complete
 
 ## Implementation Details (merged from PROGRESS.md, source of truth)
 
