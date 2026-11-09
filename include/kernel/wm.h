@@ -5,6 +5,7 @@
 #include <kernel/ui_theme.h>
 
 #define MAX_WINDOWS 16
+#define WM_MAX_TITLE_LENGTH 127
 #define WINDOW_TITLEBAR_HEIGHT 28
 
 #define COLOR_SURFACE CHARIS_UI_PANEL
@@ -14,7 +15,7 @@
 typedef struct window {
     int x, y;
     int width, height;
-    int z_order; /* Higher = front */
+    u32 z_order; /* Higher = front */
     bool visible;
     bool focused;
     bool minimized;
