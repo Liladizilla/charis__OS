@@ -399,10 +399,9 @@ at creation; children inherit the parent's set across `fork`.
 | `CAP_SPAWN` | `sys_exec`, `sys_fork` |
 | `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | reserved |
 
-`security_verify_path()` rejects parent-directory traversal. When RDRAND is
-available, it seeds the stack guard. Without RDRAND, the current fallback is
-weak and is explicitly warned about; cryptographic token generation is disabled.
-The fallback must not be treated as cryptographic entropy.
+`security_verify_path()` rejects parent-directory traversal. When RDRAND is available, it can seed the stack guard. If RDRAND is
+unavailable, cryptographic token generation is disabled. The kernel does not
+claim that a weak fallback provides cryptographic entropy.
 
 **Known gaps:** enforcement currently covers `open` and `exec` only — the VFS
 read/write paths, socket syscalls, and shared memory are unchecked. The
