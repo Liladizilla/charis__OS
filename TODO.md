@@ -34,7 +34,7 @@
 - [ ] Tear down/reclaim old image mappings on repeated exec
 
 ## Phase 5: Graphics & Display (COMPLETE)
-- [x] fb.h/fb.c - framebuffer driver (VESA/GOP ready)
+- [x] fb.h/fb.c - framebuffer driver using the Multiboot2 framebuffer handoff
 - [x] psf.h/psf.c - PC Screen Font renderer (PSF2 support)
 - [x] fb_put_pixel(), fb_clear(), fb_fill_rect()
 - [x] graphics.h/graphics.c - 2D drawing primitives
@@ -46,10 +46,13 @@
 ## Phase 6: Window System (PARTIAL)
 - [x] Window/widget/input foundations exist (`wm.c`, `compositor.c`, `widgets.c`, `input.c`)\n- [x] Bound WM window count, validate dimensions and allocation size, cap title strings, clip window drawing, ignore hidden/minimized windows in hit testing, and safely compact z-order
 - [x] PS/2 mouse input and pointer-driven shell interaction
+- [x] Shell-owned Terminal, Files, Browser, Settings and About surfaces register with WM focus/lifecycle metadata without duplicate pixel buffers
 - [ ] General desktop window lifecycle and independent per-window surfaces
 - [ ] Consistent titlebar controls, focus/z-order, minimize/restore and Alt+Tab
+- [x] Register shell-owned native app surfaces with WM focus and lifecycle metadata (no duplicate buffers; existing app renderer remains authoritative)
 - [ ] Integrate the bounded WM clipping/compositing path into the active desktop shell and add resize handling
-- [ ] Automated stress tests for window limits, allocation failures and repeated create/focus/destroy cycles
+- [x] Host-side C regression tests cover window limits, allocation failures, title sanitization, focus/hit testing, visibility, focus recovery and repeated create/destroy cycles
+- [ ] QEMU interaction tests for window dragging, overlapping surfaces and focus transitions
 
 The current desktop uses modal native app surfaces and a shell redraw path. The
 presence of WM/compositor source files does not mean a complete multi-window
@@ -86,7 +89,7 @@ desktop is available.
 - [ ] Implement shared layout primitives: measure/arrange, horizontal/vertical flow, padding/gaps, wrapping, clipping/ellipsis and scroll containers
 - [ ] Verify layout at 100/125/150/200% text/UI scales and 1024x768, 1280x800 and 1920x1080 framebuffer sizes
 - [ ] Standardize app chrome, titlebars, focus indication, keyboard navigation and modal dimming
-- [ ] Add a general window manager with independent surfaces, clipping, z-order and focus lifecycle
+- [ ] Add independently movable/resizable windows, multi-window z-order, titlebar controls and Alt+Tab; current shell registers one active modal app surface
 - [ ] Add a first-login setup wizard with language/keyboard, appearance and network steps; current wizard remains limited to existing setup preferences
 - [ ] Add functional Text Editor and System Monitor applications
 
@@ -148,7 +151,8 @@ desktop is available.
 - [ ] vmm_test.c wired into make test (compiles, but RUN_VMM_TESTS only for vmm_test.o)
 - [x] Removed obsolete `disk.c` implementation
 - [x] Enable `-Werror` for kernel compilation
-- [ ] Expand automated regression coverage beyond current boot, ring-3, ELF and VMM gates
+- [x] Add host-side WM lifecycle/bounds regression coverage to CI
+- [ ] Expand automated regression coverage beyond current boot, ring-3, ELF, VMM and WM metadata gates
 
 ## Phase 17: Process Management (IN PROGRESS)
 - [x] Bootstrap user task enters ring 3 with a private address-space branch and mapped user stack
