@@ -83,8 +83,9 @@ reported as limitations rather than described as accessible or responsive.
 ## Current implementation limits
 
 The current shell is a single-framebuffer, modal-app environment. The desktop
-still has a dashboard-style welcome/status surface; Files is a read-only FAT32
-root browser; Terminal is a built-in kernel command environment; Settings
-currently exposes display/font preferences. There is no complete general
-window manager, installer, writable user home, browser engine, package manager
-or finished userspace. See [TODO.md](../TODO.md) for the authoritative status.
+is a minimal workspace with a Files shortcut and taskbar; Files is a read-only
+FAT32 root browser; Terminal is a built-in kernel command environment; Settings
+exposes display/font preferences. The WM source now has bounded allocation,
+clipping and focus/lifecycle safeguards, but it is not yet the active desktop's
+complete general-purpose window manager. There is no installer, writable user
+home, browser engine, package manager or finished userspace. See [TODO.md](../TODO.md) for the authoritative status.

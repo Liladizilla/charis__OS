@@ -1,118 +1,99 @@
-<div align="center">
-
 # CharisOS
 
-**A from-scratch x86_64 operating system with a native framebuffer desktop, written in C & NASM**
+**An experimental x86_64 operating-system project built from the ground up in freestanding C and NASM.**
 
-![Arch](https://img.shields.io/badge/arch-x86__64-lightgrey?style=flat-square)
-![Lang](https://img.shields.io/badge/lang-C%20%2B%20NASM-lightgrey?style=flat-square)
-![Boot](https://img.shields.io/badge/boot-Multiboot2%20%2F%20GRUB2-lightgrey?style=flat-square)
-![CI](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml/badge.svg)
-![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
-![Stars](https://img.shields.io/github/stars/Liladizilla/charis__OS?style=flat-square)
+[![CI](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml/badge.svg)](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml)
+![Architecture](https://img.shields.io/badge/architecture-x86__64-informational)
+![Languages](https://img.shields.io/badge/kernel-C%20%2B%20NASM-informational)
+![Boot](https://img.shields.io/badge/boot-GRUB2%20%2F%20Multiboot2-informational)
+![License](https://img.shields.io/badge/license-MIT-informational)
 
-*Built and maintained by **Charis Chara***
-
-</div>
-
-```
-╔═════════════════════════════════════════════════════╗
-║    ████ █   █  ███  ████  █████  ████  ███   ████   ║
-║   █     █   █ █   █ █   █   █   █     █   █ █       ║
-║   █     █   █ █   █ █   █   █   █     █   █ █       ║
-║   █     █████ █████ ████    █    ███  █   █  ███    ║
-║   █     █   █ █   █ █ █     █       █ █   █     █   ║
-║   █     █   █ █   █ █  █    █       █ █   █     █   ║
-║    ████ █   █ █   █ █   █ █████ ████   ███  ████    ║
-║                                                      ║
-║  x86_64 kernel  //  built from scratch in C & NASM   ║
-║             x86_64  -  C + NASM  -  WIP               ║
-╚═════════════════════════════════════════════════════╝
-```
+Maintained by **Charis Chara** · [Source repository](https://github.com/Liladizilla/charis__OS)
 
 ---
 
-## Current desktop
+## Project overview
 
-The current QEMU workflow captures the desktop workspace, Files, Settings at multiple scales, Terminal, and a desktop image after applying enlarged text. These are engineering previews, not release screenshots. The latest successful run is [available here](https://github.com/Liladizilla/charis__OS/actions/runs/42367534252).
+CharisOS is a from-scratch operating-system research project targeting x86_64 PCs and virtual machines. The repository contains a freestanding kernel, Multiboot2/GRUB boot path, physical and virtual memory management, interrupt and task infrastructure, a small syscall interface, FAT32-backed storage support, a static ELF executable loader, and a framebuffer-based graphical shell.
 
-> The dashboard-style home surface has been removed. The current shell is a minimal workspace with a Files shortcut, launcher, and taskbar. It is not yet a complete multi-window desktop; Files is still a read-only FAT32 root browser, and application chrome/layout consistency remain active work.
+The project is under active development. It is not currently a general-purpose or production-ready operating system, and it should not be treated as a replacement for Windows or Linux. This README distinguishes implemented and tested behavior from partial subsystems and planned work.
 
----
+**Implementation constraints:** kernel and boot implementation use C and NASM. The kernel is built freestanding with GCC and a custom linker script; it does not depend on a host operating-system runtime after boot.
 
-## About
+## Current state at a glance
 
-CharisOS is an educational, from-scratch x86_64 kernel. Everything below the
-GRUB handoff is written by hand: the bootloader assembly, the physical and
-virtual memory managers, the interrupt tables, the preemptive scheduler, the
-SYSCALL/SYSRET ABI, the VFS with a FAT32 backend, an ELF program loader, and a
-framebuffer graphics/window-manager stack.
-
-There is no standard library, no runtime, and no host-OS dependency. The kernel
-compiles with `gcc -ffreestanding` and links with a hand-written `link.ld`.
-
-**Implementation:** freestanding C and NASM, with BIOS/QEMU boot validation and a framebuffer desktop. Exact file counts are omitted while the active branch is changing.
-
-### Project status
-
-This is an active educational kernel. BIOS CD and raw-disk boots are verified
-in CI, including a ring-3 syscall and yield/resume round trip. Several
-subsystems are complete and exercised; others are present but partial.
-[`TODO.md`](./TODO.md) is the authoritative status document and is kept honest
-— a phase is only marked complete once it has been booted and exercised, not
-merely compiled.
-
-| Area | Status |
+| Subsystem | Current evidence-based status |
 |---|---|
-| Boot (Multiboot2 → long mode), BIOS | ✅ Working; CI tested as CD and raw disk |
-| UEFI boot | ✅ BIOS/UEFI CD and disk paths pass locally; CI UEFI remains advisory |
-| Graphics on BIOS (framebuffer request in the MB2 header) | ✅ Working |
-| Physical + virtual memory, heap | ✅ Working |
-| IDT/IRQ, PIT timer, PS/2 keyboard, serial | ✅ Working |
-| Preemptive round-robin scheduler, task stacks | ✅ Kernel-task scheduling and ring-3 yield/resume tested |
-| Interactive shell | ✅ Working |
-| DPL3 `int 0x80` syscall path | ✅ Used by the ring-3 bootstrap and tested in QEMU |
-| SYSCALL/SYSRET fast path | ⚠️ Configured, but not yet validated from user mode |
-| VFS + FAT32 | ⚠️ Read path plus config create/write on supported primary ATA FAT32; root-directory 8.3 names only |
-| ELF loader (`sys_exec`) | ✅ Static x86-64 `ET_EXEC` loaded from FAT32 and entered in ring 3 (QEMU smoke test) |
-| **Ring-3 bootstrap** | ✅ Kernel task enters, syscalls, yields and resumes; invalid user access is rejected and private pages reclaimed |
-| **libc / userland build** | ❌ Not started |
-| Framebuffer and desktop shell | ⚠️ QEMU-tested minimal workspace, launcher and taskbar; apps remain modal surfaces and there is no complete multi-window environment |
-| Capability-based security | ⚠️ Partial — syscall open/exec gates and path validation; broader VFS/network enforcement remains |
-| Desktop preferences | ✅ Font family, font size and UI scale persist in `/CHARISOS.CFG` on writable primary ATA FAT32; reboot round-trip verified |
-| RTL8139 networking | ⚠️ TX wired; no TCP/IP or RX |
-| USB, audio, gamepad | ⚠️ Stubs |
+| BIOS boot | CI verifies GRUB/Multiboot2 boot from CD image and raw disk image in QEMU |
+| UEFI boot | UEFI paths exist; CI coverage is advisory and firmware-dependent |
+| CPU and memory | x86_64 long-mode entry, PMM, VMM, heap and page-permission regression tests |
+| Interrupts and scheduling | IDT/PIC/PIT, PS/2 input and kernel-task scheduling; ring-3 yield/resume exercised in QEMU |
+| User mode | DPL3 `int 0x80` path exercised; static x86_64 `ET_EXEC` smoke program loaded from FAT32 and entered in ring 3 |
+| Storage | Primary ATA PIO and FAT32 support; current Files interface is read-only and limited to the root directory and 8.3 names |
+| Graphical shell | Framebuffer workspace, launcher/taskbar, Files, Terminal and Settings surfaces; not a complete independent-window desktop |
+| Settings | Font family, text size and interface scale; CI verifies saved values survive a reboot on a writable FAT32 test disk |
+| Security | Capability checks and input validation exist in selected paths; enforcement and isolation are incomplete |
+| Networking | RTL8139 transmit path only; receive and TCP/IP stack are not implemented |
+| USB and peripherals | USB and gamepad support are stubs; audio support is incomplete |
+| Userspace | No complete libc, package manager, installer or general-purpose userspace environment |
 
-> A tiny static `ET_EXEC` smoke binary is loaded from a FAT32 test disk and
-> entered through the current task’s IRET frame. `ET_DYN`, relocations,
-> dynamic relocations, rich auxv entries, address-space teardown, libc,
-> complete user-pointer validation, and per-task kernel interrupt stacks
-> remain incomplete. Bounded `argv`/`envp` vectors are placed on the initial
-> stack and checked by the smoke ELF.
-> [`TODO.md`](./TODO.md) tracks the remaining work.
+For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). A subsystem is not considered complete merely because it compiles.
 
----
+## Latest desktop validation
 
-## Features
+The latest successful CI run for the current development branch is [run #42574028248](https://github.com/Liladizilla/charis__OS/actions/runs/42574028248). Its workflow builds the kernel and images, runs BIOS/QEMU boot checks, ring-3 and ELF smoke tests, VMM permission regressions, and captures the graphical shell.
 
-| Category | Details |
+The desktop capture covers:
+- The minimal workspace and taskbar.
+- Files opening the FAT32 root directory and responding to refresh.
+- Settings at default and adjusted display preferences.
+- A reboot round-trip confirming `font_scale=2` and `ui_scale=120` are loaded from `/CHARISOS.CFG`.
+- Terminal launch and execution of the built-in `help` command.
+
+These are automated engineering captures, not polished release photography. The current workspace is intentionally sparse. Files is a read-only root browser, application surfaces are not yet integrated into a complete window-management experience, and the general desktop still needs substantial design and interaction work.
+
+## What is implemented
+
+- GRUB2 and Multiboot2 boot path into x86_64 long mode.
+- Physical memory bitmap allocator, virtual memory management and kernel heap.
+- IDT, PIC, PIT, PS/2 keyboard/mouse and diagnostic output.
+- Kernel-task scheduling and a tested ring-3 bootstrap path.
+- DPL3 `int 0x80` syscall dispatch and a static ELF64 `ET_EXEC` smoke path.
+- VFS abstractions with a limited FAT32 backend over primary ATA PIO.
+- Framebuffer drawing and PSF2 bitmap-font rendering.
+- Native graphical workspace, launcher/taskbar, Terminal, Files and Settings surfaces.
+- Persistent display preferences on supported writable FAT32 storage.
+- CI boot, memory-permission, ring-3, ELF and desktop-capture checks.
+
+## Important limitations
+
+CharisOS is still an early-stage kernel and shell. In particular:
+
+- There is no complete general-purpose window manager or mature userspace.
+- Files does not yet support writable files, nested directory navigation or long filenames.
+- The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking and a complete process lifecycle are unfinished.
+- The `SYSCALL/SYSRET` user-mode path is configured but not yet validated as the normal syscall entry.
+- Capability enforcement covers only selected operations. It is not a complete security boundary.
+- The current entropy source is hardware-feature-dependent. If RDRAND is unavailable, cryptographic token generation is disabled; no weak fallback is presented as cryptographic randomness.
+- Storage support is limited to legacy primary-channel ATA PIO and FAT32. AHCI and NVMe are not implemented.
+- Networking is limited to an RTL8139 transmit path. TCP/IP and receive support are not implemented.
+- USB support is not implemented, and audio/peripheral support remains partial.
+- The graphics path uses the currently supported framebuffer mode; broad hardware and resolution coverage remains future work.
+
+Do not use this project to store sensitive data or as the only operating system on a machine.
+
+## Documentation map
+
+| Document | Purpose |
 |---|---|
-| **Boot** | Multiboot2 via GRUB2 · protected → long mode · CPUID feature checks · identity paging with 2MB huge pages · 16KB boot stack |
-| **Memory** | Bitmap PMM (next-fit, double-free guarded) · split/merge heap (`kmalloc`/`kfree`) · per-process PML4 address spaces |
-| **Scheduling** | Preemptive round-robin on a 1kHz PIT tick · 32 tasks · 8KB stacks · guard pages + stack canaries |
-| **Interrupts** | 256-entry IDT · PIC remapped to IRQ 32–47 · page-fault and exception handlers with diagnostics |
-| **Syscalls** | DPL3 `int 0x80` tested from ring 3 · `SYSCALL`/`SYSRET` MSRs configured but user path unvalidated · 34 registered calls |
-| **Security** | Capability bitmask per task, inherited across `fork` · stack canaries · path-traversal rejection · enforced on `open`/`exec` |
-| **VFS** | Node abstraction with read/write/open/close/readdir/finddir function pointers · device nodes · per-task fd tables |
-| **Storage** | ATA PIO driver · FAT32 read path |
-| **Loader** | `sys_exec` — validates ELF64 `ET_EXEC`, copies `PT_LOAD` contents, zeros BSS, maps permissions, and enters through IRET |
-| **Graphics** | Framebuffer driver · PSF2 bitmap font renderer · 2D primitives (line/rect/circle) · modal app surfaces · minimal desktop workspace and taskbar; general multi-window management is not implemented |
-| **Drivers** | VGA text · PS/2 keyboard and mouse · PIT · PCI enumeration with a probe/remove driver framework · HDA audio · RTL8139 Ethernet |
-| **Shell** | Built-in command interpreter · native graphical Terminal with bounded built-in commands · Files root browser · Settings for font family, text size and interface scale |
+| [TODO.md](./TODO.md) | Current implementation status, milestones and remaining work |
+| [docs/charis-design-language.md](./docs/charis-design-language.md) | Desktop visual principles, scaling goals and current UI limitations |
+| [SECURITY.md](./SECURITY.md) | Security reporting and responsible-disclosure guidance |
+| [LICENSE](./LICENSE) | MIT license |
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ### Boot sequence
 
@@ -213,7 +194,7 @@ structure before the task limit is raised.
 
 ---
 
-## 📁 Repository layout
+## Repository layout
 
 ```
 charis__OS/
@@ -312,7 +293,7 @@ Both are produced by `grub-mkrescue`, which emits a *hybrid* image: an ISO9660
 filesystem plus a protective MBR, a GPT header, and GRUB loaders for both
 `i386-pc` (legacy BIOS) and `x86_64-efi` (UEFI). The two files are identical
 bytes; they are named for their intended use. The image is verified to boot in
-all four combinations — CD and raw disk, BIOS and UEFI — by `make verify-boot`.
+BIOS CD and raw-disk paths in CI. UEFI variants can be exercised with the\n`run-vm-uefi`, `run-usb-uefi` and `verify-boot` targets when compatible OVMF\nfirmware is installed; CI treats UEFI checks as advisory.
 
 ### Testing in a VM (GNOME Boxes / QEMU on Fedora)
 
@@ -385,7 +366,7 @@ run.bat
 
 ---
 
-## 🔭 Boot-time debugging
+## Boot-time debugging
 
 If the kernel hangs, the markers in the VGA text buffer tell you where. For
 example, seeing `S12344567[L>` means serial, memory, IDT, IRQ, timer, keyboard,
@@ -418,10 +399,9 @@ at creation; children inherit the parent's set across `fork`.
 | `CAP_SPAWN` | `sys_exec`, `sys_fork` |
 | `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | reserved |
 
-`security_verify_path()` rejects parent-directory traversal. When RDRAND is
-available, it seeds the stack guard. Without RDRAND, the current fallback is
-weak and is explicitly warned about; cryptographic token generation is disabled.
-The fallback must not be treated as cryptographic entropy.
+`security_verify_path()` rejects parent-directory traversal. When RDRAND is available, it can seed the stack guard. If RDRAND is
+unavailable, cryptographic token generation is disabled. The kernel does not
+claim that a weak fallback provides cryptographic entropy.
 
 **Known gaps:** enforcement currently covers `open` and `exec` only — the VFS
 read/write paths, socket syscalls, and shared memory are unchecked. The
