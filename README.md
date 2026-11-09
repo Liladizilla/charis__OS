@@ -47,7 +47,7 @@ The following gallery contains real QEMU captures from the automated desktop wor
 
 ## Latest desktop validation
 
-The latest successful CI run for the current development branch is [run #42574028248](https://github.com/Liladizilla/charis__OS/actions/runs/42574028248). Its workflow builds the kernel and images, runs BIOS/QEMU boot checks, ring-3 and ELF smoke tests, VMM permission regressions, and captures the graphical shell.
+The latest successful CI run is [run #42577223546](https://github.com/Liladizilla/charis__OS/actions/runs/42577223546). It also runs host-side window-manager lifecycle and bounds tests. Its workflow builds the kernel and images, runs BIOS/QEMU boot checks, ring-3 and ELF smoke tests, VMM permission regressions, and captures the graphical shell.
 
 The desktop capture covers:
 - The minimal workspace and taskbar.
@@ -67,15 +67,15 @@ These are automated engineering captures, not polished release photography. The 
 - DPL3 `int 0x80` syscall dispatch and a static ELF64 `ET_EXEC` smoke path.
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
 - Framebuffer drawing and PSF2 bitmap-font rendering.
-- Native graphical workspace, launcher/taskbar, Terminal, Files and Settings surfaces.
+- Native graphical workspace, launcher/taskbar, Terminal, Files and Settings surfaces; shell surfaces register with WM focus/lifecycle metadata, but remain modal.
 - Persistent display preferences on supported writable FAT32 storage.
-- CI boot, memory-permission, ring-3, ELF and desktop-capture checks.
+- CI boot, memory-permission, ring-3, ELF, desktop-capture and host-side WM lifecycle/bounds checks.
 
 ## Important limitations
 
 CharisOS is still an early-stage kernel and shell. In particular:
 
-- There is no complete general-purpose window manager or mature userspace.
+- There is no complete general-purpose window manager or mature userspace. The shell registers one active modal surface with WM lifecycle metadata; independent overlapping/movable/resizable windows are not implemented.
 - Files does not yet support writable files, nested directory navigation or long filenames.
 - The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking and a complete process lifecycle are unfinished.
 - The `SYSCALL/SYSRET` user-mode path is configured but not yet validated as the normal syscall entry.
