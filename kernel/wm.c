@@ -115,7 +115,7 @@ static window_t* wm_create_window_internal(const char* title, int x, int y,
 
     /* Bound the title and sanitize control bytes before drawing it. */
     kstrncpy(win->title, title, WM_MAX_TITLE_LENGTH);
-    win->title[sizeof(win->title) - 1] = '\\0';
+    win->title[sizeof(win->title) - 1] = '\0';
     for (u32 i = 0; i < sizeof(win->title) - 1 && win->title[i]; i++)
         if ((u8)win->title[i] < 0x20u || (u8)win->title[i] == 0x7Fu)
             win->title[i] = ' ';
