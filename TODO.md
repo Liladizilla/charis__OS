@@ -76,18 +76,19 @@ desktop is available.
 - [ ] IRQ-driven network processing
 
 ## Phase 9: Desktop Environment (PARTIAL, ACTIVE)
-- [x] Graphical desktop surface and taskbar render in QEMU
+- [x] Minimal workspace replaces the dashboard-style home surface; Files desktop shortcut, launcher and taskbar render in QEMU
 - [x] Native Files launcher and read-only FAT32 root browser (8.3 names only)
 - [x] Native Terminal surface with bounded built-in commands
 - [x] Settings controls for font family, text size and global UI scale
 - [x] Settings persist to `/CHARISOS.CFG` on supported primary ATA FAT32 and reload after reboot in CI
-- [ ] Replace the dashboard-style home surface with a true desktop: wallpaper, desktop icons, launcher and taskbar
-- [ ] Fix reflow at enlarged text and multiple framebuffer resolutions; current captures still show clipped text
-- [ ] Implement shared layout primitives: measure/arrange, word wrapping, clipping/ellipsis and scroll containers
-- [ ] Standardize app chrome and modal dimming
-- [ ] Add a general window manager with independent surfaces and focus lifecycle
-- [ ] Add a first-login setup wizard with language/keyboard, appearance and network steps
-- [ ] Add a functional Text Editor and System Monitor
+- [x] QEMU capture verifies the desktop after closing Settings at 200% text and 120% interface scale without the previous welcome-card clipping
+- [ ] Add a useful but restrained desktop surface: verified status indicators, accessible shortcut selection and clear empty-workspace affordances
+- [ ] Implement shared layout primitives: measure/arrange, horizontal/vertical flow, padding/gaps, wrapping, clipping/ellipsis and scroll containers
+- [ ] Verify layout at 100/125/150/200% text/UI scales and 1024x768, 1280x800 and 1920x1080 framebuffer sizes
+- [ ] Standardize app chrome, titlebars, focus indication, keyboard navigation and modal dimming
+- [ ] Add a general window manager with independent surfaces, clipping, z-order and focus lifecycle
+- [ ] Add a first-login setup wizard with language/keyboard, appearance and network steps; current wizard remains limited to existing setup preferences
+- [ ] Add functional Text Editor and System Monitor applications
 
 ## Phase 10: User Applications (ACTIVE)
 - [x] Native framebuffer Terminal window with keyboard input and shell/Start-menu integration
