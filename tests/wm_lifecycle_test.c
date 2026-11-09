@@ -117,6 +117,19 @@ static void test_position_is_clamped_and_destroy_refocuses(void) {
     expect(wm_windows == NULL && wm_get_focused() == NULL,
            "destroying final window leaves empty manager");
 }
+static void test_shell_surface_avoids_duplicate_pixel_buffer(void) {
+    reset_manager();
+    unsigned before = allocations;
+    window_t *surface = wm_create_surface_window("Terminal", 20, 20, 400, 240);
+    expect(surface != NULL, "shell surface is registered with window manager");
+    expect(surface->buffer == NULL, "shell surface does not allocate a duplicate pixel buffer");
+    expect(allocations == before + 1, "shell surface allocates only its metadata object");
+    expect(wm_get_focused() == surface, "shell surface receives focus");
+    expect(wm_get_window_at(30, 30) == surface, "shell surface participates in hit testing");
+    wm_destroy_window(surface);
+    expect(wm_get_focused() == NULL, "closing shell surface releases focus");
+}
+
 static void test_window_limit_and_repeated_reuse(void) {
     reset_manager();
     window_t *items[MAX_WINDOWS];
@@ -141,6 +154,7 @@ int main(void) {
     test_title_is_bounded_and_sanitized();
     test_focus_hit_testing_and_visibility();
     test_position_is_clamped_and_destroy_refocuses();
+    test_shell_surface_avoids_duplicate_pixel_buffer();
     test_window_limit_and_repeated_reuse();
     expect(allocations == frees, "all test window and buffer allocations released");
     puts("Window manager lifecycle and bounds tests passed");
