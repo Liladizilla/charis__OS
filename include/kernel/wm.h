@@ -34,8 +34,11 @@ extern window_t* wm_windows; /* Linked list of windows */
 /* Initialize window manager */
 void wm_init(void);
 
-/* Create a new window */
+/* Create a buffered compositor window. */
 window_t* wm_create_window(const char* title, int x, int y, int w, int h);
+
+/* Register a shell-owned surface for focus and lifecycle without a pixel buffer. */
+window_t* wm_create_surface_window(const char* title, int x, int y, int w, int h);
 
 /* Destroy window */
 void wm_destroy_window(window_t* win);
