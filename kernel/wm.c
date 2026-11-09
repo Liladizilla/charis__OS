@@ -54,13 +54,14 @@ static void wm_raise(window_t* win) {
 }
 
 static void wm_clamp_position(window_t* win) {
-    if (!win || !g_framebuffer.initialized) return;
+    if (!win) return;
+    if (win->x < 0) win->x = 0;
+    if (win->y < 0) win->y = 0;
+    if (!g_framebuffer.initialized) return;
     s32 max_x = (g_framebuffer.width > (u32)win->width)
         ? (s32)(g_framebuffer.width - (u32)win->width) : 0;
     s32 max_y = (g_framebuffer.height > (u32)(win->height + WINDOW_TITLEBAR_HEIGHT))
         ? (s32)(g_framebuffer.height - (u32)(win->height + WINDOW_TITLEBAR_HEIGHT)) : 0;
-    if (win->x < 0) win->x = 0;
-    if (win->y < 0) win->y = 0;
     if (win->x > max_x) win->x = max_x;
     if (win->y > max_y) win->y = max_y;
 }
@@ -107,7 +108,7 @@ window_t* wm_create_window(const char* title, int x, int y, int w, int h) {
     win->maximized = false;
 
     /* Bound the title and sanitize control bytes before drawing it. */
-    kstrncpy(win->title, title, sizeof(win->title) - 1);
+    kstrncpy(win->title, title, WM_MAX_TITLE_LENGTH);
     win->title[sizeof(win->title) - 1] = '\0';
     for (u32 i = 0; i < sizeof(win->title) - 1 && win->title[i]; i++)
         if ((u8)win->title[i] < 0x20u || (u8)win->title[i] == 0x7Fu)
