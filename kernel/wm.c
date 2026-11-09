@@ -1,202 +1,265 @@
+/* wm.c - bounded native window manager */
 #include <kernel/wm.h>
 #include <kernel/graphics.h>
 #include <kernel/memory.h>
+#include <kernel/fb.h>
 #include <kernel/vga.h>
 #include <kernel/input.h>
 #include <kernel/mouse.h>
 #include <kernel/string.h>
 #include <kernel/psf.h>
 
+#define WM_MAX_DIMENSION 4096u
+#define WM_MAX_BUFFER_BYTES (16ULL * 1024ULL * 1024ULL)
+
 window_t* wm_windows = NULL;
-static int wm_z_counter = 0;
+static u32 wm_z_counter = 0;
+
+static bool wm_contains(const window_t* target) {
+    if (!target) return false;
+    u32 count = 0;
+    for (window_t* w = wm_windows; w && count < MAX_WINDOWS; w = w->next, count++)
+        if (w == target) return true;
+    return false;
+}
+
+static u32 wm_count(void) {
+    u32 count = 0;
+    for (window_t* w = wm_windows; w && count < MAX_WINDOWS; w = w->next) count++;
+    return count;
+}
+
+static void wm_compact_z(void) {
+    window_t* ordered[MAX_WINDOWS];
+    u32 count = 0;
+    for (window_t* w = wm_windows; w && count < MAX_WINDOWS; w = w->next)
+        ordered[count++] = w;
+
+    for (u32 i = 1; i < count; i++) {
+        window_t* item = ordered[i];
+        u32 j = i;
+        while (j > 0 && ordered[j - 1]->z_order > item->z_order) {
+            ordered[j] = ordered[j - 1];
+            j--;
+        }
+        ordered[j] = item;
+    }
+    for (u32 i = 0; i < count; i++) ordered[i]->z_order = i;
+    wm_z_counter = count;
+}
+
+static void wm_raise(window_t* win) {
+    if (wm_z_counter == 0xFFFFFFFFu) wm_compact_z();
+    win->z_order = wm_z_counter++;
+}
+
+static void wm_clamp_position(window_t* win) {
+    if (!win) return;
+    if (win->x < 0) win->x = 0;
+    if (win->y < 0) win->y = 0;
+    if (!g_framebuffer.initialized) return;
+    s32 max_x = (g_framebuffer.width > (u32)win->width)
+        ? (s32)(g_framebuffer.width - (u32)win->width) : 0;
+    s32 max_y = (g_framebuffer.height > (u32)(win->height + WINDOW_TITLEBAR_HEIGHT))
+        ? (s32)(g_framebuffer.height - (u32)(win->height + WINDOW_TITLEBAR_HEIGHT)) : 0;
+    if (win->x > max_x) win->x = max_x;
+    if (win->y > max_y) win->y = max_y;
+}
 
 void wm_init(void) {
     wm_windows = NULL;
     wm_z_counter = 0;
     g_graphics.bg_color = CHARIS_UI_BACKGROUND;
+    fb_reset_clip();
     fb_clear(CHARIS_UI_BACKGROUND);
 }
 
 window_t* wm_create_window(const char* title, int x, int y, int w, int h) {
-    if (w <= 0 || h <= 0) return NULL;
-    
+    if (w <= 0 || h <= 0 || (u32)w > WM_MAX_DIMENSION ||
+        (u32)h > WM_MAX_DIMENSION || wm_count() >= MAX_WINDOWS) return NULL;
+
+    if (g_framebuffer.initialized &&
+        ((u32)w > g_framebuffer.width ||
+         (u64)(u32)h + WINDOW_TITLEBAR_HEIGHT > g_framebuffer.height)) return NULL;
+
+    u64 pixels = (u64)(u32)w * (u64)(u32)h;
+    if (pixels > WM_MAX_BUFFER_BYTES / sizeof(u32)) return NULL;
+    u64 bytes = pixels * sizeof(u32);
+    if (bytes > (u64)(usize)-1) return NULL;
+
     window_t* win = (window_t*)kmalloc(sizeof(window_t));
     if (!win) return NULL;
-    
     kmemset(win, 0, sizeof(window_t));
-    win->x = x;
-    win->y = y;
-    win->width = w;
-    win->height = h;
-    win->z_order = wm_z_counter++;
-    win->visible = true;
-    win->focused = false;
-    
-    kstrncpy(win->title, title, 127);
-    
-    // Allocate pixel buffer for window
-    win->buffer = (u32*)kmalloc(w * h * sizeof(u32));
+
+    win->buffer = (u32*)kmalloc((usize)bytes);
     if (!win->buffer) {
         kfree(win);
         return NULL;
     }
-    
-    // Add to window list
+    kmemset(win->buffer, 0, (usize)bytes);
+
+    win->x = x;
+    win->y = y;
+    win->width = w;
+    win->height = h;
+    win->visible = true;
+    win->focused = false;
+    win->minimized = false;
+    win->maximized = false;
+
+    /* Bound the title and sanitize control bytes before drawing it. */
+    kstrncpy(win->title, title, WM_MAX_TITLE_LENGTH);
+    win->title[sizeof(win->title) - 1] = '\0';
+    for (u32 i = 0; i < sizeof(win->title) - 1 && win->title[i]; i++)
+        if ((u8)win->title[i] < 0x20u || (u8)win->title[i] == 0x7Fu)
+            win->title[i] = ' ';
+
+    wm_clamp_position(win);
     win->next = wm_windows;
     wm_windows = win;
-    
     wm_focus_window(win);
-    
     return win;
 }
 
 void wm_destroy_window(window_t* win) {
     if (!win) return;
-    
+    window_t** link = &wm_windows;
+    while (*link && *link != win) link = &(*link)->next;
+    if (!*link) return;
+
+    bool was_focused = win->focused;
+    *link = win->next;
+    win->next = NULL;
+    win->focused = false;
     if (win->buffer) kfree(win->buffer);
-    
-    if (wm_windows == win) {
-        wm_windows = win->next;
-    } else {
-        window_t* curr = wm_windows;
-        while (curr && curr->next != win) {
-            curr = curr->next;
-        }
-        if (curr) curr->next = win->next;
-    }
-    
+    win->buffer = NULL;
     kfree(win);
+
+    if (was_focused) {
+        window_t* candidate = NULL;
+        for (window_t* w = wm_windows; w; w = w->next)
+            if (w->visible && !w->minimized &&
+                (!candidate || w->z_order > candidate->z_order))
+                candidate = w;
+        if (candidate) wm_focus_window(candidate);
+    }
 }
 
 void wm_focus_window(window_t* win) {
-    if (!win) return;
-    
+    if (!wm_contains(win) || !win->visible || win->minimized) return;
+    for (window_t* w = wm_windows; w; w = w->next) w->focused = false;
     win->focused = true;
-    win->z_order = wm_z_counter++;
-    
-    // Notify other windows lost focus
-    for (window_t* w = wm_windows; w; w = w->next) {
-        if (w != win) {
-            w->focused = false;
-        }
-    }
+    wm_raise(win);
 }
 
 void wm_render(void) {
-    // Clear screen (desktop background)
+    if (!g_framebuffer.initialized) return;
+    fb_reset_clip();
     fb_clear(CHARIS_UI_BACKGROUND);
-    
-    // Draw windows from back to front (by z_order)
-    // Simple insertion sort
-    window_t* sorted = NULL;
-    
-    for (window_t* win = wm_windows; win; ) {
-        window_t* next = win->next;
-        
-        // Insert into sorted list
-        if (!sorted || win->z_order < sorted->z_order) {
-            win->next = sorted;
-            sorted = win;
-        } else {
-            window_t* curr = sorted;
-            while (curr->next && curr->next->z_order <= win->z_order) {
-                curr = curr->next;
-            }
-            win->next = curr->next;
-            curr->next = win;
+
+    window_t* ordered[MAX_WINDOWS];
+    u32 count = 0;
+    for (window_t* w = wm_windows; w && count < MAX_WINDOWS; w = w->next)
+        ordered[count++] = w;
+
+    /* Small bounded insertion sort; never mutate the ownership list. */
+    for (u32 i = 1; i < count; i++) {
+        window_t* item = ordered[i];
+        u32 j = i;
+        while (j > 0 && ordered[j - 1]->z_order > item->z_order) {
+            ordered[j] = ordered[j - 1];
+            j--;
         }
-        win = next;
+        ordered[j] = item;
     }
 
-    /*
-     * Sorting rewires each window's next pointer. Publish the sorted head
-     * back to the manager; otherwise wm_windows can point into the middle of
-     * the reordered list and windows become unreachable or the list cycles.
-     */
-    wm_windows = sorted;
-
-    // Draw each window
-    for (window_t* win = sorted; win; win = win->next) {
-        if (win->visible) {
-            wm_draw_decorations(win);
-            
-            // Blit window buffer to screen
-            for (int py = 0; py < win->height; py++) {
-                for (int px = 0; px < win->width; px++) {
-                    u32 color = win->buffer[py * win->width + px];
-                    fb_put_pixel(win->x + px, win->y + py + WINDOW_TITLEBAR_HEIGHT, color);
-                }
+    for (u32 i = 0; i < count; i++) {
+        window_t* win = ordered[i];
+        if (!win->visible || win->minimized || !win->buffer) continue;
+        u32 clip_h = (u32)win->height + WINDOW_TITLEBAR_HEIGHT;
+        fb_set_clip((u32)win->x, (u32)win->y, (u32)win->width, clip_h);
+        wm_draw_decorations(win);
+        wm_draw_contents(win);
+        for (u32 py = 0; py < (u32)win->height; py++) {
+            for (u32 px = 0; px < (u32)win->width; px++) {
+                u32 color = win->buffer[(usize)py * (usize)win->width + px];
+                fb_put_pixel((u32)win->x + px,
+                             (u32)win->y + WINDOW_TITLEBAR_HEIGHT + py, color);
             }
         }
     }
+    fb_reset_clip();
 }
 
 void wm_dispatch_event(int event_type, void* data) {
     window_t* focused = wm_get_focused();
-    if (focused && focused->on_event) {
+    if (focused && focused->on_event)
         focused->on_event(focused, event_type, data);
-    }
 }
 
 window_t* wm_get_focused(void) {
-    for (window_t* win = wm_windows; win; win = win->next) {
-        if (win->focused) return win;
-    }
+    for (window_t* win = wm_windows; win; win = win->next)
+        if (win->focused && win->visible && !win->minimized) return win;
     return NULL;
 }
 
 window_t* wm_get_window_at(int x, int y) {
+    window_t* best = NULL;
     for (window_t* win = wm_windows; win; win = win->next) {
-        if (win->visible && x >= win->x && x < win->x + win->width &&
-            y >= win->y && y < win->y + win->height) {
-            return win;
-        }
+        if (!win->visible || win->minimized) continue;
+        s64 right = (s64)win->x + win->width;
+        s64 bottom = (s64)win->y + win->height + WINDOW_TITLEBAR_HEIGHT;
+        if ((s64)x >= win->x && (s64)x < right &&
+            (s64)y >= win->y && (s64)y < bottom &&
+            (!best || win->z_order > best->z_order)) best = win;
     }
-    return NULL;
+    return best;
 }
 
 void wm_draw_contents(window_t* win) {
-    if (!win || !win->visible) return;
-    
+    if (!win || !wm_contains(win) || !win->visible || win->minimized) return;
     if (win->on_paint) {
         win->on_paint(win);
     } else {
-        // Default: fill with surface color
         graphics_set_color(COLOR_SURFACE);
-        graphics_rect(win->x, win->y + WINDOW_TITLEBAR_HEIGHT, win->width, win->height, true);
+        graphics_rect((u32)win->x, (u32)win->y + WINDOW_TITLEBAR_HEIGHT,
+                      (u32)win->width, (u32)win->height, true);
     }
+}
+
+static void wm_move_to(window_t* win, int x, int y) {
+    if (!win || !wm_contains(win)) return;
+    win->x = x;
+    win->y = y;
+    wm_clamp_position(win);
 }
 
 void wm_process_mouse(int x, int y, int button, bool pressed) {
     static bool dragging = false;
-    static int drag_offset_x = 0, drag_offset_y = 0;
+    static int offset_x = 0, offset_y = 0;
     static window_t* drag_window = NULL;
-    
-    window_t* win = wm_get_window_at(x, y);
-    
+
     if (button == 1 && pressed) {
-        // Left click - focus window
+        window_t* win = wm_get_window_at(x, y);
         if (win) {
             wm_focus_window(win);
-            // Check if click is on titlebar for dragging
             if (y >= win->y && y < win->y + WINDOW_TITLEBAR_HEIGHT) {
                 dragging = true;
                 drag_window = win;
-                drag_offset_x = x - win->x;
-                drag_offset_y = y - win->y;
+                offset_x = x - win->x;
+                offset_y = y - win->y;
             }
             wm_render();
         }
     } else if (button == 1 && !pressed) {
         dragging = false;
         drag_window = NULL;
-    }
-    
-    // Handle dragging
-    if (dragging && drag_window && button == 1) {
-        drag_window->x = x - drag_offset_x;
-        drag_window->y = y - drag_offset_y;
+    } else if (dragging && drag_window && wm_contains(drag_window)) {
+        wm_move_to(drag_window, x - offset_x, y - offset_y);
         wm_render();
+    } else {
+        dragging = false;
+        drag_window = NULL;
     }
 }
 
@@ -204,28 +267,28 @@ void wm_main_loop(void) {
     static bool mouse_left_down = false;
     static int drag_offset_x = 0, drag_offset_y = 0;
     static window_t* drag_window = NULL;
-    
+
     while (1) {
         input_process_events();
-        
         input_event_t evt;
         while (input_pop_event(&evt)) {
             switch (evt.type) {
                 case INPUT_MOUSE_MOVE:
-                    if (mouse_left_down && drag_window) {
-                        drag_window->x = evt.mouse.x - drag_offset_x;
-                        drag_window->y = evt.mouse.y - drag_offset_y;
+                    if (mouse_left_down && drag_window && wm_contains(drag_window)) {
+                        wm_move_to(drag_window, evt.mouse.x - drag_offset_x,
+                                   evt.mouse.y - drag_offset_y);
                         wm_render();
                     }
                     break;
-                    
                 case INPUT_MOUSE_DOWN:
                     if (evt.mouse.button == 1) {
                         mouse_left_down = true;
                         window_t* win = wm_get_window_at(evt.mouse.x, evt.mouse.y);
+                        drag_window = NULL;
                         if (win) {
                             wm_focus_window(win);
-                            if (evt.mouse.y >= win->y && evt.mouse.y < win->y + WINDOW_TITLEBAR_HEIGHT) {
+                            if (evt.mouse.y >= win->y &&
+                                evt.mouse.y < win->y + WINDOW_TITLEBAR_HEIGHT) {
                                 drag_window = win;
                                 drag_offset_x = evt.mouse.x - win->x;
                                 drag_offset_y = evt.mouse.y - win->y;
@@ -234,46 +297,38 @@ void wm_main_loop(void) {
                         }
                     }
                     break;
-                    
                 case INPUT_MOUSE_UP:
                     if (evt.mouse.button == 1) {
                         mouse_left_down = false;
                         drag_window = NULL;
                     }
                     break;
-                    
-                case INPUT_KEY_DOWN:
-                    {
-                        window_t* focused = wm_get_focused();
-                        if (focused && focused->on_event) {
-                            focused->on_event(focused, 100 /*EV_KEY_PRESS*/, &evt.key.keycode);
-                        }
-                    }
+                case INPUT_KEY_DOWN: {
+                    window_t* focused = wm_get_focused();
+                    if (focused && focused->on_event)
+                        focused->on_event(focused, 100 /* EV_KEY_PRESS */,
+                                          &evt.key.keycode);
                     break;
-                    
+                }
                 default:
                     break;
             }
         }
-        
         asm volatile("hlt");
     }
 }
 
 void wm_draw_decorations(window_t* win) {
-    if (!win->visible) return;
-    
-    /* Titlebar background */
+    if (!win || !wm_contains(win) || !win->visible || win->minimized) return;
     graphics_set_color(COLOR_SURFACE);
-    graphics_rect(win->x, win->y, win->width, WINDOW_TITLEBAR_HEIGHT, true);
-    
-    /* Border */
+    graphics_rect((u32)win->x, (u32)win->y, (u32)win->width,
+                  WINDOW_TITLEBAR_HEIGHT, true);
     graphics_set_color(COLOR_BORDER);
-    graphics_rect(win->x, win->y, win->width, win->height + WINDOW_TITLEBAR_HEIGHT, false);
-    
-    /* Title text */
+    graphics_rect((u32)win->x, (u32)win->y, (u32)win->width,
+                  (u32)win->height + WINDOW_TITLEBAR_HEIGHT, false);
     graphics_set_color(COLOR_ACCENT);
-    psf_draw_string(win->x + 8, win->y + 6, win->title, COLOR_ACCENT, COLOR_SURFACE);
+    psf_draw_string((u32)win->x + 8, (u32)win->y + 6,
+                    win->title, COLOR_ACCENT, COLOR_SURFACE);
 }
 
 void wm_set_screen_bounds(uint32_t width, uint32_t height) {

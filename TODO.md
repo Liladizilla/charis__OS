@@ -44,7 +44,7 @@
 - [x] graphics_put_string() - PSF-based text rendering
 
 ## Phase 6: Window System (PARTIAL)
-- [x] Window/widget/input foundations exist (`wm.c`, `compositor.c`, `widgets.c`, `input.c`)
+- [x] Window/widget/input foundations exist (`wm.c`, `compositor.c`, `widgets.c`, `input.c`)\n- [x] Bound WM window count, validate dimensions and allocation size, cap title strings, clip window drawing, ignore hidden/minimized windows in hit testing, and safely compact z-order
 - [x] PS/2 mouse input and pointer-driven shell interaction
 - [ ] General desktop window lifecycle and independent per-window surfaces
 - [ ] Consistent titlebar controls, focus/z-order, minimize/restore and Alt+Tab
