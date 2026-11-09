@@ -659,7 +659,11 @@ static void handle_event(const input_event_t* e) {
         u32 bar_top = g_framebuffer.height > bar_h ? g_framebuffer.height - bar_h : 0;
         bool over_start = e->mouse.y >= (int)bar_top
                        && e->mouse.x < (int)START_BTN_W;
+        /* The cursor is software-rendered into the framebuffer. Redraw the
+         * scene for every pointer move so the previous cursor pixels are
+         * restored instead of leaving a trail across the workspace. */
         if (hit != ui.hover_item || over_start) ui.needs_redraw = true;
+        else ui.needs_redraw = true;
         ui.hover_item = hit;
         return;
     }
