@@ -28,6 +28,7 @@
 #include <kernel/wizard.h>
 #include <kernel/terminal_ui.h>
 #include <kernel/files_ui.h>
+#include <kernel/wm.h>
 
 /* Native desktop widgets and launcher hit-testing. */
 extern void desktop_surface_render(void);
@@ -113,6 +114,62 @@ typedef struct {
 } ui_state_t;
 
 static ui_state_t ui = { false, -1, false, 0, 0, true };
+
+/* The shell owns application drawing, while the WM owns window identity,
+ * focus and lifecycle. These native surfaces intentionally have no duplicate
+ * pixel buffer; the existing app renderers remain the framebuffer owners. */
+typedef enum {
+    SHELL_SURFACE_NONE = 0,
+    SHELL_SURFACE_TERMINAL,
+    SHELL_SURFACE_FILES,
+    SHELL_SURFACE_BROWSER,
+    SHELL_SURFACE_SETTINGS,
+    SHELL_SURFACE_ABOUT
+} shell_surface_kind_t;
+
+static window_t* shell_surface_window;
+static shell_surface_kind_t shell_surface_kind;
+
+static void shell_sync_window(void) {
+    shell_surface_kind_t wanted = SHELL_SURFACE_NONE;
+    const char* title = "";
+    if (terminal_is_open()) {
+        wanted = SHELL_SURFACE_TERMINAL; title = "Terminal";
+    } else if (files_is_open()) {
+        wanted = SHELL_SURFACE_FILES; title = "Files";
+    } else if (browser_is_open()) {
+        wanted = SHELL_SURFACE_BROWSER; title = "Browser";
+    } else if (settings_open) {
+        wanted = SHELL_SURFACE_SETTINGS; title = "Settings";
+    } else if (notice_open) {
+        wanted = SHELL_SURFACE_ABOUT; title = "About CharisOS";
+    }
+
+    if (wanted == shell_surface_kind && shell_surface_window) return;
+    if (shell_surface_window) {
+        wm_destroy_window(shell_surface_window);
+        shell_surface_window = NULL;
+    }
+    shell_surface_kind = SHELL_SURFACE_NONE;
+    if (wanted == SHELL_SURFACE_NONE || !g_framebuffer.initialized) return;
+
+    u32 margin_x = g_framebuffer.width / 12u;
+    u32 margin_y = g_framebuffer.height / 12u;
+    u32 width = g_framebuffer.width > margin_x * 2u
+              ? g_framebuffer.width - margin_x * 2u : g_framebuffer.width;
+    u32 height = g_framebuffer.height > margin_y * 2u + WINDOW_TITLEBAR_HEIGHT
+               ? g_framebuffer.height - margin_y * 2u - WINDOW_TITLEBAR_HEIGHT
+               : g_framebuffer.height > WINDOW_TITLEBAR_HEIGHT
+                 ? g_framebuffer.height - WINDOW_TITLEBAR_HEIGHT : 1u;
+    if (!width) width = 1;
+    if (!height) height = 1;
+    shell_surface_window = wm_create_surface_window(
+        title, (int)margin_x, (int)margin_y, (int)width, (int)height);
+    if (shell_surface_window) {
+        shell_surface_kind = wanted;
+        wm_focus_window(shell_surface_window);
+    }
+}
 
 /* ── Chrome ───────────────────────────────────────────────────────── */
 
@@ -665,6 +722,7 @@ static void handle_event(const input_event_t* e) {
 
     case INPUT_MOUSE_DOWN: {
         int mx = e->mouse.x, my = e->mouse.y;
+        if (shell_surface_window) wm_focus_window(shell_surface_window);
 
         if (terminal_is_open()) {
             terminal_handle_mouse(mx, my);
@@ -803,6 +861,7 @@ void shell_ui_main(void* arg) {
             }
         }
         if (had_event) ui.needs_redraw = true;
+        shell_sync_window();
 
         /* Cursor blink. */
         u64 now = timer_get_ms();
