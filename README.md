@@ -293,7 +293,7 @@ Both are produced by `grub-mkrescue`, which emits a *hybrid* image: an ISO9660
 filesystem plus a protective MBR, a GPT header, and GRUB loaders for both
 `i386-pc` (legacy BIOS) and `x86_64-efi` (UEFI). The two files are identical
 bytes; they are named for their intended use. The image is verified to boot in
-all four combinations — CD and raw disk, BIOS and UEFI — by `make verify-boot`.
+BIOS CD and raw-disk paths in CI. UEFI variants can be exercised with the\n`run-vm-uefi`, `run-usb-uefi` and `verify-boot` targets when compatible OVMF\nfirmware is installed; CI treats UEFI checks as advisory.
 
 ### Testing in a VM (GNOME Boxes / QEMU on Fedora)
 
