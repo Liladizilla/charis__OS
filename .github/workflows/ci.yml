@@ -50,7 +50,7 @@ jobs:
 
       - name: Test window manager lifecycle and bounds
         run: |
-          gcc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/wm_lifecycle_test.c -Wl,--gc-sections -o /tmp/wm_lifecycle_test
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/wm_lifecycle_test.c -Wl,--gc-sections -o /tmp/wm_lifecycle_test
           /tmp/wm_lifecycle_test
 
       - name: Build ELF smoke-test disk
