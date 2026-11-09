@@ -39,6 +39,12 @@ The project is under active development. It is not currently a general-purpose o
 
 For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). A subsystem is not considered complete merely because it compiles.
 
+## Desktop screenshots
+
+The following gallery contains real QEMU captures from the automated desktop workflow. The workspace is sparse and the applications are still limited, so these are implementation evidence rather than release marketing shots. [Download the original full-resolution captures and logs from CI run #42574028248](https://github.com/Liladizilla/charis__OS/actions/runs/42574028248).
+
+![CharisOS desktop, Files, Settings and Terminal previews](docs/screenshots/charisos-preview-gallery.jpg)
+
 ## Latest desktop validation
 
 The latest successful CI run for the current development branch is [run #42574028248](https://github.com/Liladizilla/charis__OS/actions/runs/42574028248). Its workflow builds the kernel and images, runs BIOS/QEMU boot checks, ring-3 and ELF smoke tests, VMM permission regressions, and captures the graphical shell.
