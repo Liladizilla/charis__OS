@@ -43,13 +43,17 @@
 - [x] graphics_circle() - midpoint circle
 - [x] graphics_put_string() - PSF-based text rendering
 
-## Phase 6: Window System (MOSTLY COMPLETE)
-- [x] Window manager (compositor.c, wm.c)
-- [x] Widget library (widgets.c)
-- [x] Input event system (input.c, keyboard.c, mouse.c)
-- [x] PS/2 mouse driver
-- [ ] Window compositing effects (frosted/acrylic materials in compositor.h are stubs)
-- [ ] Window manager needs stress testing (32 task limit)
+## Phase 6: Window System (PARTIAL)
+- [x] Window/widget/input foundations exist (`wm.c`, `compositor.c`, `widgets.c`, `input.c`)
+- [x] PS/2 mouse input and pointer-driven shell interaction
+- [ ] General desktop window lifecycle and independent per-window surfaces
+- [ ] Consistent titlebar controls, focus/z-order, minimize/restore and Alt+Tab
+- [ ] Per-window clipping/compositing and resize handling
+- [ ] Stress tests for task/window limits and repeated open/close cycles
+
+The current desktop uses modal native app surfaces and a shell redraw path. The
+presence of WM/compositor source files does not mean a complete multi-window
+desktop is available.
 
 ## Phase 7: IPC & Signals (PARTIAL)
 - [x] Signals (SIGINT, SIGSEGV, SIGCHLD) - signal.c exists
@@ -72,18 +76,29 @@
 - [ ] IRQ-driven network processing
 
 ## Phase 9: Desktop Environment (PARTIAL, ACTIVE)
-- [x] Desktop surface with application icons, taskbar, system overview and notifications
-- [x] Settings surface: font family, font size and global UI scale controls
-- [x] Save preferences to root FAT32 config and reload them after reboot (QEMU CI round trip)
-- [ ] File Manager: root-directory enumeration and safe VFS operations
-- [ ] Text Editor: bounded file open/edit/save workflow
-- [ ] Calculator: functional arithmetic UI
+- [x] Minimal workspace replaces the dashboard-style home surface; Files desktop shortcut, launcher and taskbar render in QEMU
+- [x] Native Files launcher and read-only FAT32 root browser (8.3 names only)
+- [x] Native Terminal surface with bounded built-in commands
+- [x] Settings controls for font family, text size and global UI scale
+- [x] Settings persist to `/CHARISOS.CFG` on supported primary ATA FAT32 and reload after reboot in CI
+- [x] QEMU capture verifies the desktop after closing Settings at 200% text and 120% interface scale without the previous welcome-card clipping
+- [ ] Add a useful but restrained desktop surface: verified status indicators, accessible shortcut selection and clear empty-workspace affordances
+- [ ] Implement shared layout primitives: measure/arrange, horizontal/vertical flow, padding/gaps, wrapping, clipping/ellipsis and scroll containers
+- [ ] Verify layout at 100/125/150/200% text/UI scales and 1024x768, 1280x800 and 1920x1080 framebuffer sizes
+- [ ] Standardize app chrome, titlebars, focus indication, keyboard navigation and modal dimming
+- [ ] Add a general window manager with independent surfaces, clipping, z-order and focus lifecycle
+- [ ] Add a first-login setup wizard with language/keyboard, appearance and network steps; current wizard remains limited to existing setup preferences
+- [ ] Add functional Text Editor and System Monitor applications
 
 ## Phase 10: User Applications (ACTIVE)
-- [x] Native framebuffer Terminal window and desktop/Start-menu launch integration (PR #97; regression test pending)
-- [x] Read-only commands: help, clear, echo, uname, version, uptime, mem, tasks, settings
-- [ ] Terminal launcher, keyboard input and close interaction regression must pass CI
-- [ ] File Manager, Text Editor and Calculator implementations
+- [x] Native framebuffer Terminal window with keyboard input and shell/Start-menu integration
+- [x] Built-in commands: help, clear, echo, uname, version, uptime, mem, tasks, settings
+- [x] Native Files application: read-only FAT32 root listing, selection and refresh
+- [ ] Terminal text selection, clipboard integration and standard window chrome
+- [ ] Files write operations, nested directories, long filenames and safe mutation
+- [ ] Text Editor with bounded open/edit/save workflow
+- [ ] System Monitor with real CPU, memory and process data
+- [ ] Calculator with validated arithmetic
 - [ ] Game SDK with graphics/audio syscalls; no actual games yet
 
 ## Phase 11: Hardware Abstraction (PARTIAL)

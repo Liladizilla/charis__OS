@@ -1,15 +1,15 @@
 <div align="center">
 
-# ⚙️ CharisOS
+# CharisOS
 
 **A from-scratch x86_64 operating system with a native framebuffer desktop, written in C & NASM**
 
-![Arch](https://img.shields.io/badge/arch-x86__64-blue?style=flat-square)
-![Lang](https://img.shields.io/badge/lang-C%20%2B%20NASM-purple?style=flat-square)
-![Boot](https://img.shields.io/badge/boot-Multiboot2%20%2F%20GRUB2-orange?style=flat-square)
+![Arch](https://img.shields.io/badge/arch-x86__64-lightgrey?style=flat-square)
+![Lang](https://img.shields.io/badge/lang-C%20%2B%20NASM-lightgrey?style=flat-square)
+![Boot](https://img.shields.io/badge/boot-Multiboot2%20%2F%20GRUB2-lightgrey?style=flat-square)
 ![CI](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml/badge.svg)
-![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
-![Stars](https://img.shields.io/github/stars/Liladizilla/charis__OS?style=flat-square&color=yellow)
+![License](https://img.shields.io/badge/license-MIT-lightgrey?style=flat-square)
+![Stars](https://img.shields.io/github/stars/Liladizilla/charis__OS?style=flat-square)
 
 *Built and maintained by **Charis Chara***
 
@@ -32,17 +32,15 @@
 
 ---
 
-## 📸 Current desktop
+## Current desktop
 
-The framebuffer desktop, system diagnostics and taskbar were captured from a passing QEMU build. The linked workflow also contains the Settings captures and the FAT32 save/reboot verification.
+The current QEMU workflow captures the desktop workspace, Files, Settings at multiple scales, Terminal, and a desktop image after applying enlarged text. These are engineering previews, not release screenshots. The latest successful run is [available here](https://github.com/Liladizilla/charis__OS/actions/runs/42367534252).
 
-[Open the verified desktop and Settings screenshots in the CI artifacts](https://github.com/Liladizilla/charis__OS/actions/runs/42244060806)
-
-> The native Terminal is under integration. Its launcher/input regression must pass before it is described as validated.
+> The dashboard-style home surface has been removed. The current shell is a minimal workspace with a Files shortcut, launcher, and taskbar. It is not yet a complete multi-window desktop; Files is still a read-only FAT32 root browser, and application chrome/layout consistency remain active work.
 
 ---
 
-## 📖 About
+## About
 
 CharisOS is an educational, from-scratch x86_64 kernel. Everything below the
 GRUB handoff is written by hand: the bootloader assembly, the physical and
@@ -79,7 +77,7 @@ merely compiled.
 | ELF loader (`sys_exec`) | ✅ Static x86-64 `ET_EXEC` loaded from FAT32 and entered in ring 3 (QEMU smoke test) |
 | **Ring-3 bootstrap** | ✅ Kernel task enters, syscalls, yields and resumes; invalid user access is rejected and private pages reclaimed |
 | **libc / userland build** | ❌ Not started |
-| Framebuffer, window manager, desktop | ✅ QEMU framebuffer capture; desktop, taskbar and diagnostics render |
+| Framebuffer and desktop shell | ⚠️ QEMU-tested minimal workspace, launcher and taskbar; apps remain modal surfaces and there is no complete multi-window environment |
 | Capability-based security | ⚠️ Partial — syscall open/exec gates and path validation; broader VFS/network enforcement remains |
 | Desktop preferences | ✅ Font family, font size and UI scale persist in `/CHARISOS.CFG` on writable primary ATA FAT32; reboot round-trip verified |
 | RTL8139 networking | ⚠️ TX wired; no TCP/IP or RX |
@@ -95,7 +93,7 @@ merely compiled.
 
 ---
 
-## ✨ Features
+## Features
 
 | Category | Details |
 |---|---|
@@ -108,9 +106,9 @@ merely compiled.
 | **VFS** | Node abstraction with read/write/open/close/readdir/finddir function pointers · device nodes · per-task fd tables |
 | **Storage** | ATA PIO driver · FAT32 read path |
 | **Loader** | `sys_exec` — validates ELF64 `ET_EXEC`, copies `PT_LOAD` contents, zeros BSS, maps permissions, and enters through IRET |
-| **Graphics** | Framebuffer driver · PSF2 bitmap font renderer · 2D primitives (line/rect/circle) · window manager with drag, focus and z-order · desktop with taskbar |
+| **Graphics** | Framebuffer driver · PSF2 bitmap font renderer · 2D primitives (line/rect/circle) · modal app surfaces · minimal desktop workspace and taskbar; general multi-window management is not implemented |
 | **Drivers** | VGA text · PS/2 keyboard and mouse · PIT · PCI enumeration with a probe/remove driver framework · HDA audio · RTL8139 Ethernet |
-| **Shell** | Built-in interpreter: `help`, `ls`, `echo`, `net`, `uptime`, `clear`; graphical Terminal is being integrated with a restricted read-only command set |
+| **Shell** | Built-in command interpreter · native graphical Terminal with bounded built-in commands · Files root browser · Settings for font family, text size and interface scale |
 
 ---
 
@@ -249,7 +247,7 @@ charis__OS/
 
 ---
 
-## 🛠️ Building
+## Building
 
 ### Prerequisites
 
@@ -301,7 +299,7 @@ qemu-system-x86_64 -cdrom build/charisos.iso -m 256M -nographic
 
 ---
 
-## 💾 Boot images: VM vs bare metal
+## Boot images: VM vs bare metal
 
 `make images` produces two named artifacts:
 
@@ -409,7 +407,7 @@ Combine with `make gdb` and:
 
 ---
 
-## 🔒 Security
+## Security
 
 Capability bits are defined in `include/kernel/security.h` and assigned per task
 at creation; children inherit the parent's set across `fork`.
@@ -420,8 +418,10 @@ at creation; children inherit the parent's set across `fork`.
 | `CAP_SPAWN` | `sys_exec`, `sys_fork` |
 | `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | reserved |
 
-`security_verify_path()` rejects `..` traversal. Stack canaries are seeded from
-an RDTSC/timer entropy mix in `security_init()`.
+`security_verify_path()` rejects parent-directory traversal. When RDRAND is
+available, it seeds the stack guard. Without RDRAND, the current fallback is
+weak and is explicitly warned about; cryptographic token generation is disabled.
+The fallback must not be treated as cryptographic entropy.
 
 **Known gaps:** enforcement currently covers `open` and `exec` only — the VFS
 read/write paths, socket syscalls, and shared memory are unchecked. The
@@ -431,24 +431,30 @@ See [`SECURITY.md`](./SECURITY.md) for reporting guidance.
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
-Near-term work, in rough priority order:
+The immediate priority is a trustworthy, consistent native desktop rather than
+a large collection of unfinished applications.
 
-- [ ] TCP/IP stack on the RTL8139 driver (ARP, ICMP, UDP, TCP) + RX path
-- [ ] `wait()` / `waitpid()` syscalls and zombie reaping
-- [ ] Wire the Settings app to `config_set_*` + `config_save()`
-- [ ] Add `mkdir`/`create` to the VFS so `/etc/charisos.conf` can be created
-- [ ] Enforce capabilities on VFS read/write, sockets and shared memory
-- [ ] Add `-Werror` to the build to prevent regression
-- [ ] Run `vmm_run_tests()` at boot behind a build flag
-- [ ] Userspace: real Ring 3 processes — CR3 load on first switch, `TSS.rsp0`, wire `address_space`, map a real user stack. Detailed in [`TODO.md`](./TODO.md).
+1. Repository and documentation accuracy, repeatable builds and reviewable
+   releases.
+2. Shared UI foundations: measured layout, word wrapping, clipping, scrolling,
+   font metrics and resolution/scale regression tests.
+3. A real desktop shell and consistent multi-window lifecycle.
+4. Complete the first core applications: Files, Terminal, Settings, Text Editor
+   and System Monitor.
+5. Continue kernel security and stability work: capability enforcement,
+   process reaping, ELF/address-space lifecycle, malformed-input testing and
+   long-session regression.
+6. Expand real hardware support, writable storage, networking and installation.
 
-[`TODO.md`](./TODO.md) tracks all of this in detail.
+The exact Working / Partial / Planned status is maintained in [`TODO.md`](./TODO.md).
+The design rules and current UI limitations are documented in
+[`docs/charis-design-language.md`](./docs/charis-design-language.md).
 
 ---
 
-## 📚 References
+## References
 
 | Resource | Topic |
 |---|---|
@@ -463,7 +469,7 @@ Near-term work, in rough priority order:
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a branch: `git checkout -b feat/your-feature`
@@ -476,7 +482,7 @@ boot. Read [`SECURITY.md`](./SECURITY.md) before reporting security issues.
 
 ---
 
-## 👤 Author
+## Author
 
 **Charis Chara**
 
@@ -486,12 +492,12 @@ boot. Read [`SECURITY.md`](./SECURITY.md) before reporting security issues.
 
 ---
 
-## 📄 License
+## License
 
 MIT — see [`LICENSE`](./LICENSE).
 
 ---
 
 <div align="center">
-  <sub>Written from scratch — no OS, no stdlib, no shortcuts.</sub>
+  <sub>An independent x86_64 operating system built from scratch in C and NASM.</sub>
 </div>

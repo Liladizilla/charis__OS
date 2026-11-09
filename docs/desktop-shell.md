@@ -1,46 +1,53 @@
-# CharisOS desktop shell
+# Desktop shell
 
-## Current desktop
+## Desktop workspace
 
-The native framebuffer shell provides:
+The native framebuffer desktop uses a shared graphite palette with restrained blue, amber, green and violet application accents. The workspace contains:
+- Product identity and a welcome surface.
+- Live system status for free managed RAM, active kernel tasks and uptime.
+- Four application tiles for Browser, Files, Terminal and Settings.
+- A pinned taskbar and Start launcher.
+- A software pointer and keyboard launch paths.
 
-- A dark desktop with a compact Start/taskbar surface.
-- Browser, Files and Terminal desktop shortcuts.
-- Four taskbar launchers: Browser, Files, Terminal and Settings.
-- A live System Overview card with uptime, managed RAM, active/blocked task counts, current task/PID, context switches, interrupt count and syscall count.
-- A notification card.
-- A Settings panel that reflows with font size and interface scale.
+The system card reads kernel diagnostics and memory-manager counters. These are current kernel metrics, not a complete hardware monitor. The desktop is still a single framebuffer shell, not yet a multi-window compositor.
+
+## Native applications
+
+### Files
+
+Files uses a three-part layout: volume locations, the root-directory list and a selection inspector. It supports bounded FAT32 root enumeration, keyboard navigation, selection and F5 refresh. The current filesystem browser is read-only and limited to FAT32 8.3 root entries. Nested directories, long filenames, file preview and write operations are not implemented. The inspector reports metadata only; it does not claim to open or edit a file.
+
+### Terminal
+
+Terminal is a native framebuffer command environment with a session title bar, local-session strip, dark console canvas, line gutter, differentiated prompt/output colours and a dedicated input row. Its text follows the configured system font family and text scale, with wrapped output and a horizontally scrolling prompt. Commands currently supported:
+- `help`, `clear`, `echo TEXT`
+- `uname`, `version`, `uptime`
+- `mem`, `tasks`, `settings`
+
+This is a built-in kernel command environment, not yet a general-purpose POSIX shell or isolated userspace terminal.
 
 ## Settings
 
-The current controls are:
+Settings uses a navigation rail and a focused Display preferences page. Current controls:
+- Font family: Proportional, Monospace, Bitmap serif.
+- Text size: 100%, 200%, 300%.
+- Interface scale: 80%, 100%, 120%.
 
-| Setting | Values | Behavior |
-|---|---|---|
-| Font family | Proportional, monospace, bitmap serif | Changes bitmap glyph selection |
-| Font size | 1x, 2x, 3x | Changes text scale |
-| UI scale | 80%, 100%, 120% | Changes desktop geometry and control sizes |
-
-Changes apply immediately and are saved to the root FAT32 file `/CHARISOS.CFG`. If a writable FAT32 volume is mounted, the kernel creates the file when needed and reloads it on the next boot. Without writable FAT32 storage, the Settings panel explicitly reports that the current session is not persistent.
+Changes apply immediately and are saved to `/CHARISOS.CFG` when a writable FAT32 volume is mounted. Without writable storage, the panel reports that preferences are session-only. The navigation categories are visual structure only until their corresponding settings services are implemented.
 
 ## Input
 
-- Click the Start button to open the launcher.
-- Click a desktop shortcut to open its app or status notice.
-- Use the pinned gear icon to open Settings directly.
-- Use the minus/plus controls to change font family, font size and global scale.
-
-## Diagnostics
-
-The System Overview values are collected from kernel diagnostics at redraw time. Free RAM is queried through the PMM's cached O(1) counter so the UI does not scan the physical-page bitmap on every frame.
-
-## Security-related shell behavior
-
-The desktop is a kernel task. User processes use private user code and stack frames; the scheduler updates TSS.RSP0 to the selected task's private kernel stack before each handoff. System-wide IPC, socket, audio, framebuffer-clear and diagnostics syscalls remain kernel-only until per-process ownership and capability-backed handles are implemented.
+- Click an application tile or pinned taskbar icon to launch it.
+- Click Start to open the application launcher.
+- F10 opens Files and F12 opens Terminal.
+- Escape closes the active modal application.
+- Settings controls apply font family, text size and interface scale changes.
 
 ## Known limitations
 
-- Browser opens, but Files and Terminal are still status notices rather than complete applications.
-- Preferences persist only when a writable FAT32 volume is mounted; the current VFS supports root-directory 8.3 filenames, not nested configuration directories.
-- ELF execution is denied to untrusted tasks until the loader and process-image lifecycle are fully enabled.
-- Manual keyboard/mouse testing on physical hardware and UEFI boot validation remain outstanding.
+- Browser networking and remote web transport are not complete.
+- Files remains a read-only root-directory browser with FAT32 8.3 names.
+- Terminal command coverage is intentionally small.
+- The shell is still a kernel task rather than a fully isolated userspace desktop session.
+- There is no general window manager yet: applications are modal surfaces, not independently movable, resizable, overlapping windows.
+- Physical hardware and UEFI interaction testing remain outstanding.

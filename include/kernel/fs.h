@@ -13,7 +13,15 @@ typedef struct {
     int  dir_index;
 } file_t;
 
+typedef struct {
+    char name[13];
+    u32 size;
+    bool directory;
+} fs_dirent_t;
+
 void fs_init(void);
+/* Enumerate bounded root-directory entries as 8.3 names. */
+int fs_list_root(fs_dirent_t* entries, u32 capacity);
 int fs_open(const char* path, file_t* file);
 int fs_read(file_t* file, void* buffer, usize size);
 int fs_write(file_t* file, const void* buffer, usize size);
