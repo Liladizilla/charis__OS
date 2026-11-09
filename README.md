@@ -34,9 +34,9 @@
 
 ## Current desktop
 
-The current QEMU workflow captures the desktop, Files, Settings at multiple scales, Terminal, and a separate desktop image after applying enlarged text. These are engineering previews, not release screenshots. The latest run is [available here](https://github.com/Liladizilla/charis__OS/actions/runs/42366246435).
+The current QEMU workflow captures the desktop workspace, Files, Settings at multiple scales, Terminal, and a desktop image after applying enlarged text. These are engineering previews, not release screenshots. The latest successful run is [available here](https://github.com/Liladizilla/charis__OS/actions/runs/42367534252).
 
-> The enlarged-text capture still shows clipped desktop copy. The desktop is under active redesign and is not yet presented as a finished, accessible environment.
+> The dashboard-style home surface has been removed. The current shell is a minimal workspace with a Files shortcut, launcher, and taskbar. It is not yet a complete multi-window desktop; Files is still a read-only FAT32 root browser, and application chrome/layout consistency remain active work.
 
 ---
 
@@ -77,7 +77,7 @@ merely compiled.
 | ELF loader (`sys_exec`) | ✅ Static x86-64 `ET_EXEC` loaded from FAT32 and entered in ring 3 (QEMU smoke test) |
 | **Ring-3 bootstrap** | ✅ Kernel task enters, syscalls, yields and resumes; invalid user access is rejected and private pages reclaimed |
 | **libc / userland build** | ❌ Not started |
-| Framebuffer and desktop shell | ⚠️ QEMU capture; modal app surfaces and taskbar render, but the desktop remains dashboard-style and there is no complete multi-window environment |
+| Framebuffer and desktop shell | ⚠️ QEMU-tested minimal workspace, launcher and taskbar; apps remain modal surfaces and there is no complete multi-window environment |
 | Capability-based security | ⚠️ Partial — syscall open/exec gates and path validation; broader VFS/network enforcement remains |
 | Desktop preferences | ✅ Font family, font size and UI scale persist in `/CHARISOS.CFG` on writable primary ATA FAT32; reboot round-trip verified |
 | RTL8139 networking | ⚠️ TX wired; no TCP/IP or RX |
@@ -106,9 +106,9 @@ merely compiled.
 | **VFS** | Node abstraction with read/write/open/close/readdir/finddir function pointers · device nodes · per-task fd tables |
 | **Storage** | ATA PIO driver · FAT32 read path |
 | **Loader** | `sys_exec` — validates ELF64 `ET_EXEC`, copies `PT_LOAD` contents, zeros BSS, maps permissions, and enters through IRET |
-| **Graphics** | Framebuffer driver · PSF2 bitmap font renderer · 2D primitives (line/rect/circle) · window manager with drag, focus and z-order · desktop with taskbar |
+| **Graphics** | Framebuffer driver · PSF2 bitmap font renderer · 2D primitives (line/rect/circle) · modal app surfaces · minimal desktop workspace and taskbar; general multi-window management is not implemented |
 | **Drivers** | VGA text · PS/2 keyboard and mouse · PIT · PCI enumeration with a probe/remove driver framework · HDA audio · RTL8139 Ethernet |
-| **Shell** | Built-in interpreter: `help`, `ls`, `echo`, `net`, `uptime`, `clear`; graphical Terminal is being integrated with a restricted read-only command set |
+| **Shell** | Built-in command interpreter · native graphical Terminal with bounded built-in commands · Files root browser · Settings for font family, text size and interface scale |
 
 ---
 
