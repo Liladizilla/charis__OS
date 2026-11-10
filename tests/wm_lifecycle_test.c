@@ -148,6 +148,24 @@ static void test_minimize_restore_and_focus_cycle(void) {
     expect(!wm_minimize_window(NULL), "null minimize rejected");
     wm_destroy_window(a); wm_destroy_window(b); wm_destroy_window(c);
 }
+static void test_window_limit_and_repeated_reuse(void) {
+    reset_manager();
+    window_t *items[MAX_WINDOWS];
+    for (unsigned i = 0; i < MAX_WINDOWS; i++) {
+        items[i] = wm_create_window("limit", (int)i, (int)i, 32, 32);
+        expect(items[i] != NULL, "window slot allocated below maximum");
+    }
+    expect(wm_get_window_count() == MAX_WINDOWS, "window count reaches configured cap");
+    expect(wm_create_window("overflow", 0, 0, 32, 32) == NULL,
+           "window count cap enforced");
+    for (unsigned i = 0; i < MAX_WINDOWS; i += 2) wm_destroy_window(items[i]);
+    for (unsigned i = 0; i < MAX_WINDOWS / 2; i++)
+        expect(wm_create_window("reuse", 0, 0, 32, 32) != NULL,
+               "destroyed slot can be reused");
+    expect(wm_create_window("overflow again", 0, 0, 32, 32) == NULL,
+           "reused slots still respect maximum");
+    reset_manager();
+}
 int main(void) {
     test_rejects_invalid_and_oversized_dimensions();
     test_allocation_failure_is_clean();
@@ -158,6 +176,7 @@ int main(void) {
     test_geometry_operations_are_bounded();
     test_resize_allocation_failure_is_transactional();
     test_minimize_restore_and_focus_cycle();
+    test_window_limit_and_repeated_reuse();
     expect(allocations == frees, "all test allocations released");
     puts("Window manager lifecycle, geometry and visibility tests passed");
     return 0;
