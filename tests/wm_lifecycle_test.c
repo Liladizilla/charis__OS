@@ -137,7 +137,7 @@ static void test_minimize_restore_and_focus_cycle(void) {
     expect(wm_focus_next() == a, "focus cycle wraps to oldest eligible window");
     expect(wm_focus_next() == b, "focus cycle advances by z-order");
     expect(wm_minimize_window(b), "focused surface minimizes");
-    expect(wm_get_focused() == c, "minimize transfers focus to topmost remaining surface");
+    expect(wm_get_focused() == a, "minimize transfers focus to highest remaining z-order surface");
     expect(wm_get_window_at(30, 30) == c, "minimized surface excluded from hit testing");
     expect(wm_restore_window(b), "minimized surface restores");
     expect(wm_get_focused() == b, "restored surface receives focus");
