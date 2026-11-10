@@ -95,6 +95,10 @@ static void test_shell_surface_avoids_duplicate_pixel_buffer(void) {
     expect(allocations == before + 1, "surface allocates only metadata");
     expect(wm_get_focused() == surface, "surface receives focus");
     expect(wm_get_window_at(30, 30) == surface, "surface participates in hit testing");
+    unsigned before_resize = allocations;
+    expect(wm_resize_window(surface, 500, 300), "bufferless surface geometry can be resized");
+    expect(surface->buffer == NULL && allocations == before_resize,
+           "resizing a shell surface does not allocate a content buffer");
     wm_destroy_window(surface);
     expect(wm_get_focused() == NULL, "closing surface releases focus");
 }
@@ -138,7 +142,7 @@ static void test_minimize_restore_and_focus_cycle(void) {
     expect(wm_focus_next() == b, "focus cycle advances by z-order");
     expect(wm_minimize_window(b), "focused surface minimizes");
     expect(wm_get_focused() == a, "minimize transfers focus to highest remaining z-order surface");
-    expect(wm_get_window_at(30, 30) == c, "minimized surface excluded from hit testing");
+    expect(wm_get_window_at(30, 30) == a, "hit testing selects highest remaining z-order surface");
     expect(wm_restore_window(b), "minimized surface restores");
     expect(wm_get_focused() == b, "restored surface receives focus");
     expect(!wm_minimize_window(NULL), "null minimize rejected");
