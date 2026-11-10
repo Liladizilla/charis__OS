@@ -9,7 +9,7 @@
 - [x] PMM safety: double-free check, next-fit cursor
 
 ## Phase 2: Syscall Interface & User Space (PARTIAL)
-- [x] SYSCALL/SYSRET assembly entry and MSR setup (user bootstrap wrappers currently use DPL3 `int 0x80`)
+- [x] SYSCALL/SYSRET assembly entry and MSR setup (user bootstrap wrappers currently use DPL3 int 0x80)
 - [x] sys_exit(), sys_getpid(), sys_yield(), sys_sleep()
 - [x] sys_read()/sys_write() with fd-based I/O
 - [x] sys_print() - debug output
@@ -18,233 +18,94 @@
 - [x] Per-process fd table (stdin/stdout/stderr pre-opened)
 
 ## Phase 3: Filesystem (PARTIAL)
-- [x] VFS layer (vfs.h, vfs.c) - vfs_node_t, mount points
-- [x] Device nodes: /dev/null, /dev/zero, /dev/kbd, /dev/vga
-- [x] Per-task fd table with fd_alloc(), fd_get(), fd_close()
-- [x] FAT32 integration with VFS (read-only)
-- [x] sys_open() / sys_close() syscalls
+- [x] VFS layer, device nodes, per-task fd table and read-only FAT32 integration
+- [ ] Capability enforcement in all VFS read/write paths
 
 ## Phase 4: ELF Loader (IN PROGRESS)
-- [x] Validate static ELF64 x86-64 `ET_EXEC` headers and program-header bounds
-- [x] Copy `PT_LOAD` file contents, zero pages for BSS, and map user permissions
-- [x] `sys_exec` replaces the ring-3 IRET frame with the ELF entry and stack
-- [x] QEMU FAT32 smoke test enters an ELF and prints `ELF_EXEC_OK`
-- [x] Build bounded `argc`/`argv`/`envp` vectors plus `AT_NULL` on the initial stack
-- [ ] `ET_DYN` and relocations/interpreters
-- [ ] Tear down/reclaim old image mappings on repeated exec
+- [x] Validate static ELF64 x86-64 ET_EXEC headers and program-header bounds
+- [x] Copy PT_LOAD contents, zero BSS and map user permissions
+- [x] sys_exec replaces the ring-3 IRET frame with the ELF entry and stack
+- [x] QEMU FAT32 smoke test enters an ELF and prints ELF_EXEC_OK
+- [x] Build bounded argc/argv/envp vectors plus AT_NULL
+- [ ] ET_DYN, relocations/interpreters and safe image teardown on repeated exec
 
 ## Phase 5: Graphics & Display (COMPLETE)
-- [x] fb.h/fb.c - framebuffer driver using the Multiboot2 framebuffer handoff
-- [x] psf.h/psf.c - PC Screen Font renderer (PSF2 support)
-- [x] fb_put_pixel(), fb_clear(), fb_fill_rect()
-- [x] graphics.h/graphics.c - 2D drawing primitives
-- [x] graphics_line() - Bresenham's algorithm
-- [x] graphics_rect() - filled/outline
-- [x] graphics_circle() - midpoint circle
-- [x] graphics_put_string() - PSF-based text rendering
+- [x] Multiboot2 framebuffer, PSF2 bitmap font and 2D graphics primitives
 
 ## Phase 6: Window System (PARTIAL)
-- [x] Window/widget/input foundations exist (`wm.c`, `compositor.c`, `widgets.c`, `input.c`)\n- [x] Bound WM window count, validate dimensions and allocation size, cap title strings, clip window drawing, ignore hidden/minimized windows in hit testing, and safely compact z-order
-- [x] PS/2 mouse input and pointer-driven shell interaction
-- [x] Shell-owned Terminal, Files, Browser, Settings and About surfaces register with WM focus/lifecycle metadata without duplicate pixel buffers
-- [ ] General desktop window lifecycle and independent per-window surfaces
-- [ ] Consistent titlebar controls, focus/z-order, minimize/restore and Alt+Tab
-- [x] Register shell-owned native app surfaces with WM focus and lifecycle metadata (no duplicate buffers; existing app renderer remains authoritative)
-- [ ] Integrate the bounded WM clipping/compositing path into the active desktop shell and add resize handling
-- [x] Host-side C regression tests cover window limits, allocation failures, title sanitization, focus/hit testing, visibility, focus recovery and repeated create/destroy cycles
-- [ ] QEMU interaction tests for window dragging, overlapping surfaces and focus transitions
+- [x] Bounded WM window count, dimensions, buffer allocation, title sanitization, clipping and z-order
+- [x] Host-side lifecycle and bounds tests
+- [x] Bufferless shell-surface registration without duplicate pixel buffers
+- [x] Metadata-level move, transactional resize, minimize, restore, visibility and focus-cycle APIs with host tests
+- [ ] Wire geometry operations to shell-owned application renderers
+- [ ] Independent per-window render surfaces and compositor ownership
+- [ ] Titlebar close/minimize/maximize controls and resize handles
+- [ ] Alt+Tab and taskbar focus/restore integration
+- [ ] QEMU tests for overlapping windows, pointer drag, resize and focus transitions
 
-The current desktop uses modal native app surfaces and a shell redraw path. The
-presence of WM/compositor source files does not mean a complete multi-window
-desktop is available.
+The current shell still owns the framebuffer and supports one modal app at a time. WM metadata operations do not yet constitute a complete multi-window desktop.
 
 ## Phase 7: IPC & Signals (PARTIAL)
-- [x] Signals (SIGINT, SIGSEGV, SIGCHLD) - signal.c exists
-- [x] Pipes - pipe.c implemented
-- [x] Shared memory (shm.c)
-- [ ] Unix domain sockets (socket.c is INET-only)
-- [x] Distinguish unused task slots from exited zombies; exited tasks are no longer silently reused
-- [x] Preserve the `SYS_EXIT` status in zombie metadata for future `waitpid()` collection
-- [x] Track each task's creator PID and provide task-table PID lookup for child collection
-- [ ] wait()/waitpid() syscall and safe resource reaping still missing
+- [x] Signals and pipes foundations
+- [x] Shared memory foundation
+- [ ] Unix domain sockets
+- [x] Track exited tasks as zombies and preserve exit status/creator PID
+- [ ] wait()/waitpid() and safe resource reaping
 
-## Phase 8: Network Stack (PARTIAL - ENABLED BUT INCOMPLETE)
-- [x] Socket API (AF_INET, SOCK_STREAM/SOCK_DGRAM) - socket.c
-- [x] Socket syscalls (SYS_SOCKET, SYS_CONNECT, SYS_BIND, SYS_LISTEN, SYS_ACCEPT, SYS_SEND, SYS_RECV, SYS_SOCKET_CLOSE)
-- [x] RTL8139 driver (net.c) - finds device via PCI, basic TX implemented
-- [ ] TCP/IP stack foundation (net_handle_tcpip is stub)
-- [ ] ARP/ICMP implementation
-- [ ] DHCP/static IP config via config.c
-- [ ] RX packet handling (net_recv_packet returns 0)
-- [ ] IRQ-driven network processing
+## Phase 8: Network Stack (PARTIAL)
+- [x] AF_INET socket API and syscalls
+- [x] RTL8139 PCI probe and basic transmit path
+- [ ] TCP/IP, ARP/ICMP, receive path, DHCP and IRQ-driven processing
 
 ## Phase 9: Desktop Environment (PARTIAL, ACTIVE)
-- [x] Minimal workspace replaces the dashboard-style home surface; Files desktop shortcut, launcher and taskbar render in QEMU
-- [x] Native Files launcher and read-only FAT32 root browser (8.3 names only)
-- [x] Native Terminal surface with bounded built-in commands
-- [x] Settings controls for font family, text size and global UI scale
-- [x] Settings persist to `/CHARISOS.CFG` on supported primary ATA FAT32 and reload after reboot in CI
-- [x] QEMU capture verifies the desktop after closing Settings at 200% text and 120% interface scale without the previous welcome-card clipping
-- [ ] Add a useful but restrained desktop surface: verified status indicators, accessible shortcut selection and clear empty-workspace affordances
-- [ ] Implement shared layout primitives: measure/arrange, horizontal/vertical flow, padding/gaps, wrapping, clipping/ellipsis and scroll containers
-- [ ] Verify layout at 100/125/150/200% text/UI scales and 1024x768, 1280x800 and 1920x1080 framebuffer sizes
-- [ ] Standardize app chrome, titlebars, focus indication, keyboard navigation and modal dimming
-- [ ] Add independently movable/resizable windows, multi-window z-order, titlebar controls and Alt+Tab; current shell registers one active modal app surface
-- [ ] Add a first-login setup wizard with language/keyboard, appearance and network steps; current wizard remains limited to existing setup preferences
-- [ ] Add functional Text Editor and System Monitor applications
+- [x] Minimal workspace, launcher, taskbar and native Files/Terminal/Settings surfaces
+- [x] Settings font family, text size and UI scale persistence
+- [ ] Improve desktop density, status indicators and accessible workspace affordances
+- [ ] Shared layout primitives and scale/resolution validation
+- [ ] Independent multi-window desktop and consistent native app chrome
+- [ ] First-login setup wizard with language, keyboard, appearance and network steps
+- [ ] Functional Text Editor and System Monitor
 
 ## Phase 10: User Applications (ACTIVE)
-- [x] Native framebuffer Terminal window with keyboard input and shell/Start-menu integration
-- [x] Built-in commands: help, clear, echo, uname, version, uptime, mem, tasks, settings
-- [x] Native Files application: read-only FAT32 root listing, selection and refresh
-- [ ] Terminal text selection, clipboard integration and standard window chrome
-- [ ] Files write operations, nested directories, long filenames and safe mutation
-- [ ] Text Editor with bounded open/edit/save workflow
-- [ ] System Monitor with real CPU, memory and process data
-- [ ] Calculator with validated arithmetic
-- [ ] Game SDK with graphics/audio syscalls; no actual games yet
+- [x] Native Terminal with bounded built-in commands
+- [x] Native Files with read-only FAT32 root listing
+- [ ] Terminal selection/clipboard and standard window chrome
+- [ ] Files writes, nested directories, long filenames and safe mutation
+- [ ] Text Editor, System Monitor and Calculator
 
 ## Phase 11: Hardware Abstraction (PARTIAL)
-- [x] HDA audio driver with PCI binding (hda.c) - probe logic fixed
-- [x] USB device enumeration placeholder (usb.c - stub)
-- [x] Driver framework with probe/remove callbacks (driver.c) - wildcard match bug fixed
-- [x] PCI class/subclass detection in pci_scan()
-- [ ] ATA driver (ata.c) - basic read only, no write, no identify
-- [ ] Second ATA driver (disk.c) - REMOVED (dead code)
-- [ ] GPU/framebuffer driver for real hardware (fb.c uses fixed 640x480)
+- [x] HDA probe foundation, USB enumeration placeholder and PCI driver framework
+- [ ] ATA identify/write support and broader GPU/framebuffer driver support
 
 ## Phase 12: Graphics Acceleration (PARTIAL)
-- [x] Software rasterizer (16.16 fixed-point) - raster.c
-- [x] Triangle rasterization with depth buffer
-- [x] Barycentric coordinate interpolation
-- [ ] Integration with window system (not wired)
+- [x] Software rasterizer and triangle/depth-buffer foundation
+- [ ] Integrate rasterizer with window system
 
-## Phase 13: Gaming Support (HEADERS ONLY)
-- [x] Gamepad subsystem (gamepad.c - stub)
-- [x] Game SDK header (sdk/charis_game.h)
-- [x] SYS_GAME_* syscalls for graphics/audio - registered but minimal impl
+## Phase 13: Gaming Support (HEADERS/FOUNDATIONS)
+- [x] Gamepad and game SDK/syscall foundations
 - [ ] Actual game demo
 
-## Phase 14: Security & Capabilities (PARTIAL - ENFORCEMENT IN PROGRESS)
-- [x] Capability bitmask per task (CAP_FS_READ, CAP_FS_WRITE, CAP_SPAWN, etc.)
-- [x] Capability inheritance on fork
-- [x] Capability enforcement in sys_open() and sys_exec() (NEW)
-- [x] Path traversal blocking in security_verify_path() (NEW)
-- [ ] Capability enforcement in VFS write/read paths
-- [ ] Capability enforcement in socket/net syscalls
-- [ ] Cryptographically secure entropy source; token generation remains disabled when RDRAND is unavailable
+## Phase 14: Security & Capabilities (PARTIAL)
+- [x] Per-task capability bitmask and inheritance
+- [x] Capability enforcement in sys_open/sys_exec and path traversal blocking
+- [ ] Enforce capabilities across VFS and network syscall paths
+- [ ] Cryptographically secure entropy source; token generation remains disabled without RDRAND
 - [ ] Persistent audit log
 
-## Phase 15: Configuration & Persistence (PARTIAL, QEMU VERIFIED)
-- [x] In-memory typed config store
-- [x] Root FAT32 config file /CHARISOS.CFG created when a writable primary ATA volume is mounted
-- [x] Settings UI saves font family, font scale and UI scale immediately
-- [x] CI reads the saved file, reboots with the same disk and verifies the values reload
-- [ ] Persistence on non-ATA storage and filesystems beyond current FAT32 support
+## Phase 15: Configuration & Persistence (PARTIAL)
+- [x] Typed in-memory config and FAT32 settings persistence
+- [ ] Persistence on other storage devices/filesystems
 
 ## Phase 16: Build & Quality (IN PROGRESS)
-- [x] Kernel compiles cleanly (all 7 errors fixed)
-- [x] CI workflow (.github/workflows/ci.yml) - build + QEMU ring-3 yield/resume boot test
-- [x] QEMU regression gate covers BIOS ring-3 yield/resume and static ELF execution
-- [x] Repo hygiene: .gitattributes, .gitignore, CRLF→LF fixed
-- [x] Boot debug markers fixed (no collisions, full coverage)
-- [ ] vmm_test.c wired into make test (compiles, but RUN_VMM_TESTS only for vmm_test.o)
-- [x] Removed obsolete `disk.c` implementation
-- [x] Enable `-Werror` for kernel compilation
-- [x] Add host-side WM lifecycle/bounds regression coverage to CI
-- [ ] Expand automated regression coverage beyond current boot, ring-3, ELF, VMM and WM metadata gates
+- [x] Kernel builds with warnings treated as errors
+- [x] CI boot, ring-3, ELF, VMM, desktop capture and WM host tests
+- [ ] Wire remaining VMM tests into a unified host/QEMU test target
+- [ ] Expand malformed filesystem, syscall and input regression coverage
 
 ## Phase 17: Process Management (IN PROGRESS)
-- [x] Bootstrap user task enters ring 3 with a private address-space branch and mapped user stack
-- [x] DPL3 syscall, yield to a kernel task, and resume the user interrupt frame (QEMU verified)
-- [x] `sys_exec` loads a static ELF into the running ring-3 task (QEMU verified)
-- [ ] Complete user ABI/libc and validate SYSRET path
-- [ ] Per-task kernel interrupt stacks and SMP-safe TSS handling
-- [ ] wait()/waitpid() syscall for zombie reaping
-- [ ] Process groups/sessions
-- [ ] Signal delivery to process groups
-- [ ] Resource limits (RLIMIT_*)
+- [x] Ring-3 bootstrap, DPL3 syscall/yield/resume and static ELF execution smoke test
+- [ ] Complete user ABI/libc, SYSRET validation and per-task kernel interrupt stacks
+- [ ] wait()/waitpid(), process groups, signals and resource limits
 
----
-
-## Summary of Audit Fixes Applied (Sep 2026)
-
-| Priority | Issue | Status |
-|----------|-------|--------|
-| 1 | 7 compilation errors | ✅ FIXED |
-| 2 | CI workflow | ✅ ADDED (now greps a post-init sentinel) |
-| 3 | Repo hygiene (node_modules, CRLF, logs) | ✅ FIXED |
-| 4 | Boot debug markers (collisions, gaps) | ✅ FIXED |
-| 5 | Dead code and VMM test coverage | ⚠️ `disk.c` removed; VMM tests compile and run in a dedicated QEMU CI image |
-| 6 | Config persistence | ✅ IMPLEMENTED |
-| 7 | Capability enforcement + PCI wildcard | ✅ IMPLEMENTED |
-| 8 | Networking (net_init, socket_send) | ✅ ENABLED (RTL8139 TX wired, RX/TCP stubs) |
-| 9 | TODO.md sync | ✅ THIS FILE |
-
----
-
-## Boot-blocking bugs found during the Sep 2026 audit
-
-These were not in the original audit. They were found by instrumenting
-`kernel_main()` with serial traces and stepping through a real QEMU boot. The
-first three each caused the kernel to hang, which meant **every subsystem
-initialised after the hang point had never actually executed** — so several
-"verified" items above were only verified to compile, not to run.
-
-| Bug | Location | Effect | Fix |
-|---|---|---|---|
-| `u8 bus` compared `< 256` | `kernel/pci.c:12` | `pci_scan()` looped forever. GCC emitted `-Wtype-limits` and the warning was ignored. Everything after `pci_scan()` in `kernel_main()` — config, desktop, services, diagnostics, power, security, net_init, task creation, `scheduler_start()` — never ran. | Widen the loop variable to `u16`. |
-| FAT32 walk with no volume | `kernel/fs.c` | `fs_init()` bails with "Not FAT32" when no disk is attached, but set no validity flag. `fs_open()` then walked a garbage FAT chain from an uninitialised boot sector and hung inside `config_load()`. This is the common case: booting from CD-ROM with no hard disk. | Added an `fs_mounted` flag plus geometry validation (non-zero `sectors_per_cluster`/`num_fats`/`fat_size_32`, sane `data_start` and `root_cluster`); `fs_open`/`fs_read` now return `-1` immediately when unmounted. |
-| Multiboot2 magic clobbered | `boot/boot.asm` | The debug output at the top of `start:` wrote to `AL` and `AH` before `EAX` was saved, so `mb_magic` stored corrupted data. The kernel then rejected its own boot. | Save `EAX`/`EBX` as the first two instructions of `start:`, before any debug output. |
-| `char c` compared `> 127` | `kernel/psf.c:30,62` | `char` is signed on x86, so `c > 127` is always false. Latin-1/high-byte characters are never skipped and index out of the intended glyph range. | Cast input to `unsigned char` before range checks. Fixed in `kernel/psf.c`. |
-| Wrong initial return address | `kernel/task.c` | `task_create()` pushed `task_exit_handler` where `context_switch`'s `ret` lands. The task's entry function was never called; `task_exit_handler` ran instead and `kfree`'d the stack it was executing on. Triple fault the instant the scheduler started. | Push `task_trampoline`, which pops `func` and `arg` off the same stack and calls them. |
-| Ring-3 frame one slot short | `kernel/task.c` | `context_switch` pops six callee-saved registers before reaching `iretq`, which then consumes five more. Only five zeros were pushed, so `iretq` loaded RIP from the CS value and jumped to address `0x1B` in ring 3. | Push six zeros so the frame is 6 register slots + the 5-slot `iretq` frame. |
-| Boot gate could not see a crash | `tools/verify-boot.sh` | The gate only checked that init printed a line, so a kernel that completed init and then faulted passed. The two bugs above were invisible to CI. | Also assert liveness: QEMU exiting before the timeout fires, or a second firmware banner, both mean the guest reset. |
-
-### Why this happened
-
-The build already reported all of these. The warnings were visible in the
-compiler output and were dismissed. The first corrective action taken was to
-make CI verify something that could not distinguish "booted successfully" from
-"halted immediately after the banner" — the old check greppped for `Built:`,
-which is printed *before* the Multiboot2 magic is validated.
-
-CI now asserts on `[BOOT] init complete, entering scheduler`, a line emitted
-only after the magic validates, every `init*()` returns, and the shell task is
-created — **and** that the guest is still alive afterwards. A kernel that boots
-and then crashes now fails the build.
-
----
-
-## Userspace status
-
-The QEMU boot gate verifies a ring-3 task enters through `iretq`, prints via
-the DPL3 `int 0x80` interface, yields to a kernel task, resumes its saved
-interrupt frame, prints again, and leaves the guest alive. The test task is
-still compiled into the kernel image; this does not yet mean ELF binaries can
-be loaded as isolated user programs.
-
-The SYSCALL/SYSRET assembly path, libc, ELF-to-task handoff, complete user
-pointer validation, and per-task kernel interrupt stacks remain incomplete.
-
----
-
-## Recommended Next Steps
-
-1. **Implement TCP/IP stack** - ARP, ICMP, TCP state machine in net.c
-2. **Add wait()/waitpid()** - validate child ownership, copy status safely, and reap address spaces only after mapping ownership is tracked
-3. **Finish Files write support** - implement safe FAT32 mutation and validate cluster-chain updates
-4. **Complete process reaping** - implement wait()/waitpid() with ownership-safe teardown
-5. **Expand regression coverage** - add WM lifecycle tests and malformed filesystem/input cases
-6. **Extend capability checks** - enforce read/write and network permissions in the VFS and socket paths
-7. **Add network receive path and DHCP** - only after RTL8139 RX and TCP/IP foundations are complete
-
-## Implementation Details (merged from PROGRESS.md, source of truth)
-
-- `kernel/irq.c`: `pic_init`, `pic_send_eoi`, `pic_mask_irq`, `pic_unmask_irq`; EOI added to timer and keyboard handlers
-- `kernel/input.c`: mouse button state tracking; `wm_process_mouse` for window dragging
-- `kernel/services.c`: background service manager (not yet reflected in a TODO phase)
-- `kernel/display.c`: multi-monitor support (up to 4 displays; not yet in TODO)
-- `kernel/power.c`: power state management (idle, sleep, shutdown; not yet in TODO)
-
-> PROGRESS.md was removed on 2026-10-05. TODO.md is the single source of truth.
+## Security posture
+CharisOS remains an early-stage kernel. Capability enforcement, user-pointer validation, address-space teardown, interrupt-stack isolation, filesystem mutation and cryptographic entropy are incomplete. Do not describe it as production-secure or a Windows replacement until these areas have been implemented and independently tested.
