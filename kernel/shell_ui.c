@@ -1045,6 +1045,8 @@ static void handle_event(const input_event_t* e) {
     }
 
     case INPUT_MOUSE_MOVE:
+        serial_printf("SHELL_POINTER_MOVED %d,%d\\n",
+                      e->mouse.x, e->mouse.y);
         if (shell_resize_window) {
             int id = shell_app_id_for_window(shell_resize_window);
             if (id >= 0) {

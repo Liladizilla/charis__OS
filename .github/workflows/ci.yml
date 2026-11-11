@@ -213,12 +213,12 @@ jobs:
             # grip (initial pointer 50,50; Terminal bounds 228,188 to 868,628).
             # QEMU HMP mouse_move uses relative deltas. PS/2 Y is inverted by
             # QEMU, so positive monitor Y moves down in the framebuffer.
-            # Keep every PS/2 delta below 127 counts and give the guest
-            # time to drain the three-byte packet before sending the next one.
-            # Eight 101x71 steps move from (50,50) to the grip at (858,618).
+            # Keep every PS/2 delta comfortably below 127 counts and
+            # allow the guest input task to drain each three-byte packet.
+            # Eight 100x70 steps move from (50,50) to the grip at (850,610).
             for step in {1..8}; do
-              printf 'mouse_move 101 71\n'
-              sleep 0.2
+              printf 'mouse_move 100 70\n'
+              sleep 0.5
             done
             sleep 1
             printf 'mouse_button 1\n'
@@ -272,7 +272,8 @@ jobs:
           grep -q 'TERMINAL_CMD help' build/desktop-capture-serial.log
           grep -q 'SHELL_WINDOW_MAXIMIZED' build/desktop-capture-serial.log
           grep -q 'SHELL_WINDOW_RESTORED' build/desktop-capture-serial.log
-          grep -q 'SHELL_RESIZE_GRIP_ARMED 858,618' build/desktop-capture-serial.log
+          grep -q 'SHELL_POINTER_MOVED 850,610' build/desktop-capture-serial.log
+          grep -q 'SHELL_RESIZE_GRIP_ARMED 850,610' build/desktop-capture-serial.log
           grep -q 'SHELL_WINDOW_RESIZED 720x464' build/desktop-capture-serial.log
           test -s build/charisos-maximized-preview.ppm
           test -s build/charisos-multiwindow-preview.ppm
