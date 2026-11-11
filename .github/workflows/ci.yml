@@ -306,6 +306,15 @@ jobs:
             sleep 2
             printf 'screendump build/charisos-settings-reloaded-preview.ppm\n'
             sleep 1
+            # The persisted 200% setting has now been verified after reboot.
+            # Increase once more to the largest supported font size and capture
+            # the desktop without the Settings window obscuring the workspace.
+            printf 'sendkey f6\n'
+            sleep 2
+            printf 'sendkey esc\n'
+            sleep 2
+            printf 'screendump build/charisos-desktop-large-font-preview.ppm\n'
+            sleep 1
             printf 'quit\n'
           } | timeout 35s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
@@ -365,6 +374,7 @@ jobs:
             build/charisos-settings-adjusted-preview.ppm
             build/charisos-desktop-scaled-preview.ppm
             build/charisos-settings-reloaded-preview.ppm
+            build/charisos-desktop-large-font-preview.ppm
             build/charisos-terminal-preview.ppm
             build/desktop-capture-serial.log
             build/desktop-capture-qemu.log
