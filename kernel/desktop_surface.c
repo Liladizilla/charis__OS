@@ -60,8 +60,7 @@ static const char* const shortcut_label[DESKTOP_SHORTCUT_COUNT] = {
     "Files", "Terminal", "Settings", "Browser"
 };
 static const char* const shortcut_detail[DESKTOP_SHORTCUT_COUNT] = {
-    "Browse local volumes", "Run commands and tools",
-    "Personalize your system", "Explore local pages"
+    "Local files", "Command line", "Preferences", "Web pages"
 };
 
 static void draw_u32(u32 x, u32 y, u32 value, u32 color) {
