@@ -33,7 +33,7 @@ The project is under active development. It is not currently a general-purpose o
 | Graphical shell | Framebuffer workspace with independent Terminal, Files, Browser, Settings and About windows; workspace and application coverage remain limited |
 | Window manager | Bounded ownership, back-to-front composition, focus-only input, move, lower-right resize grip, maximize/restore, minimize, taskbar switching and Alt+Tab; snap/tiling and QEMU pointer-resize validation remain unfinished |
 | Settings | Font family, text size and interface scale; CI verifies saved values survive a reboot on a writable FAT32 test disk |
-| Security | Capability checks and input validation exist in selected paths; enforcement and isolation are incomplete |
+| Security | Selected capability checks and input validation; page faults use a dedicated TSS.IST1 stack with QEMU guard-fault verification; overall enforcement and isolation remain incomplete |
 | Networking | RTL8139 transmit path only; receive and TCP/IP stack are not implemented |
 | USB and peripherals | USB and gamepad support are stubs; audio support is incomplete |
 | Userspace | No complete libc, package manager, installer or general-purpose userspace environment |
@@ -42,7 +42,7 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The latest checked-in PNG remains the 1024×768 capture from commit `1f0414c` (CI run #724). The latest full [QEMU desktop artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43085558879) is run #730 on commit `e9abac5`; it contains the refreshed workspace with live Kernel Activity counters plus app, multi-window, resize, Settings and serial/QEMU captures.
+The latest checked-in PNG remains the 1024×768 capture from commit `1f0414c` (CI run #724). The latest full [QEMU desktop artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43087769709) is run #732 on commit `d8c21dc`; it contains the refreshed workspace, app and multi-window captures, Settings persistence after reboot, and the kernel-stack guard/IST fault-injection boot logs.
 
 ![CharisOS QEMU desktop workspace, CI run 724](docs/screenshots/charisos-desktop-run-724.png)
 
@@ -50,9 +50,9 @@ The [run #722 capture](docs/screenshots/charisos-desktop-run-722.png) and older 
 
 ## Latest desktop validation
 
-[CI run #730](https://github.com/Liladizilla/charis__OS/actions/runs/43085558879) passed on commit `e9abac5`. It completed dependency installation, the freestanding kernel build, x86-64 baseline audit, browser and window-manager host tests, BIOS/ring-3 checks, VMM huge-page/permission regressions, QEMU desktop captures and Settings persistence checks.
+[CI run #732](https://github.com/Liladizilla/charis__OS/actions/runs/43087769709) passed on commit `d8c21dc`. It completed dependency installation, the freestanding kernel build, x86-64 baseline audit, browser and window-manager host tests, BIOS/ring-3 checks, VMM huge-page/permission regressions, the dedicated kernel-stack guard/IST1 fault-injection test, QEMU desktop captures and Settings persistence checks.
 
-The refreshed 1024×768 QEMU capture shows four direct application cards, the System Overview panel, System Status and a new Kernel Activity panel. Kernel Activity displays context-switch, interrupt and syscall counters through an O(1) snapshot API; desktop repaint does not traverse the scheduler task list. The widget is suppressed above 200% text scale or when there is insufficient width/height, rather than colliding with the taskbar. At 200% text and 120% UI scale it is intentionally absent. The desktop still has unused space below the panels, and user-facing live workspace content, the complete 100/125/150/200% text/UI and 1024×768, 1280×800 and 1920×1080 matrix remain unfinished. This is engineering evidence, not a release-quality claim.
+The refreshed 1024×768 QEMU capture shows four direct application cards, System Overview, System Status and Kernel Activity. Kernel Activity displays context-switch, interrupt and syscall counters through an O(1) snapshot API; desktop repaint does not traverse the scheduler task list. It is suppressed when text scale or available geometry leaves insufficient room. At 200% text and 120% UI scale it is intentionally absent. CI run #732 also boots a dedicated fault-injection image: a kernel task writes to its own unmapped stack guard, the CPU enters through TSS.IST1, the dispatcher verifies the exception frame is on that stack, emits containment markers and halts with a diagnostic panic rather than triple-faulting. This proves safe exception reporting, not recovery of a corrupted kernel task. Unused desktop space, richer user-facing workspace content and the complete font/UI/framebuffer matrix remain open. This is engineering evidence, not a release-quality claim.
 
 The current ELF disk test accepts an explicit `ELF_EXEC_DENIED_CAPABILITY` result because the bootstrap task does not receive `CAP_ALLOW_EXEC`; it does not prove that an ELF executable was entered. Successful authorized ELF execution remains an explicit validation gap.
 

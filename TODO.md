@@ -68,7 +68,7 @@
 - [x] Add direct Files, Terminal, Settings and Browser launch cards with responsive one-/two-/four-column geometry and a live PIT/PMM System Overview panel
 - [x] Add a lower System Status panel with live memory-allocation and display-profile values
 - [x] Add a Kernel Activity panel with O(1) context-switch, interrupt and syscall counters; suppress it when the selected text scale or available geometry cannot accommodate it
-- [x] Capture and verify the 1024×768 workspace, native app windows, multi-window focus routing, maximize/restore, keyboard resize, System Status, Kernel Activity and settings persistence across reboot in CI run #730
+- [x] Capture and verify the 1024×768 workspace, native app windows, multi-window focus routing, maximize/restore, keyboard resize, System Status, Kernel Activity and settings persistence across reboot in CI run #732
 - [ ] Use the remaining desktop area for useful user-facing content; the verified system panels are not a substitute for a richer workspace
 - [ ] Validate the full font/UI scale matrix and additional 1280×800 and 1920×1080 framebuffer modes
 
@@ -159,7 +159,9 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [ ] Cryptographically secure entropy source; token generation remains disabled when RDRAND is unavailable
 - [ ] Persistent audit log
 - [x] Allocate each kernel task stack from page-aligned supervisor-only writable/NX frames, with a genuinely unmapped guard page and deferred physical-frame reclamation after context switch
-- [ ] Add a QEMU page-fault containment test that deliberately probes a task's unmapped kernel-stack guard
+- [x] Configure a dedicated, aligned TSS.IST1 landing stack for page-fault vector 14 and verify the exception frame remains within it
+- [x] QEMU deliberately writes into a kernel task's unmapped stack guard; CI run #732 verifies IST1 frame placement and the diagnostic panic markers
+- [ ] Add a separate IST2/double-fault stack and nested-fault regression; the guard test halts safely rather than attempting unsafe recovery of a damaged kernel task
 
 ## Phase 15: Configuration & Persistence (PARTIAL, QEMU VERIFIED)
 - [x] In-memory typed config store
@@ -185,8 +187,9 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] WM list traversal detects duplicate nodes and remains bounded if links form a cycle
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions
-- [x] CI run #730 passed the freestanding build, x86-64 baseline audit, BIOS/ring-3 isolation checks, VMM huge-page/permission regression suite and QEMU desktop/settings capture
-- [x] QEMU capture from run #730 verifies Files, Terminal, Browser, multi-window routing, maximize/restore, keyboard resize, System Status and Kernel Activity counters
+- [x] CI run #732 passed the freestanding build, x86-64 baseline audit, BIOS/ring-3 isolation checks, VMM huge-page/permission regression suite, dedicated kernel-stack guard fault on IST1 and QEMU desktop/settings capture
+- [x] QEMU capture from run #732 verifies Files, Terminal, Browser, multi-window routing, maximize/restore, keyboard resize, System Status and Kernel Activity counters
+- [x] QEMU guard-probe from run #732 verifies the kernel stack-guard #PF arrives on IST1 and produces the expected diagnostic markers
 - [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`); the capture also checks the largest font preset
 - [ ] Expand automated regression coverage to pointer-drag resize, snap/tiling, real hardware and long-session desktop stability
 

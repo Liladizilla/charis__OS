@@ -404,7 +404,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: boot-logs
-          path: build/verify-*.log
+          path: |
+            build/verify-*.log
+            build/stack-guard-test/stack-guard-qemu-serial.log
+            build/stack-guard-test/stack-guard-qemu.log
+          if-no-files-found: warn
           retention-days: 14
 
       - name: Publish ISO artifacts
