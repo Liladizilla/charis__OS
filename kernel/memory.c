@@ -17,7 +17,7 @@ void memory_init(multiboot_info_t* info) {
     bootmem_parse_multiboot(info);
     u32 region_count = 0;
     (void)bootmem_regions(&region_count);
-    serial_printf("[BOOT] memory: Multiboot parsing complete, regions=%u\\n",
+    serial_printf("[BOOT] memory: Multiboot parsing complete, regions=%u\n",
                   region_count);
     if (!region_count) {
         serial_puts("[BOOT] FATAL: no usable Multiboot memory map");
@@ -26,7 +26,7 @@ void memory_init(multiboot_info_t* info) {
 
     serial_puts("[BOOT] memory: PMM initialization begin");
     pmm_init(info);
-    serial_printf("[BOOT] memory: PMM ready, free=%u total=%u pages\\n",
+    serial_printf("[BOOT] memory: PMM ready, free=%u total=%u pages\n",
                   pmm_free_pages(), pmm_total_pages());
 
     serial_puts("[BOOT] memory: VMM initialization begin");
@@ -50,12 +50,12 @@ void memory_init(multiboot_info_t* info) {
     for (u64 addr = HEAP_START; addr < HEAP_START + HEAP_SIZE; addr += PAGE_SIZE) {
         u64 phys = pmm_alloc_page();
         if (!phys) {
-            serial_printf("[BOOT] FATAL: heap frame allocation failed at page %u\\n",
+            serial_printf("[BOOT] FATAL: heap frame allocation failed at page %u\n",
                           heap_page_index);
             for (;;) asm volatile("cli; hlt" : : : "memory");
         }
         if (!vmm_map_page(addr, phys, PTE_WRITABLE)) {
-            serial_printf("[BOOT] FATAL: heap mapping failed at page %u\\n",
+            serial_printf("[BOOT] FATAL: heap mapping failed at page %u\n",
                           heap_page_index);
             pmm_free_page(phys);
             for (;;) asm volatile("cli; hlt" : : : "memory");
@@ -64,7 +64,7 @@ void memory_init(multiboot_info_t* info) {
     }
 
     heap_init((void*)HEAP_START, (usize)HEAP_SIZE);
-    serial_printf("[BOOT] memory: heap ready, mapped=%u pages\\n",
+    serial_printf("[BOOT] memory: heap ready, mapped=%u pages\n",
                   heap_page_index);
 }
 
