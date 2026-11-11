@@ -21,8 +21,6 @@ bool vmm_translate(pml4_t* pml4, u64 vaddr, u64* physical, u64* flags);
 bool vmm_map_page(u64 virt, u64 phys, u64 flags);
 bool vmm_map_page_pml4(pml4_t* pml4, u64 virt, u64 phys, u64 flags);
 void vmm_unmap_page(u64 virt);
-/* Unmap a leaf in the active CR3 and return its owned physical frame. */
-u64 vmm_unmap_page_current(u64 virt);
 /* Clear a leaf mapping in any address space and return its physical page base. */
 u64 vmm_unmap_page_pml4(pml4_t* pml4, u64 virt);
 u64 vmm_get_phys(u64 virt);

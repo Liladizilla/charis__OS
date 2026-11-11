@@ -457,16 +457,19 @@ bool syscall_exec_from_frame(reg_frame_t* frame) {
     }
 
     u64 entry_point;
-    u64 stack_top;
-    if (elf_load_exec(path, &task->mm, &entry_point, &stack_top,
-            (const char* const*)argv, (int)argc,
-            (const char* const*)envp, (int)envc) < 0) {
+    if (elf_load(path, &task->mm, &entry_point) < 0) {
         kfree(storage);
         kfree(strings);
         return false;
     }
+
+    u64 stack_top;
+    bool stack_ready = elf_setup_stack(&task->mm, &stack_top,
+        (const char* const*)argv, (int)argc,
+        (const char* const*)envp, (int)envc) == 0;
     kfree(storage);
     kfree(strings);
+    if (!stack_ready) return false;
 
     vmm_switch(task->mm.pml4);
     task->mm.stack_top = stack_top;

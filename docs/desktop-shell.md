@@ -19,11 +19,9 @@ The WM exposes bounded move, pointer resize, keyboard resize, maximize and trans
 
 ## Workspace and taskbar
 
-The workspace uses four labelled launch cards for Files, Terminal, Settings and Browser, with a pinned taskbar for the same core applications. The System Overview panel reads uptime from the PIT timer and free/managed/allocated memory from O(1) PMM counters; it does not walk the scheduler task list during repaint. About is launched from the Start menu. Focus and minimized state are visible on the taskbar.
+The workspace uses four labelled launch cards for Files, Terminal, Settings and Browser, with a pinned taskbar for the same core applications. The System Overview panel reads uptime from the PIT timer and free/managed/allocated memory from O(1) PMM counters; it does not walk the scheduler task list during repaint. About is launched from the Start menu. Focus and minimized state are visible on the taskbar. Card descriptions have been shortened to fit the baseline text column; the updated layout still requires a fresh QEMU capture before that correction can be called verified.
 
-The shortcut grid chooses one, two or four columns from the available framebuffer width after reserving space for the System Overview panel. Multi-column cards expand to fill their lane, are capped at 360 logical pixels and are centered when the cap leaves spare room. Drawing and hit-testing share the same geometry. The lower System Status panel reads live PMM allocation/free counters and the active framebuffer/font/UI profile; it is deliberately omitted when the available height cannot accommodate it. CI run #724 captures the real 1024×768 framebuffer and verifies the workspace, native app windows, multi-window focus routing, keyboard resize and display preferences across a reboot.
-
-Secondary descriptions are suppressed at larger font scales. The QEMU sequence checks the 120% interface profile and larger font presets, but the complete 100/125/150/200% text/UI and 1024×768, 1280×800 and 1920×1080 validation matrix remains unverified. The System Overview panel is hidden below its minimum framebuffer dimensions rather than being drawn off-screen. The new lower System Status panel also hides itself when it cannot fit above the taskbar.
+The launch-card geometry is currently tuned around the standard 1024×768 QEMU mode. Secondary descriptions are suppressed at larger font scales, but the full 100/125/150/200% text/UI and multi-resolution matrix remains unverified. The System Overview panel is hidden below its minimum framebuffer dimensions rather than being drawn off-screen.
 
 Keyboard launch paths:
 - F9 opens/focuses Browser.
@@ -47,7 +45,7 @@ Files provides a bounded FAT32 root-directory listing, selection, keyboard navig
 Terminal is a native framebuffer command environment with a console canvas, prompt and input handling. Supported commands include `help`, `clear`, `echo TEXT`, `uname`, `version`, `uptime`, `mem`, `tasks` and `settings`. It is not yet a general-purpose POSIX shell or isolated userspace terminal.
 
 ### Settings
-Settings is an independent window exposing font family, text size and global interface scale. Changes apply immediately and persist to `/CHARISOS.CFG` on supported writable primary ATA FAT32 storage. CI run #724 verifies saved values after reboot. The Personalization and System categories remain visual placeholders rather than functional services.
+Settings is an independent window exposing font family, text size and global interface scale. Changes apply immediately and persist to `/CHARISOS.CFG` on supported writable primary ATA FAT32 storage. The Personalization and System categories remain visual placeholders rather than functional services.
 
 ### Browser and About
 Browser provides local shell pages and limited remote text-preview plumbing. It is not a full standards-compliant browser. About is an informational window.
@@ -61,7 +59,7 @@ The QEMU capture path exercises Files and Terminal open at the same time, switch
 ## Known limitations
 
 - The shell and application renderers are kernel-owned, not isolated userspace processes.
-- The workspace exposes four direct application launch cards, the System Overview panel and a live System Status panel. CI run #724 visually verifies the 1024×768 layout and checks a 120% interface profile; substantial unused space remains below the content, and narrow-width wrapping plus the full resolution/scale matrix remain open.
+- The workspace exposes four direct application launch cards and live system counters. Card-description shortening is awaiting fresh QEMU visual verification; wrapping and the full resolution/scale matrix remain open.
 - Snap/tiling controls, window menus and dirty-region rendering are not implemented.
 - Pointer-driven resize uses a lower-right grip with per-app minimum dimensions and work-area clamping; QEMU pointer-drag verification is still pending.
 - Files is read-only and limited to FAT32 root entries with 8.3 names.

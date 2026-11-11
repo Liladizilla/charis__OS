@@ -10,7 +10,6 @@
 #define TASK_STATE_BLOCKED      2
 #define TASK_STATE_ZOMBIE       3
 #define TASK_STATE_UNUSED       4 /* Free task-table slot; distinct from an exited process. */
-#define TASK_STATE_ALLOCATING   5 /* Reserved atomically while a new task is built. */
 
 #define TASK_NAME_MAX           32
 #define TASK_STACK_SIZE         8192
@@ -53,10 +52,8 @@ typedef struct task {
     u64 runtime_ticks;
     u32 remaining_quantum;
     u32 capabilities;
-    u64 guard_page_addr; /* Reserved virtual page; intentionally not present. */
+    u64 guard_page_addr;
     u64 stack_canary_addr;
-    /* Two supervisor-only physical frames backing this task's kernel stack. */
-    u64 kernel_stack_pages[2];
     u64 event_data;
     u32 waiting_event;
     bool is_user;
