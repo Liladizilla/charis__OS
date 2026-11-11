@@ -90,6 +90,12 @@ void pmm_init(multiboot_info_t* info) {
     serial_puts("[BOOT] PMM: initialization begin");
     memory_map = bootmem_regions(&memory_map_count);
     serial_printf("[BOOT] PMM: memory map entries=%u\n", memory_map_count);
+    for (u32 i = 0; i < memory_map_count; i++) {
+        const mem_map_entry_t* region = &memory_map[i];
+        serial_printf("[BOOT] PMM: region %u base=%p length=%p type=%u\n",
+                      i, (void*)(uintptr_t)region->base,
+                      (void*)(uintptr_t)region->length, region->type);
+    }
     last_free = 0;
     managed_page_count = 0;
     free_page_count = 0;
@@ -107,10 +113,25 @@ void pmm_init(multiboot_info_t* info) {
          block <= VMM_PHYSICAL_LIMIT - PMM_BLOCK_SIZE;
          block += PMM_BLOCK_SIZE) {
         scanned_blocks++;
-        if (!pmm_block_is_usable_ram(block)) continue;
+        bool usable = pmm_block_is_usable_ram(block);
+        if (scanned_blocks <= 3) {
+            serial_printf("[BOOT] PMM: candidate %u base=%p usable=%u\n",
+                          scanned_blocks, (void*)(uintptr_t)block, usable ? 1U : 0U);
+        }
+        if (!usable) continue;
         managed_page_count += (u32)(PMM_BLOCK_SIZE / 4096ULL);
+        if (scanned_blocks <= 3)
+            serial_puts("[BOOT] PMM: marking pages in candidate");
+        u32 marked_pages = 0;
         for (u64 addr = block; addr < block + PMM_BLOCK_SIZE; addr += 4096ULL) {
             pmm_mark_free(addr);
+            marked_pages++;
+            if (marked_pages == 1 && scanned_blocks <= 3)
+                serial_puts("[BOOT] PMM: first page mark complete");
+        }
+        if (scanned_blocks <= 3) {
+            serial_printf("[BOOT] PMM: candidate pages marked=%u\n",
+                          marked_pages);
         }
     }
 
