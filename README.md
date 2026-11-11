@@ -42,16 +42,16 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The checked-in gallery is a compact historical overview of the framebuffer desktop. The **latest, full-resolution QEMU evidence** is attached to [CI run #43018580076](https://github.com/Liladizilla/charis__OS/actions/runs/43018580076). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts from that run. The desktop-preview artifact includes separate 1024×768 captures for the four-shortcut workspace, Files, simultaneous Files/Terminal windows, maximized Terminal, resized Terminal, Settings, adjusted preferences and post-reboot Settings.
+The checked-in gallery is a compact historical overview of the framebuffer desktop. The latest **successful baseline QEMU evidence** is attached to [CI run #43018580076](https://github.com/Liladizilla/charis__OS/actions/runs/43018580076). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts from that run for the verified pre-shortcut workspace, Files, simultaneous Files/Terminal windows, maximized/resized Terminal and Settings persistence. PR #108 adds the four-shortcut workspace and Browser-launch capture; its updated evidence will replace this baseline link after CI passes.
 
 ![CharisOS desktop, multi-window, maximized Terminal and Settings captures](docs/screenshots/charisos-preview-gallery.jpg)
 
 ## Latest desktop validation
 
-The latest successful CI run is [run #43018580076](https://github.com/Liladizilla/charis__OS/actions/runs/43018580076), on commit `1fcdbdef`. All 20 workflow stages passed: kernel build with `-Werror`, generic x86-64 baseline audit, browser extraction tests, WM lifecycle/geometry/focus/maximize tests, ELF image construction and inspection, BIOS/ring-3/ELF execution, VMM huge-page and page-permission runtime tests, QEMU desktop capture, and artifact publication.
+The latest successful baseline CI run is [run #43018580076](https://github.com/Liladizilla/charis__OS/actions/runs/43018580076), on commit `a2cee5d`. All 20 workflow stages passed: kernel build with `-Werror`, generic x86-64 baseline audit, browser extraction tests, WM lifecycle/geometry/focus/maximize tests, ELF image construction and inspection, BIOS/ring-3/ELF execution, VMM huge-page and page-permission runtime tests, QEMU desktop capture, and artifact publication.
 
 The QEMU capture covers:
-- The workspace, four direct application shortcuts (Files, Terminal, Settings and Browser), and taskbar.
+- The baseline workspace and taskbar. PR #108 adds direct Files, Terminal, Settings and Browser shortcuts, with QEMU capture pending.
 - Files and Terminal open simultaneously, with Alt+Tab moving focus between them. Alt+F8 provides keyboard resizing with arrow keys, Enter to commit and Escape to cancel.
 - A second Files refresh routed to Files while Terminal remains open behind/above it.
 - Terminal executing the built-in `help` command while Files remains open.
