@@ -29,17 +29,18 @@ static void paint_recorder(window_t* win) {
     if (paint_count < sizeof(paint_order) / sizeof(paint_order[0]))
         paint_order[paint_count++] = win->z_order;
 }
+static int allocations_before_failure = -1;
+static unsigned allocations, frees;
+static u32 dispatched_events;
+static window_t* dispatched_target;
+static int dispatched_type;
+
 static void event_recorder(window_t* win, int event_type, void* data) {
     (void)data;
     dispatched_events++;
     dispatched_target = win;
     dispatched_type = event_type;
 }
-static int allocations_before_failure = -1;
-static unsigned allocations, frees;
-static u32 dispatched_events;
-static window_t* dispatched_target;
-static int dispatched_type;
 
 void *kmalloc(usize size) {
     if (allocations_before_failure == 0) return NULL;
