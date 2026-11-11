@@ -98,9 +98,13 @@ static void draw_uptime(u32 x, u32 y, u64 milliseconds) {
 /* Card height follows the selected font metrics. At the largest bitmap
  * size the detail line is intentionally omitted: preserving readable labels
  * is more useful than squeezing two colliding lines into a fixed card. */
+static bool shortcut_show_detail(void) {
+    return gfx_text_get_scale() < 3u && g_framebuffer.height >= u(600u);
+}
+
 static u32 shortcut_card_height(void) {
     u32 line = th();
-    return gfx_text_get_scale() >= 3u ? line + 32u : line * 2u + 24u;
+    return shortcut_show_detail() ? line * 2u + 24u : line + 16u;
 }
 
 /* Keep the two-column composition when there is room. Larger bitmap
@@ -161,7 +165,7 @@ static void draw_shortcut(u32 index, u32 icon_size) {
     u32 text_h = th();
     if (w < u(112)) text_x = x + u(16);
     u32 label_y;
-    if (gfx_text_get_scale() >= 3u) {
+    if (!shortcut_show_detail()) {
         label_y = y + (h > text_h ? (h - text_h) / 2u : 0u);
     } else {
         u32 block_h = text_h * 2u + u(4);
@@ -171,7 +175,7 @@ static void draw_shortcut(u32 index, u32 icon_size) {
                 h > u(8) ? h - u(8) : 1u);
     gfx_draw_string(text_x, label_y, shortcut_label[index],
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
-    if (gfx_text_get_scale() < 3u) {
+    if (shortcut_show_detail()) {
         fb_set_clip(x + u(16), label_y + text_h + u(4),
                     w > u(32) ? w - u(32) : 1u, text_h);
         gfx_draw_string(x + u(16), label_y + text_h + u(4),
