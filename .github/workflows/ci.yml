@@ -188,7 +188,8 @@ jobs:
             sleep 1
             printf 'sendkey f5\n'
             sleep 1
-            printf 'sendkey alt-tab\n'            sleep 1
+            printf 'sendkey alt-tab\n'
+            sleep 1
             # Terminal is focused while Files remains open underneath.
             printf 'sendkey h\n'
             sleep 1
@@ -207,6 +208,20 @@ jobs:
             printf 'sendkey meta_l-down\n'
             sleep 1
             printf 'screendump build/charisos-multiwindow-preview.ppm\n'
+            sleep 1
+            # Drive the actual PS/2 pointer to the restored Terminal resize
+            # grip (initial pointer 50,50; Terminal bounds 228,188 to 868,628).
+            # QEMU HMP mouse_move uses relative deltas. PS/2 Y is inverted by
+            # QEMU, so positive monitor Y moves down in the framebuffer.
+            printf 'mouse_move 808 568\n'
+            sleep 1
+            printf 'mouse_button 1\n'
+            sleep 1
+            printf 'mouse_move 80 60\n'
+            sleep 1
+            printf 'mouse_button 0\n'
+            sleep 1
+            printf 'screendump build/charisos-resized-preview.ppm\n'
             sleep 1
             printf 'sendkey esc\n'
             sleep 1
@@ -251,8 +266,10 @@ jobs:
           grep -q 'TERMINAL_CMD help' build/desktop-capture-serial.log
           grep -q 'SHELL_WINDOW_MAXIMIZED' build/desktop-capture-serial.log
           grep -q 'SHELL_WINDOW_RESTORED' build/desktop-capture-serial.log
+          grep -q 'SHELL_WINDOW_RESIZED 720x464' build/desktop-capture-serial.log
           test -s build/charisos-maximized-preview.ppm
           test -s build/charisos-multiwindow-preview.ppm
+          test -s build/charisos-resized-preview.ppm
           test -s build/charisos-settings-preview.ppm
           test -s build/charisos-settings-adjusted-preview.ppm
           test -s build/charisos-desktop-scaled-preview.ppm
@@ -324,6 +341,7 @@ jobs:
             build/charisos-files-preview.ppm
             build/charisos-multiwindow-preview.ppm
             build/charisos-maximized-preview.ppm
+            build/charisos-resized-preview.ppm
             build/charisos-settings-preview.ppm
             build/charisos-settings-adjusted-preview.ppm
             build/charisos-desktop-scaled-preview.ppm

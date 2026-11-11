@@ -1088,6 +1088,11 @@ static void handle_event(const input_event_t* e) {
 
     case INPUT_MOUSE_UP:
         if (e->mouse.button == 1) {
+            if (shell_resize_window) {
+                serial_printf("SHELL_WINDOW_RESIZED %dx%d\n",
+                              shell_resize_window->width,
+                              shell_resize_window->height);
+            }
             shell_drag_window = NULL;
             shell_resize_window = NULL;
         }
