@@ -291,27 +291,68 @@ static window_t* shell_create_app_window(shell_app_id_t id) {
     if (sw < 320u || sh < 220u) return NULL;
 
     u32 title_h = shell_app_titlebar_height(id);
-    u32 width = sw > 48u ? sw - 48u : sw;
-    u32 height = sh > 72u ? sh - 72u : sh;
-    if (width > 960u) width = 960u;
-    if (height > 680u) height = 680u;
-    if (id == SHELL_APP_SETTINGS) {
-        width = settings_panel_width();
-        height = settings_panel_height();
-        if (height > sh - 24u) height = sh - 24u;
-    } else if (id == SHELL_APP_ABOUT) {
-        if (width > ui_px(560)) width = ui_px(560);
-        height = sh > ui_px(72) ? ui_px(280) : sh - ui_px(24);
-        if (height > sh - 24u) height = sh - 24u;
+    /* Give applications useful, different default footprints. A newly opened
+     * window should not bury every earlier window under a full-screen sheet. */
+    u32 width = ui_px(680);
+    u32 height = ui_px(460);
+    switch (id) {
+        case SHELL_APP_FILES:
+            width = ui_px(720);
+            height = ui_px(520);
+            break;
+        case SHELL_APP_TERMINAL:
+            width = ui_px(640);
+            height = ui_px(440);
+            break;
+        case SHELL_APP_BROWSER:
+            width = ui_px(840);
+            height = ui_px(560);
+            break;
+        case SHELL_APP_SETTINGS:
+            width = settings_panel_width();
+            height = settings_panel_height();
+            break;
+        case SHELL_APP_ABOUT:
+            width = ui_px(560);
+            height = ui_px(280);
+            break;
+        default:
+            break;
     }
-    if (width > sw - 24u) width = sw - 24u;
-    if (height <= title_h + 64u) return NULL;
 
-    u32 offset = (u32)id * 26u;
-    u32 x = sw > width ? (sw - width) / 2u + offset : 0;
-    u32 y = sh > height ? (sh - height) / 2u + offset : 0;
-    if (x + width > sw) x = sw - width;
-    if (y + height > sh) y = sh - height;
+    u32 max_width = sw > ui_px(24) ? sw - ui_px(24) : sw;
+    u32 max_height = sh > ui_px(24) ? sh - ui_px(24) : sh;
+    if (width > max_width) width = max_width;
+    if (height > max_height) height = max_height;
+    if (height <= title_h + 64u || width <= ui_px(160)) return NULL;
+
+    s32 x = (s32)((sw - width) / 2u);
+    s32 y = (s32)((sh - height) / 2u);
+    switch (id) {
+        case SHELL_APP_FILES:
+            x -= (s32)ui_px(36);
+            y -= (s32)ui_px(24);
+            break;
+        case SHELL_APP_TERMINAL:
+            x += (s32)ui_px(36);
+            y += (s32)ui_px(24);
+            break;
+        case SHELL_APP_BROWSER:
+            x += (s32)ui_px(54);
+            y -= (s32)ui_px(12);
+            break;
+        case SHELL_APP_SETTINGS:
+            x -= (s32)ui_px(24);
+            y += (s32)ui_px(12);
+            break;
+        case SHELL_APP_ABOUT:
+        default:
+            break;
+    }
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    if ((u32)x + width > sw) x = (s32)(sw - width);
+    if ((u32)y + height > sh) y = (s32)(sh - height);
 
     window_t* win = wm_create_surface_window(
         shell_app_title(id), (int)x, (int)y, (int)width,

@@ -188,10 +188,7 @@ jobs:
             sleep 1
             printf 'sendkey f5\n'
             sleep 1
-            printf 'screendump build/charisos-multiwindow-preview.ppm\n'
-            sleep 1
-            printf 'sendkey alt-tab\n'
-            sleep 1
+            printf 'sendkey alt-tab\n'            sleep 1
             # Terminal is focused while Files remains open underneath.
             printf 'sendkey h\n'
             sleep 1
@@ -203,6 +200,8 @@ jobs:
             sleep 1
             printf 'sendkey ret\n'
             sleep 2
+            printf 'screendump build/charisos-multiwindow-preview.ppm\n'
+            sleep 1
             printf 'sendkey esc\n'
             sleep 1
             # Files receives focus again after Terminal closes.
