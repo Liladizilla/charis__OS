@@ -45,6 +45,8 @@ window_t* wm_focus_next(void);
 u32 wm_get_window_count(void);
 
 void wm_render(void);
+/* Composite WM-owned surfaces over an already painted desktop background. */
+void wm_render_surfaces(void);
 void wm_dispatch_event(int event_type, void* data);
 window_t* wm_get_focused(void);
 window_t* wm_get_window_at(int x, int y);

@@ -338,6 +338,49 @@ void wm_render(void) {
     fb_reset_clip();
 }
 
+/* Render window-owned application surfaces over the shell workspace without
+ * clearing the desktop or taskbar. A bufferless window with on_paint is a
+ * native app surface: its renderer owns its complete chrome and content.
+ * Legacy buffer-backed windows keep the existing WM decoration path. */
+void wm_render_surfaces(void) {
+    if (!g_framebuffer.initialized) return;
+    window_t* ordered[MAX_WINDOWS];
+    u32 count = wm_collect_windows(ordered);
+    for (u32 i = 1; i < count; i++) {
+        window_t* item = ordered[i];
+        u32 j = i;
+        while (j > 0 && ordered[j - 1]->z_order > item->z_order) {
+            ordered[j] = ordered[j - 1];
+            j--;
+        }
+        ordered[j] = item;
+    }
+
+    fb_reset_clip();
+    for (u32 i = 0; i < count; i++) {
+        window_t* win = ordered[i];
+        if (!win->visible || win->minimized) continue;
+        u32 clip_h = (u32)win->height + WINDOW_TITLEBAR_HEIGHT;
+        fb_set_clip((u32)win->x, (u32)win->y, (u32)win->width, clip_h);
+        if (win->on_paint) {
+            win->on_paint(win);
+        } else {
+            wm_draw_decorations(win);
+            wm_draw_contents(win);
+            if (win->buffer) {
+                for (u32 py = 0; py < (u32)win->height; py++)
+                    for (u32 px = 0; px < (u32)win->width; px++) {
+                        u32 color = win->buffer[(usize)py * (usize)win->width + px];
+                        fb_put_pixel((u32)win->x + px,
+                                     (u32)win->y + WINDOW_TITLEBAR_HEIGHT + py,
+                                     color);
+                    }
+            }
+        }
+        fb_reset_clip();
+    }
+}
+
 void wm_dispatch_event(int event_type, void* data) {
     window_t* focused = wm_get_focused();
     if (focused && focused->on_event)
