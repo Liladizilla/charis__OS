@@ -30,27 +30,15 @@ static void pmm_mark_used(u64 addr) {
     bitmap[byte] |= mask;
 }
 
-__attribute__((noinline, no_stack_protector))
 static void pmm_mark_free(u64 addr) {
-    bool trace = (addr >= 0x200000ULL && addr < 0x208000ULL);
-    if (trace) serial_puts("[BOOT] PMM mark: entered");
     if (addr < PMM_BITMAP_BASE || addr >= VMM_PHYSICAL_LIMIT) return;
     u64 page = (addr - PMM_BITMAP_BASE) / 4096ULL;
     u32 byte = (u32)(page / 8ULL);
     u8 mask = (u8)(1U << (page % 8ULL));
-    if (trace) serial_puts("[BOOT] PMM mark: index arithmetic complete");
-    volatile u8* slot = &bitmap[byte];
-    if (trace) serial_puts("[BOOT] PMM mark: before bitmap read");
-    u8 old_value = *slot;
-    if (trace) serial_puts("[BOOT] PMM mark: after bitmap read");
-    if (old_value & mask) {
-        if (trace) serial_puts("[BOOT] PMM mark: before free counter update");
+    if (!(bitmap[byte] & mask) && free_page_count < managed_page_count) {
         free_page_count++;
-        if (trace) serial_puts("[BOOT] PMM mark: after free counter update");
     }
-    if (trace) serial_puts("[BOOT] PMM mark: before bitmap write");
-    *slot = (u8)(old_value & (u8)~mask);
-    if (trace) serial_puts("[BOOT] PMM mark: after bitmap write");
+    bitmap[byte] &= (u8)~mask;
 }
 
 static u64 pmm_align_up_page(u64 value) {
@@ -104,12 +92,6 @@ void pmm_init(multiboot_info_t* info) {
     serial_puts("[BOOT] PMM: initialization begin");
     memory_map = bootmem_regions(&memory_map_count);
     serial_printf("[BOOT] PMM: memory map entries=%u\n", memory_map_count);
-    for (u32 i = 0; i < memory_map_count; i++) {
-        const mem_map_entry_t* region = &memory_map[i];
-        serial_printf("[BOOT] PMM: region %u base=%p length=%p type=%u\n",
-                      i, (void*)(uintptr_t)region->base,
-                      (void*)(uintptr_t)region->length, region->type);
-    }
     last_free = 0;
     managed_page_count = 0;
     free_page_count = 0;
@@ -127,29 +109,10 @@ void pmm_init(multiboot_info_t* info) {
          block <= VMM_PHYSICAL_LIMIT - PMM_BLOCK_SIZE;
          block += PMM_BLOCK_SIZE) {
         scanned_blocks++;
-        bool usable = pmm_block_is_usable_ram(block);
-        if (scanned_blocks <= 3) {
-            serial_printf("[BOOT] PMM: candidate %u base=%p usable=%u\n",
-                          scanned_blocks, (void*)(uintptr_t)block, usable ? 1U : 0U);
-        }
-        if (!usable) continue;
+        if (!pmm_block_is_usable_ram(block)) continue;
         managed_page_count += (u32)(PMM_BLOCK_SIZE / 4096ULL);
-        if (scanned_blocks <= 3)
-            serial_puts("[BOOT] PMM: marking pages in candidate");
-        u32 marked_pages = 0;
         for (u64 addr = block; addr < block + PMM_BLOCK_SIZE; addr += 4096ULL) {
-            if (marked_pages < 8 && scanned_blocks <= 3)
-                serial_puts("[BOOT] PMM: entering initial page mark");
             pmm_mark_free(addr);
-            marked_pages++;
-            if (marked_pages <= 8 && scanned_blocks <= 3)
-                serial_puts("[BOOT] PMM: initial page mark returned");
-            if (marked_pages == 1 && scanned_blocks <= 3)
-                serial_puts("[BOOT] PMM: first page mark complete");
-        }
-        if (scanned_blocks <= 3) {
-            serial_printf("[BOOT] PMM: candidate pages marked=%u\n",
-                          marked_pages);
         }
     }
 

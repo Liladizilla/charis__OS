@@ -43,15 +43,14 @@ jobs:
       - name: Build kernel and boot images
         run: make images
 
-      - name: Map early boot exception to kernel instruction
-        if: always()
+      - name: Verify x86-64 baseline instruction set
         run: |
-          if [ -f build/kernel.elf ]; then
-            echo "=== address 0x1042b2 ==="
-            addr2line -f -C -e build/kernel.elf 0x1042b2
-            echo "=== nearby instructions ==="
-            objdump -d -Mintel --start-address=0x104280 --stop-address=0x1042e0 build/kernel.elf
+          if objdump -d -Mintel build/kernel.elf | grep -Eiq '[[:space:]](shlx|shrx|sarx|mulx|bzhi|pdep|pext|rorx|andn|bextr|blsi|blsr|blsmsk|tzcnt|lzcnt|popcnt|crc32|adcx|adox)[[:space:]]'; then
+            echo "ERROR: compiler emitted BMI/other non-baseline instructions"
+            objdump -d -Mintel build/kernel.elf | grep -Ei '[[:space:]](shlx|shrx|sarx|mulx|bzhi|pdep|pext|rorx|andn|bextr|blsi|blsr|blsmsk|tzcnt|lzcnt|popcnt|crc32|adcx|adox)[[:space:]]'
+            exit 1
           fi
+          echo "PASS: generated kernel code uses the x86-64 baseline ISA"
 
       - name: Upload kernel debug symbols and objects
         if: always()
