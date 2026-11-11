@@ -32,7 +32,7 @@ NASM_FLAGS = -f elf64
 # build, and the build looked correct the whole time.
 DEPFLAGS = -MMD -MP
 
-GCC_FLAGS = -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -fno-omit-frame-pointer -Wall -Wextra -Werror -fstack-protector-strong -I$(INCLUDE_DIR) $(DEPFLAGS)
+GCC_FLAGS = -ffreestanding -m64 -march=x86-64 -mtune=generic -mno-bmi -mno-bmi2 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -fno-omit-frame-pointer -Wall -Wextra -Werror -fstack-protector-strong -I$(INCLUDE_DIR) $(DEPFLAGS)
 LD_FLAGS = -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack
 
 # Source files

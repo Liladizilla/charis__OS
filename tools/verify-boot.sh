@@ -197,6 +197,7 @@ boot_once() {
     if [ "$NEEDS_DISPLAY" = "1" ]; then
         timeout "$TIMEOUT" qemu-system-x86_64 \
             "${DRIVE[@]}" "${BOOT_ORDER[@]}" -m 256M -no-reboot -nic none \
+            -d int,cpu_reset,guest_errors -D "$BUILD_DIR/verify-qemu-debug.log" \
             -serial "file:$LOG" >/dev/null 2>&1
         QEMU_STATUS=$?
     else
@@ -207,6 +208,7 @@ boot_once() {
         timeout "$TIMEOUT" qemu-system-x86_64 \
             "${DRIVE[@]}" "${BOOT_ORDER[@]}" \
             -m 256M -nographic -no-reboot -nic none \
+            -d int,cpu_reset,guest_errors -D "$BUILD_DIR/verify-qemu-debug.log" \
             -monitor none -serial "file:$LOG" \
             >"$QEMU_LOG" 2>&1
         QEMU_STATUS=$?
@@ -265,6 +267,10 @@ fail() {
     fi
     echo "--- captured output ($LOG) ---"
     cat "$LOG"
+    if [ -s "$BUILD_DIR/verify-qemu-debug.log" ]; then
+        echo "--- QEMU CPU/exception trace (last 160 lines) ---"
+        tail -n 160 "$BUILD_DIR/verify-qemu-debug.log"
+    fi
     echo "--------------------------------"
     exit 1
 }
