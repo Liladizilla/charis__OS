@@ -245,7 +245,7 @@ static void shell_window_resize_limits(window_t* win,
 }
 
 static bool shell_resize_app_window(window_t* win, int width, int height) {
-    if (!win || !wm_contains(win) || shell_app_id_for_window(win) < 0 ||
+    if (!win || shell_app_id_for_window(win) < 0 ||
         win->maximized) return false;
     int min_w, min_h, max_w, max_h;
     shell_window_resize_limits(win, &min_w, &min_h, &max_w, &max_h);
