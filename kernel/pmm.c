@@ -128,14 +128,29 @@ void pmm_reserve_range(u64 addr, u64 len) {
     u64 start = addr & ~4095ULL;
     end = pmm_align_up_page(end);
     if (start < PMM_BITMAP_BASE) start = PMM_BITMAP_BASE;
+
+    /*
+     * Keep the range inside the exact page window represented by the bitmap.
+     * VMM_PHYSICAL_LIMIT is the allocator's address ceiling, but the bitmap
+     * size is the authority for indexing its backing arrays. The explicit
+     * page/byte checks also keep newer GCC range analysis from treating a
+     * narrowed u32 index as potentially wrapped.
+     */
+    const u64 bitmap_end =
+        PMM_BITMAP_BASE + (u64)PMM_PAGE_COUNT * 4096ULL;
+    if (end > bitmap_end) end = bitmap_end;
     if (end > VMM_PHYSICAL_LIMIT) end = VMM_PHYSICAL_LIMIT;
 
     for (u64 current = start; current < end; current += 4096ULL) {
         u64 page = (current - PMM_BITMAP_BASE) / 4096ULL;
-        u32 byte = (u32)(page / 8ULL);
+        if (page >= PMM_PAGE_COUNT) break;
+
+        u64 byte_index = page / 8ULL;
+        if (byte_index >= (u64)BITMAP_SIZE) break;
+
         u8 mask = (u8)(1U << (page % 8ULL));
         pmm_mark_used(current);
-        allocated_bitmap[byte] &= (u8)~mask;
+        allocated_bitmap[(usize)byte_index] &= (u8)~mask;
     }
 }
 
