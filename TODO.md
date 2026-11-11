@@ -94,13 +94,15 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Settings controls for font family, text size and global UI scale
 - [x] Settings persist to `/CHARISOS.CFG` on supported primary ATA FAT32 and reload after reboot in CI
 - [x] QEMU capture verifies the desktop after closing Settings at 200% text and 120% interface scale without the previous welcome-card clipping
-- [ ] Add a useful but restrained desktop surface: verified status indicators, accessible shortcut selection and clear empty-workspace affordances
+- [x] Add a restrained two-column workspace shortcut grid for Files, Terminal, Settings and Browser with bounded hit testing
+- [ ] Add verified live system status indicators and clear empty-workspace affordances
 - [ ] Implement shared layout primitives: measure/arrange, horizontal/vertical flow, padding/gaps, wrapping, clipping/ellipsis and scroll containers
 - [ ] Verify layout at 100/125/150/200% text/UI scales and 1024x768, 1280x800 and 1920x1080 framebuffer sizes
 - [x] Standardize native app titlebars, close controls, focus indication and keyboard dispatch for current applications
 - [x] Add independently movable windows, multi-window z-order, taskbar focus/restore and Alt+Tab
 - [x] Add pointer resize handles, maximize/restore and focused-window keyboard shortcuts
 - [x] QEMU capture verifies multiple application windows, Alt+Tab routing, maximize/restore and keyboard resize
+- [x] Desktop workspace exposes direct Files, Terminal, Settings and Browser shortcuts
 - [ ] Add snap/tiling, global window menu, QEMU pointer-resize test and consistent per-window keyboard navigation
 - [ ] Add a first-login setup wizard with language/keyboard, appearance and network steps; current wizard remains limited to existing setup preferences
 - [ ] Add functional Text Editor and System Monitor applications
