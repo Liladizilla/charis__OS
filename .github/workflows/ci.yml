@@ -26,6 +26,12 @@ jobs:
         run: |
           # Keep dependency setup bounded; firmware is optional because BIOS
           # boot is the gating path and graphical capture uses SeaBIOS.
+          # Hosted Ubuntu runners may list an Azure HTTP mirror first; it has
+          # repeatedly stalled DNS/HTTP access while the official HTTPS archive
+          # was reachable. Pin this ephemeral mirror list to the working archive.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            printf '%s\\n' 'https://archive.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
           timeout 420s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
           timeout 780s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends \
             build-essential \
