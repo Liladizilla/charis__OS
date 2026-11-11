@@ -1127,6 +1127,13 @@ static void handle_event(const input_event_t* e) {
             ui.needs_redraw = true;
             return;
         }
+        if (pressed && !extended && base == 0x43u) {
+            ui.menu_open = false;
+            notice_open = false;
+            shell_open_app(SHELL_APP_BROWSER);
+            ui.needs_redraw = true;
+            return;
+        }
         if (pressed && !extended && base == 0x44u) {
             ui.menu_open = false;
             notice_open = false;
@@ -1267,9 +1274,13 @@ static void handle_event(const input_event_t* e) {
         }
 
         int shortcut = desktop_surface_hit_test(mx, my);
-        if (shortcut == 0) {
+        if (shortcut >= 0 && shortcut < 4) {
+            static const shell_app_id_t shortcut_apps[4] = {
+                SHELL_APP_FILES, SHELL_APP_TERMINAL,
+                SHELL_APP_SETTINGS, SHELL_APP_BROWSER
+            };
             ui.menu_open = false;
-            shell_open_app(SHELL_APP_FILES);
+            shell_open_app(shortcut_apps[shortcut]);
             ui.needs_redraw = true;
             return;
         }
