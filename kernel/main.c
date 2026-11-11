@@ -43,6 +43,24 @@
 
 /* The multiboot2 info pointer arrives zero-extended in RDI, so it is a 64-bit
  * value here. Declaring it u32 would silently truncate any address above 4GB. */
+#ifdef TEST_KERNEL_STACK_GUARD
+static void kernel_stack_guard_probe(void* unused) {
+    (void)unused;
+    task_t* task = scheduler_current();
+    if (!task || !task->guard_page_addr) {
+        serial_puts("KERNEL_STACK_GUARD_TEST_SETUP_FAILED\n");
+        for (;;) asm volatile("cli; hlt" : : : "memory");
+    }
+
+    serial_puts("KERNEL_STACK_GUARD_TEST_ARMED\n");
+    *(volatile u64*)(uintptr_t)task->guard_page_addr =
+        0x535441434B475541ULL;
+
+    serial_puts("KERNEL_STACK_GUARD_TEST_FAILED: guard write returned\n");
+    for (;;) asm volatile("cli; hlt" : : : "memory");
+}
+#endif
+
 __attribute__((no_stack_protector))
 void kernel_main(u32 magic, u64 info_ptr) {
     // Boot marker helper - writes sequential chars to VGA text buffer at even offsets
@@ -252,6 +270,18 @@ void kernel_main(u32 magic, u64 info_ptr) {
             vga_puts_error("ERROR: Failed to create desktop task!");
         }
     }
+
+#ifdef TEST_KERNEL_STACK_GUARD
+    /* Deliberately write into this task's own unmapped kernel-stack guard.
+     * The #PF dispatcher must arrive on TSS.IST1 and report containment. */
+    task_t* guard_probe = task_create("guard-probe",
+        kernel_stack_guard_probe, NULL, 0, false);
+    if (!guard_probe) {
+        serial_puts("KERNEL_STACK_GUARD_TEST_SETUP_FAILED\n");
+        for (;;) asm volatile("cli; hlt" : : : "memory");
+    }
+    scheduler_add_task(guard_probe);
+#endif
 
     vga_puts_success("All systems go. Starting shell.");
 

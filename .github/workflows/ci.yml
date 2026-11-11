@@ -158,6 +158,12 @@ jobs:
           make images-vmm-test
           BUILD_DIR=build/vmm-test ./tools/verify-boot.sh build/vmm-test/charisos-vm.iso --require-vmm-tests
 
+      - name: Boot kernel-stack guard IST containment test
+        run: |
+          set -e
+          make images-stack-guard-test
+          BUILD_DIR=build/stack-guard-test ./tools/verify-stack-guard.sh build/stack-guard-test/charisos-vm.iso
+
       - name: Capture desktop and verify persistent settings
         if: success()
         timeout-minutes: 5

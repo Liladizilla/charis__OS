@@ -79,6 +79,12 @@ images-vmm-test:
 	rm -rf $(BUILD_DIR)/vmm-test
 	$(MAKE) BUILD_DIR=$(BUILD_DIR)/vmm-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DRUN_VMM_TESTS" images
 
+# Dedicated boot image that deliberately faults on a task's unmapped kernel
+# stack guard. It must not share normal object files or the desktop test image.
+images-stack-guard-test:
+	rm -rf $(BUILD_DIR)/stack-guard-test
+	$(MAKE) BUILD_DIR=$(BUILD_DIR)/stack-guard-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DTEST_KERNEL_STACK_GUARD" images
+
 ELF_SMOKE_IMAGE = $(BUILD_DIR)/elf-smoke-disk.img
 
 elf-test: $(ELF_SMOKE_IMAGE)
@@ -233,4 +239,4 @@ clean:
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-.PHONY: all check-tools images images-vmm-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
+.PHONY: all check-tools images images-vmm-test images-stack-guard-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
