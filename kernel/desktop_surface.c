@@ -116,7 +116,9 @@ static u32 system_panel_logical_width(void) {
 }
 
 static bool system_panel_fits(void) {
-    return g_framebuffer.width >= u(900u) && g_framebuffer.height >= u(480u);
+    u32 minimum_height = gfx_text_get_scale() >= 3u ? 520u : 480u;
+    return g_framebuffer.width >= u(900u) &&
+           g_framebuffer.height >= u(minimum_height);
 }
 
 static u32 shortcut_columns(void) {
