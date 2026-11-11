@@ -202,11 +202,11 @@ jobs:
             printf 'sendkey ret\n'
             sleep 2
             printf 'sendkey meta_l-up\n'
-            sleep 1
+            sleep 3
             printf 'screendump build/charisos-maximized-preview.ppm\n'
             sleep 1
             printf 'sendkey meta_l-down\n'
-            sleep 1
+            sleep 3
             printf 'screendump build/charisos-multiwindow-preview.ppm\n'
             sleep 1
             # Drive the actual PS/2 pointer to the restored Terminal resize
@@ -227,7 +227,7 @@ jobs:
               sleep 0.25
             done
             printf 'sendkey ret\n'
-            sleep 1
+            sleep 3
             printf 'screendump build/charisos-resized-preview.ppm\n'
             sleep 1
             printf 'sendkey esc\n'
