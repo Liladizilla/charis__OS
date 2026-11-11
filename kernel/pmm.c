@@ -35,7 +35,7 @@ static void pmm_mark_free(u64 addr) {
     u64 page = (addr - PMM_BITMAP_BASE) / 4096ULL;
     u32 byte = (u32)(page / 8ULL);
     u8 mask = (u8)(1U << (page % 8ULL));
-    if (!(bitmap[byte] & mask) && free_page_count < managed_page_count) {
+    if ((bitmap[byte] & mask) && free_page_count < managed_page_count) {
         free_page_count++;
     }
     bitmap[byte] &= (u8)~mask;
