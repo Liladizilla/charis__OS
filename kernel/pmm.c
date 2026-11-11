@@ -32,8 +32,8 @@ static void pmm_mark_used(u64 addr) {
 
 __attribute__((noinline, no_stack_protector))
 static void pmm_mark_free(u64 addr) {
-    bool trace = (addr == 0x200000ULL);
-    if (trace) serial_puts("[BOOT] PMM mark: entered");
+    bool trace = (addr >= 0x200000ULL && addr < 0x208000ULL);
+    if (trace) serial_printf("[BOOT] PMM mark: entered addr=%p\n", (void*)(uintptr_t)addr);
     if (addr < PMM_BITMAP_BASE || addr >= VMM_PHYSICAL_LIMIT) return;
     u64 page = (addr - PMM_BITMAP_BASE) / 4096ULL;
     u32 byte = (u32)(page / 8ULL);
@@ -141,8 +141,14 @@ void pmm_init(multiboot_info_t* info) {
             serial_puts("[BOOT] PMM: marking pages in candidate");
         u32 marked_pages = 0;
         for (u64 addr = block; addr < block + PMM_BLOCK_SIZE; addr += 4096ULL) {
+            if (marked_pages < 8 && scanned_blocks <= 3)
+                serial_printf("[BOOT] PMM: marking index=%u addr=%p\n",
+                              marked_pages, (void*)(uintptr_t)addr);
             pmm_mark_free(addr);
             marked_pages++;
+            if (marked_pages <= 8 && scanned_blocks <= 3)
+                serial_printf("[BOOT] PMM: mark returned index=%u\n",
+                              marked_pages - 1);
             if (marked_pages == 1 && scanned_blocks <= 3)
                 serial_puts("[BOOT] PMM: first page mark complete");
         }
