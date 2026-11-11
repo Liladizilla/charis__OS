@@ -957,14 +957,14 @@ void shell_ui_main(void* arg) {
             handle_event(&e);
             had_event = true;
         }
-        if (shell_app_windows[SHELL_APP_TERMINAL] &&
+        char key;
+        bool terminal_has_focus =
+            shell_app_windows[SHELL_APP_TERMINAL] &&
             wm_get_focused() == shell_app_windows[SHELL_APP_TERMINAL] &&
-            !shell_app_windows[SHELL_APP_TERMINAL]->minimized) {
-            char key;
-            while (keyboard_get_key(&key)) {
-                terminal_handle_char(key);
-                had_event = true;
-            }
+            !shell_app_windows[SHELL_APP_TERMINAL]->minimized;
+        while (keyboard_get_key(&key)) {
+            if (terminal_has_focus) terminal_handle_char(key);
+            had_event = true;
         }
         if (had_event) ui.needs_redraw = true;
         shell_sync_app_windows();

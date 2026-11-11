@@ -94,8 +94,9 @@ bool files_handle_mouse(int mx,int my) {
     u32 x=wx(),y=wy(),w=ww(),h=wh();
     if(mx<(int)x || mx>=(int)(x+w) || my<(int)y || my>=(int)(y+h))
         return false;
-    if(my<(int)(y+title_h()) && mx>=(int)(x+w-px(48))) {
-        files_close(); return true;
+    if(my<(int)(y+title_h())) {
+        if(mx>=(int)(x+w-px(48))) { files_close(); return true; }
+        return false; /* window manager handles titlebar dragging */
     }
     u32 sy=list_y(), rh=row_h();
     if(my>=(int)sy && mx>=(int)(x+sidebar_w()+px(12))) {

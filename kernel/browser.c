@@ -88,7 +88,7 @@ static void browser_geometry(u32* x, u32* y, u32* w, u32* h) {
     *x=12; *y=10; *w=sw>24 ? sw-24 : sw;
     *h=sh>BROWSER_TASKBAR+22 ? sh-BROWSER_TASKBAR-18 : sh>18 ? sh-18 : sh;
 }
-u32 browser_titlebar_height(void) { return 34u; }
+u32 browser_titlebar_height(void) { return 42u; }
 void browser_set_bounds(u32 x,u32 y,u32 width,u32 height) {
     if(!width || !height) { browser_bounds_valid=false; return; }
     browser_bounds_x=x; browser_bounds_y=y; browser_bounds_w=width; browser_bounds_h=height;
@@ -790,6 +790,9 @@ bool browser_handle_mouse(int mx, int my) {
         my < (int)y || my >= (int)(y + h)) return false;
     browser_tab_t* tab = current_tab();
     if (!tab) return true;
+
+    if (my >= (int)(y + 33) && my < (int)(y + 42))
+        return false; /* reserved drag gutter between tabs and toolbar */
 
     if (my >= (int)(y + 5) && my < (int)(y + 33)) {
         u32 tab_x = x + 12;

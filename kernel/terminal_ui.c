@@ -249,8 +249,13 @@ bool terminal_handle_mouse(int mx, int my) {
     term_geometry(&x, &y, &w, &h, &title_h);
     if (mx < (int)x || mx >= (int)(x + w) ||
         my < (int)y || my >= (int)(y + h)) return false;
-    if (mx >= (int)(x + w - term_px(36)) && mx < (int)(x + w) &&
-        my >= (int)y && my < (int)(y + title_h)) terminal_close();
+    if (my < (int)(y + title_h)) {
+        if (mx >= (int)(x + w - term_px(36))) {
+            terminal_close();
+            return true;
+        }
+        return false; /* unclaimed titlebar space is the drag handle */
+    }
     return true;
 }
 
