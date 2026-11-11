@@ -51,9 +51,10 @@ static void app_icon(u32 x, u32 y, u32 kind, u32 size) {
  * panel uses only O(1) counters so desktop repaint never walks task lists. */
 #define DESKTOP_SHORTCUT_COUNT 4u
 #define DESKTOP_CELL_W 184u
-#define DESKTOP_CELL_H 112u
-static const u32 shortcut_x[DESKTOP_SHORTCUT_COUNT] = { 48u, 248u, 48u, 248u };
-static const u32 shortcut_y[DESKTOP_SHORTCUT_COUNT] = { 112u, 112u, 240u, 240u };
+#define DESKTOP_CARD_GAP_X 16u
+#define DESKTOP_CARD_GAP_Y 16u
+#define DESKTOP_GRID_X 48u
+#define DESKTOP_GRID_Y 112u
 static const u32 shortcut_icon[DESKTOP_SHORTCUT_COUNT] = { 1u, 2u, 3u, 4u };
 static const char* const shortcut_label[DESKTOP_SHORTCUT_COUNT] = {
     "Files", "Terminal", "Settings", "Browser"
@@ -94,18 +95,51 @@ static void draw_uptime(u32 x, u32 y, u64 milliseconds) {
     gfx_draw_string(x, y, value, CHARIS_UI_TEXT, FB_TRANSPARENT);
 }
 
+/* Card height follows the selected font metrics. At the largest bitmap
+ * size the detail line is intentionally omitted: preserving readable labels
+ * is more useful than squeezing two colliding lines into a fixed card. */
+static u32 shortcut_card_height(void) {
+    u32 line = th();
+    return gfx_text_get_scale() >= 3u ? line + 32u : line * 2u + 24u;
+}
+
+static void shortcut_position(u32 index, u32* x, u32* y) {
+    u32 column = index & 1u;
+    u32 row = index >> 1;
+    u32 card_h = shortcut_card_height();
+    if (x) *x = u(DESKTOP_GRID_X + column * (DESKTOP_CELL_W + DESKTOP_CARD_GAP_X));
+    if (y) *y = u(DESKTOP_GRID_Y + row * (card_h + DESKTOP_CARD_GAP_Y));
+}
+
 static void draw_shortcut(u32 index, u32 icon_size) {
-    u32 x = u(shortcut_x[index]), y = u(shortcut_y[index]);
-    u32 w = u(DESKTOP_CELL_W), h = u(DESKTOP_CELL_H);
+    u32 logical_x = 0, logical_y = 0;
+    shortcut_position(index, &logical_x, &logical_y);
+    u32 x = logical_x, y = logical_y;
+    u32 w = u(DESKTOP_CELL_W), h = u(shortcut_card_height());
+    u32 icon = u(icon_size);
     fb_fill_rect(x, y, w, h, CHARIS_UI_PANEL);
     fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER);
     fb_fill_rect(x, y, u(3), h, CHARIS_UI_ACCENT);
-    app_icon(x + u(16), y + (h-u(icon_size))/2u, shortcut_icon[index], u(icon_size));
-    gfx_draw_string(x + u(72), y + u(34), shortcut_label[index],
+    app_icon(x + u(16), y + (h-icon)/2u, shortcut_icon[index], icon);
+
+    u32 text_x = x + u(72);
+    u32 text_h = th();
+    u32 label_y;
+    if (gfx_text_get_scale() >= 3u) {
+        label_y = y + (h > text_h ? (h - text_h) / 2u : 0u);
+    } else {
+        u32 block_h = text_h * 2u + u(4);
+        label_y = y + (h > block_h ? (h - block_h) / 2u : 0u);
+    }
+    fb_set_clip(text_x, y + u(4), w > u(80) ? w - u(84) : 1u,
+                h > u(8) ? h - u(8) : 1u);
+    gfx_draw_string(text_x, label_y, shortcut_label[index],
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
-    fb_set_clip(x + u(16), y + h - th() - u(12), w - u(28), th() + u(4));
-    gfx_draw_string(x + u(16), y + h - th() - u(8), shortcut_detail[index],
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+    if (gfx_text_get_scale() < 3u) {
+        gfx_draw_string(x + u(16), label_y + text_h + u(4),
+                        shortcut_detail[index], CHARIS_UI_MUTED,
+                        FB_TRANSPARENT);
+    }
     fb_reset_clip();
 }
 
@@ -158,8 +192,9 @@ void desktop_surface_render(void) {
 
 int desktop_surface_hit_test(int mx, int my) {
     for (u32 i = 0; i < DESKTOP_SHORTCUT_COUNT; i++) {
-        u32 x = u(shortcut_x[i]), y = u(shortcut_y[i]);
-        u32 w = u(DESKTOP_CELL_W), h = u(DESKTOP_CELL_H);
+        u32 x = 0, y = 0;
+        shortcut_position(i, &x, &y);
+        u32 w = u(DESKTOP_CELL_W), h = u(shortcut_card_height());
         if (mx >= (int)x && mx < (int)(x+w) &&
             my >= (int)y && my < (int)(y+h)) return (int)i;
     }
