@@ -9,7 +9,6 @@
 #include <kernel/diagnostics.h>
 #include <kernel/pmm.h>
 #include <kernel/timer.h>
-#include <kernel/pmm.h>
 #include <kernel/string.h>
 
 static u32 u(u32 v) { return gfx_ui_scale(v); }
@@ -124,15 +123,15 @@ static void draw_system_panel(void) {
     gfx_draw_string(x + u(20), y + u(68), "UPTIME",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
     draw_uptime(x + u(20), y + u(88), timer_get_ms());
-    gfx_draw_string(x + u(164), y + u(68), "MEMORY FREE",
+    gfx_draw_string(x + u(164), y + u(68), "FREE RAM (MiB)",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
     draw_u32(x + u(164), y + u(88), pmm_free_pages() / 256u,
              CHARIS_UI_TEXT);
-    gfx_draw_string(x + u(20), y + u(132), "MANAGED MEMORY",
+    gfx_draw_string(x + u(20), y + u(132), "MANAGED (MiB)",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
     draw_u32(x + u(20), y + u(152), pmm_total_pages() / 256u,
              CHARIS_UI_TEXT);
-    gfx_draw_string(x + u(164), y + u(132), "ALLOCATED",
+    gfx_draw_string(x + u(164), y + u(132), "ALLOCATED (MiB)",
                     CHARIS_UI_MUTED, FB_TRANSPARENT);
     draw_u32(x + u(164), y + u(152), pmm_used_pages() / 256u,
              CHARIS_UI_TEXT);
