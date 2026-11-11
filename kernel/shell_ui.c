@@ -187,8 +187,8 @@ static u32 shell_app_titlebar_height(shell_app_id_t id) {
 }
 
 static void shell_draw_resize_grip(const window_t* win) {
-    if (!win || win->maximized || win->width < ui_px(18) ||
-        win->height < ui_px(18)) return;
+    if (!win || win->maximized || win->width < (int)ui_px(18) ||
+        win->height < (int)ui_px(18)) return;
     u32 right = (u32)win->x + (u32)win->width - ui_px(4);
     u32 bottom = (u32)win->y + win->titlebar_height +
                  (u32)win->height - ui_px(4);
