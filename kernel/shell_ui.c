@@ -29,6 +29,7 @@
 #include <kernel/terminal_ui.h>
 #include <kernel/files_ui.h>
 #include <kernel/wm.h>
+#include <kernel/serial.h>
 
 /* Native desktop widgets and launcher hit-testing. */
 extern void desktop_surface_render(void);
@@ -131,6 +132,9 @@ typedef enum {
 static window_t* shell_app_windows[SHELL_APP_COUNT];
 static window_t* shell_drag_window;
 static int shell_drag_offset_x, shell_drag_offset_y;
+static window_t* shell_resize_window;
+static int shell_resize_origin_x, shell_resize_origin_y;
+static int shell_resize_start_width, shell_resize_start_height;
 static bool shell_pointer_handled;
 static bool alt_held;
 
@@ -182,6 +186,31 @@ static u32 shell_app_titlebar_height(shell_app_id_t id) {
     }
 }
 
+static void shell_draw_resize_grip(const window_t* win) {
+    if (!win || win->maximized || win->width < ui_px(18) ||
+        win->height < ui_px(18)) return;
+    u32 right = (u32)win->x + (u32)win->width - ui_px(4);
+    u32 bottom = (u32)win->y + win->titlebar_height +
+                 (u32)win->height - ui_px(4);
+    for (u32 i = 0; i < 3; i++) {
+        u32 inset = ui_px(5u + i * 4u);
+        u32 length = ui_px(3u + i * 2u);
+        fb_fill_rect(right - inset, bottom, length, ui_px(1),
+                     CHARIS_UI_BORDER_STRONG);
+        fb_fill_rect(right, bottom - inset, ui_px(1), length,
+                     CHARIS_UI_BORDER_STRONG);
+    }
+}
+
+static bool shell_resize_grip_hit(const window_t* win, int mx, int my) {
+    if (!win || win->maximized) return false;
+    u32 grip = ui_px(18);
+    int right = win->x + win->width;
+    int bottom = win->y + (int)win->titlebar_height + win->height;
+    return mx >= right - (int)grip && mx < right &&
+           my >= bottom - (int)grip && my < bottom;
+}
+
 static void shell_app_paint(window_t* win) {
     int id = shell_app_id_for_window(win);
     if (id < 0 || !win || !win->visible || win->minimized) return;
@@ -210,6 +239,7 @@ static void shell_app_paint(window_t* win) {
             break;
         default: break;
     }
+    shell_draw_resize_grip(win);
 }
 
 static void shell_app_event(window_t* win, int event_type, void* data) {
@@ -373,6 +403,7 @@ static void shell_sync_app_windows(void) {
         if (!shell_app_is_open(id)) {
             if (shell_app_windows[i]) {
                 if (shell_drag_window == shell_app_windows[i]) shell_drag_window = NULL;
+                if (shell_resize_window == shell_app_windows[i]) shell_resize_window = NULL;
                 wm_destroy_window(shell_app_windows[i]);
                 shell_app_windows[i] = NULL;
             }
@@ -887,6 +918,25 @@ void ui_install_input_hooks(void) {
 
 static bool super_held = false;
 
+static void shell_close_focused_app(void) {
+    window_t* win = wm_get_focused();
+    int id = shell_app_id_for_window(win);
+    if (id < 0) return;
+    switch ((shell_app_id_t)id) {
+        case SHELL_APP_TERMINAL: terminal_close(); break;
+        case SHELL_APP_FILES: files_close(); break;
+        case SHELL_APP_BROWSER: browser_close(); break;
+        case SHELL_APP_SETTINGS: settings_open = false; break;
+        case SHELL_APP_ABOUT:
+            notice_open = false;
+            notice_item = -1;
+            break;
+        default: return;
+    }
+    shell_sync_app_windows();
+    serial_puts("SHELL_WINDOW_CLOSED");
+}
+
 static void handle_event(const input_event_t* e) {
     switch (e->type) {
     case INPUT_KEY_DOWN:
@@ -904,6 +954,42 @@ static void handle_event(const input_event_t* e) {
         }
         if (pressed && !extended && base == 0x0Fu && alt_held) {
             (void)wm_focus_next();
+            ui.needs_redraw = true;
+            return;
+        }
+        if (pressed && !extended && base == 0x3Eu && alt_held) {
+            shell_close_focused_app();
+            ui.menu_open = false;
+            ui.needs_redraw = true;
+            return;
+        }
+
+        if (pressed && super_held && extended && base == 0x48u) {
+            window_t* win = wm_get_focused();
+            ui.menu_open = false;
+            if (win) {
+                if (win->maximized) {
+                    if (wm_restore_window_geometry(win))
+                        serial_puts("SHELL_WINDOW_RESTORED");
+                } else if (wm_maximize_window(
+                               win, g_framebuffer.height - taskbar_height())) {
+                    serial_puts("SHELL_WINDOW_MAXIMIZED");
+                }
+            }
+            ui.needs_redraw = true;
+            return;
+        }
+        if (pressed && super_held && extended && base == 0x50u) {
+            window_t* win = wm_get_focused();
+            ui.menu_open = false;
+            if (win) {
+                if (win->maximized) {
+                    if (wm_restore_window_geometry(win))
+                        serial_puts("SHELL_WINDOW_RESTORED");
+                } else if (wm_minimize_window(win)) {
+                    serial_puts("SHELL_WINDOW_MINIMIZED");
+                }
+            }
             ui.needs_redraw = true;
             return;
         }
@@ -959,7 +1045,39 @@ static void handle_event(const input_event_t* e) {
     }
 
     case INPUT_MOUSE_MOVE:
-        if (shell_drag_window) {
+        if (shell_resize_window) {
+            int id = shell_app_id_for_window(shell_resize_window);
+            if (id >= 0) {
+                u32 min_width = ui_px(360), min_height = ui_px(220);
+                switch ((shell_app_id_t)id) {
+                    case SHELL_APP_FILES: min_width=ui_px(540); min_height=ui_px(340); break;
+                    case SHELL_APP_TERMINAL: min_width=ui_px(420); min_height=ui_px(280); break;
+                    case SHELL_APP_BROWSER: min_width=ui_px(560); min_height=ui_px(340); break;
+                    case SHELL_APP_SETTINGS: min_width=ui_px(520); min_height=ui_px(400); break;
+                    case SHELL_APP_ABOUT: min_width=ui_px(360); min_height=ui_px(220); break;
+                    default: break;
+                }
+                u32 max_width = g_framebuffer.width > (u32)shell_resize_window->x
+                    ? g_framebuffer.width - (u32)shell_resize_window->x : 1u;
+                u32 work_bottom = g_framebuffer.height > taskbar_height()
+                    ? g_framebuffer.height - taskbar_height() : g_framebuffer.height;
+                u32 top = (u32)shell_resize_window->y +
+                          shell_resize_window->titlebar_height;
+                u32 max_height = work_bottom > top ? work_bottom - top : 1u;
+                if (min_width > max_width) min_width = max_width;
+                if (min_height > max_height) min_height = max_height;
+                int requested_w = shell_resize_start_width +
+                                  e->mouse.x - shell_resize_origin_x;
+                int requested_h = shell_resize_start_height +
+                                  e->mouse.y - shell_resize_origin_y;
+                if (requested_w < (int)min_width) requested_w = (int)min_width;
+                if (requested_h < (int)min_height) requested_h = (int)min_height;
+                if (requested_w > (int)max_width) requested_w = (int)max_width;
+                if (requested_h > (int)max_height) requested_h = (int)max_height;
+                (void)wm_resize_window(shell_resize_window,
+                                       requested_w, requested_h);
+            }
+        } else if (shell_drag_window) {
             (void)wm_move_window(shell_drag_window,
                                  e->mouse.x - shell_drag_offset_x,
                                  e->mouse.y - shell_drag_offset_y);
@@ -969,7 +1087,10 @@ static void handle_event(const input_event_t* e) {
         return;
 
     case INPUT_MOUSE_UP:
-        if (e->mouse.button == 1) shell_drag_window = NULL;
+        if (e->mouse.button == 1) {
+            shell_drag_window = NULL;
+            shell_resize_window = NULL;
+        }
         return;
 
     case INPUT_MOUSE_DOWN: {
@@ -977,15 +1098,32 @@ static void handle_event(const input_event_t* e) {
         window_t* hit = wm_get_window_at(mx, my);
         if (hit) {
             wm_focus_window(hit);
+            if (e->mouse.button == 1 && shell_app_id_for_window(hit) >= 0 &&
+                shell_resize_grip_hit(hit, mx, my)) {
+                shell_resize_window = hit;
+                shell_drag_window = NULL;
+                shell_resize_origin_x = mx;
+                shell_resize_origin_y = my;
+                shell_resize_start_width = hit->width;
+                shell_resize_start_height = hit->height;
+                ui.needs_redraw = true;
+                return;
+            }
             shell_pointer_handled = false;
             wm_dispatch_event(INPUT_MOUSE_DOWN, (void*)e);
             if (e->mouse.button == 1 && shell_app_id_for_window(hit) >= 0 &&
                 my >= hit->y &&
                 my < hit->y + (int)hit->titlebar_height &&
                 !shell_pointer_handled) {
+                if (hit->maximized) {
+                    (void)wm_restore_window_geometry(hit);
+                    shell_drag_offset_x = hit->width / 2;
+                    shell_drag_offset_y = (int)hit->titlebar_height / 2;
+                } else {
+                    shell_drag_offset_x = mx - hit->x;
+                    shell_drag_offset_y = my - hit->y;
+                }
                 shell_drag_window = hit;
-                shell_drag_offset_x = mx - hit->x;
-                shell_drag_offset_y = my - hit->y;
             } else {
                 shell_drag_window = NULL;
             }

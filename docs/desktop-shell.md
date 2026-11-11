@@ -15,7 +15,7 @@ Terminal, Files, Browser, Settings and About each have a bufferless window recor
 - Alt+Tab cycles visible, non-minimized windows. Subsequent keyboard and pointer events are delivered only to the focused window.
 - Escape is dispatched to the focused application unless the launcher is open.
 
-The WM exposes bounded move and transactional resize operations. There are no pointer resize handles, maximize/snap controls or workspace tiling yet. The current compositor redraws the desktop and all visible surfaces on a shell repaint; dirty-region repaint and independent userspace framebuffers remain future work.
+The WM exposes bounded move, pointer resize, maximize and transactional restore operations. The resize grip is placed at the lower-right corner and enforces app-specific minimum sizes. Super+Up maximizes, Super+Down restores or minimizes, and Alt+F4 closes the focused app. Snap/tiling and workspace management are not implemented yet. The current compositor redraws the desktop and all visible surfaces on a shell repaint; dirty-region repaint and independent userspace framebuffers remain future work.
 
 ## Workspace and taskbar
 
@@ -45,7 +45,7 @@ Browser provides local shell pages and limited remote text-preview plumbing. It 
 
 ## Validation
 
-Host-side CI covers allocation failure cleanup, dimensions and buffer caps, title sanitization, focus and hit testing, visibility, focus recovery, maximum window count, slot reuse, bufferless surface lifecycle, bounded movement, transactional resize, minimize/restore, focus cycling, compositor clipping/z-order and focus-only event dispatch.
+Host-side CI covers allocation failure cleanup, dimensions and buffer caps, title sanitization, focus and hit testing, visibility, focus recovery, maximum window count, slot reuse, bufferless surface lifecycle, bounded movement, transactional resize, minimize/restore, maximize/restore geometry, failed buffer allocation rollback, focus cycling, compositor clipping/z-order and focus-only event dispatch.
 
 The QEMU capture path exercises Files and Terminal open at the same time, switches focus with Alt+Tab, confirms keyboard input reaches Files only when Files is focused, then validates Settings persistence across reboot.
 
@@ -53,7 +53,7 @@ The QEMU capture path exercises Files and Terminal open at the same time, switch
 
 - The shell and application renderers are kernel-owned, not isolated userspace processes.
 - The workspace is still sparse and is not yet release-quality desktop design.
-- There are no pointer resize handles, maximize/snap/tiling controls or dirty-region rendering.
+- Snap/tiling controls, window menus and dirty-region rendering are not implemented.
 - Files is read-only and limited to FAT32 root entries with 8.3 names.
 - Terminal command coverage is intentionally small.
 - Browser remote rendering is not a standards-compliant browser; TLS, full HTML/CSS and JavaScript execution are not implemented.

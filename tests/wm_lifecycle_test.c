@@ -173,6 +173,68 @@ static void test_resize_allocation_failure_is_transactional(void) {
     allocations_before_failure = -1;
     wm_destroy_window(w);
 }
+static void test_maximize_and_restore_preserves_geometry(void) {
+    reset_manager();
+    window_t *win = wm_create_surface_window("maximize", 40, 36, 220, 140);
+    expect(win != NULL, "surface created for maximize/restore");
+    int old_x=win->x, old_y=win->y, old_w=win->width, old_h=win->height;
+    expect(wm_maximize_window(win, 430), "visible surface maximizes into work area");
+    expect(win->maximized && win->restore_geometry_valid,
+           "maximize records a valid restore snapshot");
+    expect(win->x == 0 && win->y == 0 && win->width == 640 &&
+           win->height == 430-(int)win->titlebar_height,
+           "maximized geometry fills framebuffer work area");
+    expect(!wm_maximize_window(win, 430), "already-maximized surface is rejected");
+    expect(!wm_move_window(win, 10, 10), "maximized surface cannot drift from work area");
+    expect(wm_restore_window_geometry(win), "surface restores saved bounds");
+    expect(!win->maximized && !win->restore_geometry_valid,
+           "restore clears maximize state and snapshot");
+    expect(win->x == old_x && win->y == old_y &&
+           win->width == old_w && win->height == old_h,
+           "restore returns exact previous position and dimensions");
+    expect(!wm_restore_window_geometry(win), "restoring a normal surface is rejected");
+    wm_destroy_window(win);
+}
+
+static void test_maximize_buffer_failure_is_transactional(void) {
+    reset_manager();
+    window_t *win = wm_create_window("buffered-maximize", 18, 22, 64, 48);
+    expect(win != NULL && win->buffer != NULL, "buffer-backed surface created");
+    u32* old_buffer = win->buffer;
+    int old_x=win->x, old_y=win->y, old_w=win->width, old_h=win->height;
+    allocations_before_failure = 0;
+    expect(!wm_maximize_window(win, 430), "buffer allocation failure rejects maximize");
+    expect(win->buffer == old_buffer && win->x == old_x && win->y == old_y &&
+           win->width == old_w && win->height == old_h && !win->maximized &&
+           !win->restore_geometry_valid,
+           "failed maximize preserves pixels, geometry and flags");
+    allocations_before_failure = -1;
+    expect(wm_maximize_window(win, 430), "buffer-backed surface maximizes when allocation succeeds");
+    allocations_before_failure = 0;
+    expect(!wm_restore_window_geometry(win), "failed restore allocation keeps maximized geometry");
+    expect(win->maximized && win->restore_geometry_valid,
+           "failed restore retains the original snapshot");
+    allocations_before_failure = -1;
+    expect(wm_restore_window_geometry(win), "buffer-backed surface restores after allocation recovers");
+    expect(win->x == old_x && win->y == old_y &&
+           win->width == old_w && win->height == old_h,
+           "buffer-backed restore returns original geometry");
+    wm_destroy_window(win);
+}
+
+static void test_maximize_rejects_hidden_or_minimized_windows(void) {
+    reset_manager();
+    window_t *hidden = wm_create_surface_window("hidden", 4, 4, 100, 80);
+    window_t *minimized = wm_create_surface_window("minimized", 8, 8, 100, 80);
+    expect(hidden && minimized, "visibility test windows created");
+    expect(wm_set_window_visible(hidden, false), "surface hidden");
+    expect(wm_minimize_window(minimized), "surface minimized");
+    expect(!wm_maximize_window(hidden, 430), "hidden surface cannot maximize");
+    expect(!wm_maximize_window(minimized, 430), "minimized surface cannot maximize");
+    wm_destroy_window(hidden);
+    wm_destroy_window(minimized);
+}
+
 static void test_minimize_restore_and_focus_cycle(void) {
     reset_manager();
     window_t *a = wm_create_surface_window("A", 0, 0, 100, 80);
@@ -332,6 +394,9 @@ int main(void) {
     test_geometry_operations_are_bounded();
     test_resize_allocation_failure_is_transactional();
     test_minimize_restore_and_focus_cycle();
+    test_maximize_and_restore_preserves_geometry();
+    test_maximize_buffer_failure_is_transactional();
+    test_maximize_rejects_hidden_or_minimized_windows();
     test_window_list_traversal_is_bounded_and_unique();
     test_surface_compositor_paints_visible_windows_in_z_order();
     test_event_dispatch_targets_only_focused_window();

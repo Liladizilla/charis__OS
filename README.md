@@ -31,7 +31,7 @@ The project is under active development. It is not currently a general-purpose o
 | User mode | DPL3 `int 0x80` path exercised; static x86_64 `ET_EXEC` smoke program loaded from FAT32 and entered in ring 3 |
 | Storage | Primary ATA PIO and FAT32 support; current Files interface is read-only and limited to the root directory and 8.3 names |
 | Graphical shell | Framebuffer workspace with independent Terminal, Files, Browser, Settings and About windows; workspace and application coverage remain limited |
-| Window manager | Bounded ownership, back-to-front callback composition, focus-only input, move, minimize/restore, taskbar switching and Alt+Tab; pointer resize handles remain unfinished |
+| Window manager | Bounded ownership, back-to-front composition, focus-only input, move/resize, maximize/restore, minimize, taskbar switching and Alt+Tab; snap/tiling remains unfinished |
 | Settings | Font family, text size and interface scale; CI verifies saved values survive a reboot on a writable FAT32 test disk |
 | Security | Capability checks and input validation exist in selected paths; enforcement and isolation are incomplete |
 | Networking | RTL8139 transmit path only; receive and TCP/IP stack are not implemented |
@@ -70,7 +70,7 @@ These are automated engineering captures, not polished release photography. The 
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
 - Framebuffer drawing and PSF2 bitmap-font rendering.
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
-- Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, bounds, clipping and event-routing tests cover the foundation.
+- Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, lower-right pointer resizing, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation.
 - Persistent display preferences on supported writable FAT32 storage.
 - CI boot, memory-permission, ring-3, ELF, desktop-capture and host-side WM lifecycle/bounds checks.
 
@@ -78,7 +78,7 @@ These are automated engineering captures, not polished release photography. The 
 
 CharisOS is still an early-stage kernel and shell. In particular:
 
-- The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging, taskbar switching and Alt+Tab. Pointer-driven resize handles, maximize/snap behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
+- The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
 - The latest QEMU capture still shows a sparse workspace with one Files shortcut. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
 - Files does not yet support writable files, nested directory navigation or long filenames.
 - The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking and a complete process lifecycle are unfinished.

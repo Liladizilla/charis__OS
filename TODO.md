@@ -55,7 +55,10 @@
 - [x] Taskbar focus/minimize/restore and Alt+Tab focus cycling
 - [x] Settings and About promoted from modal overlays to independent WM windows
 - [x] Visible active-window focus rule and focused-window-only compositor regression
-- [ ] Pointer-driven resize handles, maximize/restore and snap/tiling interactions
+- [x] Bounded lower-right pointer resize handle with app-specific minimum dimensions
+- [x] WM maximize/restore geometry snapshots with transactional allocation-failure behavior
+- [x] Super+Up maximize, Super+Down restore/minimize and Alt+F4 close for focused apps
+- [ ] Snap/tiling interactions and QEMU pointer-drag resize verification
 - [ ] QEMU validation of simultaneous windows, Alt+Tab input routing and pointer drag
 - [ ] Expand the workspace beyond the current sparse Files shortcut and taskbar
 
@@ -93,7 +96,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [ ] Verify layout at 100/125/150/200% text/UI scales and 1024x768, 1280x800 and 1920x1080 framebuffer sizes
 - [x] Standardize native app titlebars, close controls, focus indication and keyboard dispatch for current applications
 - [x] Add independently movable windows, multi-window z-order, taskbar focus/restore and Alt+Tab
-- [ ] Add pointer resize handles, maximize, snap/tiling and consistent per-window keyboard navigation
+- [x] Add pointer resize handles, maximize/restore and focused-window keyboard shortcuts
+- [ ] Add snap/tiling, global window menu and consistent per-window keyboard navigation
 - [ ] Add a first-login setup wizard with language/keyboard, appearance and network steps; current wizard remains limited to existing setup preferences
 - [ ] Add functional Text Editor and System Monitor applications
 
@@ -158,6 +162,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Add host-side WM lifecycle/bounds regression coverage to CI
 - [x] Host test proves only focused visible windows receive dispatched events
 - [x] Host test verifies the focused window receives the visible compositor focus rule
+- [x] Host tests cover maximize/restore geometry, hidden/minimized rejection and transactional buffer allocation failure
 - [x] WM list traversal detects duplicate nodes and remains bounded if links form a cycle
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions

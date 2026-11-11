@@ -200,6 +200,12 @@ jobs:
             sleep 1
             printf 'sendkey ret\n'
             sleep 2
+            printf 'sendkey meta_l-up\n'
+            sleep 1
+            printf 'screendump build/charisos-maximized-preview.ppm\n'
+            sleep 1
+            printf 'sendkey meta_l-down\n'
+            sleep 1
             printf 'screendump build/charisos-multiwindow-preview.ppm\n'
             sleep 1
             printf 'sendkey esc\n'
@@ -243,6 +249,9 @@ jobs:
           grep -q 'FILES_CLOSE' build/desktop-capture-serial.log
           grep -q 'TERMINAL_OPEN' build/desktop-capture-serial.log
           grep -q 'TERMINAL_CMD help' build/desktop-capture-serial.log
+          grep -q 'SHELL_WINDOW_MAXIMIZED' build/desktop-capture-serial.log
+          grep -q 'SHELL_WINDOW_RESTORED' build/desktop-capture-serial.log
+          test -s build/charisos-maximized-preview.ppm
           test -s build/charisos-multiwindow-preview.ppm
           test -s build/charisos-settings-preview.ppm
           test -s build/charisos-settings-adjusted-preview.ppm
@@ -314,6 +323,7 @@ jobs:
             build/charisos-desktop-preview.ppm
             build/charisos-files-preview.ppm
             build/charisos-multiwindow-preview.ppm
+            build/charisos-maximized-preview.ppm
             build/charisos-settings-preview.ppm
             build/charisos-settings-adjusted-preview.ppm
             build/charisos-desktop-scaled-preview.ppm

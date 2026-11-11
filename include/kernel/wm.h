@@ -21,6 +21,9 @@ typedef struct window {
     bool focused;
     bool minimized;
     bool maximized;
+    bool restore_geometry_valid;
+    int restore_x, restore_y;
+    int restore_width, restore_height;
     char title[128];
     u32* buffer;
     struct window* next;
@@ -39,6 +42,9 @@ void wm_focus_window(window_t* win);
 /* Geometry and visibility operations validate ownership and screen bounds. */
 bool wm_move_window(window_t* win, int x, int y);
 bool wm_resize_window(window_t* win, int width, int height);
+/* usable_height excludes the shell taskbar; height stores client pixels only. */
+bool wm_maximize_window(window_t* win, u32 usable_height);
+bool wm_restore_window_geometry(window_t* win);
 bool wm_set_titlebar_height(window_t* win, u32 height);
 bool wm_minimize_window(window_t* win);
 bool wm_restore_window(window_t* win);

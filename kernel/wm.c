@@ -212,7 +212,8 @@ void wm_focus_window(window_t* win) {
 }
 
 bool wm_move_window(window_t* win, int x, int y) {
-    if (!wm_contains(win) || !win->visible || win->minimized) return false;
+    if (!wm_contains(win) || !win->visible || win->minimized || win->maximized)
+        return false;
     win->x = x;
     win->y = y;
     wm_clamp_position(win);
@@ -248,7 +249,53 @@ bool wm_resize_window(window_t* win, int width, int height) {
     win->buffer = replacement;
     win->width = width;
     win->height = height;
+    win->maximized = false;
+    win->restore_geometry_valid = false;
     wm_clamp_position(win);
+    return true;
+}
+
+bool wm_maximize_window(window_t* win, u32 usable_height) {
+    if (!wm_contains(win) || !win->visible || win->minimized ||
+        win->maximized || !g_framebuffer.initialized) return false;
+
+    u32 title_h = wm_titlebar_height(win);
+    if (usable_height > g_framebuffer.height) usable_height = g_framebuffer.height;
+    if (usable_height <= title_h || !g_framebuffer.width ||
+        g_framebuffer.width > WM_MAX_DIMENSION ||
+        usable_height - title_h > WM_MAX_DIMENSION) return false;
+
+    int old_x = win->x, old_y = win->y;
+    int old_width = win->width, old_height = win->height;
+    if (!wm_resize_window(win, (int)g_framebuffer.width,
+                          (int)(usable_height - title_h))) return false;
+
+    win->restore_x = old_x;
+    win->restore_y = old_y;
+    win->restore_width = old_width;
+    win->restore_height = old_height;
+    win->restore_geometry_valid = true;
+    win->maximized = true;
+    win->x = 0;
+    win->y = 0;
+    wm_focus_window(win);
+    return true;
+}
+
+bool wm_restore_window_geometry(window_t* win) {
+    if (!wm_contains(win) || !win->visible || win->minimized ||
+        !win->maximized || !win->restore_geometry_valid) return false;
+
+    int old_x = win->restore_x, old_y = win->restore_y;
+    int old_width = win->restore_width, old_height = win->restore_height;
+    /* Resize commits only after a replacement buffer has been allocated.
+     * The saved geometry is local so the normal resize path can clear the
+     * maximize snapshot without losing the restore target. */
+    if (!wm_resize_window(win, old_width, old_height)) return false;
+    if (!wm_move_window(win, old_x, old_y)) return false;
+    win->maximized = false;
+    win->restore_geometry_valid = false;
+    wm_focus_window(win);
     return true;
 }
 
