@@ -86,7 +86,7 @@ static void wm_clamp_position(window_t* win) {
     s32 max_x = (g_framebuffer.width > (u32)win->width)
         ? (s32)(g_framebuffer.width - (u32)win->width) : 0;
     s32 max_y = (g_framebuffer.height > (u32)win->height + wm_titlebar_height(win))
-        ? (s32)(g_framebuffer.height - (u32)(win->height + WINDOW_TITLEBAR_HEIGHT)) : 0;
+        ? (s32)(g_framebuffer.height - ((u32)win->height + wm_titlebar_height(win))) : 0;
     if (win->x > max_x) win->x = max_x;
     if (win->y > max_y) win->y = max_y;
 }
@@ -375,7 +375,8 @@ void wm_render_surfaces(void) {
     for (u32 i = 0; i < count; i++) {
         window_t* win = ordered[i];
         if (!win->visible || win->minimized) continue;
-        u32 clip_h = (u32)win->height + WINDOW_TITLEBAR_HEIGHT;
+        u32 title_h = wm_titlebar_height(win);
+        u32 clip_h = (u32)win->height + title_h;
         fb_set_clip((u32)win->x, (u32)win->y, (u32)win->width, clip_h);
         if (win->on_paint) {
             win->on_paint(win);
@@ -387,7 +388,7 @@ void wm_render_surfaces(void) {
                     for (u32 px = 0; px < (u32)win->width; px++) {
                         u32 color = win->buffer[(usize)py * (usize)win->width + px];
                         fb_put_pixel((u32)win->x + px,
-                                     (u32)win->y + WINDOW_TITLEBAR_HEIGHT + py,
+                                     (u32)win->y + title_h + py,
                                      color);
                     }
             }
@@ -433,7 +434,7 @@ void wm_draw_contents(window_t* win) {
     if (win->on_paint) win->on_paint(win);
     else {
         graphics_set_color(COLOR_SURFACE);
-        graphics_rect((u32)win->x, (u32)win->y + WINDOW_TITLEBAR_HEIGHT,
+        graphics_rect((u32)win->x, (u32)win->y + wm_titlebar_height(win),
                       (u32)win->width, (u32)win->height, true);
     }
 }
@@ -526,7 +527,7 @@ void wm_draw_decorations(window_t* win) {
     if (!win || !wm_contains(win) || !win->visible || win->minimized) return;
     graphics_set_color(COLOR_SURFACE);
     graphics_rect((u32)win->x, (u32)win->y, (u32)win->width,
-                  WINDOW_TITLEBAR_HEIGHT, true);
+                  wm_titlebar_height(win), true);
     graphics_set_color(COLOR_BORDER);
     graphics_rect((u32)win->x, (u32)win->y, (u32)win->width,
                   (u32)win->height + wm_titlebar_height(win), false);
