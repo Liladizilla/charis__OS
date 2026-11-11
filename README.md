@@ -42,13 +42,13 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The checked-in gallery below is a reference snapshot from an earlier QEMU run. The latest full-resolution captures (desktop, Files, Settings, adjusted display preferences, scaled desktop, post-reboot Settings and Terminal), serial logs and boot images are attached to the [passing CI run #42977397083](https://github.com/Liladizilla/charis__OS/actions/runs/42977397083). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts there. These captures are engineering evidence, not release marketing shots.
+The checked-in gallery below is a reference snapshot from an earlier QEMU run. The latest full-resolution captures (desktop, Files, Settings, adjusted display preferences, scaled desktop, post-reboot Settings and Terminal), serial logs and boot images are attached to the [passing CI run #42979022447](https://github.com/Liladizilla/charis__OS/actions/runs/42979022447). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts there. These captures are engineering evidence, not release marketing shots.
 
 ![CharisOS desktop, Files, Settings and Terminal previews](docs/screenshots/charisos-preview-gallery.jpg)
 
 ## Latest desktop validation
 
-The latest successful CI run is [run #42977397083](https://github.com/Liladizilla/charis__OS/actions/runs/42977397083). All 19 workflow steps passed. The run builds the kernel and boot images for the generic x86-64 baseline, checks the generated ELF for BMI/BMI2-family instructions, runs browser-parser and host-side WM lifecycle/geometry tests, verifies BIOS boot, ring-3 and ELF execution, boots the VMM huge-page/permission regression suite, and captures the graphical shell.
+The latest successful CI run is [run #42979022447](https://github.com/Liladizilla/charis__OS/actions/runs/42979022447). All required workflow gates passed, including BIOS/disk boot, ring-3, ELF, VMM permission tests and desktop persistence capture. The run builds the kernel and boot images for the generic x86-64 baseline, checks the generated ELF for BMI/BMI2-family instructions, runs browser-parser and host-side WM lifecycle/geometry tests, verifies BIOS boot, ring-3 and ELF execution, boots the VMM huge-page/permission regression suite, and captures the graphical shell.
 
 The desktop capture covers:
 - The minimal workspace and taskbar.
@@ -126,17 +126,18 @@ boot/long_mode.asm     64-bit
    ▼
 kernel/main.c :: kernel_main()
    ├─ vga_init, serial_init, Multiboot2 magic validation
-   ├─ memory_init → idt_init → irq_init → timer_init(1000) → keyboard_init
-   ├─ ata_init → fs_init → vfs_init
-   ├─ task_init → scheduler_init → syscall_init
-   ├─ graphics_init → wm_init → input_init → ipc_init → audio_init
-   ├─ signal_init → pipe_init → driver_init → pci_scan → driver_scan_and_bind
-   ├─ config_init → config_load("/CHARISOS.CFG")
-   ├─ display_init → desktop_init → services_init → diag_init
-   ├─ power_init → security_init
-   ├─ net_init  (gated on config "net_enabled")
-  ├─ create the ring-3 bootstrap and the active shell/desktop task
-  └─ sti; scheduler_start()  →  ring-3 bootstrap, then kernel shell/desktop
+   ├─ security_init (seeds stack guard; cryptographic tokens stay disabled without RDRAND)
+   ├─ memory_init: Multiboot map → PMM → VMM/direct map → kernel heap
+   ├─ fb_init → idt_init → input_init
+   ├─ irq_init → timer_init(1000) → keyboard_init → ata_init → fs_init → vfs_init
+   ├─ task_init → scheduler_init → syscall_init → graphics_init → mouse_init
+   ├─ install UI input hooks → wm_init → ipc_init → audio_init → signal_init → pipe_init
+   ├─ driver_init → pci_scan → driver_scan_and_bind
+   ├─ config_init → config_load("/CHARISOS.CFG") → apply display preferences
+   ├─ display_init → desktop_init → services_init → diag_init → power_init
+   ├─ net_init (gated on config "net_enabled") → apps_init
+   ├─ create ring-3 bootstrap and either the framebuffer desktop or text shell task
+   └─ sti; scheduler_start()
 ```
 
 ### Boot markers

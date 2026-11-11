@@ -15,18 +15,38 @@
 window_t* wm_windows = NULL;
 static u32 wm_z_counter = 0;
 
+/* Collect unique nodes from the bounded window list. The normal list
+ * contains at most MAX_WINDOWS entries; the duplicate check also prevents a
+ * corrupted cycle from making rendering, focus or lookup paths spin forever
+ * or count the same window repeatedly. */
+static u32 wm_collect_windows(window_t* windows[MAX_WINDOWS]) {
+    u32 count = 0;
+    for (window_t* w = wm_windows; w && count < MAX_WINDOWS; w = w->next) {
+        bool seen = false;
+        for (u32 i = 0; i < count; i++) {
+            if (windows[i] == w) {
+                seen = true;
+                break;
+            }
+        }
+        if (seen) break;
+        windows[count++] = w;
+    }
+    return count;
+}
+
 static bool wm_contains(const window_t* target) {
     if (!target) return false;
-    u32 count = 0;
-    for (window_t* w = wm_windows; w && count < MAX_WINDOWS; w = w->next, count++)
-        if (w == target) return true;
+    window_t* windows[MAX_WINDOWS];
+    u32 count = wm_collect_windows(windows);
+    for (u32 i = 0; i < count; i++)
+        if (windows[i] == target) return true;
     return false;
 }
 
 static u32 wm_count(void) {
-    u32 count = 0;
-    for (window_t* w = wm_windows; w && count < MAX_WINDOWS; w = w->next) count++;
-    return count;
+    window_t* windows[MAX_WINDOWS];
+    return wm_collect_windows(windows);
 }
 
 u32 wm_get_window_count(void) {
@@ -35,9 +55,7 @@ u32 wm_get_window_count(void) {
 
 static void wm_compact_z(void) {
     window_t* ordered[MAX_WINDOWS];
-    u32 count = 0;
-    for (window_t* w = wm_windows; w && count < MAX_WINDOWS; w = w->next)
-        ordered[count++] = w;
+    u32 count = wm_collect_windows(ordered);
     for (u32 i = 1; i < count; i++) {
         window_t* item = ordered[i];
         u32 j = i;
@@ -70,11 +88,15 @@ static void wm_clamp_position(window_t* win) {
 }
 
 static void wm_focus_topmost(void) {
+    window_t* windows[MAX_WINDOWS];
+    u32 count = wm_collect_windows(windows);
     window_t* candidate = NULL;
-    for (window_t* w = wm_windows; w; w = w->next)
+    for (u32 i = 0; i < count; i++) {
+        window_t* w = windows[i];
         if (w->visible && !w->minimized &&
             (!candidate || w->z_order > candidate->z_order))
             candidate = w;
+    }
     if (candidate) wm_focus_window(candidate);
 }
 
@@ -141,11 +163,20 @@ window_t* wm_create_surface_window(const char* title, int x, int y, int w, int h
 
 void wm_destroy_window(window_t* win) {
     if (!win) return;
-    window_t** link = &wm_windows;
-    while (*link && *link != win) link = &(*link)->next;
-    if (!*link) return;
+    window_t* windows[MAX_WINDOWS];
+    u32 count = wm_collect_windows(windows);
+    u32 index = count;
+    for (u32 i = 0; i < count; i++) {
+        if (windows[i] == win) {
+            index = i;
+            break;
+        }
+    }
+    if (index == count) return;
+
     bool was_focused = win->focused;
-    *link = win->next;
+    if (index == 0) wm_windows = win->next;
+    else windows[index - 1]->next = win->next;
     win->next = NULL;
     win->focused = false;
     if (win->buffer) kfree(win->buffer);
@@ -155,8 +186,13 @@ void wm_destroy_window(window_t* win) {
 }
 
 void wm_focus_window(window_t* win) {
-    if (!wm_contains(win) || !win->visible || win->minimized) return;
-    for (window_t* w = wm_windows; w; w = w->next) w->focused = false;
+    window_t* windows[MAX_WINDOWS];
+    u32 count = wm_collect_windows(windows);
+    bool owned = false;
+    for (u32 i = 0; i < count; i++)
+        if (windows[i] == win) { owned = true; break; }
+    if (!owned || !win->visible || win->minimized) return;
+    for (u32 i = 0; i < count; i++) windows[i]->focused = false;
     win->focused = true;
     wm_raise(win);
 }
@@ -261,9 +297,7 @@ void wm_render(void) {
     fb_reset_clip();
     fb_clear(CHARIS_UI_BACKGROUND);
     window_t* ordered[MAX_WINDOWS];
-    u32 count = 0;
-    for (window_t* w = wm_windows; w && count < MAX_WINDOWS; w = w->next)
-        ordered[count++] = w;
+    u32 count = wm_collect_windows(ordered);
     for (u32 i = 1; i < count; i++) {
         window_t* item = ordered[i];
         u32 j = i;
@@ -297,14 +331,21 @@ void wm_dispatch_event(int event_type, void* data) {
 }
 
 window_t* wm_get_focused(void) {
-    for (window_t* win = wm_windows; win; win = win->next)
+    window_t* windows[MAX_WINDOWS];
+    u32 count = wm_collect_windows(windows);
+    for (u32 i = 0; i < count; i++) {
+        window_t* win = windows[i];
         if (win->focused && win->visible && !win->minimized) return win;
+    }
     return NULL;
 }
 
 window_t* wm_get_window_at(int x, int y) {
     window_t* best = NULL;
-    for (window_t* win = wm_windows; win; win = win->next) {
+    window_t* windows[MAX_WINDOWS];
+    u32 count = wm_collect_windows(windows);
+    for (u32 i = 0; i < count; i++) {
+        window_t* win = windows[i];
         if (!win->visible || win->minimized) continue;
         s64 right = (s64)win->x + win->width;
         s64 bottom = (s64)win->y + win->height + WINDOW_TITLEBAR_HEIGHT;

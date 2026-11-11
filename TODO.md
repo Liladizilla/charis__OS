@@ -151,9 +151,10 @@ The current shell still owns the framebuffer and supports one modal app at a tim
 - [x] Removed obsolete `disk.c` implementation
 - [x] Enable `-Werror` for kernel compilation
 - [x] Add host-side WM lifecycle/bounds regression coverage to CI
+- [x] WM list traversal detects duplicate nodes and remains bounded if links form a cycle
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions
-- [x] QEMU BIOS, ring-3, ELF and VMM huge-page/permission regression suites pass (CI run #42977397083)
+- [x] QEMU BIOS, ring-3, ELF and VMM huge-page/permission regression suites pass (CI run #42979022447)
 - [x] QEMU desktop capture verifies Files, Settings and Terminal launch paths
 - [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`)
 - [ ] Expand automated regression coverage beyond current boot, ring-3, ELF, VMM and WM metadata gates

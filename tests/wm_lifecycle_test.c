@@ -148,6 +148,28 @@ static void test_minimize_restore_and_focus_cycle(void) {
     expect(!wm_minimize_window(NULL), "null minimize rejected");
     wm_destroy_window(a); wm_destroy_window(b); wm_destroy_window(c);
 }
+static void test_window_list_traversal_is_bounded_and_unique(void) {
+    reset_manager();
+    window_t *a = wm_create_surface_window("cycle-a", 0, 0, 100, 80);
+    window_t *b = wm_create_surface_window("cycle-b", 0, 0, 100, 80);
+    expect(a && b && b->next == a, "two-node list created in expected order");
+
+    /* Deliberately corrupt the private link into a cycle. Public reads and
+     * focus paths must stop at the manager's hard bound without duplicates. */
+    a->next = b;
+    expect(wm_get_window_count() == 2, "cyclic list counts unique nodes only");
+    expect(wm_get_focused() == b, "focused lookup terminates on cyclic list");
+    expect(wm_get_window_at(10, 10) == b, "hit testing terminates on cyclic list");
+    wm_focus_window(a);
+    expect(wm_get_focused() == a, "focus traversal terminates on cyclic list");
+    expect(wm_minimize_window(a), "minimize uses bounded focus recovery");
+    expect(wm_get_focused() == b, "focus recovery selects remaining visible node");
+    wm_destroy_window((window_t*)(uintptr_t)1);
+    a->next = NULL;
+    reset_manager();
+    expect(wm_windows == NULL, "cycle test restores and releases all nodes");
+}
+
 static void test_window_limit_and_repeated_reuse(void) {
     reset_manager();
     window_t *items[MAX_WINDOWS];
@@ -176,6 +198,7 @@ int main(void) {
     test_geometry_operations_are_bounded();
     test_resize_allocation_failure_is_transactional();
     test_minimize_restore_and_focus_cycle();
+    test_window_list_traversal_is_bounded_and_unique();
     test_window_limit_and_repeated_reuse();
     expect(allocations == frees, "all test allocations released");
     puts("Window manager lifecycle, geometry and visibility tests passed");
