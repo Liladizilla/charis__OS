@@ -197,11 +197,15 @@ static void draw_shortcut(u32 index, u32 icon_size) {
     gfx_draw_string(text_x, label_y, shortcut_label[index],
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
     if (shortcut_show_detail()) {
-        fb_set_clip(x + u(16), label_y + text_h + u(4),
-                    w > u(32) ? w - u(32) : 1u, text_h);
-        gfx_draw_string(x + u(16), label_y + text_h + u(4),
-                        shortcut_detail[index], CHARIS_UI_MUTED,
-                        FB_TRANSPARENT);
+        /* Keep the secondary line in the same text column as the title.
+         * Starting it at the card inset made it run underneath the icon. */
+        u32 text_offset = text_x - x;
+        u32 detail_width = w > text_offset + u(12)
+                         ? w - text_offset - u(12) : 1u;
+        u32 detail_y = label_y + text_h + u(4);
+        fb_set_clip(text_x, detail_y, detail_width, text_h);
+        gfx_draw_string(text_x, detail_y, shortcut_detail[index],
+                        CHARIS_UI_MUTED, FB_TRANSPARENT);
         fb_reset_clip();
     }
     fb_reset_clip();
