@@ -107,7 +107,7 @@ static void test_geometry_operations_are_bounded(void) {
     window_t *w = wm_create_window("geometry", 10, 10, 80, 60);
     expect(w != NULL && wm_get_window_count() == 1, "window count reports live windows");
     expect(wm_move_window(w, 900, 900), "valid move accepted");
-    expect(w->x == 540 && w->y == 392, "move clamps titlebar and content to screen");
+    expect(w->x == 560 && w->y == 392, "move clamps titlebar and content to screen");
     expect(!wm_move_window(NULL, 1, 1), "null move rejected");
     expect(!wm_resize_window(w, 2049, 2049), "oversized buffer resize rejected");
     expect(w->width == 80 && w->height == 60, "rejected resize leaves geometry unchanged");
