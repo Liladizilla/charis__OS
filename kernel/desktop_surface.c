@@ -95,11 +95,11 @@ static void draw_uptime(u32 x, u32 y, u64 milliseconds) {
     gfx_draw_string(x, y, value, CHARIS_UI_TEXT, FB_TRANSPARENT);
 }
 
-/* Card height follows the selected font metrics. At the largest bitmap
- * size the detail line is intentionally omitted: preserving readable labels
- * is more useful than squeezing two colliding lines into a fixed card. */
+/* Descriptions are a secondary affordance, not worth clipping at larger
+ * text sizes. Keep them only at the baseline font scale; the card itself
+ * expands with the selected font metrics. */
 static bool shortcut_show_detail(void) {
-    return gfx_text_get_scale() < 3u && g_framebuffer.height >= u(600u);
+    return gfx_text_get_scale() == 1u && g_framebuffer.height >= u(600u);
 }
 
 static u32 shortcut_card_height(void) {
@@ -117,7 +117,10 @@ static u32 system_panel_logical_width(void) {
 
 static bool system_panel_fits(void) {
     u32 minimum_height = gfx_text_get_scale() >= 3u ? 520u : 480u;
-    return g_framebuffer.width >= u(900u) &&
+    /* The previous 900-logical-pixel width gate hid the panel at 120%
+     * interface scale on a 1024px framebuffer even though a one-column
+     * shortcut grid leaves enough room beside it. */
+    return g_framebuffer.width >= u(760u) &&
            g_framebuffer.height >= u(minimum_height);
 }
 
