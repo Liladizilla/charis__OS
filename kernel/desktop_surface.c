@@ -106,51 +106,51 @@ static u32 shortcut_card_height(void) {
     return shortcut_show_detail() ? line * 2u + 24u : line + 16u;
 }
 
-/* Keep the two-column composition when there is room. Larger bitmap
- * fonts get wider cards; compact framebuffers switch to one column instead
- * of drawing labels underneath the system panel or beyond the right edge. */
-static u32 system_panel_logical_width(void) {
-    u32 scale = gfx_text_get_scale();
-    return scale >= 3u ? 440u : (scale == 2u ? 400u : 312u);
-}
-
-static bool system_panel_fits(void) {
-    u32 minimum_height = gfx_text_get_scale() >= 3u ? 520u : 480u;
-    /* The previous 900-logical-pixel width gate hid the panel at 120%
-     * interface scale on a 1024px framebuffer even though a one-column
-     * shortcut grid leaves enough room beside it. */
-    return g_framebuffer.width >= u(760u) &&
-           g_framebuffer.height >= u(minimum_height);
-}
-
-static u32 shortcut_columns(void) {
+/* The workspace uses two or four columns, avoiding an unbalanced
+ * three-plus-one final row. Cards expand to fill the available lane instead
+ * of leaving a narrow 184px strip stranded beside the system panel. */
+static u32 shortcut_available_width(void) {
     u32 width = g_framebuffer.width;
     u32 panel_reserved = system_panel_fits()
                        ? u(system_panel_logical_width() + 24u) : 0u;
     u32 left = u(DESKTOP_GRID_X);
     u32 right = width > panel_reserved + u(48u)
               ? width - panel_reserved - u(48u) : 0u;
-    u32 available = right > left ? right - left : 0u;
+    return right > left ? right - left : 1u;
+}
+
+static u32 shortcut_minimum_width(void) {
     u32 font_scale = gfx_text_get_scale();
-    u32 desired = u(DESKTOP_CELL_W + (font_scale > 1u ? (font_scale - 1u) * 48u : 0u));
+    u32 logical = DESKTOP_CELL_W +
+                  (font_scale > 1u ? (font_scale - 1u) * 48u : 0u);
+    return u(logical);
+}
+
+static u32 shortcut_columns(void) {
+    u32 available = shortcut_available_width();
+    u32 desired = shortcut_minimum_width();
     u32 gap = u(DESKTOP_CARD_GAP_X);
+    if (available >= desired * 4u + gap * 3u) return 4u;
     return available >= desired * 2u + gap ? 2u : 1u;
 }
 
 static u32 shortcut_card_width(void) {
-    u32 width = g_framebuffer.width;
-    u32 panel_reserved = system_panel_fits()
-                       ? u(system_panel_logical_width() + 24u) : 0u;
+    u32 available = shortcut_available_width();
+    u32 columns = shortcut_columns();
+    if (columns == 1u) return available;
+    u32 gaps = u(DESKTOP_CARD_GAP_X) * (columns - 1u);
+    u32 card_width = available > gaps ? (available - gaps) / columns : 1u;
+    u32 maximum = u(360u);
+    return card_width > maximum ? maximum : card_width;
+}
+
+static u32 shortcut_grid_left(void) {
     u32 left = u(DESKTOP_GRID_X);
-    u32 right = width > panel_reserved + u(48u)
-              ? width - panel_reserved - u(48u) : 0u;
-    u32 available = right > left ? right - left : 1u;
-    if (shortcut_columns() == 2u) {
-        u32 font_scale = gfx_text_get_scale();
-        u32 desired = u(DESKTOP_CELL_W + (font_scale > 1u ? (font_scale - 1u) * 48u : 0u));
-        return desired;
-    }
-    return available;
+    u32 available = shortcut_available_width();
+    u32 columns = shortcut_columns();
+    u32 used = shortcut_card_width() * columns +
+               u(DESKTOP_CARD_GAP_X) * (columns - 1u);
+    return available > used ? left + (available - used) / 2u : left;
 }
 
 static u32 desktop_grid_top(void) {
@@ -166,7 +166,7 @@ static void shortcut_position(u32 index, u32* x, u32* y) {
     u32 row = index / columns;
     u32 card_w = shortcut_card_width();
     u32 card_h = shortcut_card_height();
-    if (x) *x = u(DESKTOP_GRID_X) + column * (card_w + u(DESKTOP_CARD_GAP_X));
+    if (x) *x = shortcut_grid_left() + column * (card_w + u(DESKTOP_CARD_GAP_X));
     if (y) *y = desktop_grid_top() + row * (card_h + u(DESKTOP_CARD_GAP_Y));
 }
 
