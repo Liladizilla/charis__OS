@@ -42,17 +42,17 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The current baseline QEMU workspace capture is checked in below. It was captured from commit `b2e2f20` by [CI run #722](https://github.com/Liladizilla/charis__OS/actions/runs/43069919498). The [full QEMU capture artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43069919498) contains separate 1024×768 captures for the workspace, Files, Terminal, Browser, Settings, multi-window focus, maximized and resized windows, adjusted display preferences, post-reboot settings and large-font layout, along with serial and QEMU logs.
+The latest checked-in QEMU workspace capture is from commit `1f0414c`, verified by [CI run #724](https://github.com/Liladizilla/charis__OS/actions/runs/43071788055). The [full QEMU desktop artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43071788055) includes separate 1024×768 captures for the workspace, Files, Terminal, Browser, Settings, multi-window focus, maximized and resized windows, adjusted preferences, post-reboot settings, 120% interface scaling and large-font layout, with serial and QEMU logs.
 
-![CharisOS QEMU desktop workspace, CI run 722](docs/screenshots/charisos-desktop-run-722.png)
+![CharisOS QEMU desktop workspace, CI run 724](docs/screenshots/charisos-desktop-run-724.png)
 
-The older [preview gallery](docs/screenshots/charisos-preview-gallery.jpg) is retained as historical comparison material; it does not represent the current workspace.
+The [run #722 capture](docs/screenshots/charisos-desktop-run-722.png) and older [preview gallery](docs/screenshots/charisos-preview-gallery.jpg) remain available as historical comparisons.
 
 ## Latest desktop validation
 
-[CI run #722](https://github.com/Liladizilla/charis__OS/actions/runs/43069919498) passed on commit `b2e2f20`. The run completed dependency installation, the freestanding kernel build, the x86-64 baseline instruction audit, browser and window-manager host tests, BIOS boot and ring-3 checks, VMM huge-page and permission regressions, and the full QEMU desktop capture. QEMU verified the 1024×768 workspace, independent Files/Terminal/Browser/Settings windows, multi-window focus routing, maximize/restore, keyboard resize and settings persistence across reboot. The display test saves `font_scale=2` and `ui_scale=120`, reloads those values after reboot, then exercises the largest supported font preset.
+[CI run #724](https://github.com/Liladizilla/charis__OS/actions/runs/43071788055) passed on commit `1f0414c`. The run completed dependency installation, the freestanding kernel build, the x86-64 baseline instruction audit, browser and window-manager host tests, BIOS boot and ring-3 checks, VMM huge-page and permission regressions, and the QEMU desktop/settings capture sequence. QEMU verified the 1024×768 workspace, Files/Terminal/Browser/Settings windows, multi-window focus routing, maximize/restore, keyboard resize and display preferences surviving a reboot. The settings test reloads `font_scale=2` and `ui_scale=120`, then exercises the largest supported font preset.
 
-The baseline screenshot confirms the four direct application cards and System Overview panel render without clipping at the default scale. The workspace still leaves a large area below the launch surface unused; filling it with functional, live information remains a design task. The full resolution and font/UI-scale matrix has not been completed, and this capture is engineering evidence rather than a release-quality claim.
+The current workspace shows four direct application cards, the System Overview panel and a lower System Status panel with live memory allocation/free space plus display dimensions and scale values. The new lower panel occupies more of the canvas without clipping at the captured default and 120% interface scales. A substantial unused region remains below the workspace content, and large-font layouts intentionally suppress some secondary details. The complete 100/125/150/200% text/UI and 1024×768, 1280×800 and 1920×1080 matrix remains unfinished. This is engineering evidence, not a release-quality claim.
 
 The current ELF disk test accepts an explicit `ELF_EXEC_DENIED_CAPABILITY` result because the bootstrap task does not receive `CAP_ALLOW_EXEC`; it does not prove that an ELF executable was entered. Successful authorized ELF execution remains an explicit validation gap.
 
@@ -69,7 +69,8 @@ The current ELF disk test accepts an explicit `ELF_EXEC_DENIED_CAPABILITY` resul
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
 - Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, a lower-right pointer resize grip, Alt+F8 keyboard resizing, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation; QEMU verifies simultaneous windows and keyboard maximize/restore.
 - Persistent display preferences on supported writable FAT32 storage.
-- CI verifies the freestanding build, x86-64 baseline, BIOS/ring-3 path, VMM permission regressions, host-side WM tests and QEMU desktop/settings capture; [run #722](https://github.com/Liladizilla/charis__OS/actions/runs/43069919498) passed on commit `b2e2f20`.
+- Workspace System Status panel reads PMM allocator counters and the active display profile without walking task state during repaint.
+- CI verifies the freestanding build, x86-64 baseline, BIOS/ring-3 path, VMM permission regressions, host-side WM tests and QEMU desktop/settings capture; [run #724](https://github.com/Liladizilla/charis__OS/actions/runs/43071788055) passed on commit `1f0414c`.
 
 ## Important limitations
 

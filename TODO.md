@@ -31,6 +31,7 @@
 - [ ] QEMU test authorizes a ring-3 task with `CAP_ALLOW_EXEC`, enters a FAT32 ELF and observes `ELF_EXEC_OK` (current smoke test verifies denial without that capability)
 - [x] Build bounded `argc`/`argv`/`envp` vectors plus `AT_NULL` on the initial stack
 - [ ] `ET_DYN` and relocations/interpreters
+- [ ] Make ELF loading and initial-stack construction one transaction; roll back successfully loaded PT_LOAD pages if stack setup fails
 - [ ] Tear down/reclaim old image mappings on repeated exec
 
 ## Phase 5: Graphics & Display (COMPLETE)
@@ -64,7 +65,8 @@
 - [x] QEMU keyboard resize verification (Alt+F8, arrows, Enter/Escape) through shared bounded geometry
 - [ ] QEMU pointer-drag resize verification with a reliable PS/2 or hardware-input test
 - [x] Add direct Files, Terminal, Settings and Browser launch cards with responsive one-/two-/four-column geometry and a live PIT/PMM System Overview panel
-- [x] Capture and verify the 1024×768 workspace, native app windows, multi-window focus routing, maximize/restore, keyboard resize and settings persistence across reboot in CI run #722
+- [x] Add a lower System Status panel with live memory-allocation and display-profile values
+- [x] Capture and verify the 1024×768 workspace, native app windows, multi-window focus routing, maximize/restore, keyboard resize, status panel and settings persistence across reboot in CI run #724
 - [ ] Fill the remaining workspace with useful, live system or user content rather than decorative placeholder cards
 - [ ] Validate the full font/UI scale matrix and additional 1280×800 and 1920×1080 framebuffer modes
 
@@ -154,6 +156,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [ ] Capability enforcement in socket/net syscalls
 - [ ] Cryptographically secure entropy source; token generation remains disabled when RDRAND is unavailable
 - [ ] Persistent audit log
+- [ ] Replace the heap-backed kernel task stack prefix with a genuinely unmapped guard page and verify overflow faults
 
 ## Phase 15: Configuration & Persistence (PARTIAL, QEMU VERIFIED)
 - [x] In-memory typed config store
@@ -179,9 +182,9 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] WM list traversal detects duplicate nodes and remains bounded if links form a cycle
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions
-- [x] Historical QEMU BIOS, ring-3 and VMM permission suites passed on earlier source; current branch validation is pending because runner dependency installation is failing before compilation
-- [x] QEMU desktop capture verifies Files, Terminal, simultaneous windows, Alt+Tab, maximize/restore and keyboard resize
-- [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`)
+- [x] CI run #724 passed the freestanding build, x86-64 baseline audit, BIOS/ring-3 isolation checks and VMM huge-page/permission regression suite
+- [x] QEMU desktop capture from run #724 verifies Files, Terminal, Browser, multi-window routing, maximize/restore, keyboard resize and the live System Status panel
+- [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`); the capture also checks the largest font preset
 - [ ] Expand automated regression coverage to pointer-drag resize, snap/tiling, real hardware and long-session desktop stability
 
 ## Phase 17: Process Management (IN PROGRESS)
