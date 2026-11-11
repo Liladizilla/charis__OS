@@ -42,21 +42,16 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The checked-in gallery remains a historical overview. The latest successful QEMU desktop evidence for the workspace hierarchy increment is attached to [CI run #43025957282](https://github.com/Liladizilla/charis__OS/actions/runs/43025957282). Download its `charisos-desktop-preview` artifact for 11 captures covering the workspace, Browser, Files, simultaneous Files/Terminal windows, maximized and resized Terminal, default/adjusted/reloaded Settings, and the scaled desktop. The `boot-logs` and `charisos-images` artifacts provide the corresponding serial/QEMU logs and build outputs. The label/unit cleanup and documentation synchronization are now included in PR #109. CI for the latest documentation commit is [run #43028111026](https://github.com/Liladizilla/charis__OS/actions/runs/43028111026); do not treat it as passed until GitHub reports success.
+The checked-in gallery remains a historical overview and must not be mistaken for the current desktop. The active workspace changes are being validated in [PR #108](https://github.com/Liladizilla/charis__OS/pull/108). Its QEMU workflow artifacts will be linked here after the latest branch head completes CI and the actual captures have been reviewed. Earlier screenshots are useful for historical comparison only.
 
 ![CharisOS desktop, multi-window, maximized Terminal and Settings captures](docs/screenshots/charisos-preview-gallery.jpg)
 
 ## Latest desktop validation
 
-The latest successful full desktop validation is [run #43025957282](https://github.com/Liladizilla/charis__OS/actions/runs/43025957282), on commit `d8688b2`. Its 19-stage workflow passed the kernel build with `-Werror`, generic x86-64 baseline audit, browser extraction tests, WM lifecycle/geometry/focus/maximize tests, ELF image construction and inspection, BIOS/ring-3/ELF execution, VMM huge-page and page-permission runtime tests, QEMU desktop capture, Settings persistence/reboot verification and artifact publication. Commit `f39cc3c` subsequently corrected the displayed memory units and removed a duplicate include; its CI rerun is tracked separately above.
+The workspace now contains direct Files, Terminal, Settings and Browser launch cards, plus a System Overview panel displaying PIT uptime and PMM memory counters. The previous card descriptions were too long for the baseline text column; the active PR shortens them to concise labels. That correction has not yet been validated by a fresh QEMU capture, so no claim is made that the visual defect is resolved.
 
-The QEMU captures cover:
-- The workspace heading, four labelled Files/Terminal/Settings/Browser launch cards, and System Overview with uptime plus PMM free/managed/allocated memory counters.
-- Browser, Files, simultaneous Files/Terminal windows, maximized and resized Terminal, and default/adjusted/reloaded Settings.
-- Alt+Tab focus routing, Terminal's built-in `help` command, Super+Up maximize, Super+Down restore, and Alt+F8 keyboard resize with arrow keys, Enter to commit and Escape to cancel.
-- A reboot round-trip confirming `font_scale=2` and `ui_scale=120` reload from `/CHARISOS.CFG`.
+The existing CI coverage exercises BIOS boot, ring-3 and static ELF execution, VMM permission regressions, host-side window-manager tests, application launch paths, multi-window focus/resize/maximize behavior and Settings persistence. See [PR #108](https://github.com/Liladizilla/charis__OS/pull/108) for the active change and its current checks. Do not treat historical workflow runs or the checked-in gallery as evidence for the latest source.
 
-These are automated engineering captures, not release marketing images. The workspace now has a labelled four-app launch grid and live kernel status counters, but it is still an early shell rather than a release-ready desktop. The scaled capture exposes typography/layout collisions at larger text sizes; responsive layout and multi-resolution verification remain open. Files is a read-only root browser, the shell and app renderers are still kernel-owned, and pointer-driven resize has not yet been exercised by QEMU automation.
 
 ## What is implemented
 
