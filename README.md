@@ -116,7 +116,7 @@ GRUB2  ── multiboot2 /boot/kernel.elf ──▶  EAX=0x36d76289, EBX=mboot i
 boot/boot.asm          32-bit protected mode
    ├─ saves EAX/EBX first (before any debug output clobbers them)
    ├─ CPUID: cpuid supported / long mode / APIC
-   ├─ builds PML4 → PDPT → PD, identity-maps 1GB with 2MB pages
+   ├─ builds PML4 → PDPT → PD, identity-maps the first 4 GiB with 2 MiB pages
    ├─ enables PAE + LME + NX + PG, loads GDT + TSS
    ▼
 boot/long_mode.asm     64-bit

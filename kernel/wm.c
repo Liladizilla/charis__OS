@@ -269,10 +269,13 @@ bool wm_set_window_visible(window_t* win, bool visible) {
 
 window_t* wm_focus_next(void) {
     window_t* current = wm_get_focused();
+    window_t* windows[MAX_WINDOWS];
+    u32 count = wm_collect_windows(windows);
     window_t* next = NULL;
     u32 lowest = 0xFFFFFFFFu;
     u32 current_z = current ? current->z_order : 0xFFFFFFFFu;
-    for (window_t* w = wm_windows; w; w = w->next) {
+    for (u32 i = 0; i < count; i++) {
+        window_t* w = windows[i];
         if (!w->visible || w->minimized || w == current) continue;
         if (w->z_order > current_z && w->z_order < lowest) {
             next = w;
@@ -281,12 +284,14 @@ window_t* wm_focus_next(void) {
     }
     if (!next) {
         lowest = 0xFFFFFFFFu;
-        for (window_t* w = wm_windows; w; w = w->next)
+        for (u32 i = 0; i < count; i++) {
+            window_t* w = windows[i];
             if (w->visible && !w->minimized && w != current &&
                 w->z_order < lowest) {
                 next = w;
                 lowest = w->z_order;
             }
+        }
     }
     if (next) wm_focus_window(next);
     return next;

@@ -160,6 +160,9 @@ static void test_window_list_traversal_is_bounded_and_unique(void) {
     expect(wm_get_window_count() == 2, "cyclic list counts unique nodes only");
     expect(wm_get_focused() == b, "focused lookup terminates on cyclic list");
     expect(wm_get_window_at(10, 10) == b, "hit testing terminates on cyclic list");
+    expect(wm_focus_next() == a, "focus cycling terminates and wraps on cyclic list");
+    expect(wm_get_focused() == a, "focus cycle selects the next unique node");
+    wm_focus_window(b);
     wm_focus_window(a);
     expect(wm_get_focused() == a, "focus traversal terminates on cyclic list");
     expect(wm_minimize_window(a), "minimize uses bounded focus recovery");
