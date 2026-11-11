@@ -165,7 +165,7 @@ static void shortcut_position(u32 index, u32* x, u32* y) {
     u32 column = index % columns;
     u32 row = index / columns;
     u32 card_w = shortcut_card_width();
-    u32 card_h = shortcut_card_height();
+    u32 card_h = u(shortcut_card_height());
     if (x) *x = shortcut_grid_left() + column * (card_w + u(DESKTOP_CARD_GAP_X));
     if (y) *y = desktop_grid_top() + row * (card_h + u(DESKTOP_CARD_GAP_Y));
 }
