@@ -284,8 +284,14 @@ void terminal_render(void) {
     u32 text_h = term_text_h();
     u32 line_h = text_h + term_px(10);
     u32 prompt_h = text_h + term_px(22);
+    /* Reserve a real footer row for the selected font size. At 200% and
+     * 300% text scale, a fixed 38px gap placed the status baseline outside
+     * the window and clipped the bottom of the terminal. */
+    u32 footer_gap = text_h + term_px(20);
     u32 content_top = y + title_h + term_px(44);
-    u32 content_bottom = y + h - prompt_h - term_px(38);
+    u32 reserved_bottom = prompt_h + footer_gap;
+    u32 content_bottom = y + h > reserved_bottom
+                       ? y + h - reserved_bottom : content_top;
     u32 rows = content_bottom > content_top ? (content_bottom - content_top) / line_h : 1;
     if (!rows) rows = 1;
 
@@ -381,7 +387,8 @@ void terminal_render(void) {
     fb_set_clip(x, y, w, h);
 
     /* Prompt is a distinct input control, not another line in the transcript. */
-    u32 prompt_y = y + h - prompt_h - term_px(38);
+    u32 prompt_y = y + h > reserved_bottom
+                  ? y + h - reserved_bottom : y;
     fb_fill_rect(x + term_px(12), prompt_y, w - term_px(24),
                  prompt_h, CHARIS_UI_PANEL_RAISED);
     fb_draw_rect(x + term_px(12), prompt_y, w - term_px(24),
@@ -415,7 +422,8 @@ void terminal_render(void) {
                  term_px(2), text_h, CHARIS_UI_ACCENT);
     fb_set_clip(x, y, w, h);
 
-    u32 status_y = y + h - term_px(25);
+    u32 status_y = y + h > text_h + term_px(10)
+                  ? y + h - text_h - term_px(10) : y;
     term_draw(x + term_px(18), status_y,
                     "READY", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
     const char* status_label = "Kernel command environment";

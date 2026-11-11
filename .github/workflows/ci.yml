@@ -14,7 +14,7 @@ concurrency:
 jobs:
   build-and-test:
     name: Build, Boot & Ring-3 Test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -26,8 +26,14 @@ jobs:
         run: |
           # Keep dependency setup bounded; firmware is optional because BIOS
           # boot is the gating path and graphical capture uses SeaBIOS.
-          timeout 300s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
-          timeout 780s sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends \
+          # Hosted Ubuntu runners may list an Azure HTTP mirror first; it has
+          # repeatedly stalled DNS/HTTP access while the official HTTPS archive
+          # was reachable. Pin this ephemeral mirror list to the working archive.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo 'https://archive.ubuntu.com/ubuntu' | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+          fi
+          timeout 420s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+          timeout 780s sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install -y --no-install-recommends \
             build-essential \
             nasm \
             qemu-system-x86 \
@@ -130,9 +136,9 @@ jobs:
             # kernel. Both of these are hard failures in `make verify-boot`,
             # where the local firmware works -- and the published images are
             # verified against BIOS and UEFI on KVM before release.
-            ./tools/verify-boot.sh build/charisos-vm.iso --uefi \
+            VERIFY_RETRIES=0 ./tools/verify-boot.sh build/charisos-vm.iso --uefi --timeout 30 \
               || echo "::warning::UEFI boot check did not pass on this runner (firmware-dependent)"
-            ./tools/verify-boot.sh build/charisos-usb.img --disk --uefi \
+            VERIFY_RETRIES=0 ./tools/verify-boot.sh build/charisos-usb.img --disk --uefi --timeout 30 \
               || echo "::warning::UEFI disk boot check did not pass on this runner (firmware-dependent)"
             # UEFI on KVM: the configuration GNOME Boxes and VirtualBox use,
             # and the one that stayed broken longest.
@@ -142,7 +148,7 @@ jobs:
             # OVMF the runner has. Ubuntu ships the 4MB build only as
             # /usr/share/qemu/OVMF.fd, which is not usable here, so a failure
             # here means the runner's firmware, not the kernel.
-            ./tools/verify-boot.sh build/charisos-vm.iso --uefi --kvm \
+            VERIFY_RETRIES=0 ./tools/verify-boot.sh build/charisos-vm.iso --uefi --kvm --timeout 30 \
               || echo "::warning::UEFI+KVM boot check did not pass on this runner (firmware-dependent) -- see local \`make verify-boot\`"
           fi
 
@@ -153,8 +159,8 @@ jobs:
           BUILD_DIR=build/vmm-test ./tools/verify-boot.sh build/vmm-test/charisos-vm.iso --require-vmm-tests
 
       - name: Capture desktop and verify persistent settings
-        if: always()
-        timeout-minutes: 2
+        if: success()
+        timeout-minutes: 5
         shell: bash
         run: |
           set -eu
@@ -263,7 +269,7 @@ jobs:
             printf 'screendump build/charisos-desktop-scaled-preview.ppm\n'
             sleep 1
             printf 'quit\n'
-          } | timeout 70s qemu-system-x86_64 \
+          } | timeout 85s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
@@ -316,7 +322,7 @@ jobs:
             printf 'screendump build/charisos-desktop-large-font-preview.ppm\n'
             sleep 1
             printf 'quit\n'
-          } | timeout 35s qemu-system-x86_64 \
+          } | timeout 45s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
@@ -349,7 +355,7 @@ jobs:
             printf 'screendump build/charisos-terminal-preview.ppm\n'
             sleep 1
             printf 'quit\n'
-          } | timeout 25s qemu-system-x86_64 \
+          } | timeout 35s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \

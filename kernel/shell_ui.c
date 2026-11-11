@@ -810,7 +810,7 @@ static void draw_settings_window(window_t* win) {
     if (font_scale<1 || font_scale>3) font_scale=1;
     int scale_index = global_scale<=80 ? 0 : global_scale>=120 ? 2 : 1;
     const char* values[3] = { styles[style], scales[font_scale-1], ui_scales[scale_index] };
-    const char* labels[3] = { "Font family", "Text size", "Interface scale" };
+    const char* labels[3] = { "Font family", "Text size", "UI scale" };
     const char* hints[3] = {
         "Native app typeface",
         "Desktop text size",
