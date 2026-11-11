@@ -106,6 +106,19 @@ static u32 shortcut_card_height(void) {
     return shortcut_show_detail() ? line * 2u + 24u : line + 16u;
 }
 
+/* Reserve a right-hand status lane only when the framebuffer can contain it.
+ * Wider font presets receive a wider panel so values and labels stay readable. */
+static u32 system_panel_logical_width(void) {
+    u32 scale = gfx_text_get_scale();
+    return scale >= 3u ? 440u : (scale == 2u ? 400u : 312u);
+}
+
+static bool system_panel_fits(void) {
+    u32 minimum_height = gfx_text_get_scale() >= 3u ? 520u : 480u;
+    return g_framebuffer.width >= u(760u) &&
+           g_framebuffer.height >= u(minimum_height);
+}
+
 /* The workspace uses two or four columns, avoiding an unbalanced
  * three-plus-one final row. Cards expand to fill the available lane instead
  * of leaving a narrow 184px strip stranded beside the system panel. */
