@@ -94,7 +94,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Settings controls for font family, text size and global UI scale
 - [x] Settings persist to `/CHARISOS.CFG` on supported primary ATA FAT32 and reload after reboot in CI
 - [x] QEMU capture verifies the desktop after closing Settings at 200% text and 120% interface scale without the previous welcome-card clipping
-- [x] Add a restrained two-column workspace shortcut grid for Files, Terminal, Settings and Browser with bounded hit testing
+- [x] Add a responsive one-/two-/four-column workspace shortcut grid for Files, Terminal, Settings and Browser with bounded hit testing
 - [x] Add verified live system status indicators (uptime and PMM memory counters) and a labelled workspace hierarchy
 - [x] Add scale-aware workspace geometry and suppress secondary card descriptions at larger font scales
 - [x] Distribute shortcut cards across responsive one-, two- or four-column layouts with bounded card width (fresh QEMU visual verification pending)
