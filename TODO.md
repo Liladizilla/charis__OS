@@ -13,7 +13,7 @@
 - [x] sys_exit(), sys_getpid(), sys_yield(), sys_sleep()
 - [x] sys_read()/sys_write() with fd-based I/O
 - [x] sys_print() - debug output
-- [x] sys_fork() - creates child with separate PML4
+- [ ] sys_fork() - create and validate child register context, address-space ownership and resources
 - [x] task_create_with_pml4() - create task with custom address space
 - [x] Per-process fd table (stdin/stdout/stderr pre-opened)
 
@@ -27,8 +27,8 @@
 ## Phase 4: ELF Loader (IN PROGRESS)
 - [x] Validate static ELF64 x86-64 `ET_EXEC` headers and program-header bounds
 - [x] Copy `PT_LOAD` file contents, zero pages for BSS, and map user permissions
-- [x] `sys_exec` replaces the ring-3 IRET frame with the ELF entry and stack
-- [x] QEMU FAT32 smoke test enters an ELF and prints `ELF_EXEC_OK`
+- [x] `sys_exec` implementation validates policy, loads segments and prepares a replacement IRET frame
+- [ ] QEMU test authorizes a ring-3 task with `CAP_ALLOW_EXEC`, enters a FAT32 ELF and observes `ELF_EXEC_OK` (current smoke test verifies denial without that capability)
 - [x] Build bounded `argc`/`argv`/`envp` vectors plus `AT_NULL` on the initial stack
 - [ ] `ET_DYN` and relocations/interpreters
 - [ ] Tear down/reclaim old image mappings on repeated exec
@@ -96,7 +96,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] QEMU capture verifies the desktop after closing Settings at 200% text and 120% interface scale without the previous welcome-card clipping
 - [x] Add a restrained two-column workspace shortcut grid for Files, Terminal, Settings and Browser with bounded hit testing
 - [x] Add verified live system status indicators (uptime and PMM memory counters) and a labelled workspace hierarchy
-- [x] Add scale-aware one-/two-column workspace geometry and suppress secondary card descriptions at larger font scales
+- [x] Add scale-aware workspace geometry and suppress secondary card descriptions at larger font scales
+- [x] Distribute shortcut cards across responsive one-, two- or four-column layouts with bounded card width (fresh QEMU visual verification pending)
 - [ ] Verify card and System Overview typography at 100/125/150/200% text/UI scales; add measured wrapping where clipping remains
 - [ ] Implement shared layout primitives: measure/arrange, horizontal/vertical flow, padding/gaps, wrapping, clipping/ellipsis and scroll containers
 - [ ] Verify layout at 100/125/150/200% text/UI scales and 1024x768, 1280x800 and 1920x1080 framebuffer sizes
@@ -143,8 +144,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 
 ## Phase 14: Security & Capabilities (PARTIAL - ENFORCEMENT IN PROGRESS)
 - [x] Capability bitmask per task (CAP_FS_READ, CAP_FS_WRITE, CAP_SPAWN, etc.)
-- [x] Capability inheritance on fork
-- [x] Capability enforcement in sys_open() and sys_exec() (NEW)
+- [ ] Capability inheritance and reduction rules for a future working fork implementation
+- [x] Capability checks on `sys_open`, non-console `sys_write`, and `sys_exec` authorization (the bootstrap task intentionally lacks `CAP_ALLOW_EXEC`)
 - [x] Path traversal blocking in security_verify_path() (NEW)
 - [ ] Capability enforcement in VFS write/read paths
 - [ ] Capability enforcement in socket/net syscalls
@@ -161,7 +162,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 ## Phase 16: Build & Quality (IN PROGRESS)
 - [x] Kernel compiles cleanly (all 7 errors fixed)
 - [x] CI workflow (.github/workflows/ci.yml) - build + QEMU ring-3 yield/resume boot test
-- [x] QEMU regression gate covers BIOS ring-3 yield/resume and static ELF execution
+- [x] QEMU regression gate covers BIOS ring-3 yield/resume, user-fault containment and ELF capability-denial policy
+- [ ] QEMU regression gate authorizes and successfully enters a static ELF program
 - [x] Repo hygiene: .gitattributes, .gitignore, CRLF→LF fixed
 - [x] Boot debug markers fixed (no collisions, full coverage)
 - [ ] Make the default `make test` target execute the VMM suite; CI currently boots a separate `RUN_VMM_TESTS` image and runs the full regression suite in QEMU
@@ -174,7 +176,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] WM list traversal detects duplicate nodes and remains bounded if links form a cycle
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions
-- [x] QEMU BIOS, ring-3, ELF and VMM huge-page/permission regression suites pass (CI run #43005333279)
+- [x] Historical QEMU BIOS, ring-3 and VMM permission suites passed on earlier source; current branch validation is pending because runner dependency installation is failing before compilation
 - [x] QEMU desktop capture verifies Files, Terminal, simultaneous windows, Alt+Tab, maximize/restore and keyboard resize
 - [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`)
 - [ ] Expand automated regression coverage to pointer-drag resize, snap/tiling, real hardware and long-session desktop stability
@@ -182,7 +184,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 ## Phase 17: Process Management (IN PROGRESS)
 - [x] Bootstrap user task enters ring 3 with a private address-space branch and mapped user stack
 - [x] DPL3 syscall, yield to a kernel task, and resume the user interrupt frame (QEMU verified)
-- [x] `sys_exec` loads a static ELF into the running ring-3 task (QEMU verified)
+- [x] Static ELF loader and ring-3 frame-replacement implementation exist
+- [ ] QEMU verifies successful authorized ELF entry; current configured bootstrap test is denied by `CAP_ALLOW_EXEC` policy
 - [ ] Complete user ABI/libc and validate SYSRET path
 - [ ] Per-task kernel interrupt stacks and SMP-safe TSS handling
 - [ ] wait()/waitpid() syscall for zombie reaping
