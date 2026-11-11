@@ -73,6 +73,7 @@ void desktop_surface_draw_taskbar_icons(u32 y) {
     app_icon(u(112), y+center, 1, size); /* Files */
     app_icon(u(156), y+center, 2, size); /* Terminal */
     app_icon(u(200), y+center, 3, size); /* Settings */
+    app_icon(u(244), y+center, 4, size); /* Browser */
 }
 
 int desktop_surface_taskbar_hit_test(int mx, int my, u32 taskbar_y) {
@@ -80,5 +81,6 @@ int desktop_surface_taskbar_hit_test(int mx, int my, u32 taskbar_y) {
     if (mx >= (int)u(108) && mx < (int)u(150)) return 1;
     if (mx >= (int)u(152) && mx < (int)u(194)) return 2;
     if (mx >= (int)u(196) && mx < (int)u(238)) return 3;
+    if (mx >= (int)u(240) && mx < (int)u(282)) return 4;
     return -1;
 }

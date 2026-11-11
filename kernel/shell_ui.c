@@ -87,6 +87,7 @@ static const menu_entry_t MENU_ITEMS[] = {
     { "Terminal" },
     { "Files" },
     { "Settings" },
+    { "Browser" },
     { "About CharisOS" },
 };
 
@@ -95,11 +96,11 @@ static int notice_item = -1;
 static bool settings_open = false;
 
 static const char* const NOTICE_LINE_1[] = {
-    "", "", "",
+    "", "", "", "",
     "CharisOS is an independent x86_64 operating system.",
 };
 static const char* const NOTICE_LINE_2[] = {
-    "", "", "",
+    "", "", "", "",
     "Built from scratch in C and NASM.",
 };
 #define MENU_ITEM_COUNT ((u32)(sizeof(MENU_ITEMS) / sizeof(MENU_ITEMS[0])))
@@ -115,60 +116,193 @@ typedef struct {
 
 static ui_state_t ui = { false, -1, false, 0, 0, true };
 
-/* The shell owns application drawing, while the WM owns window identity,
- * focus and lifecycle. These native surfaces intentionally have no duplicate
- * pixel buffer; the existing app renderers remain the framebuffer owners. */
+/* The shell owns application lifecycle; the WM owns focus, geometry,
+ * clipping, z-order and repaint order. Native app renderers paint directly
+ * into their assigned clipped framebuffer rectangle. */
 typedef enum {
-    SHELL_SURFACE_NONE = 0,
-    SHELL_SURFACE_TERMINAL,
-    SHELL_SURFACE_FILES,
-    SHELL_SURFACE_BROWSER,
-    SHELL_SURFACE_SETTINGS,
-    SHELL_SURFACE_ABOUT
-} shell_surface_kind_t;
+    SHELL_APP_TERMINAL = 0,
+    SHELL_APP_FILES,
+    SHELL_APP_BROWSER,
+    SHELL_APP_COUNT
+} shell_app_id_t;
 
-static window_t* shell_surface_window;
-static shell_surface_kind_t shell_surface_kind;
+static window_t* shell_app_windows[SHELL_APP_COUNT];
+static window_t* shell_drag_window;
+static int shell_drag_offset_x, shell_drag_offset_y;
+static bool shell_pointer_handled;
 
-static void shell_sync_window(void) {
-    shell_surface_kind_t wanted = SHELL_SURFACE_NONE;
-    const char* title = "";
-    if (terminal_is_open()) {
-        wanted = SHELL_SURFACE_TERMINAL; title = "Terminal";
-    } else if (files_is_open()) {
-        wanted = SHELL_SURFACE_FILES; title = "Files";
-    } else if (browser_is_open()) {
-        wanted = SHELL_SURFACE_BROWSER; title = "Browser";
-    } else if (settings_open) {
-        wanted = SHELL_SURFACE_SETTINGS; title = "Settings";
-    } else if (notice_open) {
-        wanted = SHELL_SURFACE_ABOUT; title = "About CharisOS";
+static int shell_app_id_for_window(const window_t* win) {
+    for (u32 i = 0; i < SHELL_APP_COUNT; i++)
+        if (shell_app_windows[i] == win) return (int)i;
+    return -1;
+}
+
+static bool shell_app_is_open(shell_app_id_t id) {
+    switch (id) {
+        case SHELL_APP_TERMINAL: return terminal_is_open();
+        case SHELL_APP_FILES: return files_is_open();
+        case SHELL_APP_BROWSER: return browser_is_open();
+        default: return false;
+    }
+}
+
+static const char* shell_app_title(shell_app_id_t id) {
+    switch (id) {
+        case SHELL_APP_TERMINAL: return "Terminal";
+        case SHELL_APP_FILES: return "Files";
+        case SHELL_APP_BROWSER: return "Browser";
+        default: return "Application";
+    }
+}
+
+static u32 shell_app_titlebar_height(shell_app_id_t id) {
+    switch (id) {
+        case SHELL_APP_TERMINAL: return terminal_titlebar_height();
+        case SHELL_APP_FILES: return files_titlebar_height();
+        case SHELL_APP_BROWSER: return browser_titlebar_height();
+        default: return WINDOW_TITLEBAR_HEIGHT;
+    }
+}
+
+static void shell_app_paint(window_t* win) {
+    int id = shell_app_id_for_window(win);
+    if (id < 0 || !win || !win->visible || win->minimized) return;
+    u32 full_height = (u32)win->height + win->titlebar_height;
+    switch ((shell_app_id_t)id) {
+        case SHELL_APP_TERMINAL:
+            terminal_set_bounds((u32)win->x, (u32)win->y,
+                                (u32)win->width, full_height);
+            terminal_render();
+            break;
+        case SHELL_APP_FILES:
+            files_set_bounds((u32)win->x, (u32)win->y,
+                             (u32)win->width, full_height);
+            files_render();
+            break;
+        case SHELL_APP_BROWSER:
+            browser_set_bounds((u32)win->x, (u32)win->y,
+                               (u32)win->width, full_height);
+            browser_render();
+            break;
+        default: break;
+    }
+}
+
+static void shell_app_event(window_t* win, int event_type, void* data) {
+    int id = shell_app_id_for_window(win);
+    if (id < 0 || !data) return;
+
+    if (event_type == INPUT_MOUSE_DOWN) {
+        const input_event_t* evt = (const input_event_t*)data;
+        switch ((shell_app_id_t)id) {
+            case SHELL_APP_TERMINAL:
+                shell_pointer_handled = terminal_handle_mouse(evt->mouse.x, evt->mouse.y);
+                break;
+            case SHELL_APP_FILES:
+                shell_pointer_handled = files_handle_mouse(evt->mouse.x, evt->mouse.y);
+                break;
+            case SHELL_APP_BROWSER:
+                shell_pointer_handled = browser_handle_mouse(evt->mouse.x, evt->mouse.y);
+                break;
+            default: break;
+        }
+        return;
     }
 
-    if (wanted == shell_surface_kind && shell_surface_window) return;
-    if (shell_surface_window) {
-        wm_destroy_window(shell_surface_window);
-        shell_surface_window = NULL;
-    }
-    shell_surface_kind = SHELL_SURFACE_NONE;
-    if (wanted == SHELL_SURFACE_NONE || !g_framebuffer.initialized) return;
+    if (event_type != INPUT_KEY_DOWN && event_type != INPUT_KEY_UP) return;
+    const input_event_t* evt = (const input_event_t*)data;
+    bool pressed = event_type == INPUT_KEY_DOWN;
+    u8 scancode = evt->key.scancode;
+    u8 base = scancode & 0x7Fu;
+    bool extended = (scancode & 0x80u) != 0;
 
-    u32 margin_x = g_framebuffer.width / 12u;
-    u32 margin_y = g_framebuffer.height / 12u;
-    u32 width = g_framebuffer.width > margin_x * 2u
-              ? g_framebuffer.width - margin_x * 2u : g_framebuffer.width;
-    u32 height = g_framebuffer.height > margin_y * 2u + WINDOW_TITLEBAR_HEIGHT
-               ? g_framebuffer.height - margin_y * 2u - WINDOW_TITLEBAR_HEIGHT
-               : g_framebuffer.height > WINDOW_TITLEBAR_HEIGHT
-                 ? g_framebuffer.height - WINDOW_TITLEBAR_HEIGHT : 1u;
-    if (!width) width = 1;
-    if (!height) height = 1;
-    shell_surface_window = wm_create_surface_window(
-        title, (int)margin_x, (int)margin_y, (int)width, (int)height);
-    if (shell_surface_window) {
-        shell_surface_kind = wanted;
-        wm_focus_window(shell_surface_window);
+    switch ((shell_app_id_t)id) {
+        case SHELL_APP_TERMINAL:
+            if (pressed && !extended && base == KEY_ESCAPE) terminal_close();
+            break;
+        case SHELL_APP_FILES:
+            (void)files_handle_key((u8)(base | (extended ? 0x80u : 0u)), pressed);
+            break;
+        case SHELL_APP_BROWSER:
+            (void)browser_handle_key(base, pressed);
+            break;
+        default: break;
     }
+}
+
+static window_t* shell_create_app_window(shell_app_id_t id) {
+    if (!g_framebuffer.initialized) return NULL;
+    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
+    if (sw < 320u || sh < 220u) return NULL;
+
+    u32 title_h = shell_app_titlebar_height(id);
+    u32 width = sw > 48u ? sw - 48u : sw;
+    u32 height = sh > 72u ? sh - 72u : sh;
+    if (width > 960u) width = 960u;
+    if (height > 680u) height = 680u;
+    if (height <= title_h + 64u) return NULL;
+
+    u32 offset = (u32)id * 26u;
+    u32 x = sw > width ? (sw - width) / 2u + offset : 0;
+    u32 y = sh > height ? (sh - height) / 2u + offset : 0;
+    if (x + width > sw) x = sw - width;
+    if (y + height > sh) y = sh - height;
+
+    window_t* win = wm_create_surface_window(
+        shell_app_title(id), (int)x, (int)y, (int)width,
+        (int)(height - title_h));
+    if (!win) return NULL;
+    if (!wm_set_titlebar_height(win, title_h)) {
+        wm_destroy_window(win);
+        return NULL;
+    }
+    win->on_paint = shell_app_paint;
+    win->on_event = shell_app_event;
+    return win;
+}
+
+static void shell_sync_app_windows(void) {
+    for (u32 i = 0; i < SHELL_APP_COUNT; i++) {
+        shell_app_id_t id = (shell_app_id_t)i;
+        if (!shell_app_is_open(id)) {
+            if (shell_app_windows[i]) {
+                if (shell_drag_window == shell_app_windows[i]) shell_drag_window = NULL;
+                wm_destroy_window(shell_app_windows[i]);
+                shell_app_windows[i] = NULL;
+            }
+            continue;
+        }
+        if (!shell_app_windows[i])
+            shell_app_windows[i] = shell_create_app_window(id);
+    }
+}
+
+static void shell_open_app(shell_app_id_t id) {
+    if (shell_app_windows[id]) {
+        window_t* win = shell_app_windows[id];
+        if (win->minimized) (void)wm_restore_window(win);
+        else wm_focus_window(win);
+        return;
+    }
+    switch (id) {
+        case SHELL_APP_TERMINAL: terminal_open(); break;
+        case SHELL_APP_FILES: files_open(); break;
+        case SHELL_APP_BROWSER: browser_open(); break;
+        default: break;
+    }
+    shell_sync_app_windows();
+    if (shell_app_windows[id]) wm_focus_window(shell_app_windows[id]);
+}
+
+static void shell_toggle_app(shell_app_id_t id) {
+    window_t* win = shell_app_windows[id];
+    if (!win) {
+        shell_open_app(id);
+        return;
+    }
+    if (win->minimized) (void)wm_restore_window(win);
+    else if (wm_get_focused() == win) (void)wm_minimize_window(win);
+    else wm_focus_window(win);
 }
 
 /* ── Chrome ───────────────────────────────────────────────────────── */
@@ -540,13 +674,11 @@ void ui_draw_cursor(void) {
 static void redraw_all(void) {
     wallpaper_draw((u32)config_get_int("wallpaper", 0));
     desktop_surface_render();
-    browser_render();
     draw_taskbar();
+    wm_render_surfaces();
     draw_menu();
     draw_notice();
     draw_settings();
-    terminal_render();
-    files_render();
     ui_draw_cursor();
 }
 
@@ -596,38 +728,22 @@ static void handle_event(const input_event_t* e) {
     case INPUT_KEY_DOWN:
     case INPUT_KEY_UP: {
         u8 code = e->key.scancode;
-        bool extended = (code & 0x80) != 0;
-        u8 base = code & 0x7F;
+        bool extended = (code & 0x80u) != 0;
+        u8 base = code & 0x7Fu;
+        bool pressed = e->type == INPUT_KEY_DOWN;
 
-        /* The terminal is modal. ASCII characters are consumed from the
-         * keyboard ring after event dispatch; Escape closes the window. */
-        if (terminal_is_open()) {
-            if (e->type == INPUT_KEY_DOWN && !extended && base == KEY_ESCAPE) {
-                terminal_close();
-                ui.needs_redraw = true;
-            }
-            return;
-        }
-        if (files_is_open()) {
-            if (e->type == INPUT_KEY_DOWN)
-                files_handle_key((u8)(base | (extended ? 0x80u : 0u)), true);
-            ui.needs_redraw = true;
-            return;
-        }
-
-        /* Settings is keyboard-accessible: F11 opens it, F6 increases
-         * text size, and F7 increases interface scale. */
+        /* Settings remains a modal overlay until it has a proper app renderer. */
         if (settings_open) {
-            if (e->type == INPUT_KEY_DOWN && !extended) {
+            if (pressed && !extended) {
                 if (base == KEY_ESCAPE) {
                     settings_open = false;
-                } else if (base == 0x40) {
+                } else if (base == 0x40u) {
                     int value = config_get_int("font_scale", 1) + 1;
                     if (value > 3) value = 3;
                     config_set_int("font_scale", value);
                     gfx_text_apply_preferences();
                     config_save(CONFIG_FILE_PATH);
-                } else if (base == 0x41) {
+                } else if (base == 0x41u) {
                     int value = config_get_int("ui_scale", 100) + 20;
                     if (value > 120) value = 120;
                     config_set_int("ui_scale", value);
@@ -639,46 +755,10 @@ static void handle_event(const input_event_t* e) {
             return;
         }
 
-        if (e->type == INPUT_KEY_DOWN && !extended && base == 0x57) {
-            ui.menu_open = false;
-            ui.hover_item = -1;
-            notice_open = false;
-            browser_close();
-            terminal_close();
-            files_close();
-            settings_open = true;
-            ui.needs_redraw = true;
-            return;
-        }
-
-        /* F10 opens Files without requiring a working pointer device. */
-        if (e->type == INPUT_KEY_DOWN && !extended && base == 0x44) {
-            ui.menu_open = false;
-            ui.hover_item = -1;
-            notice_open = false;
-            settings_open = false;
-            files_open();
-            ui.needs_redraw = true;
-            return;
-        }
-
-        /* F12 is a reliable keyboard-only Terminal shortcut. It also
-         * gives headless systems and accessibility setups a way to open the
-         * command surface without depending on pointer hardware. */
-        if (e->type == INPUT_KEY_DOWN && !extended && base == 0x58) {
-            ui.menu_open = false;
-            ui.hover_item = -1;
-            notice_open = false;
-            settings_open = false;
-            terminal_open();
-            ui.needs_redraw = true;
-            return;
-        }
-
-        /* Super is 0x5B/0x5C, both extended. */
-        if (extended && (base == 0x5B || base == 0x5C)) {
-            super_held = (e->type == INPUT_KEY_DOWN);
-            if (super_held) {
+        /* Super is global and toggles the launcher regardless of app focus. */
+        if (extended && (base == 0x5Bu || base == 0x5Cu)) {
+            super_held = pressed;
+            if (pressed) {
                 ui.menu_open = !ui.menu_open;
                 ui.hover_item = -1;
                 ui.needs_redraw = true;
@@ -686,75 +766,98 @@ static void handle_event(const input_event_t* e) {
             return;
         }
 
-        if (browser_is_open()) {
-            browser_handle_key(base, e->type == INPUT_KEY_DOWN);
+        if (pressed && !extended && base == 0x57u) {
+            ui.menu_open = false;
+            notice_open = false;
+            notice_item = -1;
+            settings_open = true;
+            ui.needs_redraw = true;
+            return;
+        }
+        if (pressed && !extended && base == 0x44u) {
+            ui.menu_open = false;
+            notice_open = false;
+            shell_open_app(SHELL_APP_FILES);
+            ui.needs_redraw = true;
+            return;
+        }
+        if (pressed && !extended && base == 0x58u) {
+            ui.menu_open = false;
+            notice_open = false;
+            shell_open_app(SHELL_APP_TERMINAL);
             ui.needs_redraw = true;
             return;
         }
 
-        /* Escape dismisses the topmost transient surface. */
-        if (e->type == INPUT_KEY_DOWN && base == KEY_ESCAPE) {
-            if (settings_open) {
-                settings_open = false;
-                ui.needs_redraw = true;
-            } else if (notice_open) {
+        /* Escape dismisses shell overlays first. Otherwise the focused app
+         * receives it, so Browser can leave address editing without closing. */
+        if (pressed && !extended && base == KEY_ESCAPE) {
+            if (notice_open) {
                 notice_open = false;
                 notice_item = -1;
                 ui.needs_redraw = true;
-            } else if (ui.menu_open) {
+                return;
+            }
+            if (ui.menu_open) {
                 ui.menu_open = false;
                 ui.hover_item = -1;
                 ui.needs_redraw = true;
+                return;
             }
         }
+
+        wm_dispatch_event(e->type, (void*)e);
+        ui.needs_redraw = true;
         return;
     }
 
-    case INPUT_MOUSE_MOVE: {
-        int hit = hit_menu_item(e->mouse.x, e->mouse.y);
-        /* The cursor is software-rendered into the framebuffer. Redraw the
-         * scene for every pointer move so the previous cursor pixels are
-         * restored instead of leaving a trail across the workspace. */
+    case INPUT_MOUSE_MOVE:
+        if (shell_drag_window) {
+            (void)wm_move_window(shell_drag_window,
+                                 e->mouse.x - shell_drag_offset_x,
+                                 e->mouse.y - shell_drag_offset_y);
+        }
+        ui.hover_item = hit_menu_item(e->mouse.x, e->mouse.y);
         ui.needs_redraw = true;
-        ui.hover_item = hit;
         return;
-    }
+
+    case INPUT_MOUSE_UP:
+        if (e->mouse.button == 1) shell_drag_window = NULL;
+        return;
 
     case INPUT_MOUSE_DOWN: {
         int mx = e->mouse.x, my = e->mouse.y;
-        if (shell_surface_window) wm_focus_window(shell_surface_window);
-
-        if (terminal_is_open()) {
-            terminal_handle_mouse(mx, my);
-            ui.needs_redraw = true;
-            return;
-        }
-        if (files_is_open()) {
-            files_handle_mouse(mx, my);
-            ui.needs_redraw = true;
-            return;
-        }
-
-        if (browser_is_open()) {
-            browser_handle_mouse(mx, my);
-            ui.needs_redraw = true;
-            return;
-        }
-
         if (settings_open) {
             settings_handle_click(mx, my);
             ui.needs_redraw = true;
             return;
         }
-
         if (notice_open) {
-            /* The notice is modal: clicking its Close button or outside it
-             * dismisses it, and the same click cannot activate an item below. */
             notice_open = false;
             notice_item = -1;
             ui.needs_redraw = true;
             return;
         }
+
+        window_t* hit = wm_get_window_at(mx, my);
+        if (hit) {
+            wm_focus_window(hit);
+            shell_pointer_handled = false;
+            wm_dispatch_event(INPUT_MOUSE_DOWN, (void*)e);
+            if (e->mouse.button == 1 && shell_app_id_for_window(hit) >= 0 &&
+                my >= hit->y &&
+                my < hit->y + (int)hit->titlebar_height &&
+                !shell_pointer_handled) {
+                shell_drag_window = hit;
+                shell_drag_offset_x = mx - hit->x;
+                shell_drag_offset_y = my - hit->y;
+            } else {
+                shell_drag_window = NULL;
+            }
+            ui.needs_redraw = true;
+            return;
+        }
+        shell_drag_window = NULL;
 
         u32 bar_h = taskbar_height();
         u32 bar_top = g_framebuffer.height > bar_h ? g_framebuffer.height - bar_h : 0;
@@ -764,22 +867,25 @@ static void handle_event(const input_event_t* e) {
             int pinned = desktop_surface_taskbar_hit_test(mx, my, bar_top);
             if (pinned == 1) {
                 ui.menu_open = false;
-                notice_open = false;
-                files_open();
+                shell_toggle_app(SHELL_APP_FILES);
                 ui.needs_redraw = true;
                 return;
             }
             if (pinned == 2) {
                 ui.menu_open = false;
-                notice_open = false;
-                terminal_open();
+                shell_toggle_app(SHELL_APP_TERMINAL);
                 ui.needs_redraw = true;
                 return;
             }
             if (pinned == 3) {
                 ui.menu_open = false;
-                notice_open = false;
-                settings_open = true;
+                settings_open = !settings_open;
+                ui.needs_redraw = true;
+                return;
+            }
+            if (pinned == 4) {
+                ui.menu_open = false;
+                shell_toggle_app(SHELL_APP_BROWSER);
                 ui.needs_redraw = true;
                 return;
             }
@@ -795,27 +901,25 @@ static void handle_event(const input_event_t* e) {
         int shortcut = desktop_surface_hit_test(mx, my);
         if (shortcut == 0) {
             ui.menu_open = false;
-            notice_open = false;
-            files_open();
+            shell_open_app(SHELL_APP_FILES);
             ui.needs_redraw = true;
             return;
         }
 
-        int hit = hit_menu_item(mx, my);
-        if (hit >= 0) {
+        int menu_hit = hit_menu_item(mx, my);
+        if (menu_hit >= 0) {
             ui.menu_open = false;
             ui.hover_item = -1;
-            if (hit == 0) {
-                notice_open = false;
-                terminal_open();
-            } else if (hit == 1) {
-                notice_open = false;
-                files_open();
-            } else if (hit == 2) {
+            if (menu_hit == 0) {
+                shell_open_app(SHELL_APP_TERMINAL);
+            } else if (menu_hit == 1) {
+                shell_open_app(SHELL_APP_FILES);
+            } else if (menu_hit == 2) {
                 settings_open = true;
-                notice_open = false;
+            } else if (menu_hit == 3) {
+                shell_open_app(SHELL_APP_BROWSER);
             } else {
-                notice_item = hit;
+                notice_item = menu_hit;
                 notice_open = true;
             }
             ui.needs_redraw = true;
@@ -853,7 +957,9 @@ void shell_ui_main(void* arg) {
             handle_event(&e);
             had_event = true;
         }
-        if (terminal_is_open()) {
+        if (shell_app_windows[SHELL_APP_TERMINAL] &&
+            wm_get_focused() == shell_app_windows[SHELL_APP_TERMINAL] &&
+            !shell_app_windows[SHELL_APP_TERMINAL]->minimized) {
             char key;
             while (keyboard_get_key(&key)) {
                 terminal_handle_char(key);
@@ -861,7 +967,7 @@ void shell_ui_main(void* arg) {
             }
         }
         if (had_event) ui.needs_redraw = true;
-        shell_sync_window();
+        shell_sync_app_windows();
 
         /* Cursor blink. */
         u64 now = timer_get_ms();
