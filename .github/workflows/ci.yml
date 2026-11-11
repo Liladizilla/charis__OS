@@ -136,9 +136,9 @@ jobs:
             # kernel. Both of these are hard failures in `make verify-boot`,
             # where the local firmware works -- and the published images are
             # verified against BIOS and UEFI on KVM before release.
-            ./tools/verify-boot.sh build/charisos-vm.iso --uefi \
+            VERIFY_RETRIES=0 ./tools/verify-boot.sh build/charisos-vm.iso --uefi --timeout 30 \
               || echo "::warning::UEFI boot check did not pass on this runner (firmware-dependent)"
-            ./tools/verify-boot.sh build/charisos-usb.img --disk --uefi \
+            VERIFY_RETRIES=0 ./tools/verify-boot.sh build/charisos-usb.img --disk --uefi --timeout 30 \
               || echo "::warning::UEFI disk boot check did not pass on this runner (firmware-dependent)"
             # UEFI on KVM: the configuration GNOME Boxes and VirtualBox use,
             # and the one that stayed broken longest.
@@ -148,7 +148,7 @@ jobs:
             # OVMF the runner has. Ubuntu ships the 4MB build only as
             # /usr/share/qemu/OVMF.fd, which is not usable here, so a failure
             # here means the runner's firmware, not the kernel.
-            ./tools/verify-boot.sh build/charisos-vm.iso --uefi --kvm \
+            VERIFY_RETRIES=0 ./tools/verify-boot.sh build/charisos-vm.iso --uefi --kvm --timeout 30 \
               || echo "::warning::UEFI+KVM boot check did not pass on this runner (firmware-dependent) -- see local \`make verify-boot\`"
           fi
 
