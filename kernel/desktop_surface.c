@@ -31,8 +31,18 @@ static void app_icon(u32 x, u32 y, u32 kind, u32 size) {
         fb_fill_rect(x+p, y+p+u(6), inner, inner-u(5), ink);
     } else if (kind == 2) {
         fb_draw_rect(x+p, y+p, inner, inner, ink);
-        gfx_draw_string_scaled(x+p+u(3), y+size/2u-th(), ">_", ink,
-                               CHARIS_UI_SURFACE, 1u);
+        /* Draw the prompt mark with framebuffer strokes, not a font glyph:
+         * icons must keep fixed geometry when the user enlarges text. */
+        u32 stroke = u(2u);
+        u32 leg = inner / 4u;
+        u32 cx = x + p + inner / 4u;
+        u32 cy = y + p + inner / 2u;
+        for (u32 i = 0; i <= leg; i++) {
+            fb_fill_rect(cx + i, cy - i, stroke, stroke, ink);
+            fb_fill_rect(cx + i, cy + i, stroke, stroke, ink);
+        }
+        fb_fill_rect(cx + leg + u(3u), cy + leg + u(1u),
+                     inner / 3u, stroke, ink);
     } else if (kind == 3) {
         fb_draw_rect(x+p+u(3), y+p+u(3), inner-u(6), inner-u(6), ink);
         fb_fill_rect(x+size/2u-u(2), y+p, u(4), inner, ink);
