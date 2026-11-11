@@ -32,7 +32,7 @@ static void app_icon(u32 x, u32 y, u32 kind, u32 size) {
     } else if (kind == 2) {
         fb_draw_rect(x+p, y+p, inner, inner, ink);
         gfx_draw_string_scaled(x+p+u(3), y+size/2u-th(), ">_", ink,
-                               CHARIS_UI_SURFACE, gfx_text_get_scale());
+                               CHARIS_UI_SURFACE, 1u);
     } else if (kind == 3) {
         fb_draw_rect(x+p+u(3), y+p+u(3), inner-u(6), inner-u(6), ink);
         fb_fill_rect(x+size/2u-u(2), y+p, u(4), inner, ink);
@@ -252,9 +252,9 @@ static void draw_system_panel(void) {
     fb_fill_rect(left, divider_y, panel_w - u(40u), u(1u),
                  CHARIS_UI_BORDER);
 
-    const char* free_label = gfx_text_get_scale() >= 3u ? "FREE MiB" : "FREE RAM (MiB)";
-    const char* total_label = gfx_text_get_scale() >= 3u ? "TOTAL MiB" : "MANAGED (MiB)";
-    const char* used_label = gfx_text_get_scale() >= 3u ? "USED MiB" : "ALLOCATED (MiB)";
+    const char* free_label = gfx_text_get_scale() >= 2u ? "FREE MiB" : "FREE RAM (MiB)";
+    const char* total_label = gfx_text_get_scale() >= 2u ? "TOTAL MiB" : "MANAGED (MiB)";
+    const char* used_label = gfx_text_get_scale() >= 2u ? "USED MiB" : "ALLOCATED (MiB)";
 
     fb_set_clip(left, row1_label_y, col_w, line);
     gfx_draw_string(left, row1_label_y, "UPTIME",
