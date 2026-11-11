@@ -43,6 +43,30 @@ jobs:
       - name: Build kernel and boot images
         run: make images
 
+      - name: Map early boot exception to kernel instruction
+        if: always()
+        run: |
+          if [ -f build/kernel.elf ]; then
+            echo "=== address 0x1042b2 ==="
+            addr2line -f -C -e build/kernel.elf 0x1042b2
+            echo "=== nearby instructions ==="
+            objdump -d -Mintel --start-address=0x104280 --stop-address=0x1042e0 build/kernel.elf
+          fi
+
+      - name: Upload kernel debug symbols and objects
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: charisos-kernel-debug
+          path: |
+            build/kernel.elf
+            build/pmm.o
+            build/memory.o
+            build/main.o
+            build/serial.o
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Test browser HTML text extraction
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/browser_html_test.c -Wl,--gc-sections -o /tmp/browser_html_test
