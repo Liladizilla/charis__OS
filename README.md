@@ -28,7 +28,7 @@ The project is under active development. It is not currently a general-purpose o
 | UEFI boot | UEFI paths exist; CI coverage is advisory and firmware-dependent |
 | CPU and memory | x86_64 long-mode entry, PMM, VMM, heap and page-permission regression tests |
 | Interrupts and scheduling | IDT/PIC/PIT, PS/2 input and kernel-task scheduling; ring-3 yield/resume exercised in QEMU |
-| User mode | DPL3 `int 0x80` path exercised; static x86_64 `ET_EXEC` smoke program loaded from FAT32 and entered in ring 3 |
+| User mode | DPL3 `int 0x80` bootstrap path exercised; static ELF64 loader exists, but CI currently verifies execution denial without `CAP_ALLOW_EXEC`, not successful ELF entry |
 | Storage | Primary ATA PIO and FAT32 support; current Files interface is read-only and limited to the root directory and 8.3 names |
 | Graphical shell | Framebuffer workspace with independent Terminal, Files, Browser, Settings and About windows; workspace and application coverage remain limited |
 | Window manager | Bounded ownership, back-to-front composition, focus-only input, move, lower-right resize grip, maximize/restore, minimize, taskbar switching and Alt+Tab; snap/tiling and QEMU pointer-resize validation remain unfinished |
@@ -48,9 +48,9 @@ The checked-in gallery remains a historical overview and must not be mistaken fo
 
 ## Latest desktop validation
 
-The workspace now contains direct Files, Terminal, Settings and Browser launch cards, plus a System Overview panel displaying PIT uptime and PMM memory counters. The previous card descriptions were too long for the baseline text column; the active PR shortens them to concise labels. That correction has not yet been validated by a fresh QEMU capture, so no claim is made that the visual defect is resolved.
+The workspace contains direct Files, Terminal, Settings and Browser launch cards plus a System Overview panel showing PIT uptime and PMM memory counters. The latest source change distributes cards across responsive one-, two- or four-column layouts and caps very wide cards. This geometry change is not yet validated by a fresh QEMU capture; the previous preview still showed substantial unused vertical space, which remains an open design issue.
 
-The existing CI coverage exercises BIOS boot, ring-3 and static ELF execution, VMM permission regressions, host-side window-manager tests, application launch paths, multi-window focus/resize/maximize behavior and Settings persistence. See [PR #108](https://github.com/Liladizilla/charis__OS/pull/108) for the active change and its current checks. Do not treat historical workflow runs or the checked-in gallery as evidence for the latest source.
+The established CI suite has previously exercised BIOS boot, ring-3 exception containment, VMM permission regressions, host-side window-manager tests, application launch paths, multi-window focus/resize/maximize behavior and Settings persistence. The current ELF disk test accepts an explicit `ELF_EXEC_DENIED_CAPABILITY` result because the bootstrap task does not receive `CAP_ALLOW_EXEC`; it does not prove that an ELF executable was entered. The latest branch head has not yet completed its CI run. See [PR #108](https://github.com/Liladizilla/charis__OS/pull/108), and do not treat historical runs or the checked-in gallery as evidence for the latest source.
 
 
 ## What is implemented
@@ -59,13 +59,13 @@ The existing CI coverage exercises BIOS boot, ring-3 and static ELF execution, V
 - Physical memory bitmap allocator, virtual memory management and kernel heap.
 - IDT, PIC, PIT, PS/2 keyboard/mouse and diagnostic output.
 - Kernel-task scheduling and a tested ring-3 bootstrap path.
-- DPL3 `int 0x80` syscall dispatch and a static ELF64 `ET_EXEC` smoke path.
+- DPL3 `int 0x80` syscall dispatch and an implementation of a bounded static ELF64 `ET_EXEC` loader; successful authorized ring-3 execution remains unverified.
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
 - Framebuffer drawing and PSF2 bitmap-font rendering.
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
 - Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, a lower-right pointer resize grip, Alt+F8 keyboard resizing, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation; QEMU verifies simultaneous windows and keyboard maximize/restore.
 - Persistent display preferences on supported writable FAT32 storage.
-- CI boot, memory-permission, ring-3, ELF, desktop-capture and host-side WM lifecycle/bounds checks.
+- CI definitions for boot, memory-permission, ring-3, ELF capability-policy, desktop-capture and host-side WM lifecycle/bounds checks; the latest run remains blocked before compilation by external runner package-network failures.
 
 ## Important limitations
 
@@ -74,7 +74,7 @@ CharisOS is still an early-stage kernel and shell. In particular:
 - The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, keyboard resize, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
 - The workspace exposes direct shortcuts for Files, Terminal, Settings and Browser; the separate multi-window capture demonstrates Files and Terminal open together. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
 - Files does not yet support writable files, nested directory navigation or long filenames.
-- The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking and a complete process lifecycle are unfinished.
+- The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking, repeated-exec cleanup and a complete process lifecycle are unfinished. The configured CI smoke task is denied by capability policy, so successful entry into a loaded ELF remains an explicit validation gap.
 - The `SYSCALL/SYSRET` user-mode path is configured but not yet validated as the normal syscall entry.
 - Capability enforcement covers only selected operations. It is not a complete security boundary.
 - The current entropy source is hardware-feature-dependent. If RDRAND is unavailable, cryptographic token generation is disabled; no weak fallback is presented as cryptographic randomness.
@@ -402,16 +402,19 @@ at creation; children inherit the parent's set across `fork`.
 | Capability | Guards |
 |---|---|
 | `CAP_FS_READ` | `sys_open` |
-| `CAP_SPAWN` | `sys_exec`, `sys_fork` |
+| `CAP_FS_WRITE` | non-console file writes through `sys_write` |
+| `CAP_SPAWN` + `CAP_ALLOW_EXEC` | `sys_exec` authorization |
 | `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | reserved |
 
 `security_verify_path()` rejects parent-directory traversal. When RDRAND is available, it can seed the stack guard. If RDRAND is
 unavailable, cryptographic token generation is disabled. The kernel does not
 claim that a weak fallback provides cryptographic entropy.
 
-**Known gaps:** enforcement currently covers `open` and `exec` only — the VFS
-read/write paths, socket syscalls, and shared memory are unchecked. The
-capability set is not persisted or namespaced per-user.
+**Known gaps:** capability checks are applied to selected file and execution
+operations, while several global IPC, socket, networking, diagnostics and
+shared-memory interfaces remain kernel-only rather than being exposed to ring 3.
+This is not a complete per-user security boundary; ownership, process isolation,
+reaping and broader capability enforcement remain unfinished.
 
 See [`SECURITY.md`](./SECURITY.md) for reporting guidance.
 
