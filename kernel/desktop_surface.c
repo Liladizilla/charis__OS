@@ -110,10 +110,19 @@ static u32 shortcut_card_height(void) {
 /* Keep the two-column composition when there is room. Larger bitmap
  * fonts get wider cards; compact framebuffers switch to one column instead
  * of drawing labels underneath the system panel or beyond the right edge. */
+static u32 system_panel_logical_width(void) {
+    u32 scale = gfx_text_get_scale();
+    return scale >= 3u ? 440u : (scale == 2u ? 400u : 312u);
+}
+
+static bool system_panel_fits(void) {
+    return g_framebuffer.width >= u(900u) && g_framebuffer.height >= u(480u);
+}
+
 static u32 shortcut_columns(void) {
     u32 width = g_framebuffer.width;
-    u32 panel_reserved = (width >= u(900) && g_framebuffer.height >= u(480))
-                       ? u(360u + 24u) : 0u;
+    u32 panel_reserved = system_panel_fits()
+                       ? u(system_panel_logical_width() + 24u) : 0u;
     u32 left = u(DESKTOP_GRID_X);
     u32 right = width > panel_reserved + u(48u)
               ? width - panel_reserved - u(48u) : 0u;
@@ -126,8 +135,8 @@ static u32 shortcut_columns(void) {
 
 static u32 shortcut_card_width(void) {
     u32 width = g_framebuffer.width;
-    u32 panel_reserved = (width >= u(900) && g_framebuffer.height >= u(480))
-                       ? u(360u + 24u) : 0u;
+    u32 panel_reserved = system_panel_fits()
+                       ? u(system_panel_logical_width() + 24u) : 0u;
     u32 left = u(DESKTOP_GRID_X);
     u32 right = width > panel_reserved + u(48u)
               ? width - panel_reserved - u(48u) : 0u;
@@ -194,35 +203,69 @@ static void draw_shortcut(u32 index, u32 icon_size) {
 }
 
 static void draw_system_panel(void) {
+    if (!system_panel_fits()) return;
     u32 width = g_framebuffer.width;
-    u32 height = g_framebuffer.height;
-    if (width < u(900) || height < u(480)) return;
-    u32 x = width - u(360), y = u(112), w = u(312), h = u(240);
-    fb_fill_rect(x, y, w, h, CHARIS_UI_PANEL);
-    fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER);
-    fb_fill_rect(x, y, w, u(3), CHARIS_UI_ACCENT);
-    gfx_draw_string(x + u(20), y + u(22), "SYSTEM OVERVIEW",
+    u32 panel_w = u(system_panel_logical_width());
+    u32 x = width - panel_w - u(48u);
+    u32 y = desktop_grid_top();
+    u32 line = th();
+    u32 left = x + u(20u);
+    u32 right = x + panel_w / 2u + u(4u);
+    u32 col_w = panel_w / 2u - u(28u);
+
+    /* Labels and values use separate baselines. The previous fixed 20px
+     * separation collided as soon as a larger bitmap font was selected. */
+    u32 header_y = y + u(18u);
+    u32 divider_y = header_y + line + u(10u);
+    u32 row1_label_y = divider_y + u(16u);
+    u32 row1_value_y = row1_label_y + line + u(4u);
+    u32 row2_label_y = row1_value_y + line + u(12u);
+    u32 row2_value_y = row2_label_y + line + u(4u);
+    u32 panel_h = row2_value_y - y + line + u(16u);
+
+    fb_fill_rect(x, y, panel_w, panel_h, CHARIS_UI_PANEL);
+    fb_draw_rect(x, y, panel_w, panel_h, CHARIS_UI_BORDER);
+    fb_fill_rect(x, y, panel_w, u(3u), CHARIS_UI_ACCENT);
+    gfx_draw_string(left, header_y, "SYSTEM OVERVIEW",
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
-    fb_fill_rect(x + u(20), y + u(48), w - u(40), u(1), CHARIS_UI_BORDER);
-    gfx_draw_string(x + u(20), y + u(68), "UPTIME",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    draw_uptime(x + u(20), y + u(88), timer_get_ms());
-    gfx_draw_string(x + u(164), y + u(68), "FREE RAM (MiB)",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    draw_u32(x + u(164), y + u(88), pmm_free_pages() / 256u,
-             CHARIS_UI_TEXT);
-    gfx_draw_string(x + u(20), y + u(132), "MANAGED (MiB)",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    draw_u32(x + u(20), y + u(152), pmm_total_pages() / 256u,
-             CHARIS_UI_TEXT);
-    gfx_draw_string(x + u(164), y + u(132), "ALLOCATED (MiB)",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    draw_u32(x + u(164), y + u(152), pmm_used_pages() / 256u,
-             CHARIS_UI_TEXT);
-    fb_fill_rect(x + u(20), y + u(188), w - u(40), u(1),
+    fb_fill_rect(left, divider_y, panel_w - u(40u), u(1u),
                  CHARIS_UI_BORDER);
-    gfx_draw_string(x + u(20), y + u(204), "LIVE KERNEL COUNTERS",
-                    CHARIS_UI_ACCENT, FB_TRANSPARENT);
+
+    const char* free_label = gfx_text_get_scale() >= 3u ? "FREE MiB" : "FREE RAM (MiB)";
+    const char* total_label = gfx_text_get_scale() >= 3u ? "TOTAL MiB" : "MANAGED (MiB)";
+    const char* used_label = gfx_text_get_scale() >= 3u ? "USED MiB" : "ALLOCATED (MiB)";
+
+    fb_set_clip(left, row1_label_y, col_w, line);
+    gfx_draw_string(left, row1_label_y, "UPTIME",
+                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+    fb_reset_clip();
+    fb_set_clip(right, row1_label_y, col_w, line);
+    gfx_draw_string(right, row1_label_y, free_label,
+                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+    fb_reset_clip();
+
+    fb_set_clip(left, row1_value_y, col_w, line);
+    draw_uptime(left, row1_value_y, timer_get_ms());
+    fb_reset_clip();
+    fb_set_clip(right, row1_value_y, col_w, line);
+    draw_u32(right, row1_value_y, pmm_free_pages() / 256u, CHARIS_UI_TEXT);
+    fb_reset_clip();
+
+    fb_set_clip(left, row2_label_y, col_w, line);
+    gfx_draw_string(left, row2_label_y, total_label,
+                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+    fb_reset_clip();
+    fb_set_clip(right, row2_label_y, col_w, line);
+    gfx_draw_string(right, row2_label_y, used_label,
+                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+    fb_reset_clip();
+
+    fb_set_clip(left, row2_value_y, col_w, line);
+    draw_u32(left, row2_value_y, pmm_total_pages() / 256u, CHARIS_UI_TEXT);
+    fb_reset_clip();
+    fb_set_clip(right, row2_value_y, col_w, line);
+    draw_u32(right, row2_value_y, pmm_used_pages() / 256u, CHARIS_UI_TEXT);
+    fb_reset_clip();
 }
 
 void desktop_surface_render(void) {
@@ -248,7 +291,7 @@ int desktop_surface_hit_test(int mx, int my) {
     for (u32 i = 0; i < DESKTOP_SHORTCUT_COUNT; i++) {
         u32 x = 0, y = 0;
         shortcut_position(i, &x, &y);
-        u32 w = u(DESKTOP_CELL_W), h = u(shortcut_card_height());
+        u32 w = shortcut_card_width(), h = u(shortcut_card_height());
         if (mx >= (int)x && mx < (int)(x+w) &&
             my >= (int)y && my < (int)(y+h)) return (int)i;
     }
