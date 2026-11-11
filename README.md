@@ -52,7 +52,7 @@ The latest successful CI run is [run #43005333279](https://github.com/Liladizill
 
 The QEMU capture covers:
 - The bare workspace and taskbar.
-- Files and Terminal open simultaneously, with Alt+Tab moving focus between them.
+- Files and Terminal open simultaneously, with Alt+Tab moving focus between them. Alt+F8 provides keyboard resizing with arrow keys, Enter to commit and Escape to cancel.
 - A second Files refresh routed to Files while Terminal remains open behind/above it.
 - Terminal executing the built-in `help` command while Files remains open.
 - Super+Up maximizing Terminal to the workspace area and Super+Down restoring its previous size and position. Serial output confirms both state transitions.
@@ -71,7 +71,7 @@ These are automated engineering captures, not release marketing images. The bare
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
 - Framebuffer drawing and PSF2 bitmap-font rendering.
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
-- Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, a lower-right pointer resize grip, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation; QEMU verifies simultaneous windows and keyboard maximize/restore.
+- Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, a lower-right pointer resize grip, Alt+F8 keyboard resizing, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation; QEMU verifies simultaneous windows and keyboard maximize/restore.
 - Persistent display preferences on supported writable FAT32 storage.
 - CI boot, memory-permission, ring-3, ELF, desktop-capture and host-side WM lifecycle/bounds checks.
 
@@ -79,7 +79,7 @@ These are automated engineering captures, not release marketing images. The bare
 
 CharisOS is still an early-stage kernel and shell. In particular:
 
-- The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
+- The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, keyboard resize, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
 - The bare-workspace QEMU capture still shows a sparse workspace with one Files shortcut; the separate multi-window capture demonstrates Files and Terminal open together. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
 - Files does not yet support writable files, nested directory navigation or long filenames.
 - The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking and a complete process lifecycle are unfinished.

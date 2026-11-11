@@ -173,6 +173,50 @@ static void test_resize_allocation_failure_is_transactional(void) {
     allocations_before_failure = -1;
     wm_destroy_window(w);
 }
+static void test_bounded_resize_clamps_to_app_limits(void) {
+    reset_manager();
+    window_t *win = wm_create_surface_window("bounded", 20, 24, 300, 200);
+    expect(win != NULL, "surface created for bounded resize");
+    expect(wm_resize_window_bounded(win, 900, 700, 240, 160, 520, 360),
+           "bounded resize accepts a valid range");
+    expect(win->width == 520 && win->height == 360,
+           "bounded resize clamps to maximum dimensions");
+    expect(wm_resize_window_bounded(win, 20, 10, 240, 160, 520, 360),
+           "bounded resize accepts a below-minimum request");
+    expect(win->width == 240 && win->height == 160,
+           "bounded resize clamps to minimum dimensions");
+    int old_w=win->width, old_h=win->height;
+    expect(!wm_resize_window_bounded(win, 400, 300, 520, 360, 240, 160),
+           "inverted resize bounds are rejected");
+    expect(!wm_resize_window_bounded(NULL, 400, 300, 200, 100, 600, 400),
+           "bounded resize rejects a null window");
+    expect(win->width == old_w && win->height == old_h,
+           "invalid bounds leave existing geometry unchanged");
+    wm_destroy_window(win);
+}
+
+static void test_bounded_resize_respects_framebuffer_and_buffer_failure(void) {
+    reset_manager();
+    window_t *win = wm_create_window("bounded-buffer", 20, 24, 100, 80);
+    expect(win != NULL && win->buffer != NULL,
+           "buffer-backed surface created for bounded failure test");
+    u32 *old_buffer = win->buffer;
+    int old_w=win->width, old_h=win->height;
+    allocations_before_failure = 0;
+    expect(!wm_resize_window_bounded(win, 400, 300, 200, 100, 520, 360),
+           "bounded resize propagates allocation failure");
+    expect(win->buffer == old_buffer && win->width == old_w &&
+           win->height == old_h,
+           "bounded resize failure preserves buffer and geometry");
+    allocations_before_failure = -1;
+    expect(!wm_resize_window_bounded(win, 900, 700, 200, 100, 1200, 900),
+           "framebuffer rejects a clamped size larger than screen");
+    expect(win->buffer == old_buffer && win->width == old_w &&
+           win->height == old_h,
+           "screen-bound rejection preserves existing surface");
+    wm_destroy_window(win);
+}
+
 static void test_maximize_and_restore_preserves_geometry(void) {
     reset_manager();
     window_t *win = wm_create_surface_window("maximize", 40, 36, 220, 140);
@@ -394,6 +438,8 @@ int main(void) {
     test_geometry_operations_are_bounded();
     test_resize_allocation_failure_is_transactional();
     test_minimize_restore_and_focus_cycle();
+    test_bounded_resize_clamps_to_app_limits();
+    test_bounded_resize_respects_framebuffer_and_buffer_failure();
     test_maximize_and_restore_preserves_geometry();
     test_maximize_buffer_failure_is_transactional();
     test_maximize_rejects_hidden_or_minimized_windows();

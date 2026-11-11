@@ -135,6 +135,9 @@ static int shell_drag_offset_x, shell_drag_offset_y;
 static window_t* shell_resize_window;
 static int shell_resize_origin_x, shell_resize_origin_y;
 static int shell_resize_start_width, shell_resize_start_height;
+static window_t* shell_keyboard_resize_window;
+static int shell_keyboard_resize_x, shell_keyboard_resize_y;
+static int shell_keyboard_resize_width, shell_keyboard_resize_height;
 static bool shell_pointer_handled;
 static bool alt_held;
 
@@ -209,6 +212,79 @@ static bool shell_resize_grip_hit(const window_t* win, int mx, int my) {
     int bottom = win->y + (int)win->titlebar_height + win->height;
     return mx >= right - (int)grip && mx < right &&
            my >= bottom - (int)grip && my < bottom;
+}
+
+static void shell_window_resize_limits(window_t* win,
+                                          int* min_width, int* min_height,
+                                          int* max_width, int* max_height) {
+    int id = shell_app_id_for_window(win);
+    u32 min_w = ui_px(360), min_h = ui_px(220);
+    switch ((shell_app_id_t)id) {
+        case SHELL_APP_FILES: min_w=ui_px(540); min_h=ui_px(340); break;
+        case SHELL_APP_TERMINAL: min_w=ui_px(420); min_h=ui_px(280); break;
+        case SHELL_APP_BROWSER: min_w=ui_px(560); min_h=ui_px(340); break;
+        case SHELL_APP_SETTINGS: min_w=ui_px(520); min_h=ui_px(400); break;
+        case SHELL_APP_ABOUT: min_w=ui_px(360); min_h=ui_px(220); break;
+        default: break;
+    }
+
+    u32 available_w = g_framebuffer.width > (u32)win->x
+                    ? g_framebuffer.width - (u32)win->x : 1u;
+    u32 work_bottom = g_framebuffer.height > taskbar_height()
+                    ? g_framebuffer.height - taskbar_height()
+                    : g_framebuffer.height;
+    u32 top = (u32)win->y + win->titlebar_height;
+    u32 available_h = work_bottom > top ? work_bottom - top : 1u;
+
+    if (min_w > available_w) min_w = available_w;
+    if (min_h > available_h) min_h = available_h;
+    *min_width = (int)min_w;
+    *min_height = (int)min_h;
+    *max_width = (int)available_w;
+    *max_height = (int)available_h;
+}
+
+static bool shell_resize_app_window(window_t* win, int width, int height) {
+    if (!win || !wm_contains(win) || shell_app_id_for_window(win) < 0 ||
+        win->maximized) return false;
+    int min_w, min_h, max_w, max_h;
+    shell_window_resize_limits(win, &min_w, &min_h, &max_w, &max_h);
+    return wm_resize_window_bounded(win, width, height,
+                                    min_w, min_h, max_w, max_h);
+}
+
+static void shell_keyboard_resize_end(bool commit) {
+    window_t* win = shell_keyboard_resize_window;
+    if (!win) return;
+    if (!commit) {
+        if (!wm_resize_window(win, shell_keyboard_resize_width,
+                              shell_keyboard_resize_height)) {
+            serial_puts("SHELL_KEYBOARD_RESIZE_CANCEL_FAILED");
+            return;
+        }
+        (void)wm_move_window(win, shell_keyboard_resize_x,
+                             shell_keyboard_resize_y);
+    }
+    if (commit) {
+        serial_printf("SHELL_KEYBOARD_RESIZE_COMMITTED %dx%d\n",
+                      win->width, win->height);
+    } else {
+        serial_puts("SHELL_KEYBOARD_RESIZE_CANCELLED");
+    }
+    shell_keyboard_resize_window = NULL;
+}
+
+static void shell_keyboard_resize_start(void) {
+    window_t* win = wm_get_focused();
+    if (!win || shell_app_id_for_window(win) < 0 || win->maximized ||
+        win->minimized || !win->visible) return;
+    shell_keyboard_resize_window = win;
+    shell_keyboard_resize_x = win->x;
+    shell_keyboard_resize_y = win->y;
+    shell_keyboard_resize_width = win->width;
+    shell_keyboard_resize_height = win->height;
+    serial_printf("SHELL_KEYBOARD_RESIZE_STARTED %dx%d\n",
+                  win->width, win->height);
 }
 
 static void shell_app_paint(window_t* win) {
@@ -404,6 +480,8 @@ static void shell_sync_app_windows(void) {
             if (shell_app_windows[i]) {
                 if (shell_drag_window == shell_app_windows[i]) shell_drag_window = NULL;
                 if (shell_resize_window == shell_app_windows[i]) shell_resize_window = NULL;
+                if (shell_keyboard_resize_window == shell_app_windows[i])
+                    shell_keyboard_resize_window = NULL;
                 wm_destroy_window(shell_app_windows[i]);
                 shell_app_windows[i] = NULL;
             }
@@ -952,6 +1030,42 @@ static void handle_event(const input_event_t* e) {
             alt_held = pressed;
             return;
         }
+        if (shell_keyboard_resize_window) {
+            if (!pressed) return;
+            if (extended) {
+                int width = shell_keyboard_resize_window->width;
+                int height = shell_keyboard_resize_window->height;
+                int step = (int)ui_px(20);
+                if (step < 1) step = 1;
+                if (base == 0x4Du) width += step;       /* Right */
+                else if (base == 0x4Bu) width -= step;  /* Left */
+                else if (base == 0x50u) height += step; /* Down */
+                else if (base == 0x48u) height -= step; /* Up */
+                else return;
+                (void)shell_resize_app_window(shell_keyboard_resize_window,
+                                               width, height);
+                ui.needs_redraw = true;
+                return;
+            }
+            if (base == 0x1Cu) {
+                shell_keyboard_resize_end(true);
+                ui.needs_redraw = true;
+                return;
+            }
+            if (base == KEY_ESCAPE) {
+                shell_keyboard_resize_end(false);
+                ui.needs_redraw = true;
+                return;
+            }
+            return;
+        }
+
+        if (pressed && !extended && base == 0x42u && alt_held) {
+            shell_keyboard_resize_start();
+            ui.needs_redraw = true;
+            return;
+        }
+
         if (pressed && !extended && base == 0x0Fu && alt_held) {
             (void)wm_focus_next();
             ui.needs_redraw = true;
@@ -1045,40 +1159,13 @@ static void handle_event(const input_event_t* e) {
     }
 
     case INPUT_MOUSE_MOVE:
-        serial_printf("SHELL_POINTER_MOVED %d,%d\\n",
-                      e->mouse.x, e->mouse.y);
         if (shell_resize_window) {
-            int id = shell_app_id_for_window(shell_resize_window);
-            if (id >= 0) {
-                u32 min_width = ui_px(360), min_height = ui_px(220);
-                switch ((shell_app_id_t)id) {
-                    case SHELL_APP_FILES: min_width=ui_px(540); min_height=ui_px(340); break;
-                    case SHELL_APP_TERMINAL: min_width=ui_px(420); min_height=ui_px(280); break;
-                    case SHELL_APP_BROWSER: min_width=ui_px(560); min_height=ui_px(340); break;
-                    case SHELL_APP_SETTINGS: min_width=ui_px(520); min_height=ui_px(400); break;
-                    case SHELL_APP_ABOUT: min_width=ui_px(360); min_height=ui_px(220); break;
-                    default: break;
-                }
-                u32 max_width = g_framebuffer.width > (u32)shell_resize_window->x
-                    ? g_framebuffer.width - (u32)shell_resize_window->x : 1u;
-                u32 work_bottom = g_framebuffer.height > taskbar_height()
-                    ? g_framebuffer.height - taskbar_height() : g_framebuffer.height;
-                u32 top = (u32)shell_resize_window->y +
-                          shell_resize_window->titlebar_height;
-                u32 max_height = work_bottom > top ? work_bottom - top : 1u;
-                if (min_width > max_width) min_width = max_width;
-                if (min_height > max_height) min_height = max_height;
-                int requested_w = shell_resize_start_width +
-                                  e->mouse.x - shell_resize_origin_x;
-                int requested_h = shell_resize_start_height +
-                                  e->mouse.y - shell_resize_origin_y;
-                if (requested_w < (int)min_width) requested_w = (int)min_width;
-                if (requested_h < (int)min_height) requested_h = (int)min_height;
-                if (requested_w > (int)max_width) requested_w = (int)max_width;
-                if (requested_h > (int)max_height) requested_h = (int)max_height;
-                (void)wm_resize_window(shell_resize_window,
-                                       requested_w, requested_h);
-            }
+            int requested_w = shell_resize_start_width +
+                              e->mouse.x - shell_resize_origin_x;
+            int requested_h = shell_resize_start_height +
+                              e->mouse.y - shell_resize_origin_y;
+            (void)shell_resize_app_window(shell_resize_window,
+                                          requested_w, requested_h);
         } else if (shell_drag_window) {
             (void)wm_move_window(shell_drag_window,
                                  e->mouse.x - shell_drag_offset_x,
@@ -1107,7 +1194,7 @@ static void handle_event(const input_event_t* e) {
             wm_focus_window(hit);
             if (e->mouse.button == 1 && shell_app_id_for_window(hit) >= 0 &&
                 shell_resize_grip_hit(hit, mx, my)) {
-                serial_printf("SHELL_RESIZE_GRIP_ARMED %d,%d\\n", mx, my);
+                serial_printf("SHELL_RESIZE_GRIP_ARMED %d,%d\n", mx, my);
                 shell_resize_window = hit;
                 shell_drag_window = NULL;
                 shell_resize_origin_x = mx;

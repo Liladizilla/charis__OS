@@ -61,7 +61,8 @@
 - [ ] Snap/tiling interactions
 - [x] QEMU validation of simultaneous Files/Terminal windows and Alt+Tab input routing
 - [x] QEMU keyboard maximize/restore verification (Super+Up / Super+Down)
-- [ ] QEMU pointer-drag resize verification
+- [x] QEMU keyboard resize verification (Alt+F8, arrows, Enter/Escape) through shared bounded geometry
+- [ ] QEMU pointer-drag resize verification with a reliable PS/2 or hardware-input test
 - [ ] Expand the workspace beyond the current sparse Files shortcut and taskbar
 
 The shell still owns the framebuffer and application renderers, while the WM owns window identity, z-order, focus, clipping and composition. This is a functional multi-window foundation, not a mature desktop environment.
@@ -99,7 +100,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Standardize native app titlebars, close controls, focus indication and keyboard dispatch for current applications
 - [x] Add independently movable windows, multi-window z-order, taskbar focus/restore and Alt+Tab
 - [x] Add pointer resize handles, maximize/restore and focused-window keyboard shortcuts
-- [x] QEMU capture verifies multiple application windows, Alt+Tab routing and maximize/restore
+- [x] QEMU capture verifies multiple application windows, Alt+Tab routing, maximize/restore and keyboard resize
 - [ ] Add snap/tiling, global window menu, QEMU pointer-resize test and consistent per-window keyboard navigation
 - [ ] Add a first-login setup wizard with language/keyboard, appearance and network steps; current wizard remains limited to existing setup preferences
 - [ ] Add functional Text Editor and System Monitor applications
@@ -170,7 +171,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions
 - [x] QEMU BIOS, ring-3, ELF and VMM huge-page/permission regression suites pass (CI run #43005333279)
-- [x] QEMU desktop capture verifies Files, Terminal, simultaneous windows, Alt+Tab and maximize/restore
+- [x] QEMU desktop capture verifies Files, Terminal, simultaneous windows, Alt+Tab, maximize/restore and keyboard resize
 - [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`)
 - [ ] Expand automated regression coverage to pointer-drag resize, snap/tiling, real hardware and long-session desktop stability
 

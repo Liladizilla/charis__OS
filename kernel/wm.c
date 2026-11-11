@@ -255,6 +255,20 @@ bool wm_resize_window(window_t* win, int width, int height) {
     return true;
 }
 
+bool wm_resize_window_bounded(window_t* win, int width, int height,
+                              int min_width, int min_height,
+                              int max_width, int max_height) {
+    if (!wm_contains(win) || min_width <= 0 || min_height <= 0 ||
+        max_width < min_width || max_height < min_height)
+        return false;
+
+    if (width < min_width) width = min_width;
+    if (height < min_height) height = min_height;
+    if (width > max_width) width = max_width;
+    if (height > max_height) height = max_height;
+    return wm_resize_window(win, width, height);
+}
+
 bool wm_maximize_window(window_t* win, u32 usable_height) {
     if (!wm_contains(win) || !win->visible || win->minimized ||
         win->maximized || !g_framebuffer.initialized) return false;

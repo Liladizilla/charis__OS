@@ -15,7 +15,7 @@ Terminal, Files, Browser, Settings and About each have a bufferless window recor
 - Alt+Tab cycles visible, non-minimized windows. Subsequent keyboard and pointer events are delivered only to the focused window.
 - Escape is dispatched to the focused application unless the launcher is open.
 
-The WM exposes bounded move, pointer resize, maximize and transactional restore operations. The resize grip is placed at the lower-right corner and enforces app-specific minimum sizes. Super+Up maximizes, Super+Down restores or minimizes, and Alt+F4 closes the focused app. Snap/tiling and workspace management are not implemented yet. The current compositor redraws the desktop and all visible surfaces on a shell repaint; dirty-region repaint and independent userspace framebuffers remain future work.
+The WM exposes bounded move, pointer resize, keyboard resize, maximize and transactional restore operations. The lower-right pointer grip and Alt+F8 keyboard-resize mode share the same app-specific minimum sizes and work-area limits. In keyboard mode, arrows adjust the size, Enter commits and Escape restores the original bounds. Super+Up maximizes, Super+Down restores or minimizes, and Alt+F4 closes the focused app. Snap/tiling and workspace management are not implemented yet. The current compositor redraws the desktop and all visible surfaces on a shell repaint; dirty-region repaint and independent userspace framebuffers remain future work.
 
 ## Workspace and taskbar
 
@@ -28,6 +28,7 @@ Keyboard launch paths:
 - Alt+Tab cycles the visible application windows.
 - Super+Up maximizes the focused application.
 - Super+Down restores a maximized window, or minimizes a normal window.
+- Alt+F8 starts keyboard resize mode for the focused window; arrows adjust it, Enter commits and Escape restores the original bounds.
 - Alt+F4 closes the focused application.
 - The Super key toggles the Start menu.
 - Escape is sent to the focused application.
@@ -50,7 +51,7 @@ Browser provides local shell pages and limited remote text-preview plumbing. It 
 
 Host-side CI covers allocation failure cleanup, dimensions and buffer caps, title sanitization, focus and hit testing, visibility, focus recovery, maximum window count, slot reuse, bufferless surface lifecycle, bounded movement, transactional resize, minimize/restore, maximize/restore geometry, failed buffer allocation rollback, focus cycling, compositor clipping/z-order and focus-only event dispatch.
 
-The QEMU capture path exercises Files and Terminal open at the same time, switches focus with Alt+Tab, confirms keyboard input reaches Files only when Files is focused, executes `help` in Terminal, maximizes Terminal with Super+Up and restores its original bounds with Super+Down, then validates Settings persistence across reboot. CI checks the matching serial markers for both window state transitions. Pointer-driven resize-grip interaction is implemented but remains a separate QEMU test item.
+The QEMU capture path exercises Files and Terminal open at the same time, switches focus with Alt+Tab, confirms keyboard input reaches Files only when Files is focused, executes `help` in Terminal, maximizes Terminal with Super+Up, restores its original bounds with Super+Down, then uses Alt+F8 and the arrow keys to resize it from 640×404 to 720×464 before validating Settings persistence across reboot. CI checks the matching serial markers for all window state transitions. Pointer-driven resize remains implemented, but QEMU's HMP mouse injection has not been reliable enough to claim pointer-drag verification.
 
 ## Known limitations
 

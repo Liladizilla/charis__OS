@@ -42,6 +42,9 @@ void wm_focus_window(window_t* win);
 /* Geometry and visibility operations validate ownership and screen bounds. */
 bool wm_move_window(window_t* win, int x, int y);
 bool wm_resize_window(window_t* win, int width, int height);
+bool wm_resize_window_bounded(window_t* win, int width, int height,
+                              int min_width, int min_height,
+                              int max_width, int max_height);
 /* usable_height excludes the shell taskbar; height stores client pixels only. */
 bool wm_maximize_window(window_t* win, u32 usable_height);
 bool wm_restore_window_geometry(window_t* win);

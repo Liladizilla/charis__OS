@@ -213,19 +213,20 @@ jobs:
             # grip (initial pointer 50,50; Terminal bounds 228,188 to 868,628).
             # QEMU HMP mouse_move uses relative deltas. PS/2 Y is inverted by
             # QEMU, so positive monitor Y moves down in the framebuffer.
-            # Keep every PS/2 delta comfortably below 127 counts and
-            # allow the guest input task to drain each three-byte packet.
-            # Eight 100x70 steps move from (50,50) to the grip at (850,610).
-            for step in {1..8}; do
-              printf 'mouse_move 100 70\n'
-              sleep 0.5
+            # Exercise the shared bounded sizing path through accessible
+            # keyboard resize mode. Alt+F8 starts; arrows adjust; Enter commits.
+            # Four right + three down steps add 80x60 pixels to 640x404.
+            printf 'sendkey alt-f8\n'
+            sleep 1
+            for step in {1..4}; do
+              printf 'sendkey right\n'
+              sleep 0.25
             done
-            sleep 1
-            printf 'mouse_button 1\n'
-            sleep 1
-            printf 'mouse_move 80 60\n'
-            sleep 1
-            printf 'mouse_button 0\n'
+            for step in {1..3}; do
+              printf 'sendkey down\n'
+              sleep 0.25
+            done
+            printf 'sendkey ret\n'
             sleep 1
             printf 'screendump build/charisos-resized-preview.ppm\n'
             sleep 1
@@ -272,9 +273,8 @@ jobs:
           grep -q 'TERMINAL_CMD help' build/desktop-capture-serial.log
           grep -q 'SHELL_WINDOW_MAXIMIZED' build/desktop-capture-serial.log
           grep -q 'SHELL_WINDOW_RESTORED' build/desktop-capture-serial.log
-          grep -q 'SHELL_POINTER_MOVED 850,610' build/desktop-capture-serial.log
-          grep -q 'SHELL_RESIZE_GRIP_ARMED 850,610' build/desktop-capture-serial.log
-          grep -q 'SHELL_WINDOW_RESIZED 720x464' build/desktop-capture-serial.log
+          grep -q 'SHELL_KEYBOARD_RESIZE_STARTED 640x404' build/desktop-capture-serial.log
+          grep -q 'SHELL_KEYBOARD_RESIZE_COMMITTED 720x464' build/desktop-capture-serial.log
           test -s build/charisos-maximized-preview.ppm
           test -s build/charisos-multiwindow-preview.ppm
           test -s build/charisos-resized-preview.ppm
