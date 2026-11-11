@@ -26,6 +26,8 @@ static char term_input[TERM_INPUT_MAX];
 static u32 term_input_len;
 static char term_lines[TERM_HISTORY][TERM_LINE_MAX];
 static u32 term_line_count;
+static bool term_bounds_valid;
+static u32 term_bounds_x, term_bounds_y, term_bounds_w, term_bounds_h;
 
 #define TERM_TEXT_SCALE 1u
 static u32 term_px(u32 logical) { return gfx_ui_scale(logical); }
@@ -212,24 +214,43 @@ void terminal_handle_char(char ch) {
     }
 }
 
+u32 terminal_titlebar_height(void) {
+    u32 base = term_px(36), needed = term_text_h() + term_px(12);
+    return base > needed ? base : needed;
+}
+
+void terminal_set_bounds(u32 x, u32 y, u32 width, u32 height) {
+    if (!width || !height) { term_bounds_valid = false; return; }
+    term_bounds_x = x; term_bounds_y = y;
+    term_bounds_w = width; term_bounds_h = height;
+    term_bounds_valid = true;
+}
+
+void terminal_reset_bounds(void) { term_bounds_valid = false; }
+
 static void term_geometry(u32* x, u32* y, u32* w, u32* h, u32* title_h) {
+    if (term_bounds_valid) {
+        *x = term_bounds_x; *y = term_bounds_y;
+        *w = term_bounds_w; *h = term_bounds_h;
+        *title_h = terminal_titlebar_height();
+        return;
+    }
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
     *w = sw > term_px(760) ? term_px(760) : (sw > term_px(24) ? sw - term_px(24) : sw);
     *h = sh > term_px(520) ? term_px(520) : (sh > term_px(24) ? sh - term_px(24) : sh);
     *x = sw > *w ? (sw - *w) / 2 : 0;
     *y = sh > *h ? (sh - *h) / 2 : 0;
-    u32 base = term_px(36), needed = term_text_h() + term_px(12);
-    *title_h = base > needed ? base : needed;
+    *title_h = terminal_titlebar_height();
 }
 
 bool terminal_handle_mouse(int mx, int my) {
     if (!term_visible) return false;
     u32 x, y, w, h, title_h;
     term_geometry(&x, &y, &w, &h, &title_h);
+    if (mx < (int)x || mx >= (int)(x + w) ||
+        my < (int)y || my >= (int)(y + h)) return false;
     if (mx >= (int)(x + w - term_px(36)) && mx < (int)(x + w) &&
-        my >= (int)y && my < (int)(y + title_h)) {
-        terminal_close();
-    }
+        my >= (int)y && my < (int)(y + title_h)) terminal_close();
     return true;
 }
 

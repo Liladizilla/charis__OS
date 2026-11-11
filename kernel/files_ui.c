@@ -14,19 +14,30 @@ static bool files_visible;
 static fs_dirent_t files_entries[FILES_CAPACITY];
 static int files_count, files_selected=-1;
 static bool files_available;
+static bool files_bounds_valid;
+static u32 files_bounds_x, files_bounds_y, files_bounds_w, files_bounds_h;
 
 static u32 px(u32 v) { return gfx_ui_scale(v); }
 static u32 text_h(void) { return (u32)font_cell_h*gfx_text_get_scale(); }
-static u32 wx(void) { return px(36); }
-static u32 wy(void) { return px(28); }
+static u32 wx(void) { return files_bounds_valid ? files_bounds_x : px(36); }
+static u32 wy(void) { return files_bounds_valid ? files_bounds_y : px(28); }
 static u32 ww(void) {
+    if (files_bounds_valid) return files_bounds_w;
     u32 m=px(72);
     return g_framebuffer.width>m ? g_framebuffer.width-m : g_framebuffer.width;
 }
 static u32 wh(void) {
+    if (files_bounds_valid) return files_bounds_h;
     u32 m=px(100);
     return g_framebuffer.height>m ? g_framebuffer.height-m : g_framebuffer.height;
 }
+u32 files_titlebar_height(void) { return px(42); }
+void files_set_bounds(u32 x,u32 y,u32 width,u32 height) {
+    if(!width || !height) { files_bounds_valid=false; return; }
+    files_bounds_x=x; files_bounds_y=y; files_bounds_w=width; files_bounds_h=height;
+    files_bounds_valid=true;
+}
+void files_reset_bounds(void) { files_bounds_valid=false; }
 static u32 title_h(void) { return px(42); }
 static u32 toolbar_y(void) { return wy()+title_h()+px(10); }
 static u32 content_y(void) { return toolbar_y()+px(52); }
@@ -81,9 +92,8 @@ bool files_handle_key(u8 scancode,bool pressed) {
 bool files_handle_mouse(int mx,int my) {
     if(!files_visible) return false;
     u32 x=wx(),y=wy(),w=ww(),h=wh();
-    if(mx<(int)x || mx>=(int)(x+w) || my<(int)y || my>=(int)(y+h)) {
-        files_close(); return true;
-    }
+    if(mx<(int)x || mx>=(int)(x+w) || my<(int)y || my>=(int)(y+h))
+        return false;
     if(my<(int)(y+title_h()) && mx>=(int)(x+w-px(48))) {
         files_close(); return true;
     }
