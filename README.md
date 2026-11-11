@@ -42,7 +42,7 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The latest checked-in QEMU workspace capture is from commit `1f0414c`, verified by [CI run #724](https://github.com/Liladizilla/charis__OS/actions/runs/43071788055). The [full QEMU desktop artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43071788055) includes separate 1024×768 captures for the workspace, Files, Terminal, Browser, Settings, multi-window focus, maximized and resized windows, adjusted preferences, post-reboot settings, 120% interface scaling and large-font layout, with serial and QEMU logs.
+The latest checked-in PNG remains the 1024×768 capture from commit `1f0414c` (CI run #724). The latest full [QEMU desktop artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43085558879) is run #730 on commit `e9abac5`; it contains the refreshed workspace with live Kernel Activity counters plus app, multi-window, resize, Settings and serial/QEMU captures.
 
 ![CharisOS QEMU desktop workspace, CI run 724](docs/screenshots/charisos-desktop-run-724.png)
 
@@ -50,9 +50,9 @@ The [run #722 capture](docs/screenshots/charisos-desktop-run-722.png) and older 
 
 ## Latest desktop validation
 
-[CI run #724](https://github.com/Liladizilla/charis__OS/actions/runs/43071788055) passed on commit `1f0414c`. The run completed dependency installation, the freestanding kernel build, the x86-64 baseline instruction audit, browser and window-manager host tests, BIOS boot and ring-3 checks, VMM huge-page and permission regressions, and the QEMU desktop/settings capture sequence. QEMU verified the 1024×768 workspace, Files/Terminal/Browser/Settings windows, multi-window focus routing, maximize/restore, keyboard resize and display preferences surviving a reboot. The settings test reloads `font_scale=2` and `ui_scale=120`, then exercises the largest supported font preset.
+[CI run #730](https://github.com/Liladizilla/charis__OS/actions/runs/43085558879) passed on commit `e9abac5`. It completed dependency installation, the freestanding kernel build, x86-64 baseline audit, browser and window-manager host tests, BIOS/ring-3 checks, VMM huge-page/permission regressions, QEMU desktop captures and Settings persistence checks.
 
-The current workspace shows four direct application cards, the System Overview panel and a lower System Status panel with live memory allocation/free space plus display dimensions and scale values. The new lower panel occupies more of the canvas without clipping at the captured default and 120% interface scales. A substantial unused region remains below the workspace content, and large-font layouts intentionally suppress some secondary details. The complete 100/125/150/200% text/UI and 1024×768, 1280×800 and 1920×1080 matrix remains unfinished. This is engineering evidence, not a release-quality claim.
+The refreshed 1024×768 QEMU capture shows four direct application cards, the System Overview panel, System Status and a new Kernel Activity panel. Kernel Activity displays context-switch, interrupt and syscall counters through an O(1) snapshot API; desktop repaint does not traverse the scheduler task list. The widget is suppressed above 200% text scale or when there is insufficient width/height, rather than colliding with the taskbar. At 200% text and 120% UI scale it is intentionally absent. The desktop still has unused space below the panels, and user-facing live workspace content, the complete 100/125/150/200% text/UI and 1024×768, 1280×800 and 1920×1080 matrix remain unfinished. This is engineering evidence, not a release-quality claim.
 
 The current ELF disk test accepts an explicit `ELF_EXEC_DENIED_CAPABILITY` result because the bootstrap task does not receive `CAP_ALLOW_EXEC`; it does not prove that an ELF executable was entered. Successful authorized ELF execution remains an explicit validation gap.
 

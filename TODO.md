@@ -67,8 +67,9 @@
 - [ ] QEMU pointer-drag resize verification with a reliable PS/2 or hardware-input test
 - [x] Add direct Files, Terminal, Settings and Browser launch cards with responsive one-/two-/four-column geometry and a live PIT/PMM System Overview panel
 - [x] Add a lower System Status panel with live memory-allocation and display-profile values
-- [x] Capture and verify the 1024×768 workspace, native app windows, multi-window focus routing, maximize/restore, keyboard resize, status panel and settings persistence across reboot in CI run #724
-- [ ] Fill the remaining workspace with useful, live system or user content rather than decorative placeholder cards
+- [x] Add a Kernel Activity panel with O(1) context-switch, interrupt and syscall counters; suppress it when the selected text scale or available geometry cannot accommodate it
+- [x] Capture and verify the 1024×768 workspace, native app windows, multi-window focus routing, maximize/restore, keyboard resize, System Status, Kernel Activity and settings persistence across reboot in CI run #730
+- [ ] Use the remaining desktop area for useful user-facing content; the verified system panels are not a substitute for a richer workspace
 - [ ] Validate the full font/UI scale matrix and additional 1280×800 and 1920×1080 framebuffer modes
 
 The shell still owns the framebuffer and application renderers, while the WM owns window identity, z-order, focus, clipping and composition. This is a functional multi-window foundation, not a mature desktop environment.
@@ -184,8 +185,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] WM list traversal detects duplicate nodes and remains bounded if links form a cycle
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions
-- [x] CI run #724 passed the freestanding build, x86-64 baseline audit, BIOS/ring-3 isolation checks and VMM huge-page/permission regression suite
-- [x] QEMU desktop capture from run #724 verifies Files, Terminal, Browser, multi-window routing, maximize/restore, keyboard resize and the live System Status panel
+- [x] CI run #730 passed the freestanding build, x86-64 baseline audit, BIOS/ring-3 isolation checks, VMM huge-page/permission regression suite and QEMU desktop/settings capture
+- [x] QEMU capture from run #730 verifies Files, Terminal, Browser, multi-window routing, maximize/restore, keyboard resize, System Status and Kernel Activity counters
 - [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`); the capture also checks the largest font preset
 - [ ] Expand automated regression coverage to pointer-drag resize, snap/tiling, real hardware and long-session desktop stability
 
