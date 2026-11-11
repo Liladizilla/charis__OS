@@ -33,27 +33,24 @@ static void pmm_mark_used(u64 addr) {
 __attribute__((noinline, no_stack_protector))
 static void pmm_mark_free(u64 addr) {
     bool trace = (addr >= 0x200000ULL && addr < 0x208000ULL);
-    if (trace) serial_printf("[BOOT] PMM mark: entered addr=%p\n", (void*)(uintptr_t)addr);
+    if (trace) serial_puts("[BOOT] PMM mark: entered");
     if (addr < PMM_BITMAP_BASE || addr >= VMM_PHYSICAL_LIMIT) return;
     u64 page = (addr - PMM_BITMAP_BASE) / 4096ULL;
     u32 byte = (u32)(page / 8ULL);
     u8 mask = (u8)(1U << (page % 8ULL));
-    if (trace) {
-        serial_printf("[BOOT] PMM mark: page=%u byte=%u mask=%u bitmap=%p\n",
-                      (u32)page, byte, (u32)mask, (void*)bitmap);
-        serial_puts("[BOOT] PMM mark: before bitmap read");
-    }
+    if (trace) serial_puts("[BOOT] PMM mark: index arithmetic complete");
     volatile u8* slot = &bitmap[byte];
+    if (trace) serial_puts("[BOOT] PMM mark: before bitmap read");
     u8 old_value = *slot;
-    if (trace) serial_printf("[BOOT] PMM mark: bitmap read=%u\n", (u32)old_value);
+    if (trace) serial_puts("[BOOT] PMM mark: after bitmap read");
     if (old_value & mask) {
         if (trace) serial_puts("[BOOT] PMM mark: before free counter update");
         free_page_count++;
-        if (trace) serial_puts("[BOOT] PMM mark: free counter updated");
+        if (trace) serial_puts("[BOOT] PMM mark: after free counter update");
     }
     if (trace) serial_puts("[BOOT] PMM mark: before bitmap write");
     *slot = (u8)(old_value & (u8)~mask);
-    if (trace) serial_puts("[BOOT] PMM mark: bitmap write complete");
+    if (trace) serial_puts("[BOOT] PMM mark: after bitmap write");
 }
 
 static u64 pmm_align_up_page(u64 value) {
@@ -142,13 +139,11 @@ void pmm_init(multiboot_info_t* info) {
         u32 marked_pages = 0;
         for (u64 addr = block; addr < block + PMM_BLOCK_SIZE; addr += 4096ULL) {
             if (marked_pages < 8 && scanned_blocks <= 3)
-                serial_printf("[BOOT] PMM: marking index=%u addr=%p\n",
-                              marked_pages, (void*)(uintptr_t)addr);
+                serial_puts("[BOOT] PMM: entering initial page mark");
             pmm_mark_free(addr);
             marked_pages++;
             if (marked_pages <= 8 && scanned_blocks <= 3)
-                serial_printf("[BOOT] PMM: mark returned index=%u\n",
-                              marked_pages - 1);
+                serial_puts("[BOOT] PMM: initial page mark returned");
             if (marked_pages == 1 && scanned_blocks <= 3)
                 serial_puts("[BOOT] PMM: first page mark complete");
         }
