@@ -513,7 +513,7 @@ static void shell_open_app(shell_app_id_t id) {
     shell_sync_app_windows();
     if (shell_app_windows[id]) {
         wm_focus_window(shell_app_windows[id]);
-        serial_printf("SHELL_APP_OPEN %s\\n", shell_app_title(id));
+        serial_printf("SHELL_APP_OPEN %s\n", shell_app_title(id));
     }
 }
 
