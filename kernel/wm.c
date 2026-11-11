@@ -74,6 +74,10 @@ static void wm_raise(window_t* win) {
     win->z_order = wm_z_counter++;
 }
 
+static u32 wm_titlebar_height(const window_t* win) {
+    return win && win->titlebar_height ? win->titlebar_height : WINDOW_TITLEBAR_HEIGHT;
+}
+
 static void wm_clamp_position(window_t* win) {
     if (!win) return;
     if (win->x < 0) win->x = 0;
@@ -81,7 +85,7 @@ static void wm_clamp_position(window_t* win) {
     if (!g_framebuffer.initialized) return;
     s32 max_x = (g_framebuffer.width > (u32)win->width)
         ? (s32)(g_framebuffer.width - (u32)win->width) : 0;
-    s32 max_y = (g_framebuffer.height > (u32)(win->height + WINDOW_TITLEBAR_HEIGHT))
+    s32 max_y = (g_framebuffer.height > (u32)win->height + wm_titlebar_height(win))
         ? (s32)(g_framebuffer.height - (u32)(win->height + WINDOW_TITLEBAR_HEIGHT)) : 0;
     if (win->x > max_x) win->x = max_x;
     if (win->y > max_y) win->y = max_y;
@@ -139,6 +143,7 @@ static window_t* wm_create_window_internal(const char* title, int x, int y,
     win->y = y;
     win->width = w;
     win->height = h;
+    win->titlebar_height = WINDOW_TITLEBAR_HEIGHT;
     win->visible = true;
     kstrncpy(win->title, title, WM_MAX_TITLE_LENGTH);
     win->title[sizeof(win->title) - 1] = '\0';
@@ -220,7 +225,7 @@ bool wm_resize_window(window_t* win, int width, int height) {
         return false;
     if (g_framebuffer.initialized &&
         ((u32)width > g_framebuffer.width ||
-         (u64)(u32)height + WINDOW_TITLEBAR_HEIGHT > g_framebuffer.height))
+         (u64)(u32)height + wm_titlebar_height(win) > g_framebuffer.height))
         return false;
 
     u32* replacement = NULL;
@@ -243,6 +248,15 @@ bool wm_resize_window(window_t* win, int width, int height) {
     win->buffer = replacement;
     win->width = width;
     win->height = height;
+    wm_clamp_position(win);
+    return true;
+}
+
+bool wm_set_titlebar_height(window_t* win, u32 height) {
+    if (!wm_contains(win) || height < 20u || height > 96u) return false;
+    if (g_framebuffer.initialized &&
+        (u64)(u32)win->height + height > g_framebuffer.height) return false;
+    win->titlebar_height = height;
     wm_clamp_position(win);
     return true;
 }
@@ -324,7 +338,8 @@ void wm_render(void) {
     for (u32 i = 0; i < count; i++) {
         window_t* win = ordered[i];
         if (!win->visible || win->minimized || !win->buffer) continue;
-        u32 clip_h = (u32)win->height + WINDOW_TITLEBAR_HEIGHT;
+        u32 title_h = wm_titlebar_height(win);
+        u32 clip_h = (u32)win->height + title_h;
         fb_set_clip((u32)win->x, (u32)win->y, (u32)win->width, clip_h);
         wm_draw_decorations(win);
         wm_draw_contents(win);
@@ -332,7 +347,7 @@ void wm_render(void) {
             for (u32 px = 0; px < (u32)win->width; px++) {
                 u32 color = win->buffer[(usize)py * (usize)win->width + px];
                 fb_put_pixel((u32)win->x + px,
-                             (u32)win->y + WINDOW_TITLEBAR_HEIGHT + py, color);
+                             (u32)win->y + title_h + py, color);
             }
     }
     fb_reset_clip();
@@ -405,7 +420,7 @@ window_t* wm_get_window_at(int x, int y) {
         window_t* win = windows[i];
         if (!win->visible || win->minimized) continue;
         s64 right = (s64)win->x + win->width;
-        s64 bottom = (s64)win->y + win->height + WINDOW_TITLEBAR_HEIGHT;
+        s64 bottom = (s64)win->y + win->height + wm_titlebar_height(win);
         if ((s64)x >= win->x && (s64)x < right &&
             (s64)y >= win->y && (s64)y < bottom &&
             (!best || win->z_order > best->z_order)) best = win;
@@ -435,7 +450,7 @@ void wm_process_mouse(int x, int y, int button, bool pressed) {
         window_t* win = wm_get_window_at(x, y);
         if (win) {
             wm_focus_window(win);
-            if (y >= win->y && y < win->y + WINDOW_TITLEBAR_HEIGHT) {
+            if (y >= win->y && y < win->y + (int)wm_titlebar_height(win)) {
                 dragging = true;
                 drag_window = win;
                 offset_x = x - win->x;
@@ -479,7 +494,7 @@ void wm_main_loop(void) {
                         if (win) {
                             wm_focus_window(win);
                             if (evt.mouse.y >= win->y &&
-                                evt.mouse.y < win->y + WINDOW_TITLEBAR_HEIGHT) {
+                                evt.mouse.y < win->y + (int)wm_titlebar_height(win)) {
                                 drag_window = win;
                                 drag_offset_x = evt.mouse.x - win->x;
                                 drag_offset_y = evt.mouse.y - win->y;
@@ -514,7 +529,7 @@ void wm_draw_decorations(window_t* win) {
                   WINDOW_TITLEBAR_HEIGHT, true);
     graphics_set_color(COLOR_BORDER);
     graphics_rect((u32)win->x, (u32)win->y, (u32)win->width,
-                  (u32)win->height + WINDOW_TITLEBAR_HEIGHT, false);
+                  (u32)win->height + wm_titlebar_height(win), false);
     graphics_set_color(COLOR_ACCENT);
     psf_draw_string((u32)win->x + 8, (u32)win->y + 6,
                     win->title, COLOR_ACCENT, COLOR_SURFACE);

@@ -8,6 +8,17 @@
 #include "../kernel/wm.c"
 
 framebuffer_t g_framebuffer = { .width = 640, .height = 480, .initialized = true };
+static u32 clip_reset_count, clip_set_count;
+static u32 paint_order[8], paint_count;
+void fb_reset_clip(void) { clip_reset_count++; }
+void fb_set_clip(u32 x, u32 y, u32 w, u32 h) {
+    (void)x; (void)y; (void)w; (void)h;
+    clip_set_count++;
+}
+static void paint_recorder(window_t* win) {
+    if (paint_count < sizeof(paint_order) / sizeof(paint_order[0]))
+        paint_order[paint_count++] = win->z_order;
+}
 static int allocations_before_failure = -1;
 static unsigned allocations, frees;
 
@@ -176,6 +187,51 @@ static void test_window_list_traversal_is_bounded_and_unique(void) {
     expect(wm_windows == NULL, "cycle test releases all remaining nodes");
 }
 
+static void test_surface_compositor_paints_visible_windows_in_z_order(void) {
+    reset_manager();
+    paint_count = 0;
+    clip_reset_count = 0;
+    clip_set_count = 0;
+    window_t *back = wm_create_surface_window("paint-back", 10, 10, 120, 90);
+    window_t *front = wm_create_surface_window("paint-front", 30, 30, 120, 90);
+    window_t *hidden = wm_create_surface_window("paint-hidden", 50, 50, 120, 90);
+    expect(back && front && hidden, "callback surfaces created");
+    back->on_paint = paint_recorder;
+    front->on_paint = paint_recorder;
+    hidden->on_paint = paint_recorder;
+    expect(wm_set_window_visible(hidden, false), "third surface hidden");
+    wm_focus_window(back);
+    wm_focus_window(front);
+    wm_render_surfaces();
+    expect(paint_count == 2, "compositor skips hidden surfaces");
+    expect(paint_order[0] < paint_order[1], "compositor paints back-to-front by z-order");
+    expect(clip_set_count == 2, "each surface is clipped before its callback");
+    expect(clip_reset_count >= 3, "clip resets before and after surface callbacks");
+
+    paint_count = 0;
+    expect(wm_minimize_window(front), "front surface can be minimized");
+    wm_render_surfaces();
+    expect(paint_count == 1 && paint_order[0] == back->z_order,
+           "compositor skips minimized surfaces");
+    wm_destroy_window(hidden);
+    wm_destroy_window(front);
+    wm_destroy_window(back);
+}
+
+static void test_variable_titlebar_geometry_is_consistent(void) {
+    reset_manager();
+    window_t *w = wm_create_surface_window("custom chrome", 10, 10, 120, 80);
+    expect(w != NULL, "surface for custom titlebar created");
+    expect(w->titlebar_height == WINDOW_TITLEBAR_HEIGHT, "default titlebar retained");
+    expect(wm_set_titlebar_height(w, 44), "custom titlebar height accepted");
+    expect(wm_get_window_at(20, 50) == w, "expanded titlebar is included in hit testing");
+    expect(wm_move_window(w, 900, 900), "custom titlebar window can move");
+    expect(w->y == 436, "custom titlebar geometry clamps to screen edge");
+    expect(!wm_set_titlebar_height(w, 19), "titlebar below minimum rejected");
+    expect(!wm_set_titlebar_height(w, 97), "titlebar above maximum rejected");
+    wm_destroy_window(w);
+}
+
 static void test_window_limit_and_repeated_reuse(void) {
     reset_manager();
     window_t *items[MAX_WINDOWS];
@@ -205,6 +261,8 @@ int main(void) {
     test_resize_allocation_failure_is_transactional();
     test_minimize_restore_and_focus_cycle();
     test_window_list_traversal_is_bounded_and_unique();
+    test_surface_compositor_paints_visible_windows_in_z_order();
+    test_variable_titlebar_geometry_is_consistent();
     test_window_limit_and_repeated_reuse();
     expect(allocations == frees, "all test allocations released");
     puts("Window manager lifecycle, geometry and visibility tests passed");

@@ -15,6 +15,7 @@
 typedef struct window {
     int x, y;
     int width, height;
+    u32 titlebar_height;
     u32 z_order;
     bool visible;
     bool focused;
@@ -38,6 +39,7 @@ void wm_focus_window(window_t* win);
 /* Geometry and visibility operations validate ownership and screen bounds. */
 bool wm_move_window(window_t* win, int x, int y);
 bool wm_resize_window(window_t* win, int width, int height);
+bool wm_set_titlebar_height(window_t* win, u32 height);
 bool wm_minimize_window(window_t* win);
 bool wm_restore_window(window_t* win);
 bool wm_set_window_visible(window_t* win, bool visible);
