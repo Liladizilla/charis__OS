@@ -5,6 +5,7 @@
 #include <kernel/multiboot.h>
 #include <kernel/printf.h>
 #include <kernel/bootmem.h>
+#include <kernel/serial.h>
 
 #define PMM_BITMAP_BASE 0x100000ULL
 #define PMM_BLOCK_SIZE  (2ULL * 1024ULL * 1024ULL)
@@ -86,19 +87,26 @@ bool pmm_block_is_usable_ram(u64 block_base) {
 extern char _kernel_end[];
 
 void pmm_init(multiboot_info_t* info) {
+    serial_puts("[BOOT] PMM: initialization begin");
     memory_map = bootmem_regions(&memory_map_count);
+    serial_printf("[BOOT] PMM: memory map entries=%u\n", memory_map_count);
     last_free = 0;
     managed_page_count = 0;
     free_page_count = 0;
 
     /* Fail closed: only complete, firmware-declared RAM blocks are eligible. */
+    serial_puts("[BOOT] PMM: bitmap initialization begin");
     kmemset(bitmap, 0xFF, sizeof(bitmap));
     kmemset(allocated_bitmap, 0, sizeof(allocated_bitmap));
+    serial_puts("[BOOT] PMM: bitmap initialization complete");
     u64 first_block = (PMM_BITMAP_BASE + PMM_BLOCK_SIZE - 1) &
                       ~(PMM_BLOCK_SIZE - 1);
+    serial_puts("[BOOT] PMM: usable-RAM scan begin");
+    u32 scanned_blocks = 0;
     for (u64 block = first_block;
          block <= VMM_PHYSICAL_LIMIT - PMM_BLOCK_SIZE;
          block += PMM_BLOCK_SIZE) {
+        scanned_blocks++;
         if (!pmm_block_is_usable_ram(block)) continue;
         managed_page_count += (u32)(PMM_BLOCK_SIZE / 4096ULL);
         for (u64 addr = block; addr < block + PMM_BLOCK_SIZE; addr += 4096ULL) {
@@ -106,14 +114,23 @@ void pmm_init(multiboot_info_t* info) {
         }
     }
 
+    serial_printf("[BOOT] PMM: usable-RAM scan complete, scanned=%u managed_pages=%u\n",
+                  scanned_blocks, managed_page_count);
+
     /* Kernel image and still-referenced Multiboot tag storage remain reserved. */
+    serial_puts("[BOOT] PMM: kernel image reservation begin");
     for (u64 addr = 0x100000ULL; addr < (u64)_kernel_end; addr += 4096ULL) {
         pmm_mark_used(addr);
     }
+    serial_puts("[BOOT] PMM: kernel image reservation complete");
     if (info && info->total_size) {
+        serial_puts("[BOOT] PMM: Multiboot info reservation begin");
         pmm_reserve_range((u64)(uintptr_t)info, info->total_size);
+        serial_puts("[BOOT] PMM: Multiboot info reservation complete");
     }
 
+    serial_printf("[BOOT] PMM: ready, free=%u total=%u pages\n",
+                  pmm_free_pages(), pmm_total_pages());
     vga_printf("PMM: %u regions, %u managed pages, %u used/reserved, %u free\n",
                memory_map_count, pmm_total_pages(),
                pmm_total_pages() - pmm_free_pages(), pmm_free_pages());
