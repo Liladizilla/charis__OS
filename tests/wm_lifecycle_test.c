@@ -11,6 +11,9 @@ framebuffer_t g_framebuffer = { .width = 640, .height = 480, .initialized = true
 static u32 clip_reset_count, clip_set_count;
 static u32 paint_order[8], paint_count;
 void fb_reset_clip(void) { clip_reset_count++; }
+void fb_put_pixel(u32 x, u32 y, u32 color) {
+    (void)x; (void)y; (void)color;
+}
 void fb_set_clip(u32 x, u32 y, u32 w, u32 h) {
     (void)x; (void)y; (void)w; (void)h;
     clip_set_count++;
