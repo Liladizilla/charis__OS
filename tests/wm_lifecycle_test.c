@@ -29,8 +29,17 @@ static void paint_recorder(window_t* win) {
     if (paint_count < sizeof(paint_order) / sizeof(paint_order[0]))
         paint_order[paint_count++] = win->z_order;
 }
+static void event_recorder(window_t* win, int event_type, void* data) {
+    (void)data;
+    dispatched_events++;
+    dispatched_target = win;
+    dispatched_type = event_type;
+}
 static int allocations_before_failure = -1;
 static unsigned allocations, frees;
+static u32 dispatched_events;
+static window_t* dispatched_target;
+static int dispatched_type;
 
 void *kmalloc(usize size) {
     if (allocations_before_failure == 0) return NULL;
@@ -228,6 +237,38 @@ static void test_surface_compositor_paints_visible_windows_in_z_order(void) {
     wm_destroy_window(back);
 }
 
+static void test_event_dispatch_targets_only_focused_window(void) {
+    reset_manager();
+    dispatched_events = 0;
+    dispatched_target = NULL;
+    dispatched_type = 0;
+    window_t *back = wm_create_surface_window("event-back", 10, 10, 120, 80);
+    window_t *front = wm_create_surface_window("event-front", 30, 30, 120, 80);
+    expect(back && front, "event test windows created");
+    back->on_event = event_recorder;
+    front->on_event = event_recorder;
+
+    wm_dispatch_event(71, NULL);
+    expect(dispatched_events == 1 && dispatched_target == front &&
+           dispatched_type == 71, "first event reaches only focused window");
+
+    wm_focus_window(back);
+    wm_dispatch_event(72, NULL);
+    expect(dispatched_events == 2 && dispatched_target == back &&
+           dispatched_type == 72, "focus change reroutes subsequent events");
+
+    expect(wm_minimize_window(back), "focused event window minimizes");
+    wm_dispatch_event(73, NULL);
+    expect(dispatched_events == 3 && dispatched_target == front &&
+           dispatched_type == 73, "minimized window no longer receives events");
+
+    expect(wm_set_window_visible(front, false), "last visible event window hides");
+    wm_dispatch_event(74, NULL);
+    expect(dispatched_events == 3, "hidden windows receive no keyboard or pointer events");
+    wm_destroy_window(front);
+    wm_destroy_window(back);
+}
+
 static void test_variable_titlebar_geometry_is_consistent(void) {
     reset_manager();
     window_t *w = wm_create_surface_window("custom chrome", 10, 10, 120, 80);
@@ -272,6 +313,7 @@ int main(void) {
     test_minimize_restore_and_focus_cycle();
     test_window_list_traversal_is_bounded_and_unique();
     test_surface_compositor_paints_visible_windows_in_z_order();
+    test_event_dispatch_targets_only_focused_window();
     test_variable_titlebar_geometry_is_consistent();
     test_window_limit_and_repeated_reuse();
     expect(allocations == frees, "all test allocations released");

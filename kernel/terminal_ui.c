@@ -305,10 +305,17 @@ void terminal_render(void) {
                     "Terminal", CHARIS_UI_TEXT, FB_TRANSPARENT);
     const char* session_label = "LOCAL SESSION";
     u32 session_width = term_measure(session_label);
-    u32 session_x = x + w > session_width + term_px(16)
-                  ? x + w - session_width - term_px(16) : x + term_px(72);
+    u32 session_right = x + w > term_px(48) ? x + w - term_px(48) : x + w;
+    u32 session_x = session_right > session_width + term_px(16)
+                  ? session_right - session_width - term_px(16) : x + term_px(72);
     term_draw(session_x, y + (title_h - text_h) / 2,
               session_label, CHARIS_UI_MUTED, FB_TRANSPARENT);
+    u32 close_x = x + w - term_px(34);
+    u32 close_y = y + (title_h - term_px(24)) / 2u;
+    fb_fill_rect(close_x, close_y, term_px(26), term_px(24), CHARIS_UI_SURFACE);
+    fb_draw_rect(close_x, close_y, term_px(26), term_px(24), CHARIS_UI_BORDER);
+    term_draw(close_x + term_px(9), close_y + (term_px(24) - text_h) / 2u,
+              "x", CHARIS_UI_TEXT, FB_TRANSPARENT);
 
     /* Session strip separates app identity from command output. */
     u32 strip_y = y + title_h + term_px(1);

@@ -123,6 +123,8 @@ typedef enum {
     SHELL_APP_TERMINAL = 0,
     SHELL_APP_FILES,
     SHELL_APP_BROWSER,
+    SHELL_APP_SETTINGS,
+    SHELL_APP_ABOUT,
     SHELL_APP_COUNT
 } shell_app_id_t;
 
@@ -130,6 +132,16 @@ static window_t* shell_app_windows[SHELL_APP_COUNT];
 static window_t* shell_drag_window;
 static int shell_drag_offset_x, shell_drag_offset_y;
 static bool shell_pointer_handled;
+static bool alt_held;
+
+static u32 settings_title_height(void);
+static u32 settings_panel_width(void);
+static u32 settings_panel_height(void);
+static u32 about_titlebar_height(void);
+static void draw_settings_window(window_t* win);
+static bool settings_handle_window_click(window_t* win, int mx, int my);
+static void draw_about_window(window_t* win);
+static bool about_handle_window_click(window_t* win, int mx, int my);
 
 static int shell_app_id_for_window(const window_t* win) {
     for (u32 i = 0; i < SHELL_APP_COUNT; i++)
@@ -142,6 +154,8 @@ static bool shell_app_is_open(shell_app_id_t id) {
         case SHELL_APP_TERMINAL: return terminal_is_open();
         case SHELL_APP_FILES: return files_is_open();
         case SHELL_APP_BROWSER: return browser_is_open();
+        case SHELL_APP_SETTINGS: return settings_open;
+        case SHELL_APP_ABOUT: return notice_open && notice_item == 4;
         default: return false;
     }
 }
@@ -151,6 +165,8 @@ static const char* shell_app_title(shell_app_id_t id) {
         case SHELL_APP_TERMINAL: return "Terminal";
         case SHELL_APP_FILES: return "Files";
         case SHELL_APP_BROWSER: return "Browser";
+        case SHELL_APP_SETTINGS: return "Settings";
+        case SHELL_APP_ABOUT: return "About CharisOS";
         default: return "Application";
     }
 }
@@ -160,6 +176,8 @@ static u32 shell_app_titlebar_height(shell_app_id_t id) {
         case SHELL_APP_TERMINAL: return terminal_titlebar_height();
         case SHELL_APP_FILES: return files_titlebar_height();
         case SHELL_APP_BROWSER: return browser_titlebar_height();
+        case SHELL_APP_SETTINGS: return settings_title_height();
+        case SHELL_APP_ABOUT: return about_titlebar_height();
         default: return WINDOW_TITLEBAR_HEIGHT;
     }
 }
@@ -184,6 +202,12 @@ static void shell_app_paint(window_t* win) {
                                (u32)win->width, full_height);
             browser_render();
             break;
+        case SHELL_APP_SETTINGS:
+            draw_settings_window(win);
+            break;
+        case SHELL_APP_ABOUT:
+            draw_about_window(win);
+            break;
         default: break;
     }
 }
@@ -203,6 +227,14 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
                 break;
             case SHELL_APP_BROWSER:
                 shell_pointer_handled = browser_handle_mouse(evt->mouse.x, evt->mouse.y);
+                break;
+            case SHELL_APP_SETTINGS:
+                shell_pointer_handled = settings_handle_window_click(
+                    win, evt->mouse.x, evt->mouse.y);
+                break;
+            case SHELL_APP_ABOUT:
+                shell_pointer_handled = about_handle_window_click(
+                    win, evt->mouse.x, evt->mouse.y);
                 break;
             default: break;
         }
@@ -226,6 +258,29 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
         case SHELL_APP_BROWSER:
             (void)browser_handle_key(base, pressed);
             break;
+        case SHELL_APP_SETTINGS:
+            if (pressed && !extended && base == KEY_ESCAPE) {
+                settings_open = false;
+            } else if (pressed && !extended && base == 0x40u) {
+                int value = config_get_int("font_scale", 1) + 1;
+                if (value > 3) value = 3;
+                config_set_int("font_scale", value);
+                gfx_text_apply_preferences();
+                config_save(CONFIG_FILE_PATH);
+            } else if (pressed && !extended && base == 0x41u) {
+                int value = config_get_int("ui_scale", 100) + 20;
+                if (value > 120) value = 120;
+                config_set_int("ui_scale", value);
+                gfx_text_apply_preferences();
+                config_save(CONFIG_FILE_PATH);
+            }
+            break;
+        case SHELL_APP_ABOUT:
+            if (pressed && !extended && base == KEY_ESCAPE) {
+                notice_open = false;
+                notice_item = -1;
+            }
+            break;
         default: break;
     }
 }
@@ -240,6 +295,16 @@ static window_t* shell_create_app_window(shell_app_id_t id) {
     u32 height = sh > 72u ? sh - 72u : sh;
     if (width > 960u) width = 960u;
     if (height > 680u) height = 680u;
+    if (id == SHELL_APP_SETTINGS) {
+        width = settings_panel_width();
+        height = settings_panel_height();
+        if (height > sh - 24u) height = sh - 24u;
+    } else if (id == SHELL_APP_ABOUT) {
+        if (width > ui_px(560)) width = ui_px(560);
+        height = sh > ui_px(72) ? ui_px(280) : sh - ui_px(24);
+        if (height > sh - 24u) height = sh - 24u;
+    }
+    if (width > sw - 24u) width = sw - 24u;
     if (height <= title_h + 64u) return NULL;
 
     u32 offset = (u32)id * 26u;
@@ -288,6 +353,11 @@ static void shell_open_app(shell_app_id_t id) {
         case SHELL_APP_TERMINAL: terminal_open(); break;
         case SHELL_APP_FILES: files_open(); break;
         case SHELL_APP_BROWSER: browser_open(); break;
+        case SHELL_APP_SETTINGS: settings_open = true; break;
+        case SHELL_APP_ABOUT:
+            notice_item = 4;
+            notice_open = true;
+            break;
         default: break;
     }
     shell_sync_app_windows();
@@ -334,6 +404,20 @@ static void draw_taskbar(void) {
     fb_fill_rect(mark_x + ui_px(5), mark_y + ui_px(5), ui_px(14), ui_px(4), CHARIS_UI_ACCENT);
     fb_fill_rect(mark_x + ui_px(5), mark_y + ui_px(15), ui_px(14), ui_px(4), CHARIS_UI_ACCENT);
     desktop_surface_draw_taskbar_icons(y);
+    static const shell_app_id_t taskbar_apps[4] = {
+        SHELL_APP_FILES, SHELL_APP_TERMINAL,
+        SHELL_APP_SETTINGS, SHELL_APP_BROWSER
+    };
+    static const u32 taskbar_x[4] = { 112u, 156u, 200u, 244u };
+    for (u32 i = 0; i < 4; i++) {
+        window_t* win = shell_app_windows[taskbar_apps[i]];
+        if (!win) continue;
+        u32 mark = win->minimized ? CHARIS_UI_MUTED :
+                   win->focused ? CHARIS_UI_ACCENT : CHARIS_UI_BORDER_STRONG;
+        fb_fill_rect(ui_px(taskbar_x[i] + 4u),
+                     y + ui_px(44u) - ui_px(3u),
+                     ui_px(20u), ui_px(2u), mark);
+    }
 
     /* Do not label uptime as a clock. A real wall clock will be added with
      * the RTC/timezone service; the taskbar stays clear until then. */
@@ -402,29 +486,60 @@ static void draw_menu(void) {
 /* A launcher item must not silently send output to an invisible VGA console.
  * Until each application has a real framebuffer UI, explain its current state
  * in a consistent, dismissible panel instead of pretending it launched. */
-static void draw_notice(void) {
-    if (!notice_open || notice_item < 0 || notice_item >= (int)MENU_ITEM_COUNT) return;
+static u32 about_titlebar_height(void) { return ui_px(42); }
 
-    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    u32 cw = ui_px(440), ch = ui_px(152);
-    u32 x = sw > cw ? (sw - cw) / 2 : 0;
-    u32 y = sh > ch ? (sh - ch) / 2 : 0;
+static void draw_about_window(window_t* win) {
+    if (!win || !notice_open || notice_item != 4) return;
+    u32 x = (u32)win->x, y = (u32)win->y;
+    u32 w = (u32)win->width;
+    u32 h = (u32)win->height + win->titlebar_height;
+    u32 title_h = win->titlebar_height;
 
-    fb_fill_rect(x + ui_px(4), y + ui_px(4), cw, ch, CHARIS_UI_SHADOW);
-    fb_fill_rect(x, y, cw, ch, T_MENU);
-    fb_draw_rect(x, y, cw, ch, T_BORDER);
-    fb_fill_rect(x, y, cw, ui_px(28), T_START_BTN);
-    fb_fill_rect(x, y, cw, 1, CHARIS_UI_BORDER_STRONG);
-    gfx_draw_string(x + ui_px(16), y + ui_px(7), MENU_ITEMS[notice_item].label, T_FG, FB_TRANSPARENT);
+    fb_fill_rect(x + ui_px(5), y + ui_px(6), w, h, CHARIS_UI_SHADOW);
+    fb_fill_rect(x, y, w, h, CHARIS_UI_PANEL);
+    fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER_STRONG);
+    fb_fill_rect(x, y, w, title_h, CHARIS_UI_PANEL_RAISED);
+    fb_fill_rect(x, y + title_h, w, ui_px(1), CHARIS_UI_BORDER);
+    gfx_draw_string(x + ui_px(18), y + (title_h - text_height()) / 2u,
+                    "About CharisOS", CHARIS_UI_TEXT, FB_TRANSPARENT);
 
-    gfx_draw_string(x + ui_px(20), y + ui_px(48), NOTICE_LINE_1[notice_item], T_FG, FB_TRANSPARENT);
-    gfx_draw_string(x + ui_px(20), y + ui_px(72), NOTICE_LINE_2[notice_item], T_FG_DIM, FB_TRANSPARENT);
+    u32 close_x = x + w - ui_px(38);
+    u32 close_y = y + (title_h - ui_px(26)) / 2u;
+    fb_fill_rect(close_x, close_y, ui_px(26), ui_px(26), CHARIS_UI_SURFACE);
+    fb_draw_rect(close_x, close_y, ui_px(26), ui_px(26), CHARIS_UI_BORDER);
+    gfx_draw_string(close_x + ui_px(9), close_y + ui_px(5), "x",
+                    CHARIS_UI_TEXT, FB_TRANSPARENT);
 
-    u32 bw = ui_px(88), bh = ui_px(28);
-    u32 bx = x + cw - bw - ui_px(16), by = y + ch - bh - ui_px(12);
-    fb_fill_rect(bx, by, bw, bh, CHARIS_UI_ACCENT_SURFACE);
-    fb_draw_rect(bx, by, bw, bh, CHARIS_UI_BORDER_STRONG);
-    gfx_draw_string(bx + ui_px(24), by + ui_px(6), "Close", T_FG, FB_TRANSPARENT);
+    gfx_draw_string(x + ui_px(24), y + title_h + ui_px(34),
+                    NOTICE_LINE_1[4], CHARIS_UI_TEXT, FB_TRANSPARENT);
+    gfx_draw_string(x + ui_px(24), y + title_h + ui_px(64),
+                    NOTICE_LINE_2[4], CHARIS_UI_MUTED, FB_TRANSPARENT);
+    gfx_draw_string(x + ui_px(24), y + title_h + ui_px(108),
+                    "Experimental software. Not a production operating system.",
+                    CHARIS_UI_WARNING, FB_TRANSPARENT);
+    fb_fill_rect(x + ui_px(20), y + h - ui_px(40),
+                 w - ui_px(40), ui_px(1), CHARIS_UI_BORDER);
+    gfx_draw_string(x + ui_px(24), y + h - ui_px(27),
+                    "x86_64   /   Multiboot2   /   Freestanding C + NASM",
+                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+}
+
+static bool about_handle_window_click(window_t* win, int mx, int my) {
+    if (!win) return false;
+    u32 x = (u32)win->x, y = (u32)win->y;
+    u32 w = (u32)win->width, h = (u32)win->height + win->titlebar_height;
+    u32 title_h = win->titlebar_height;
+    if (mx < (int)x || mx >= (int)(x + w) ||
+        my < (int)y || my >= (int)(y + h)) return false;
+    if (my < (int)(y + title_h)) {
+        if (mx >= (int)(x + w - ui_px(44))) {
+            notice_open = false;
+            notice_item = -1;
+            return true;
+        }
+        return false; /* unclaimed titlebar space remains draggable */
+    }
+    return true;
 }
 
 /* Native Settings application: navigation rail plus a focused settings page. */
@@ -433,6 +548,13 @@ static u32 settings_row_height(void) {
     u32 minimum = ui_px(100);
     u32 readable = text_height() * 2u + ui_px(28);
     return minimum > readable ? minimum : readable;
+}
+static u32 settings_row_height_for(u32 full_height) {
+    u32 desired = settings_row_height();
+    u32 fixed = settings_title_height() + ui_px(128) + ui_px(46);
+    if (full_height <= fixed) return ui_px(64);
+    u32 available = (full_height - fixed) / 3u;
+    return desired < available ? desired : available;
 }
 static u32 settings_button_width(void) { return ui_px(32); }
 static u32 settings_panel_width(void) {
@@ -446,15 +568,16 @@ static u32 settings_panel_height(void) {
            (3 * settings_row_height()) + ui_px(58);
 }
 
-static void draw_settings(void) {
-    if (!settings_open) return;
+static void draw_settings_window(window_t* win) {
+    if (!win || !settings_open) return;
     static const char* const styles[] = { "Proportional", "Monospace", "Bitmap serif" };
     static const char* const scales[] = { "100%", "200%", "300%" };
     static const char* const ui_scales[] = { "80%", "100%", "120%" };
-    u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    u32 cw = settings_panel_width(), ch = settings_panel_height();
-    u32 x = sw > cw ? (sw-cw)/2u : 0, y = sh > ch ? (sh-ch)/2u : 0;
-    u32 title_h = settings_title_height(), row_h = settings_row_height();
+    u32 cw = (u32)win->width;
+    u32 ch = (u32)win->height + win->titlebar_height;
+    u32 x = (u32)win->x, y = (u32)win->y;
+    u32 title_h = settings_title_height();
+    u32 row_h = settings_row_height_for(ch);
     u32 rail_w = ui_px(164);
     if (rail_w > cw/3u) rail_w = cw/3u;
     u32 content_x = x+rail_w+ui_px(28);
@@ -471,7 +594,6 @@ static void draw_settings(void) {
     fb_fill_rect(x, y+title_h, cw, ui_px(1), CHARIS_UI_BORDER);
     gfx_draw_string(x+ui_px(22), y+(title_h-text_height())/2u,
                     "Settings", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    /* The secondary title collides with "Settings" when text is enlarged. */
     if (text_height() <= ui_px(16)) {
         fb_set_clip(x+ui_px(104), y,
                     cw>ui_px(168) ? cw-ui_px(168) : 1, title_h);
@@ -479,16 +601,15 @@ static void draw_settings(void) {
                         "SYSTEM PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
         fb_reset_clip();
     }
-    fb_fill_rect(x+cw-ui_px(42), y+ui_px(12), ui_px(26), ui_px(26),
-                 CHARIS_UI_SURFACE);
-    fb_draw_rect(x+cw-ui_px(42), y+ui_px(12), ui_px(26), ui_px(26),
-                 CHARIS_UI_BORDER);
-    gfx_draw_string(x+cw-ui_px(34), y+ui_px(18), "x",
+    u32 close_x = x+cw-ui_px(42), close_y = y+ui_px(12);
+    fb_fill_rect(close_x, close_y, ui_px(26), ui_px(26), CHARIS_UI_SURFACE);
+    fb_draw_rect(close_x, close_y, ui_px(26), ui_px(26), CHARIS_UI_BORDER);
+    gfx_draw_string(close_x+ui_px(8), close_y+ui_px(5), "x",
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
 
-    /* Navigation rail. */
     fb_fill_rect(x+ui_px(1), y+title_h+ui_px(1), rail_w,
-                 ch-title_h-ui_px(2), CHARIS_UI_PANEL_RAISED);
+                 ch>title_h+ui_px(2) ? ch-title_h-ui_px(2) : 1u,
+                 CHARIS_UI_PANEL_RAISED);
     gfx_draw_string(x+ui_px(18), y+title_h+ui_px(24),
                     "PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
     const char* nav[] = {
@@ -512,7 +633,6 @@ static void draw_settings(void) {
         fb_reset_clip();
     }
 
-    /* Display page. */
     u32 page_heading_y = y+title_h+ui_px(18);
     gfx_draw_string(content_x, page_heading_y,
                     "Display", CHARIS_UI_TEXT, FB_TRANSPARENT);
@@ -537,13 +657,14 @@ static void draw_settings(void) {
         u32 ry = y+title_h+ui_px(82)+i*row_h;
         u32 row_w = cw>rail_w+ui_px(30) ? cw-rail_w-ui_px(30) : 1;
         fb_fill_rect(content_x-ui_px(10), ry, row_w,
-                     row_h-ui_px(10), CHARIS_UI_SURFACE);
+                     row_h>ui_px(10) ? row_h-ui_px(10) : 1u, CHARIS_UI_SURFACE);
         fb_draw_rect(content_x-ui_px(10), ry, row_w,
-                     row_h-ui_px(10), CHARIS_UI_BORDER);
+                     row_h>ui_px(10) ? row_h-ui_px(10) : 1u, CHARIS_UI_BORDER);
         u32 label_x = content_x+ui_px(8);
         u32 label_w = value_x > label_x+ui_px(12)
                     ? value_x-label_x-ui_px(12) : 1;
-        fb_set_clip(label_x, ry, label_w, row_h-ui_px(10));
+        u32 row_draw_h = row_h>ui_px(10) ? row_h-ui_px(10) : 1u;
+        fb_set_clip(label_x, ry, label_w, row_draw_h);
         u32 label_y = font_scale > 1
                     ? ry+(row_h-text_height())/2u
                     : ry+ui_px(14);
@@ -584,24 +705,28 @@ static void draw_settings(void) {
                     FB_TRANSPARENT);
 }
 
-static bool settings_handle_click(int mx, int my) {
-    if (!settings_open) return false;
-    u32 sw=g_framebuffer.width, sh=g_framebuffer.height;
-    u32 cw=settings_panel_width(), ch=settings_panel_height();
-    u32 x=sw>cw ? (sw-cw)/2u : 0, y=sh>ch ? (sh-ch)/2u : 0;
-    if (mx<(int)x || mx>=(int)(x+cw) || my<(int)y || my>=(int)(y+ch)) {
-        settings_open=false; return true;
+static bool settings_handle_window_click(window_t* win, int mx, int my) {
+    if (!win) return false;
+    u32 x=(u32)win->x, y=(u32)win->y;
+    u32 cw=(u32)win->width, ch=(u32)win->height+win->titlebar_height;
+    u32 title_h=settings_title_height();
+    if (mx < (int)x || mx >= (int)(x+cw) ||
+        my < (int)y || my >= (int)(y+ch)) return false;
+    if (my < (int)(y+title_h)) {
+        if (mx >= (int)(x+cw-ui_px(48))) {
+            settings_open=false;
+            return true;
+        }
+        return false; /* unclaimed titlebar space is draggable */
     }
-    if (mx >= (int)(x+cw-ui_px(48)) && my < (int)(y+settings_title_height())) {
-        settings_open=false; return true;
-    }
+
     u32 rail_w=ui_px(164);
     if (rail_w > cw/3u) rail_w = cw/3u;
-    u32 row_h=settings_row_height();
+    u32 row_h=settings_row_height_for(ch);
     u32 button_w=settings_button_width();
     u32 plus_x=x+cw-button_w-ui_px(24);
     u32 control_x=plus_x-button_w-ui_px(8);
-    u32 first_y=y+settings_title_height()+ui_px(82);
+    u32 first_y=y+title_h+ui_px(82);
     if (mx < (int)(x+rail_w) || my < (int)first_y) return true;
     u32 row=(u32)(my-(int)first_y)/row_h;
     if (row>=3) return true;
@@ -677,8 +802,6 @@ static void redraw_all(void) {
     draw_taskbar();
     wm_render_surfaces();
     draw_menu();
-    draw_notice();
-    draw_settings();
     ui_draw_cursor();
 }
 
@@ -732,35 +855,14 @@ static void handle_event(const input_event_t* e) {
         u8 base = code & 0x7Fu;
         bool pressed = e->type == INPUT_KEY_DOWN;
 
-        /* About is a modal notice; it blocks input from underlying app windows. */
-        if (notice_open) {
-            if (pressed && !extended && base == KEY_ESCAPE) {
-                notice_open = false;
-                notice_item = -1;
-            }
-            ui.needs_redraw = true;
+        /* Alt+Tab is global, but only cycles the bounded set of visible,
+         * non-minimized windows exposed by the window manager. */
+        if (!extended && base == 0x38u) {
+            alt_held = pressed;
             return;
         }
-
-        /* Settings remains a modal overlay until it has a proper app renderer. */
-        if (settings_open) {
-            if (pressed && !extended) {
-                if (base == KEY_ESCAPE) {
-                    settings_open = false;
-                } else if (base == 0x40u) {
-                    int value = config_get_int("font_scale", 1) + 1;
-                    if (value > 3) value = 3;
-                    config_set_int("font_scale", value);
-                    gfx_text_apply_preferences();
-                    config_save(CONFIG_FILE_PATH);
-                } else if (base == 0x41u) {
-                    int value = config_get_int("ui_scale", 100) + 20;
-                    if (value > 120) value = 120;
-                    config_set_int("ui_scale", value);
-                    gfx_text_apply_preferences();
-                    config_save(CONFIG_FILE_PATH);
-                }
-            }
+        if (pressed && !extended && base == 0x0Fu && alt_held) {
+            (void)wm_focus_next();
             ui.needs_redraw = true;
             return;
         }
@@ -780,7 +882,7 @@ static void handle_event(const input_event_t* e) {
             ui.menu_open = false;
             notice_open = false;
             notice_item = -1;
-            settings_open = true;
+            shell_toggle_app(SHELL_APP_SETTINGS);
             ui.needs_redraw = true;
             return;
         }
@@ -802,12 +904,6 @@ static void handle_event(const input_event_t* e) {
         /* Escape dismisses shell overlays first. Otherwise the focused app
          * receives it, so Browser can leave address editing without closing. */
         if (pressed && !extended && base == KEY_ESCAPE) {
-            if (notice_open) {
-                notice_open = false;
-                notice_item = -1;
-                ui.needs_redraw = true;
-                return;
-            }
             if (ui.menu_open) {
                 ui.menu_open = false;
                 ui.hover_item = -1;
@@ -837,18 +933,6 @@ static void handle_event(const input_event_t* e) {
 
     case INPUT_MOUSE_DOWN: {
         int mx = e->mouse.x, my = e->mouse.y;
-        if (settings_open) {
-            settings_handle_click(mx, my);
-            ui.needs_redraw = true;
-            return;
-        }
-        if (notice_open) {
-            notice_open = false;
-            notice_item = -1;
-            ui.needs_redraw = true;
-            return;
-        }
-
         window_t* hit = wm_get_window_at(mx, my);
         if (hit) {
             wm_focus_window(hit);
@@ -889,7 +973,7 @@ static void handle_event(const input_event_t* e) {
             }
             if (pinned == 3) {
                 ui.menu_open = false;
-                settings_open = !settings_open;
+                shell_toggle_app(SHELL_APP_SETTINGS);
                 ui.needs_redraw = true;
                 return;
             }
@@ -925,12 +1009,11 @@ static void handle_event(const input_event_t* e) {
             } else if (menu_hit == 1) {
                 shell_open_app(SHELL_APP_FILES);
             } else if (menu_hit == 2) {
-                settings_open = true;
+                shell_open_app(SHELL_APP_SETTINGS);
             } else if (menu_hit == 3) {
                 shell_open_app(SHELL_APP_BROWSER);
             } else {
-                notice_item = menu_hit;
-                notice_open = true;
+                shell_open_app(SHELL_APP_ABOUT);
             }
             ui.needs_redraw = true;
         }
@@ -971,8 +1054,7 @@ void shell_ui_main(void* arg) {
         bool terminal_has_focus =
             shell_app_windows[SHELL_APP_TERMINAL] &&
             wm_get_focused() == shell_app_windows[SHELL_APP_TERMINAL] &&
-            !shell_app_windows[SHELL_APP_TERMINAL]->minimized &&
-            !settings_open && !notice_open;
+            !shell_app_windows[SHELL_APP_TERMINAL]->minimized;
         while (keyboard_get_key(&key)) {
             if (terminal_has_focus) terminal_handle_char(key);
             had_event = true;
