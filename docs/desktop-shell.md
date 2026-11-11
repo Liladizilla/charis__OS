@@ -19,7 +19,9 @@ The WM exposes bounded move, pointer resize, keyboard resize, maximize and trans
 
 ## Workspace and taskbar
 
-The workspace uses a compact two-column shortcut grid for Files, Terminal, Settings and Browser, with a pinned taskbar for the same core applications. About is launched from the Start menu. Focus and minimized state are visible on the taskbar.
+The workspace uses four labelled launch cards in a two-column grid for Files, Terminal, Settings and Browser, with a pinned taskbar for the same core applications. The System Overview panel reads uptime from the PIT timer and free/managed/allocated memory from O(1) PMM counters; it does not walk the scheduler task list during repaint. About is launched from the Start menu. Focus and minimized state are visible on the taskbar.
+
+The launch-card geometry is currently tuned for the standard 1024×768 QEMU mode. The 200% text-scale capture shows heading and card-detail collisions, so large-font and multi-resolution layout support is not complete. The System Overview panel is hidden below its minimum framebuffer dimensions rather than being drawn off-screen.
 
 Keyboard launch paths:
 - F9 opens/focuses Browser.
@@ -57,7 +59,7 @@ The QEMU capture path exercises Files and Terminal open at the same time, switch
 ## Known limitations
 
 - The shell and application renderers are kernel-owned, not isolated userspace processes.
-- The workspace now exposes four direct application shortcuts, but still needs richer workspace affordances and resolution/scale validation before release-quality design.
+- The workspace now exposes four direct application launch cards and live system counters, but still needs typography-aware layout, wrapping, and resolution/scale validation before release-quality design.
 - Snap/tiling controls, window menus and dirty-region rendering are not implemented.
 - Pointer-driven resize uses a lower-right grip with per-app minimum dimensions and work-area clamping; QEMU pointer-drag verification is still pending.
 - Files is read-only and limited to FAT32 root entries with 8.3 names.
