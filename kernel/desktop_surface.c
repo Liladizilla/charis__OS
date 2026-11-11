@@ -140,6 +140,13 @@ static u32 shortcut_card_width(void) {
     return available;
 }
 
+static u32 desktop_grid_top(void) {
+    u32 heading_height = 0;
+    gfx_text_size("WORKSPACE", 0, &heading_height);
+    u32 top = u(40u) + heading_height + u(32u);
+    return top > u(DESKTOP_GRID_Y) ? top : u(DESKTOP_GRID_Y);
+}
+
 static void shortcut_position(u32 index, u32* x, u32* y) {
     u32 columns = shortcut_columns();
     u32 column = index % columns;
@@ -147,7 +154,7 @@ static void shortcut_position(u32 index, u32* x, u32* y) {
     u32 card_w = shortcut_card_width();
     u32 card_h = shortcut_card_height();
     if (x) *x = u(DESKTOP_GRID_X) + column * (card_w + u(DESKTOP_CARD_GAP_X));
-    if (y) *y = u(DESKTOP_GRID_Y) + row * (card_h + u(DESKTOP_CARD_GAP_Y));
+    if (y) *y = desktop_grid_top() + row * (card_h + u(DESKTOP_CARD_GAP_Y));
 }
 
 static void draw_shortcut(u32 index, u32 icon_size) {
@@ -222,11 +229,15 @@ void desktop_surface_render(void) {
     if (!g_framebuffer.initialized) return;
     u32 width = g_framebuffer.width;
     u32 size = 44u;
-    gfx_draw_string(u(48), u(54), "WORKSPACE",
+    u32 heading_x = u(48u), heading_y = u(40u);
+    u32 heading_w = 0, heading_h = 0;
+    gfx_text_size("WORKSPACE", &heading_w, &heading_h);
+    gfx_draw_string(heading_x, heading_y, "WORKSPACE",
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(u(160), u(54), "CORE APPLICATIONS",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    fb_fill_rect(u(48), u(78), width > u(96) ? width-u(96) : width,
+    gfx_draw_string(heading_x + heading_w + u(24u), heading_y,
+                    "CORE APPLICATIONS", CHARIS_UI_MUTED, FB_TRANSPARENT);
+    u32 divider_y = heading_y + heading_h + u(16u);
+    fb_fill_rect(u(48), divider_y, width > u(96) ? width-u(96) : width,
                  u(1), CHARIS_UI_BORDER);
     for (u32 i = 0; i < DESKTOP_SHORTCUT_COUNT; i++)
         draw_shortcut(i, size);
