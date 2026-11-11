@@ -30,13 +30,30 @@ static void pmm_mark_used(u64 addr) {
     bitmap[byte] |= mask;
 }
 
+__attribute__((noinline, no_stack_protector))
 static void pmm_mark_free(u64 addr) {
+    bool trace = (addr == 0x200000ULL);
+    if (trace) serial_puts("[BOOT] PMM mark: entered");
     if (addr < PMM_BITMAP_BASE || addr >= VMM_PHYSICAL_LIMIT) return;
     u64 page = (addr - PMM_BITMAP_BASE) / 4096ULL;
     u32 byte = (u32)(page / 8ULL);
     u8 mask = (u8)(1U << (page % 8ULL));
-    if (bitmap[byte] & mask) free_page_count++;
-    bitmap[byte] &= (u8)~mask;
+    if (trace) {
+        serial_printf("[BOOT] PMM mark: page=%u byte=%u mask=%u bitmap=%p\n",
+                      (u32)page, byte, (u32)mask, (void*)bitmap);
+        serial_puts("[BOOT] PMM mark: before bitmap read");
+    }
+    volatile u8* slot = &bitmap[byte];
+    u8 old_value = *slot;
+    if (trace) serial_printf("[BOOT] PMM mark: bitmap read=%u\n", (u32)old_value);
+    if (old_value & mask) {
+        if (trace) serial_puts("[BOOT] PMM mark: before free counter update");
+        free_page_count++;
+        if (trace) serial_puts("[BOOT] PMM mark: free counter updated");
+    }
+    if (trace) serial_puts("[BOOT] PMM mark: before bitmap write");
+    *slot = (u8)(old_value & (u8)~mask);
+    if (trace) serial_puts("[BOOT] PMM mark: bitmap write complete");
 }
 
 static u64 pmm_align_up_page(u64 value) {
