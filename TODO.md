@@ -157,7 +157,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [ ] Capability enforcement in socket/net syscalls
 - [ ] Cryptographically secure entropy source; token generation remains disabled when RDRAND is unavailable
 - [ ] Persistent audit log
-- [ ] Replace the heap-backed kernel task stack prefix with a genuinely unmapped guard page and verify overflow faults
+- [x] Allocate each kernel task stack from page-aligned supervisor-only writable/NX frames, with a genuinely unmapped guard page and deferred physical-frame reclamation after context switch
+- [ ] Add a QEMU page-fault containment test that deliberately probes a task's unmapped kernel-stack guard
 
 ## Phase 15: Configuration & Persistence (PARTIAL, QEMU VERIFIED)
 - [x] In-memory typed config store

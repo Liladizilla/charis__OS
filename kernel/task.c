@@ -16,6 +16,129 @@ static u32 next_pid = 1;
 
 static void task_release_user_stack_pages(task_t* task, pml4_t* pml4);
 static void task_release_user_code_pages(task_t* task, pml4_t* pml4);
+static bool task_stack_allocate(task_t* task);
+static bool task_stack_release(task_t* task);
+
+#define TASK_STACK_ARENA_BASE 0xFFFF900000400000ULL
+#define TASK_STACK_SLOT_PAGES 3U /* one unmapped guard + two mapped stack pages */
+
+static u64 task_irq_save(void) {
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static void task_irq_restore(u64 flags) {
+    asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
+}
+
+/*
+ * Kernel task stacks live in a dedicated page-aligned virtual arena immediately
+ * after the 4 MiB kernel heap. Each fixed task slot owns three pages:
+ *
+ *   [unmapped guard][writable + NX stack page 0][writable + NX stack page 1]
+ *
+ * The heap's high-half PML4 entry is shared into process address spaces, so
+ * these supervisor mappings remain available after a ring-3 CR3 switch. The
+ * physical stack frames are owned by the task and are never heap allocations.
+ */
+static bool task_stack_allocate(task_t* task) {
+    if (!task || task->slot_index >= TASK_MAX_TASKS) return false;
+
+    u64 flags = task_irq_save();
+    u64 slot_base = TASK_STACK_ARENA_BASE +
+                    (u64)task->slot_index * TASK_STACK_SLOT_PAGES * PAGE_SIZE;
+    u64 stack_base = slot_base + PAGE_SIZE;
+
+    /* Refuse to overwrite any mapping, including a stale guard or stack page. */
+    for (u32 page = 0; page < TASK_STACK_SLOT_PAGES; page++) {
+        if (vmm_get_phys(slot_base + (u64)page * PAGE_SIZE) != 0) {
+            task_irq_restore(flags);
+            return false;
+        }
+    }
+
+    task->guard_page_addr = slot_base;
+    task->stack_base = stack_base;
+    task->kernel_stack_pages[0] = 0;
+    task->kernel_stack_pages[1] = 0;
+
+    for (u32 i = 0; i < 2; i++) {
+        u64 phys = pmm_alloc_page();
+        if (!phys) goto fail;
+
+        void* alias = vmm_phys_to_virt(phys);
+        if (!alias) {
+            pmm_free_page(phys);
+            goto fail;
+        }
+        kmemset(alias, 0, PAGE_SIZE);
+
+        u64 virt = stack_base + (u64)i * PAGE_SIZE;
+        if (!vmm_map_page(virt, phys, VMM_FLAG_WRITABLE | VMM_FLAG_NX)) {
+            pmm_free_page(phys);
+            goto fail;
+        }
+        task->kernel_stack_pages[i] = phys;
+    }
+
+    /* Runtime page-table verification: the guard has no translation and both
+     * stack leaves are supervisor-only, writable, NX, and point at owned RAM. */
+    {
+        u64 cr3;
+        asm volatile("mov %%cr3, %0" : "=r"(cr3));
+        pml4_t* active = (pml4_t*)(uintptr_t)(cr3 & ~0xFFFULL);
+        u64 physical = 0, map_flags = 0;
+        if (vmm_translate(active, slot_base, &physical, &map_flags)) goto fail;
+        for (u32 i = 0; i < 2; i++) {
+            if (!vmm_translate(active, stack_base + (u64)i * PAGE_SIZE,
+                               &physical, &map_flags) ||
+                (physical & ~(PAGE_SIZE - 1)) != task->kernel_stack_pages[i] ||
+                !(map_flags & VMM_FLAG_WRITABLE) ||
+                (map_flags & VMM_FLAG_USER) ||
+                !(map_flags & VMM_FLAG_NX)) goto fail;
+        }
+    }
+
+    task->stack_canary_addr = stack_base + sizeof(u64);
+    *(u64*)(uintptr_t)task->stack_canary_addr = 0xDEADC0DEDEADC0DEULL;
+    serial_puts("TASK_STACK_GUARD_OK\n");
+    task_irq_restore(flags);
+    return true;
+
+fail:
+    if (!task_stack_release(task)) {
+        serial_puts("FATAL: kernel stack allocation rollback failed\n");
+    }
+    task_irq_restore(flags);
+    return false;
+}
+
+/* Called only while on another stack, or before this task has been queued. */
+static bool task_stack_release(task_t* task) {
+    if (!task) return false;
+    u64 flags = task_irq_save();
+
+    for (u32 i = 0; i < 2; i++) {
+        u64 phys = task->kernel_stack_pages[i];
+        if (!phys) continue;
+        u64 virt = task->stack_base + (u64)i * PAGE_SIZE;
+        u64 unmapped = vmm_unmap_page_current(virt);
+        if (unmapped != phys) {
+            serial_puts("FATAL: kernel stack mapping ownership mismatch\n");
+            task_irq_restore(flags);
+            return false;
+        }
+        pmm_free_page(unmapped);
+        task->kernel_stack_pages[i] = 0;
+    }
+
+    task->stack_base = 0;
+    task->guard_page_addr = 0;
+    task->stack_canary_addr = 0;
+    task_irq_restore(flags);
+    return true;
+}
 
 
 void task_init(void) {
@@ -36,6 +159,8 @@ void task_init(void) {
         task_pool[i].capabilities = 0;
         task_pool[i].guard_page_addr = 0;
         task_pool[i].stack_canary_addr = 0;
+        task_pool[i].kernel_stack_pages[0] = 0;
+        task_pool[i].kernel_stack_pages[1] = 0;
         task_pool[i].event_data = 0;
         task_pool[i].waiting_event = 0;
         task_pool[i].mm.pml4 = NULL;
@@ -70,12 +195,19 @@ void task_init(void) {
 extern void task_trampoline(void);
 
 task_t* task_allocate(void) {
+    /* Reserve the slot before restoring interrupts. Otherwise a timer
+     * preemption could let two creators receive the same UNUSED task. */
+    u64 flags = task_irq_save();
+    task_t* allocated = NULL;
     for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
         if (task_pool[i].state == TASK_STATE_UNUSED) {
-            return &task_pool[i];
+            task_pool[i].state = TASK_STATE_ALLOCATING;
+            allocated = &task_pool[i];
+            break;
         }
     }
-    return NULL;
+    task_irq_restore(flags);
+    return allocated;
 }
 
 u32 task_next_pid(void) {
@@ -109,40 +241,32 @@ task_t* task_find_by_pid(u32 pid) {
  * scheduler only ever picks TASK_STATE_READY tasks, so a task parked here is
  * never resumed and never parks another.
  */
-static void* g_pending_stack = 0;
-static task_t* g_pending_task = 0;
+static task_t* g_pending_task = NULL;
 
 void task_defer_release(task_t* t) {
     if (!t) return;
-    if (t->stack_base || t->guard_page_addr) {
-        g_pending_task = t;
-        /* stack_base points one page into the allocation, after the reserved
-         * guard page. The allocator must receive the original kmalloc pointer,
-         * not that interior address. */
-        g_pending_stack = (void*)(t->guard_page_addr ? t->guard_page_addr : t->stack_base);
-        t->stack_base = 0;
-        t->guard_page_addr = 0; /* pending slot owns the full allocation */
+    if (g_pending_task && g_pending_task != t) {
+        serial_puts("FATAL: more than one deferred task stack\n");
+        for (;;) asm volatile("cli; hlt" : : : "memory");
     }
+    if (t->kernel_stack_pages[0] || t->kernel_stack_pages[1])
+        g_pending_task = t;
     t->state = TASK_STATE_ZOMBIE;
     t->runtime_ticks = 0;
 }
 
-/* Called by the scheduler from a *different* task's stack. */
+/* Called by the scheduler from a different task's stack. */
 bool task_release_pending(void) {
-    if (!g_pending_stack) return false;
+    task_t* task = g_pending_task;
+    if (!task) return false;
 
-    void*    stack = g_pending_stack;
-    task_t*  task  = g_pending_task;
-    g_pending_stack = 0;
-    g_pending_task  = 0;
-
-    kfree(stack);
-    if (task) {
-        /* The task_t itself stays in the table, stackless and unreaped, so a
-         * future waitpid() has something to find. Reaping it here would
-         * outlive this change's scope. */
-        task->state = TASK_STATE_ZOMBIE;
+    if (!task_stack_release(task)) {
+        serial_puts("FATAL: unable to reclaim exited task stack\n");
+        return false;
     }
+    g_pending_task = NULL;
+    /* The task_t remains as an unreaped zombie record for future waitpid(). */
+    task->state = TASK_STATE_ZOMBIE;
     return true;
 }
 
@@ -234,9 +358,7 @@ task_t* task_current(void) {
 }
 
 // Common task initialization helper
-static void task_init_common(task_t* task, const char* name, u32 capabilities, bool is_user, void* stack) {
-    task->stack_base = (u64)stack + PAGE_SIZE;
-    task->guard_page_addr = (u64)stack;
+static void task_init_common(task_t* task, const char* name, u32 capabilities, bool is_user) {
     task->is_user = is_user;
     task->started = false;
     task->scheduler_queued = false;
@@ -433,33 +555,22 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
         return NULL;
     }
 
-    void* stack = kmalloc(TASK_STACK_SIZE + PAGE_SIZE);
-    if (!stack) {
-        vga_puts("Failed to allocate task stack\n");
+    if (!task_stack_allocate(task)) {
+        vga_puts("Failed to allocate guarded task stack\n");
+        task_discard_unstarted(task);
         return NULL;
     }
 
-    task_init_common(task, name, capabilities, is_user, stack);
+    task_init_common(task, name, capabilities, is_user);
 
     // Create per-process address space (BUG-11 fix)
     if (is_user) {
         task->address_space = vmm_create_address_space();
         if (!task->address_space) {
             vga_puts("Failed to create address space\n");
-            kfree(stack);
-            /* task_init_common already marked this slot READY. Roll it back so
-             * allocation failure cannot permanently consume a task-table slot. */
-            task->state = TASK_STATE_UNUSED;
-            task->pid = 0;
-            task->parent_pid = 0;
-            task->exit_code = 0;
-            task->rsp = 0;
-            task->stack_base = 0;
-            task->guard_page_addr = 0;
-            task->stack_canary_addr = 0;
-            task->address_space = NULL;
-            task->next = NULL;
-            task->prev = NULL;
+            /* A failed constructor releases its private stack mappings and
+             * returns the reserved task slot to the pool. */
+            task_discard_unstarted(task);
             return NULL;
         }
     } else {
@@ -525,13 +636,13 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
         return NULL;
     }
 
-    void* stack = kmalloc(TASK_STACK_SIZE + PAGE_SIZE);
-    if (!stack) {
-        vga_puts("Failed to allocate task stack\n");
+    if (!task_stack_allocate(task)) {
+        vga_puts("Failed to allocate guarded task stack\n");
+        task_discard_unstarted(task);
         return NULL;
     }
 
-    task_init_common(task, name, capabilities, is_user, stack);
+    task_init_common(task, name, capabilities, is_user);
     task->mm.pml4 = pml4;
     task->address_space = pml4; // Use provided PML4
 
@@ -604,7 +715,7 @@ void task_discard_unstarted(task_t* task) {
     if (!task || task->state == TASK_STATE_UNUSED ||
         task->started || task->scheduler_queued) return;
 
-    if (task->guard_page_addr) kfree((void*)(uintptr_t)task->guard_page_addr);
+    if (!task_stack_release(task)) return;
     task->state = TASK_STATE_UNUSED;
     task->pid = 0;
     task->parent_pid = 0;
@@ -613,6 +724,8 @@ void task_discard_unstarted(task_t* task) {
     task->stack_base = 0;
     task->guard_page_addr = 0;
     task->stack_canary_addr = 0;
+    task->kernel_stack_pages[0] = 0;
+    task->kernel_stack_pages[1] = 0;
     task->address_space = NULL;
     task->is_user = false;
     task->started = false;

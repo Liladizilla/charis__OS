@@ -298,6 +298,9 @@ grep -q 'RING3_CODE_ISOLATION_OK' "$LOG" \
 grep -q 'TSS_RSP0_USER_STACK_OK' "$LOG" \
     || fail "ring-3 task did not receive its own kernel interrupt stack"
 
+grep -q 'TASK_STACK_GUARD_OK' "$LOG" \
+    || fail "kernel task stack is missing its unmapped page-table guard"
+
 if [ -n "$ELF_TEST_DISK" ]; then
     if grep -q 'ELF_EXEC_OK' "$LOG"; then
         ELF_RESULT="executed"
