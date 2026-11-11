@@ -120,6 +120,11 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('m');
     idt_init();
     BOOT_MARK('I');
+#ifdef TEST_KERNEL_STACK_GUARD
+    /* Exercise a non-error-code vector on IST2. The dedicated #DF gate (8)
+     * is wired to the same stack; this probe verifies IST2 frame placement. */
+    asm volatile("int $0x81" : : : "memory");
+#endif
 
     /* Prepare the shared event ring before any device driver unmasks an IRQ.
      * Keyboard and mouse handlers can enqueue events as soon as their IRQs

@@ -30,6 +30,10 @@ static u64 page_fault_ist_guard;
 static u64 page_fault_ist_stack_base;
 static u64 page_fault_ist_pages[2];
 
+static u64 double_fault_ist_guard;
+static u64 double_fault_ist_stack_base;
+static u64 double_fault_ist_pages[2];
+
 extern u64 isr_table[256];
 extern u8 tss[];
 
@@ -140,6 +144,110 @@ static bool idt_page_fault_frame_on_ist(const reg_frame_t* frame) {
            sizeof(*frame) <= end - address;
 }
 
+/* IST2 is reserved for vector 8. Keep its guard and backing frames
+ * separate from IST1 so a fault while handling #PF still has a fresh stack. */
+static bool idt_release_double_fault_ist(void) {
+    bool ok = true;
+    for (u32 i = 0; i < 2; i++) {
+        u64 owned = double_fault_ist_pages[i];
+        if (!owned) continue;
+        u64 virt = double_fault_ist_stack_base + (u64)i * PAGE_SIZE;
+        u64 unmapped = vmm_unmap_page_current(virt);
+        if (unmapped != owned) {
+            serial_puts("FATAL: double-fault IST frame ownership mismatch\\n");
+            ok = false;
+            continue;
+        }
+        pmm_free_page(unmapped);
+        double_fault_ist_pages[i] = 0;
+    }
+    if (ok) {
+        double_fault_ist_guard = 0;
+        double_fault_ist_stack_base = 0;
+    }
+    return ok;
+}
+
+static bool idt_configure_double_fault_ist(void) {
+    const u32 slot = TASK_MAX_TASKS + 1u;
+    u64 slot_base = TASK_STACK_ARENA_BASE +
+                    (u64)slot * TASK_STACK_SLOT_PAGES * PAGE_SIZE;
+    u64 stack_base = slot_base + PAGE_SIZE;
+    u64 stack_top = stack_base + 2ULL * PAGE_SIZE;
+    u64 cr3;
+    asm volatile("mov %%cr3, %0" : "=r"(cr3));
+    pml4_t* active = (pml4_t*)(uintptr_t)(cr3 & ~0xFFFULL);
+    u64 physical = 0, map_flags = 0;
+
+    for (u32 page = 0; page < TASK_STACK_SLOT_PAGES; page++) {
+        if (vmm_translate(active, slot_base + (u64)page * PAGE_SIZE,
+                          &physical, &map_flags)) return false;
+    }
+
+    double_fault_ist_guard = slot_base;
+    double_fault_ist_stack_base = stack_base;
+    for (u32 i = 0; i < 2; i++) {
+        u64 phys = pmm_alloc_page();
+        if (!phys) goto fail;
+        void* alias = vmm_phys_to_virt(phys);
+        if (!alias) {
+            pmm_free_page(phys);
+            goto fail;
+        }
+        kmemset(alias, 0, PAGE_SIZE);
+        u64 virt = stack_base + (u64)i * PAGE_SIZE;
+        if (!vmm_map_page(virt, phys, VMM_FLAG_WRITABLE | VMM_FLAG_NX)) {
+            pmm_free_page(phys);
+            goto fail;
+        }
+        double_fault_ist_pages[i] = phys;
+    }
+
+    if (vmm_translate(active, double_fault_ist_guard, &physical, &map_flags))
+        goto fail;
+    for (u32 i = 0; i < 2; i++) {
+        if (!vmm_translate(active, stack_base + (u64)i * PAGE_SIZE,
+                           &physical, &map_flags) ||
+            (physical & ~(PAGE_SIZE - 1ULL)) != double_fault_ist_pages[i] ||
+            !(map_flags & VMM_FLAG_PRESENT) ||
+            !(map_flags & VMM_FLAG_WRITABLE) ||
+            (map_flags & VMM_FLAG_USER) ||
+            !(map_flags & VMM_FLAG_NX)) goto fail;
+    }
+    if ((stack_top & 0xFULL) != 0) goto fail;
+
+    /* TSS.IST2 is at byte offset 44, also unaligned in the packed TSS. */
+    {
+        u64 observed = 0;
+        asm volatile("movq %0, 44(%1)"
+                     :
+                     : "r"(stack_top), "r"(tss)
+                     : "memory");
+        asm volatile("movq 44(%1), %0"
+                     : "=r"(observed)
+                     : "r"(tss)
+                     : "memory");
+        if (observed != stack_top) goto fail;
+    }
+
+    serial_puts("DOUBLE_FAULT_IST2_GUARD_OK\\n");
+    serial_puts("DOUBLE_FAULT_IST2_STACK_PERMISSIONS_OK\\n");
+    return true;
+
+fail:
+    if (!idt_release_double_fault_ist())
+        serial_puts("FATAL: unable to roll back double-fault IST mappings\\n");
+    return false;
+}
+
+static bool idt_double_fault_frame_on_ist(const reg_frame_t* frame) {
+    u64 start = double_fault_ist_stack_base;
+    u64 end = start + 2ULL * PAGE_SIZE;
+    u64 address = (u64)(uintptr_t)frame;
+    return start && address >= start && address <= end &&
+           sizeof(*frame) <= end - address;
+}
+
 void idt_init(void) {
     idt_ptr.limit = sizeof(idt_entry_t) * IDT_ENTRIES - 1;
     idt_ptr.base = (u64)&idt;
@@ -158,13 +266,26 @@ void idt_init(void) {
         for (;;) asm volatile("cli; hlt" : : : "memory");
     }
 
-    // Load ISR stubs from assembly
+    if (!idt_configure_double_fault_ist()) {
+        serial_puts("FATAL: unable to configure double-fault IST2\n");
+        for (;;) asm volatile("cli; hlt" : : : "memory");
+    }
+
+    // Load ISR stubs from assembly. #PF uses IST1; #DF uses an independent
+    // IST2 stack in case the page-fault path itself encounters another fault.
     for (i = 0; i < 256; i++) {
         if (isr_table[i]) {
-            idt_set_gate(i, isr_table[i], i == 14 ? 1 : 0, 0x8E);
+            u8 ist = i == 14 ? 1 : (i == 8 ? 2 : 0);
+            idt_set_gate(i, isr_table[i], ist, 0x8E);
         }
     }
+#ifdef TEST_KERNEL_STACK_GUARD
+    /* A test-only vector proves IST2 selection without claiming to synthesize
+     * a hardware double fault. The real vector 8 uses the same IST. */
+    idt_set_gate(0x81, isr_table[0x81], 2, 0x8E);
+#endif
     serial_puts("PAGE_FAULT_IST_READY\n");
+    serial_puts("DOUBLE_FAULT_IST2_READY\n");
 
     // Load IDT
     asm volatile("lidt %0" : : "m"(idt_ptr));
@@ -183,6 +304,29 @@ void idt_set_gate(u8 vector, u64 handler, u8 ist, u8 type_attr) {
 }
 
 void idt_dispatch_handler(reg_frame_t* frame) {
+#ifdef TEST_KERNEL_STACK_GUARD
+    if (frame->vector == 0x81) {
+        if (idt_double_fault_frame_on_ist(frame)) {
+            serial_puts("DOUBLE_FAULT_IST2_FRAME_OK\n");
+        } else {
+            serial_puts("DOUBLE_FAULT_IST2_FRAME_INVALID\n");
+            for (;;) asm volatile("cli; hlt" : : : "memory");
+        }
+        return;
+    }
+#endif
+
+    if (frame->vector == 8) {
+        if (idt_double_fault_frame_on_ist(frame))
+            serial_puts("DOUBLE_FAULT_IST2_FRAME_OK\n");
+        else
+            serial_puts("DOUBLE_FAULT_IST2_FRAME_INVALID\n");
+        serial_puts("DOUBLE_FAULT_EXCEPTION\n");
+        kprintf("DOUBLE FAULT: error=0x%llx RIP=0x%llx\n",
+                frame->error_code, frame->rip);
+        for (;;) asm volatile("cli; hlt" : : : "memory");
+    }
+
     if (frame->vector == 0x80) {
         if (frame->rax == SYS_EXEC && (frame->cs & 3) == 3) {
             if (!syscall_exec_from_frame(frame)) frame->rax = (u64)-1;
