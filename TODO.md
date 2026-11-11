@@ -31,7 +31,8 @@
 - [ ] QEMU test authorizes a ring-3 task with `CAP_ALLOW_EXEC`, enters a FAT32 ELF and observes `ELF_EXEC_OK` (current smoke test verifies denial without that capability)
 - [x] Build bounded `argc`/`argv`/`envp` vectors plus `AT_NULL` on the initial stack
 - [ ] `ET_DYN` and relocations/interpreters
-- [ ] Make ELF loading and initial-stack construction one transaction; roll back successfully loaded PT_LOAD pages if stack setup fails
+- [x] Make ELF loading and initial-stack construction one transaction; roll back successfully loaded PT_LOAD pages if stack setup fails
+- [ ] Add a forced stack-setup-failure regression that proves PT_LOAD frames are reclaimed
 - [ ] Tear down/reclaim old image mappings on repeated exec
 
 ## Phase 5: Graphics & Display (COMPLETE)
