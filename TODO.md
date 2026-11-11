@@ -147,10 +147,15 @@ The current shell still owns the framebuffer and supports one modal app at a tim
 - [x] QEMU regression gate covers BIOS ring-3 yield/resume and static ELF execution
 - [x] Repo hygiene: .gitattributes, .gitignore, CRLF→LF fixed
 - [x] Boot debug markers fixed (no collisions, full coverage)
-- [ ] vmm_test.c wired into make test (compiles, but RUN_VMM_TESTS only for vmm_test.o)
+- [ ] Make the default `make test` target execute the VMM suite; CI currently boots a separate `RUN_VMM_TESTS` image and runs the full regression suite in QEMU
 - [x] Removed obsolete `disk.c` implementation
 - [x] Enable `-Werror` for kernel compilation
 - [x] Add host-side WM lifecycle/bounds regression coverage to CI
+- [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
+- [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions
+- [x] QEMU BIOS, ring-3, ELF and VMM huge-page/permission regression suites pass (CI run #42977397083)
+- [x] QEMU desktop capture verifies Files, Settings and Terminal launch paths
+- [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`)
 - [ ] Expand automated regression coverage beyond current boot, ring-3, ELF, VMM and WM metadata gates
 
 ## Phase 17: Process Management (IN PROGRESS)

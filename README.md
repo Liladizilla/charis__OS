@@ -31,6 +31,7 @@ The project is under active development. It is not currently a general-purpose o
 | User mode | DPL3 `int 0x80` path exercised; static x86_64 `ET_EXEC` smoke program loaded from FAT32 and entered in ring 3 |
 | Storage | Primary ATA PIO and FAT32 support; current Files interface is read-only and limited to the root directory and 8.3 names |
 | Graphical shell | Framebuffer workspace, launcher/taskbar, Files, Terminal and Settings surfaces; not a complete independent-window desktop |
+| Window-manager foundation | Bounded metadata APIs for move, transactional resize, minimize/restore, visibility and focus cycling; host lifecycle/geometry tests pass |
 | Settings | Font family, text size and interface scale; CI verifies saved values survive a reboot on a writable FAT32 test disk |
 | Security | Capability checks and input validation exist in selected paths; enforcement and isolation are incomplete |
 | Networking | RTL8139 transmit path only; receive and TCP/IP stack are not implemented |
@@ -41,13 +42,13 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The following gallery contains real QEMU captures from the automated desktop workflow. The workspace is sparse and the applications are still limited, so these are implementation evidence rather than release marketing shots. [Download the original full-resolution captures and logs from CI run #42574028248](https://github.com/Liladizilla/charis__OS/actions/runs/42574028248).
+The checked-in gallery below is a reference snapshot from an earlier QEMU run. The latest full-resolution captures (desktop, Files, Settings, adjusted display preferences, scaled desktop, post-reboot Settings and Terminal), serial logs and boot images are attached to the [passing CI run #42977397083](https://github.com/Liladizilla/charis__OS/actions/runs/42977397083). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts there. These captures are engineering evidence, not release marketing shots.
 
 ![CharisOS desktop, Files, Settings and Terminal previews](docs/screenshots/charisos-preview-gallery.jpg)
 
 ## Latest desktop validation
 
-The latest successful CI run is [run #42577223546](https://github.com/Liladizilla/charis__OS/actions/runs/42577223546). It also runs host-side window-manager lifecycle and bounds tests. Its workflow builds the kernel and images, runs BIOS/QEMU boot checks, ring-3 and ELF smoke tests, VMM permission regressions, and captures the graphical shell.
+The latest successful CI run is [run #42977397083](https://github.com/Liladizilla/charis__OS/actions/runs/42977397083). All 19 workflow steps passed. The run builds the kernel and boot images for the generic x86-64 baseline, checks the generated ELF for BMI/BMI2-family instructions, runs browser-parser and host-side WM lifecycle/geometry tests, verifies BIOS boot, ring-3 and ELF execution, boots the VMM huge-page/permission regression suite, and captures the graphical shell.
 
 The desktop capture covers:
 - The minimal workspace and taskbar.
@@ -68,6 +69,7 @@ These are automated engineering captures, not polished release photography. The 
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
 - Framebuffer drawing and PSF2 bitmap-font rendering.
 - Native graphical workspace, launcher/taskbar, Terminal, Files and Settings surfaces; shell surfaces register with WM focus/lifecycle metadata, but remain modal.
+- Bounded WM metadata operations for movement, transactional resize, minimize/restore, visibility and focus cycling, covered by host-side lifecycle and geometry tests.
 - Persistent display preferences on supported writable FAT32 storage.
 - CI boot, memory-permission, ring-3, ELF, desktop-capture and host-side WM lifecycle/bounds checks.
 
@@ -75,7 +77,8 @@ These are automated engineering captures, not polished release photography. The 
 
 CharisOS is still an early-stage kernel and shell. In particular:
 
-- There is no complete general-purpose window manager or mature userspace. The shell registers one active modal surface with WM lifecycle metadata; independent overlapping/movable/resizable windows are not implemented.
+- There is no complete general-purpose window manager or mature userspace. The WM has bounded metadata APIs for move, transactional resize, minimize/restore, visibility and focus cycling, but these operations are not yet wired to independent shell-owned application renderers. The shell still displays one modal application surface at a time; overlapping application windows, titlebar controls, resize handles, Alt+Tab/taskbar focus integration and a full compositor remain unfinished.
+- The latest QEMU capture still shows a sparse workspace with one Files shortcut. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
 - Files does not yet support writable files, nested directory navigation or long filenames.
 - The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking and a complete process lifecycle are unfinished.
 - The `SYSCALL/SYSRET` user-mode path is configured but not yet validated as the normal syscall entry.
@@ -253,6 +256,8 @@ The build uses the **host** GCC with `-ffreestanding`; a cross-compiler is not
 required. `nasm`, `grub-mkrescue`, and `xorriso` are all mandatory.
 
 ### Build and run
+
+The kernel is compiled for the generic x86-64 baseline (`-march=x86-64 -mtune=generic -mno-bmi -mno-bmi2`). CI checks the linked kernel for accidental BMI/BMI2-family instructions so the default image does not silently require newer CPU extensions.
 
 ```bash
 git clone https://github.com/Liladizilla/charis__OS.git
