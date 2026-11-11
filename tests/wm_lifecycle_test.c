@@ -168,9 +168,12 @@ static void test_window_list_traversal_is_bounded_and_unique(void) {
     expect(wm_minimize_window(a), "minimize uses bounded focus recovery");
     expect(wm_get_focused() == b, "focus recovery selects remaining visible node");
     wm_destroy_window((window_t*)(uintptr_t)1);
-    a->next = NULL;
+    wm_destroy_window(a);
+    expect(wm_get_window_count() == 1, "destroying a real node reduces unique count");
+    expect(wm_windows == b && b->next == NULL,
+           "destroying from a cycle rebuilds a clean remaining chain");
     reset_manager();
-    expect(wm_windows == NULL, "cycle test restores and releases all nodes");
+    expect(wm_windows == NULL, "cycle test releases all remaining nodes");
 }
 
 static void test_window_limit_and_repeated_reuse(void) {

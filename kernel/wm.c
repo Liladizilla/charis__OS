@@ -175,8 +175,17 @@ void wm_destroy_window(window_t* win) {
     if (index == count) return;
 
     bool was_focused = win->focused;
-    if (index == 0) wm_windows = win->next;
-    else windows[index - 1]->next = win->next;
+
+    /* Rebuild the remaining chain from the unique-node snapshot before
+     * freeing the target. Besides ordinary deletion, this repairs a cycle
+     * instead of leaving a self-link or dangling next pointer behind. */
+    for (u32 i = index; i + 1 < count; i++)
+        windows[i] = windows[i + 1];
+    count--;
+    wm_windows = count ? windows[0] : NULL;
+    for (u32 i = 0; i < count; i++)
+        windows[i]->next = (i + 1 < count) ? windows[i + 1] : NULL;
+
     win->next = NULL;
     win->focused = false;
     if (win->buffer) kfree(win->buffer);

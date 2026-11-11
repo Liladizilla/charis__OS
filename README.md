@@ -42,13 +42,13 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The checked-in gallery below is a reference snapshot from an earlier QEMU run. The latest full-resolution captures (desktop, Files, Settings, adjusted display preferences, scaled desktop, post-reboot Settings and Terminal), serial logs and boot images are attached to the [passing CI run #42979022447](https://github.com/Liladizilla/charis__OS/actions/runs/42979022447). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts there. These captures are engineering evidence, not release marketing shots.
+The checked-in gallery below is a reference snapshot from an earlier QEMU run. The latest full-resolution captures (desktop, Files, Settings, adjusted display preferences, scaled desktop, post-reboot Settings and Terminal), serial logs and boot images are attached to the [passing CI run #42980478639](https://github.com/Liladizilla/charis__OS/actions/runs/42980478639). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts there. These captures are engineering evidence, not release marketing shots.
 
 ![CharisOS desktop, Files, Settings and Terminal previews](docs/screenshots/charisos-preview-gallery.jpg)
 
 ## Latest desktop validation
 
-The latest successful CI run is [run #42979022447](https://github.com/Liladizilla/charis__OS/actions/runs/42979022447). All required workflow gates passed, including BIOS/disk boot, ring-3, ELF, VMM permission tests and desktop persistence capture. The run builds the kernel and boot images for the generic x86-64 baseline, checks the generated ELF for BMI/BMI2-family instructions, runs browser-parser and host-side WM lifecycle/geometry tests, verifies BIOS boot, ring-3 and ELF execution, boots the VMM huge-page/permission regression suite, and captures the graphical shell.
+The latest successful CI run is [run #42980478639](https://github.com/Liladizilla/charis__OS/actions/runs/42980478639). All required workflow gates passed, including BIOS/disk boot, ring-3, ELF, VMM permission tests and desktop persistence capture. The run builds the kernel and boot images for the generic x86-64 baseline, checks the generated ELF for BMI/BMI2-family instructions, runs browser-parser and host-side WM lifecycle/geometry tests, verifies BIOS boot, ring-3 and ELF execution, boots the VMM huge-page/permission regression suite, and captures the graphical shell.
 
 The desktop capture covers:
 - The minimal workspace and taskbar.
