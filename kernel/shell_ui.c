@@ -496,7 +496,7 @@ static void shell_open_app(shell_app_id_t id) {
     /* Enum values can arrive from future callers or corrupted dispatch state;
      * validate before indexing the fixed application-window table. */
     if ((u32)id >= (u32)SHELL_APP_COUNT) {
-        serial_printf("SHELL_APP_OPEN_REJECTED id=%u\\n", (u32)id);
+        serial_printf("SHELL_APP_OPEN_REJECTED id=%u\n", (u32)id);
         return;
     }
     if (shell_app_windows[id]) {
@@ -525,7 +525,7 @@ static void shell_open_app(shell_app_id_t id) {
 
 static void shell_toggle_app(shell_app_id_t id) {
     if ((u32)id >= (u32)SHELL_APP_COUNT) {
-        serial_printf("SHELL_APP_TOGGLE_REJECTED id=%u\\n", (u32)id);
+        serial_printf("SHELL_APP_TOGGLE_REJECTED id=%u\n", (u32)id);
         return;
     }
     window_t* win = shell_app_windows[id];
