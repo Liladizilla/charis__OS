@@ -79,11 +79,15 @@ void kernel_main(u32 magic, u64 info_ptr) {
     /* Seed stack protection before memory management and device subsystems.
      * kernel_main itself is unprotected so its entry guard remains stable
      * while security_init installs the randomized guard for later functions. */
+    serial_puts("[BOOT] security initialization begin");
     security_init();
     BOOT_MARK('S');
+    serial_puts("[BOOT] security initialization complete");
 
     // Initialize subsystems in exact order
+    serial_puts("[BOOT] memory initialization begin");
     memory_init((multiboot_info_t*)(uintptr_t)info_ptr);
+    serial_puts("[BOOT] memory initialization complete");
 
     // Set up the linear framebuffer the firmware advertised. Until this runs,
     // every drawing call in the window manager, desktop, widgets and apps is a
