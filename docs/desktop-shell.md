@@ -19,9 +19,10 @@ The WM exposes bounded move, pointer resize, keyboard resize, maximize and trans
 
 ## Workspace and taskbar
 
-The workspace remains intentionally sparse, with a Files shortcut and a pinned taskbar for Files, Terminal, Settings and Browser. About is launched from the Start menu. Focus and minimized state are visible on the taskbar.
+The workspace uses a compact two-column shortcut grid for Files, Terminal, Settings and Browser, with a pinned taskbar for the same core applications. About is launched from the Start menu. Focus and minimized state are visible on the taskbar.
 
 Keyboard launch paths:
+- F9 opens/focuses Browser.
 - F10 opens/focuses Files.
 - F11 opens/focuses Settings.
 - F12 opens/focuses Terminal.
@@ -56,7 +57,7 @@ The QEMU capture path exercises Files and Terminal open at the same time, switch
 ## Known limitations
 
 - The shell and application renderers are kernel-owned, not isolated userspace processes.
-- The workspace is still sparse and is not yet release-quality desktop design.
+- The workspace now exposes four direct application shortcuts, but still needs richer workspace affordances and resolution/scale validation before release-quality design.
 - Snap/tiling controls, window menus and dirty-region rendering are not implemented.
 - Pointer-driven resize uses a lower-right grip with per-app minimum dimensions and work-area clamping; QEMU pointer-drag verification is still pending.
 - Files is read-only and limited to FAT32 root entries with 8.3 names.
