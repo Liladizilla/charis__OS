@@ -325,6 +325,7 @@ jobs:
             >build/desktop-reboot-qemu.log 2>&1
           grep -q 'CONFIG_LOADED .*font_scale=2 ui_scale=120' build/desktop-reboot-serial.log
           test -s build/charisos-settings-reloaded-preview.ppm
+          test -s build/charisos-desktop-large-font-preview.ppm
 
           # Open Terminal through its keyboard shortcut, then execute help.
           # This exercises the real keyboard IRQ and shell event path without
