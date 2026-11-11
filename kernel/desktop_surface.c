@@ -103,19 +103,54 @@ static u32 shortcut_card_height(void) {
     return gfx_text_get_scale() >= 3u ? line + 32u : line * 2u + 24u;
 }
 
+/* Keep the two-column composition when there is room. Larger bitmap
+ * fonts get wider cards; compact framebuffers switch to one column instead
+ * of drawing labels underneath the system panel or beyond the right edge. */
+static u32 shortcut_columns(void) {
+    u32 width = g_framebuffer.width;
+    u32 panel_reserved = (width >= u(900) && g_framebuffer.height >= u(480))
+                       ? u(360u + 24u) : 0u;
+    u32 left = u(DESKTOP_GRID_X);
+    u32 right = width > panel_reserved + u(48u)
+              ? width - panel_reserved - u(48u) : 0u;
+    u32 available = right > left ? right - left : 0u;
+    u32 font_scale = gfx_text_get_scale();
+    u32 desired = u(DESKTOP_CELL_W + (font_scale > 1u ? (font_scale - 1u) * 48u : 0u));
+    u32 gap = u(DESKTOP_CARD_GAP_X);
+    return available >= desired * 2u + gap ? 2u : 1u;
+}
+
+static u32 shortcut_card_width(void) {
+    u32 width = g_framebuffer.width;
+    u32 panel_reserved = (width >= u(900) && g_framebuffer.height >= u(480))
+                       ? u(360u + 24u) : 0u;
+    u32 left = u(DESKTOP_GRID_X);
+    u32 right = width > panel_reserved + u(48u)
+              ? width - panel_reserved - u(48u) : 0u;
+    u32 available = right > left ? right - left : 1u;
+    if (shortcut_columns() == 2u) {
+        u32 font_scale = gfx_text_get_scale();
+        u32 desired = u(DESKTOP_CELL_W + (font_scale > 1u ? (font_scale - 1u) * 48u : 0u));
+        return desired;
+    }
+    return available;
+}
+
 static void shortcut_position(u32 index, u32* x, u32* y) {
-    u32 column = index & 1u;
-    u32 row = index >> 1;
+    u32 columns = shortcut_columns();
+    u32 column = index % columns;
+    u32 row = index / columns;
+    u32 card_w = shortcut_card_width();
     u32 card_h = shortcut_card_height();
-    if (x) *x = u(DESKTOP_GRID_X + column * (DESKTOP_CELL_W + DESKTOP_CARD_GAP_X));
-    if (y) *y = u(DESKTOP_GRID_Y + row * (card_h + DESKTOP_CARD_GAP_Y));
+    if (x) *x = u(DESKTOP_GRID_X) + column * (card_w + u(DESKTOP_CARD_GAP_X));
+    if (y) *y = u(DESKTOP_GRID_Y) + row * (card_h + u(DESKTOP_CARD_GAP_Y));
 }
 
 static void draw_shortcut(u32 index, u32 icon_size) {
     u32 logical_x = 0, logical_y = 0;
     shortcut_position(index, &logical_x, &logical_y);
     u32 x = logical_x, y = logical_y;
-    u32 w = u(DESKTOP_CELL_W), h = u(shortcut_card_height());
+    u32 w = shortcut_card_width(), h = u(shortcut_card_height());
     u32 icon = u(icon_size);
     fb_fill_rect(x, y, w, h, CHARIS_UI_PANEL);
     fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER);
@@ -124,6 +159,7 @@ static void draw_shortcut(u32 index, u32 icon_size) {
 
     u32 text_x = x + u(72);
     u32 text_h = th();
+    if (w < u(112)) text_x = x + u(16);
     u32 label_y;
     if (gfx_text_get_scale() >= 3u) {
         label_y = y + (h > text_h ? (h - text_h) / 2u : 0u);
@@ -136,9 +172,12 @@ static void draw_shortcut(u32 index, u32 icon_size) {
     gfx_draw_string(text_x, label_y, shortcut_label[index],
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
     if (gfx_text_get_scale() < 3u) {
+        fb_set_clip(x + u(16), label_y + text_h + u(4),
+                    w > u(32) ? w - u(32) : 1u, text_h);
         gfx_draw_string(x + u(16), label_y + text_h + u(4),
                         shortcut_detail[index], CHARIS_UI_MUTED,
                         FB_TRANSPARENT);
+        fb_reset_clip();
     }
     fb_reset_clip();
 }
