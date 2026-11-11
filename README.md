@@ -42,24 +42,21 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The checked-in gallery is a compact historical overview of the framebuffer desktop. The latest **successful baseline QEMU evidence** is attached to [CI run #43018580076](https://github.com/Liladizilla/charis__OS/actions/runs/43018580076). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts from that run for the verified pre-shortcut workspace, Files, simultaneous Files/Terminal windows, maximized/resized Terminal and Settings persistence. PR #108 adds the four-shortcut workspace and Browser-launch capture; its updated evidence will replace this baseline link after CI passes.
+The checked-in gallery remains a historical overview. The latest successful QEMU desktop evidence for the workspace hierarchy increment is attached to [CI run #43025957282](https://github.com/Liladizilla/charis__OS/actions/runs/43025957282). Download its `charisos-desktop-preview` artifact for 11 captures covering the workspace, Browser, Files, simultaneous Files/Terminal windows, maximized and resized Terminal, default/adjusted/reloaded Settings, and the scaled desktop. The `boot-logs` and `charisos-images` artifacts provide the corresponding serial/QEMU logs and build outputs. The label/unit cleanup and documentation synchronization are now included in PR #109. CI for the latest documentation commit is [run #43028111026](https://github.com/Liladizilla/charis__OS/actions/runs/43028111026); do not treat it as passed until GitHub reports success.
 
 ![CharisOS desktop, multi-window, maximized Terminal and Settings captures](docs/screenshots/charisos-preview-gallery.jpg)
 
 ## Latest desktop validation
 
-The latest successful baseline CI run is [run #43018580076](https://github.com/Liladizilla/charis__OS/actions/runs/43018580076), on commit `a2cee5d`. All 20 workflow stages passed: kernel build with `-Werror`, generic x86-64 baseline audit, browser extraction tests, WM lifecycle/geometry/focus/maximize tests, ELF image construction and inspection, BIOS/ring-3/ELF execution, VMM huge-page and page-permission runtime tests, QEMU desktop capture, and artifact publication.
+The latest successful full desktop validation is [run #43025957282](https://github.com/Liladizilla/charis__OS/actions/runs/43025957282), on commit `d8688b2`. Its 19-stage workflow passed the kernel build with `-Werror`, generic x86-64 baseline audit, browser extraction tests, WM lifecycle/geometry/focus/maximize tests, ELF image construction and inspection, BIOS/ring-3/ELF execution, VMM huge-page and page-permission runtime tests, QEMU desktop capture, Settings persistence/reboot verification and artifact publication. Commit `f39cc3c` subsequently corrected the displayed memory units and removed a duplicate include; its CI rerun is tracked separately above.
 
-The QEMU capture covers:
-- The baseline workspace and taskbar. PR #108 adds direct Files, Terminal, Settings and Browser shortcuts, with QEMU capture pending.
-- Files and Terminal open simultaneously, with Alt+Tab moving focus between them. Alt+F8 provides keyboard resizing with arrow keys, Enter to commit and Escape to cancel.
-- A second Files refresh routed to Files while Terminal remains open behind/above it.
-- Terminal executing the built-in `help` command while Files remains open.
-- Super+Up maximizing Terminal to the workspace area and Super+Down restoring its previous size and position. Serial output confirms both state transitions.
-- Settings at default and adjusted display preferences.
+The QEMU captures cover:
+- The workspace heading, four labelled Files/Terminal/Settings/Browser launch cards, and System Overview with uptime plus PMM free/managed/allocated memory counters.
+- Browser, Files, simultaneous Files/Terminal windows, maximized and resized Terminal, and default/adjusted/reloaded Settings.
+- Alt+Tab focus routing, Terminal's built-in `help` command, Super+Up maximize, Super+Down restore, and Alt+F8 keyboard resize with arrow keys, Enter to commit and Escape to cancel.
 - A reboot round-trip confirming `font_scale=2` and `ui_scale=120` reload from `/CHARISOS.CFG`.
 
-These are automated engineering captures, not release marketing images. The workspace remains intentionally restrained, with direct shortcuts for the four core applications. Files is a read-only root browser, the shell and app renderers are still kernel-owned, and pointer-driven resize has not yet been exercised by QEMU automation.
+These are automated engineering captures, not release marketing images. The workspace now has a labelled four-app launch grid and live kernel status counters, but it is still an early shell rather than a release-ready desktop. The scaled capture exposes typography/layout collisions at larger text sizes; responsive layout and multi-resolution verification remain open. Files is a read-only root browser, the shell and app renderers are still kernel-owned, and pointer-driven resize has not yet been exercised by QEMU automation.
 
 ## What is implemented
 
