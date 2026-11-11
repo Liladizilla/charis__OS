@@ -732,6 +732,16 @@ static void handle_event(const input_event_t* e) {
         u8 base = code & 0x7Fu;
         bool pressed = e->type == INPUT_KEY_DOWN;
 
+        /* About is a modal notice; it blocks input from underlying app windows. */
+        if (notice_open) {
+            if (pressed && !extended && base == KEY_ESCAPE) {
+                notice_open = false;
+                notice_item = -1;
+            }
+            ui.needs_redraw = true;
+            return;
+        }
+
         /* Settings remains a modal overlay until it has a proper app renderer. */
         if (settings_open) {
             if (pressed && !extended) {
@@ -961,7 +971,8 @@ void shell_ui_main(void* arg) {
         bool terminal_has_focus =
             shell_app_windows[SHELL_APP_TERMINAL] &&
             wm_get_focused() == shell_app_windows[SHELL_APP_TERMINAL] &&
-            !shell_app_windows[SHELL_APP_TERMINAL]->minimized;
+            !shell_app_windows[SHELL_APP_TERMINAL]->minimized &&
+            !settings_open && !notice_open;
         while (keyboard_get_key(&key)) {
             if (terminal_has_focus) terminal_handle_char(key);
             had_event = true;

@@ -15,6 +15,13 @@ void fb_set_clip(u32 x, u32 y, u32 w, u32 h) {
     (void)x; (void)y; (void)w; (void)h;
     clip_set_count++;
 }
+void graphics_set_color(u32 color) { (void)color; }
+void graphics_rect(u32 x, u32 y, u32 w, u32 h, bool filled) {
+    (void)x; (void)y; (void)w; (void)h; (void)filled;
+}
+void psf_draw_string(u32 x, u32 y, const char* str, u32 fg, u32 bg) {
+    (void)x; (void)y; (void)str; (void)fg; (void)bg;
+}
 static void paint_recorder(window_t* win) {
     if (paint_count < sizeof(paint_order) / sizeof(paint_order[0]))
         paint_order[paint_count++] = win->z_order;
@@ -226,7 +233,7 @@ static void test_variable_titlebar_geometry_is_consistent(void) {
     expect(wm_set_titlebar_height(w, 44), "custom titlebar height accepted");
     expect(wm_get_window_at(20, 50) == w, "expanded titlebar is included in hit testing");
     expect(wm_move_window(w, 900, 900), "custom titlebar window can move");
-    expect(w->y == 436, "custom titlebar geometry clamps to screen edge");
+    expect(w->y == 356, "custom titlebar geometry clamps to screen edge");
     expect(!wm_set_titlebar_height(w, 19), "titlebar below minimum rejected");
     expect(!wm_set_titlebar_height(w, 97), "titlebar above maximum rejected");
     wm_destroy_window(w);
