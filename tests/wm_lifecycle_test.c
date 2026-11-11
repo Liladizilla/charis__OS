@@ -10,7 +10,18 @@
 framebuffer_t g_framebuffer = { .width = 640, .height = 480, .initialized = true };
 static u32 clip_reset_count, clip_set_count;
 static u32 paint_order[8], paint_count;
+static u32 focus_marker_count;
+static u32 focus_marker_x, focus_marker_y, focus_marker_width, focus_marker_color;
 void fb_reset_clip(void) { clip_reset_count++; }
+void fb_fill_rect(u32 x, u32 y, u32 w, u32 h, u32 color) {
+    if (h == 2u && color == COLOR_ACCENT) {
+        focus_marker_count++;
+        focus_marker_x = x;
+        focus_marker_y = y;
+        focus_marker_width = w;
+        focus_marker_color = color;
+    }
+}
 void fb_put_pixel(u32 x, u32 y, u32 color) {
     (void)x; (void)y; (void)color;
 }
@@ -212,6 +223,7 @@ static void test_surface_compositor_paints_visible_windows_in_z_order(void) {
     paint_count = 0;
     clip_reset_count = 0;
     clip_set_count = 0;
+    focus_marker_count = 0;
     window_t *back = wm_create_surface_window("paint-back", 10, 10, 120, 90);
     window_t *front = wm_create_surface_window("paint-front", 30, 30, 120, 90);
     window_t *hidden = wm_create_surface_window("paint-hidden", 50, 50, 120, 90);
@@ -227,12 +239,20 @@ static void test_surface_compositor_paints_visible_windows_in_z_order(void) {
     expect(paint_order[0] < paint_order[1], "compositor paints back-to-front by z-order");
     expect(clip_set_count == 2, "each surface is clipped before its callback");
     expect(clip_reset_count >= 3, "clip resets before and after surface callbacks");
+    expect(focus_marker_count == 1 && focus_marker_x == (u32)front->x &&
+           focus_marker_y == (u32)front->y &&
+           focus_marker_width == (u32)front->width &&
+           focus_marker_color == COLOR_ACCENT,
+           "only the focused window receives the visible focus rule");
 
     paint_count = 0;
+    focus_marker_count = 0;
     expect(wm_minimize_window(front), "front surface can be minimized");
     wm_render_surfaces();
     expect(paint_count == 1 && paint_order[0] == back->z_order,
            "compositor skips minimized surfaces");
+    expect(focus_marker_count == 1 && focus_marker_x == (u32)back->x,
+           "focus rule follows the active window after minimize");
     wm_destroy_window(hidden);
     wm_destroy_window(front);
     wm_destroy_window(back);

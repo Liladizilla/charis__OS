@@ -393,6 +393,10 @@ void wm_render_surfaces(void) {
                     }
             }
         }
+        /* A thin top-edge rule makes Alt+Tab focus changes visible. */
+        if (win->focused)
+            fb_fill_rect((u32)win->x, (u32)win->y,
+                         (u32)win->width, 2u, COLOR_ACCENT);
         fb_reset_clip();
     }
 }

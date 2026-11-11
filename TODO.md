@@ -49,13 +49,17 @@
 - [x] Host-side WM lifecycle and bounds regression tests
 - [x] Bufferless shell-surface registration without duplicate pixel buffers
 - [x] Metadata-level move, transactional resize, minimize, restore, visibility and focus-cycle APIs with host tests
-- [ ] Wire geometry operations to shell-owned application renderers
-- [ ] Independent per-window render surfaces and compositor ownership
-- [ ] Titlebar close/minimize/maximize controls and resize handles
-- [ ] Alt+Tab and taskbar focus/restore integration
-- [ ] QEMU tests for overlapping windows, pointer drag, resize and focus transitions
+- [x] Independent Terminal, Files, Browser, Settings and About surface records with shell-owned render callbacks
+- [x] Back-to-front composition of clipped per-window renderers without clearing the desktop/taskbar
+- [x] Per-window mouse hit testing, focus-only key/pointer dispatch and titlebar dragging
+- [x] Taskbar focus/minimize/restore and Alt+Tab focus cycling
+- [x] Settings and About promoted from modal overlays to independent WM windows
+- [x] Visible active-window focus rule and focused-window-only compositor regression
+- [ ] Pointer-driven resize handles, maximize/restore and snap/tiling interactions
+- [ ] QEMU validation of simultaneous windows, Alt+Tab input routing and pointer drag
+- [ ] Expand the workspace beyond the current sparse Files shortcut and taskbar
 
-The current shell still owns the framebuffer and supports one modal app at a time. WM metadata operations do not yet constitute a complete multi-window desktop.
+The shell still owns the framebuffer and application renderers, while the WM owns window identity, z-order, focus, clipping and composition. This is a functional multi-window foundation, not a mature desktop environment.
 
 ## Phase 7: IPC & Signals (PARTIAL)
 - [x] Signals (SIGINT, SIGSEGV, SIGCHLD) - signal.c exists
@@ -87,8 +91,9 @@ The current shell still owns the framebuffer and supports one modal app at a tim
 - [ ] Add a useful but restrained desktop surface: verified status indicators, accessible shortcut selection and clear empty-workspace affordances
 - [ ] Implement shared layout primitives: measure/arrange, horizontal/vertical flow, padding/gaps, wrapping, clipping/ellipsis and scroll containers
 - [ ] Verify layout at 100/125/150/200% text/UI scales and 1024x768, 1280x800 and 1920x1080 framebuffer sizes
-- [ ] Standardize app chrome, titlebars, focus indication, keyboard navigation and modal dimming
-- [ ] Add independently movable/resizable windows, multi-window z-order, titlebar controls and Alt+Tab; current shell registers one active modal app surface
+- [x] Standardize native app titlebars, close controls, focus indication and keyboard dispatch for current applications
+- [x] Add independently movable windows, multi-window z-order, taskbar focus/restore and Alt+Tab
+- [ ] Add pointer resize handles, maximize, snap/tiling and consistent per-window keyboard navigation
 - [ ] Add a first-login setup wizard with language/keyboard, appearance and network steps; current wizard remains limited to existing setup preferences
 - [ ] Add functional Text Editor and System Monitor applications
 
@@ -151,6 +156,8 @@ The current shell still owns the framebuffer and supports one modal app at a tim
 - [x] Removed obsolete `disk.c` implementation
 - [x] Enable `-Werror` for kernel compilation
 - [x] Add host-side WM lifecycle/bounds regression coverage to CI
+- [x] Host test proves only focused visible windows receive dispatched events
+- [x] Host test verifies the focused window receives the visible compositor focus rule
 - [x] WM list traversal detects duplicate nodes and remains bounded if links form a cycle
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions

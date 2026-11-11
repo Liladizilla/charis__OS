@@ -2,47 +2,60 @@
 
 ## Architecture and rendering ownership
 
-The active desktop is a single framebuffer shell running as a kernel task. It owns the wallpaper, workspace shortcuts, Start menu, taskbar, software pointer and application input routing. The shell redraws the framebuffer when UI state changes; it is not yet a general-purpose multi-window compositor.
+The active desktop is a framebuffer shell running as a kernel task. It owns the wallpaper, workspace shortcuts, Start menu, taskbar and software pointer. It paints the desktop first, then asks the window manager to composite independently registered application surfaces in back-to-front z-order.
 
-Terminal, Files, Browser, Settings and About are native framebuffer surfaces. The shell remains the rendering owner for these applications. Their lifecycle is registered with the window manager through bufferless surface records, so focus, visibility, hit testing and destruction use bounded WM metadata without allocating duplicate content buffers.
+Terminal, Files, Browser, Settings and About each have a bufferless window record. The WM owns window identity, geometry, z-order, clipping, visibility, minimize/restore and focus. The shell owns each app's state and renderer through paint and event callbacks. Applications draw directly into their own clipped framebuffer rectangle, so the WM does not allocate a second pixel buffer for these shell-owned surfaces.
 
-The WM now exposes bounded geometry and lifecycle operations for the next integration stage: move, transactional resize, minimize, restore, visibility changes and focus cycling. These operations are covered by host-side tests. They do not yet move the shell-owned application renderers, provide independent application framebuffers or establish a complete compositor.
+## Window interaction
+
+- Clicking a visible window focuses and raises it.
+- Unclaimed titlebar space can be dragged with the left mouse button. Application close controls consume their own clicks and do not start a drag.
+- Clicking a pinned taskbar icon opens/focuses its window; clicking the focused icon minimizes it; clicking a minimized icon restores it.
+- The taskbar marks open windows and uses the accent rule for the focused application.
+- Alt+Tab cycles visible, non-minimized windows. Subsequent keyboard and pointer events are delivered only to the focused window.
+- Escape is dispatched to the focused application unless the launcher is open.
+
+The WM exposes bounded move and transactional resize operations. There are no pointer resize handles, maximize/snap controls or workspace tiling yet. The current compositor redraws the desktop and all visible surfaces on a shell repaint; dirty-region repaint and independent userspace framebuffers remain future work.
 
 ## Workspace and taskbar
 
-The workspace uses a restrained graphite palette and a small Files shortcut. The taskbar provides Start and pinned Files, Terminal and Settings launch targets. Keyboard launch paths remain available:
-- F10 opens Files.
-- F11 opens Settings.
-- F12 opens Terminal.
-- Escape closes the active modal surface.
+The workspace remains intentionally sparse, with a Files shortcut and a pinned taskbar for Files, Terminal, Settings and Browser. About is launched from the Start menu. Focus and minimized state are visible on the taskbar.
+
+Keyboard launch paths:
+- F10 opens/focuses Files.
+- F11 opens/focuses Settings.
+- F12 opens/focuses Terminal.
+- Alt+Tab cycles the visible application windows.
 - The Super key toggles the Start menu.
+- Escape is sent to the focused application.
 
 ## Native applications
 
 ### Files
-Files provides a bounded FAT32 root-directory listing, selection, keyboard navigation and refresh. It is read-only and currently limited to root entries and 8.3 names.
+Files provides a bounded FAT32 root-directory listing, selection, keyboard navigation and refresh. It remains read-only and currently limited to root entries and 8.3 names.
 
 ### Terminal
 Terminal is a native framebuffer command environment with a console canvas, prompt and input handling. Supported commands include `help`, `clear`, `echo TEXT`, `uname`, `version`, `uptime`, `mem`, `tasks` and `settings`. It is not yet a general-purpose POSIX shell or isolated userspace terminal.
 
 ### Settings
-Settings exposes font family, text size and global interface scale. Changes apply immediately and persist to `/CHARISOS.CFG` on supported writable primary ATA FAT32 storage. Other categories are not yet backed by implemented services.
+Settings is an independent window exposing font family, text size and global interface scale. Changes apply immediately and persist to `/CHARISOS.CFG` on supported writable primary ATA FAT32 storage. The Personalization and System categories remain visual placeholders rather than functional services.
 
 ### Browser and About
-Browser provides local shell pages and limited remote text-preview plumbing. It is not a full standards-compliant browser. About is informational.
+Browser provides local shell pages and limited remote text-preview plumbing. It is not a full standards-compliant browser. About is an informational window.
 
-## Window-manager integration status
+## Validation
 
-Host-side CI covers allocation failure cleanup, dimensions and buffer caps, title sanitization, focus and hit testing, visibility, focus recovery, maximum window count, slot reuse, bufferless surface lifecycle, bounded movement, transactional resize, minimize/restore and focus cycling.
+Host-side CI covers allocation failure cleanup, dimensions and buffer caps, title sanitization, focus and hit testing, visibility, focus recovery, maximum window count, slot reuse, bufferless surface lifecycle, bounded movement, transactional resize, minimize/restore, focus cycling, compositor clipping/z-order and focus-only event dispatch.
 
-The shell still activates one modal application at a time. The new WM operations are metadata-level foundations only: independent shell rendering, titlebar controls, Alt+Tab integration, resize handles, per-window repaint and QEMU pointer interaction remain incomplete.
+The QEMU capture path exercises Files and Terminal open at the same time, switches focus with Alt+Tab, confirms keyboard input reaches Files only when Files is focused, then validates Settings persistence across reboot.
 
 ## Known limitations
 
-- The shell is a kernel task, not an isolated userspace desktop session.
-- There is no complete multi-window desktop, independent application rendering or per-window compositor.
+- The shell and application renderers are kernel-owned, not isolated userspace processes.
+- The workspace is still sparse and is not yet release-quality desktop design.
+- There are no pointer resize handles, maximize/snap/tiling controls or dirty-region rendering.
 - Files is read-only and limited to FAT32 root entries with 8.3 names.
 - Terminal command coverage is intentionally small.
-- Browser remote rendering is not a complete standards-compliant browser.
+- Browser remote rendering is not a standards-compliant browser; TLS, full HTML/CSS and JavaScript execution are not implemented.
 - Settings categories beyond display preferences are not yet functional.
 - Physical hardware and broad UEFI interaction testing remain outstanding.
