@@ -21,9 +21,9 @@ The WM exposes bounded move, pointer resize, keyboard resize, maximize and trans
 
 The workspace uses four labelled launch cards for Files, Terminal, Settings and Browser, with a pinned taskbar for the same core applications. The System Overview panel reads uptime from the PIT timer and free/managed/allocated memory from O(1) PMM counters; it does not walk the scheduler task list during repaint. About is launched from the Start menu. Focus and minimized state are visible on the taskbar.
 
-The shortcut grid now chooses one, two or four columns from the available framebuffer width after reserving space for the System Overview panel. Multi-column cards expand to fill their lane, are capped at 360 logical pixels and are centered when the cap leaves spare room. Drawing and hit-testing share the same geometry. This responsive layout change is source-reviewed but still requires a fresh QEMU capture before it can be called visually verified.
+The shortcut grid chooses one, two or four columns from the available framebuffer width after reserving space for the System Overview panel. Multi-column cards expand to fill their lane, are capped at 360 logical pixels and are centered when the cap leaves spare room. Drawing and hit-testing share the same geometry. CI run #722 captures the real 1024×768 framebuffer and verifies the baseline workspace, app windows, multi-window focus routing and display preferences across a reboot.
 
-Secondary descriptions are suppressed at larger font scales. The full 100/125/150/200% text/UI and 1024×768, 1280×800 and 1920×1080 validation matrix remains unverified. The System Overview panel is hidden below its minimum framebuffer dimensions rather than being drawn off-screen.
+Secondary descriptions are suppressed at larger font scales. The capture also exercises a 120% interface scale and larger font presets, but the complete 100/125/150/200% text/UI and 1024×768, 1280×800 and 1920×1080 validation matrix remains unverified. The System Overview panel is hidden below its minimum framebuffer dimensions rather than being drawn off-screen.
 
 Keyboard launch paths:
 - F9 opens/focuses Browser.
@@ -61,7 +61,7 @@ The QEMU capture path exercises Files and Terminal open at the same time, switch
 ## Known limitations
 
 - The shell and application renderers are kernel-owned, not isolated userspace processes.
-- The workspace exposes four direct application launch cards and live system counters. Responsive one-/two-/four-column geometry is awaiting fresh QEMU visual verification; wrapping and the full resolution/scale matrix remain open.
+- The workspace exposes four direct application launch cards and live system counters. CI run #722 visually verifies the baseline 1024×768 layout; substantial unused space below the launch area, text wrapping at narrow widths and the full resolution/scale matrix remain open.
 - Snap/tiling controls, window menus and dirty-region rendering are not implemented.
 - Pointer-driven resize uses a lower-right grip with per-app minimum dimensions and work-area clamping; QEMU pointer-drag verification is still pending.
 - Files is read-only and limited to FAT32 root entries with 8.3 names.

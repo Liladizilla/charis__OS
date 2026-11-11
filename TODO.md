@@ -63,7 +63,10 @@
 - [x] QEMU keyboard maximize/restore verification (Super+Up / Super+Down)
 - [x] QEMU keyboard resize verification (Alt+F8, arrows, Enter/Escape) through shared bounded geometry
 - [ ] QEMU pointer-drag resize verification with a reliable PS/2 or hardware-input test
-- [ ] Expand the workspace beyond the current sparse Files shortcut and taskbar
+- [x] Add direct Files, Terminal, Settings and Browser launch cards with responsive one-/two-/four-column geometry and a live PIT/PMM System Overview panel
+- [x] Capture and verify the 1024×768 workspace, native app windows, multi-window focus routing, maximize/restore, keyboard resize and settings persistence across reboot in CI run #722
+- [ ] Fill the remaining workspace with useful, live system or user content rather than decorative placeholder cards
+- [ ] Validate the full font/UI scale matrix and additional 1280×800 and 1920×1080 framebuffer modes
 
 The shell still owns the framebuffer and application renderers, while the WM owns window identity, z-order, focus, clipping and composition. This is a functional multi-window foundation, not a mature desktop environment.
 

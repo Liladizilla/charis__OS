@@ -42,15 +42,19 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The checked-in gallery remains a historical overview and must not be mistaken for the current desktop. The active workspace changes are being validated in [PR #108](https://github.com/Liladizilla/charis__OS/pull/108). Its QEMU workflow artifacts will be linked here after the latest branch head completes CI and the actual captures have been reviewed. Earlier screenshots are useful for historical comparison only.
+The current baseline QEMU workspace capture is checked in below. It was captured from commit `b2e2f20` by [CI run #722](https://github.com/Liladizilla/charis__OS/actions/runs/43069919498). The [full QEMU capture artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43069919498) contains separate 1024×768 captures for the workspace, Files, Terminal, Browser, Settings, multi-window focus, maximized and resized windows, adjusted display preferences, post-reboot settings and large-font layout, along with serial and QEMU logs.
 
-![CharisOS desktop, multi-window, maximized Terminal and Settings captures](docs/screenshots/charisos-preview-gallery.jpg)
+![CharisOS QEMU desktop workspace, CI run 722](docs/screenshots/charisos-desktop-run-722.png)
+
+The older [preview gallery](docs/screenshots/charisos-preview-gallery.jpg) is retained as historical comparison material; it does not represent the current workspace.
 
 ## Latest desktop validation
 
-The workspace contains direct Files, Terminal, Settings and Browser launch cards plus a System Overview panel showing PIT uptime and PMM memory counters. The latest source change distributes cards across responsive one-, two- or four-column layouts and caps very wide cards. This geometry change is not yet validated by a fresh QEMU capture; the previous preview still showed substantial unused vertical space, which remains an open design issue.
+[CI run #722](https://github.com/Liladizilla/charis__OS/actions/runs/43069919498) passed on commit `b2e2f20`. The run completed dependency installation, the freestanding kernel build, the x86-64 baseline instruction audit, browser and window-manager host tests, BIOS boot and ring-3 checks, VMM huge-page and permission regressions, and the full QEMU desktop capture. QEMU verified the 1024×768 workspace, independent Files/Terminal/Browser/Settings windows, multi-window focus routing, maximize/restore, keyboard resize and settings persistence across reboot. The display test saves `font_scale=2` and `ui_scale=120`, reloads those values after reboot, then exercises the largest supported font preset.
 
-The established CI suite has previously exercised BIOS boot, ring-3 exception containment, VMM permission regressions, host-side window-manager tests, application launch paths, multi-window focus/resize/maximize behavior and Settings persistence. The current ELF disk test accepts an explicit `ELF_EXEC_DENIED_CAPABILITY` result because the bootstrap task does not receive `CAP_ALLOW_EXEC`; it does not prove that an ELF executable was entered. The latest branch head has not yet completed its CI run. See [PR #108](https://github.com/Liladizilla/charis__OS/pull/108), and do not treat historical runs or the checked-in gallery as evidence for the latest source.
+The baseline screenshot confirms the four direct application cards and System Overview panel render without clipping at the default scale. The workspace still leaves a large area below the launch surface unused; filling it with functional, live information remains a design task. The full resolution and font/UI-scale matrix has not been completed, and this capture is engineering evidence rather than a release-quality claim.
+
+The current ELF disk test accepts an explicit `ELF_EXEC_DENIED_CAPABILITY` result because the bootstrap task does not receive `CAP_ALLOW_EXEC`; it does not prove that an ELF executable was entered. Successful authorized ELF execution remains an explicit validation gap.
 
 
 ## What is implemented
@@ -65,7 +69,7 @@ The established CI suite has previously exercised BIOS boot, ring-3 exception co
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
 - Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, a lower-right pointer resize grip, Alt+F8 keyboard resizing, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation; QEMU verifies simultaneous windows and keyboard maximize/restore.
 - Persistent display preferences on supported writable FAT32 storage.
-- CI definitions for boot, memory-permission, ring-3, ELF capability-policy, desktop-capture and host-side WM lifecycle/bounds checks; the latest run remains blocked before compilation by external runner package-network failures.
+- CI verifies the freestanding build, x86-64 baseline, BIOS/ring-3 path, VMM permission regressions, host-side WM tests and QEMU desktop/settings capture; [run #722](https://github.com/Liladizilla/charis__OS/actions/runs/43069919498) passed on commit `b2e2f20`.
 
 ## Important limitations
 
