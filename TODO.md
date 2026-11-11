@@ -95,7 +95,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Settings persist to `/CHARISOS.CFG` on supported primary ATA FAT32 and reload after reboot in CI
 - [x] QEMU capture verifies the desktop after closing Settings at 200% text and 120% interface scale without the previous welcome-card clipping
 - [x] Add a restrained two-column workspace shortcut grid for Files, Terminal, Settings and Browser with bounded hit testing
-- [ ] Add verified live system status indicators and clear empty-workspace affordances
+- [x] Add verified live system status indicators (uptime and PMM memory counters) and a labelled workspace hierarchy
+- [ ] Fix typography collisions at 200% text scale; add measured/wrapped shortcut labels and adaptive workspace geometry
 - [ ] Implement shared layout primitives: measure/arrange, horizontal/vertical flow, padding/gaps, wrapping, clipping/ellipsis and scroll containers
 - [ ] Verify layout at 100/125/150/200% text/UI scales and 1024x768, 1280x800 and 1920x1080 framebuffer sizes
 - [x] Standardize native app titlebars, close controls, focus indication and keyboard dispatch for current applications
