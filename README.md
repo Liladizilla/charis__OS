@@ -42,16 +42,16 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The checked-in gallery is a compact historical overview of the framebuffer desktop. The **latest, full-resolution QEMU evidence** is attached to [CI run #43005333279](https://github.com/Liladizilla/charis__OS/actions/runs/43005333279). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts from that run. The desktop-preview artifact includes separate 1024×768 captures for the workspace, Files, simultaneous Files/Terminal windows, maximized Terminal, Settings, adjusted preferences, post-reboot Settings and Terminal.
+The checked-in gallery is a compact historical overview of the framebuffer desktop. The **latest, full-resolution QEMU evidence** is attached to [CI run #43018580076](https://github.com/Liladizilla/charis__OS/actions/runs/43018580076). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts from that run. The desktop-preview artifact includes separate 1024×768 captures for the four-shortcut workspace, Files, simultaneous Files/Terminal windows, maximized Terminal, resized Terminal, Settings, adjusted preferences and post-reboot Settings.
 
 ![CharisOS desktop, multi-window, maximized Terminal and Settings captures](docs/screenshots/charisos-preview-gallery.jpg)
 
 ## Latest desktop validation
 
-The latest successful CI run is [run #43005333279](https://github.com/Liladizilla/charis__OS/actions/runs/43005333279), on commit `1fcdbdef`. All 20 workflow stages passed: kernel build with `-Werror`, generic x86-64 baseline audit, browser extraction tests, WM lifecycle/geometry/focus/maximize tests, ELF image construction and inspection, BIOS/ring-3/ELF execution, VMM huge-page and page-permission runtime tests, QEMU desktop capture, and artifact publication.
+The latest successful CI run is [run #43018580076](https://github.com/Liladizilla/charis__OS/actions/runs/43018580076), on commit `1fcdbdef`. All 20 workflow stages passed: kernel build with `-Werror`, generic x86-64 baseline audit, browser extraction tests, WM lifecycle/geometry/focus/maximize tests, ELF image construction and inspection, BIOS/ring-3/ELF execution, VMM huge-page and page-permission runtime tests, QEMU desktop capture, and artifact publication.
 
 The QEMU capture covers:
-- The bare workspace and taskbar.
+- The workspace, four direct application shortcuts (Files, Terminal, Settings and Browser), and taskbar.
 - Files and Terminal open simultaneously, with Alt+Tab moving focus between them. Alt+F8 provides keyboard resizing with arrow keys, Enter to commit and Escape to cancel.
 - A second Files refresh routed to Files while Terminal remains open behind/above it.
 - Terminal executing the built-in `help` command while Files remains open.
@@ -59,7 +59,7 @@ The QEMU capture covers:
 - Settings at default and adjusted display preferences.
 - A reboot round-trip confirming `font_scale=2` and `ui_scale=120` reload from `/CHARISOS.CFG`.
 
-These are automated engineering captures, not release marketing images. The bare workspace remains intentionally sparse. Files is a read-only root browser, the shell and app renderers are still kernel-owned, and pointer-driven resize has not yet been exercised by QEMU automation.
+These are automated engineering captures, not release marketing images. The workspace remains intentionally restrained, with direct shortcuts for the four core applications. Files is a read-only root browser, the shell and app renderers are still kernel-owned, and pointer-driven resize has not yet been exercised by QEMU automation.
 
 ## What is implemented
 
@@ -80,7 +80,7 @@ These are automated engineering captures, not release marketing images. The bare
 CharisOS is still an early-stage kernel and shell. In particular:
 
 - The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, keyboard resize, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
-- The bare-workspace QEMU capture still shows a sparse workspace with one Files shortcut; the separate multi-window capture demonstrates Files and Terminal open together. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
+- The workspace exposes direct shortcuts for Files, Terminal, Settings and Browser; the separate multi-window capture demonstrates Files and Terminal open together. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
 - Files does not yet support writable files, nested directory navigation or long filenames.
 - The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking and a complete process lifecycle are unfinished.
 - The `SYSCALL/SYSRET` user-mode path is configured but not yet validated as the normal syscall entry.
