@@ -17,7 +17,8 @@ static u32 th(void) { return (u32)font_cell_h * gfx_text_get_scale(); }
 static void app_icon(u32 x, u32 y, u32 kind, u32 size) {
     u32 ink = kind == 0 ? 0xFF86B9E8u :
               kind == 1 ? 0xFFF0C674u :
-              kind == 2 ? 0xFF83D6B0u : CHARIS_UI_ACCENT;
+              kind == 2 ? 0xFF83D6B0u :
+              kind == 4 ? 0xFF8FC7D8u : CHARIS_UI_ACCENT;
     fb_fill_rect(x, y, size, size, CHARIS_UI_SURFACE);
     fb_draw_rect(x, y, size, size, CHARIS_UI_BORDER_STRONG);
     u32 p = size / 5u, inner = size - p * 2u;
@@ -32,39 +33,56 @@ static void app_icon(u32 x, u32 y, u32 kind, u32 size) {
         fb_draw_rect(x+p, y+p, inner, inner, ink);
         gfx_draw_string_scaled(x+p+u(3), y+size/2u-th(), ">_", ink,
                                CHARIS_UI_SURFACE, gfx_text_get_scale());
-    } else {
+    } else if (kind == 3) {
         fb_draw_rect(x+p+u(3), y+p+u(3), inner-u(6), inner-u(6), ink);
         fb_fill_rect(x+size/2u-u(2), y+p, u(4), inner, ink);
         fb_fill_rect(x+p, y+size/2u-u(2), inner, u(4), ink);
+    } else {
+        /* Browser: a compact globe/window mark with meridian and equator. */
+        fb_draw_rect(x+p, y+p, inner, inner, ink);
+        fb_fill_rect(x+p, y+size/2u-u(1), inner, u(2), ink);
+        fb_fill_rect(x+size/2u-u(1), y+p, u(2), inner, ink);
+        fb_fill_rect(x+p+u(3), y+p+u(5), inner-u(6), u(1), ink);
     }
 }
 
-/* A desktop is a place for icons, not a second application dashboard.
- * The taskbar and launcher own application discovery; the workspace stays
- * quiet and leaves room for real windows. */
-static const u32 FILES_ICON_X = 56;
-static const u32 FILES_ICON_Y = 64;
-static const u32 FILES_CELL_W = 96;
-static const u32 FILES_CELL_H = 104;
+/* The workspace exposes the four core native applications directly.
+ * A two-column grid keeps shortcuts discoverable without turning the desktop
+ * into a second launcher or filling the workspace with dashboard cards. */
+#define DESKTOP_SHORTCUT_COUNT 4u
+#define DESKTOP_CELL_W 112u
+#define DESKTOP_CELL_H 104u
+static const u32 shortcut_x[DESKTOP_SHORTCUT_COUNT] = { 56u, 176u, 56u, 176u };
+static const u32 shortcut_y[DESKTOP_SHORTCUT_COUNT] = { 64u, 64u, 184u, 184u };
+static const u32 shortcut_icon[DESKTOP_SHORTCUT_COUNT] = { 1u, 2u, 3u, 4u };
+static const char* const shortcut_label[DESKTOP_SHORTCUT_COUNT] = {
+    "Files", "Terminal", "Settings", "Browser"
+};
 
 void desktop_surface_render(void) {
     if (!g_framebuffer.initialized) return;
-    u32 x = u(FILES_ICON_X);
-    u32 y = u(FILES_ICON_Y);
     u32 size = u(48);
-    app_icon(x + (u(FILES_CELL_W)-size)/2u, y, 1, size);
-    u32 label_w = 0;
-    gfx_text_size("Files", &label_w, NULL);
-    gfx_draw_string(x + (u(FILES_CELL_W)-label_w)/2u,
-                    y + size + u(12), "Files",
-                    CHARIS_UI_TEXT, FB_TRANSPARENT);
+    for (u32 i = 0; i < DESKTOP_SHORTCUT_COUNT; i++) {
+        u32 x = u(shortcut_x[i]), y = u(shortcut_y[i]);
+        u32 cell_w = u(DESKTOP_CELL_W);
+        app_icon(x + (cell_w-size)/2u, y, shortcut_icon[i], size);
+        u32 label_w = 0;
+        gfx_text_size(shortcut_label[i], &label_w, NULL);
+        fb_set_clip(x, y + size + u(8), cell_w, th() + u(8));
+        u32 label_x = label_w < cell_w ? x + (cell_w-label_w)/2u : x;
+        gfx_draw_string(label_x, y + size + u(12), shortcut_label[i],
+                        CHARIS_UI_TEXT, FB_TRANSPARENT);
+        fb_reset_clip();
+    }
 }
 
 int desktop_surface_hit_test(int mx, int my) {
-    u32 x = u(FILES_ICON_X), y = u(FILES_ICON_Y);
-    u32 w = u(FILES_CELL_W), h = u(FILES_CELL_H);
-    if (mx >= (int)x && mx < (int)(x+w) &&
-        my >= (int)y && my < (int)(y+h)) return 0;
+    for (u32 i = 0; i < DESKTOP_SHORTCUT_COUNT; i++) {
+        u32 x = u(shortcut_x[i]), y = u(shortcut_y[i]);
+        u32 w = u(DESKTOP_CELL_W), h = u(DESKTOP_CELL_H);
+        if (mx >= (int)x && mx < (int)(x+w) &&
+            my >= (int)y && my < (int)(y+h)) return (int)i;
+    }
     return -1;
 }
 
