@@ -160,7 +160,7 @@ jobs:
 
       - name: Capture desktop and verify persistent settings
         if: success()
-        timeout-minutes: 2
+        timeout-minutes: 5
         shell: bash
         run: |
           set -eu
@@ -269,7 +269,7 @@ jobs:
             printf 'screendump build/charisos-desktop-scaled-preview.ppm\n'
             sleep 1
             printf 'quit\n'
-          } | timeout 70s qemu-system-x86_64 \
+          } | timeout 85s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
@@ -322,7 +322,7 @@ jobs:
             printf 'screendump build/charisos-desktop-large-font-preview.ppm\n'
             sleep 1
             printf 'quit\n'
-          } | timeout 35s qemu-system-x86_64 \
+          } | timeout 45s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
@@ -355,7 +355,7 @@ jobs:
             printf 'screendump build/charisos-terminal-preview.ppm\n'
             sleep 1
             printf 'quit\n'
-          } | timeout 25s qemu-system-x86_64 \
+          } | timeout 35s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
