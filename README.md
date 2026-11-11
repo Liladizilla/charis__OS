@@ -31,7 +31,7 @@ The project is under active development. It is not currently a general-purpose o
 | User mode | DPL3 `int 0x80` path exercised; static x86_64 `ET_EXEC` smoke program loaded from FAT32 and entered in ring 3 |
 | Storage | Primary ATA PIO and FAT32 support; current Files interface is read-only and limited to the root directory and 8.3 names |
 | Graphical shell | Framebuffer workspace with independent Terminal, Files, Browser, Settings and About windows; workspace and application coverage remain limited |
-| Window manager | Bounded ownership, back-to-front composition, focus-only input, move/resize, maximize/restore, minimize, taskbar switching and Alt+Tab; snap/tiling remains unfinished |
+| Window manager | Bounded ownership, back-to-front composition, focus-only input, move, lower-right resize grip, maximize/restore, minimize, taskbar switching and Alt+Tab; snap/tiling and QEMU pointer-resize validation remain unfinished |
 | Settings | Font family, text size and interface scale; CI verifies saved values survive a reboot on a writable FAT32 test disk |
 | Security | Capability checks and input validation exist in selected paths; enforcement and isolation are incomplete |
 | Networking | RTL8139 transmit path only; receive and TCP/IP stack are not implemented |
@@ -42,23 +42,24 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The checked-in gallery below is a reference snapshot from an earlier QEMU run. The latest full-resolution captures (desktop, Files, simultaneous multi-window view, Settings, adjusted display preferences, scaled desktop, post-reboot Settings and Terminal), serial logs and boot images are attached to the [passing CI run #42980478639](https://github.com/Liladizilla/charis__OS/actions/runs/42980478639). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts there. These captures are engineering evidence, not release marketing shots.
+The checked-in gallery is a compact historical overview of the framebuffer desktop. The **latest, full-resolution QEMU evidence** is attached to [CI run #43005333279](https://github.com/Liladizilla/charis__OS/actions/runs/43005333279). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts from that run. The desktop-preview artifact includes separate 1024×768 captures for the workspace, Files, simultaneous Files/Terminal windows, maximized Terminal, Settings, adjusted preferences, post-reboot Settings and Terminal.
 
-![CharisOS desktop, Files, Settings and Terminal previews](docs/screenshots/charisos-preview-gallery.jpg)
+![CharisOS desktop, multi-window, maximized Terminal and Settings captures](docs/screenshots/charisos-preview-gallery.jpg)
 
 ## Latest desktop validation
 
-The latest successful CI run is [run #42980478639](https://github.com/Liladizilla/charis__OS/actions/runs/42980478639). All required workflow gates passed, including BIOS/disk boot, ring-3, ELF, VMM permission tests and desktop persistence capture. The run builds the kernel and boot images for the generic x86-64 baseline, checks the generated ELF for BMI/BMI2-family instructions, runs browser-parser and host-side WM lifecycle/geometry tests, verifies BIOS boot, ring-3 and ELF execution, boots the VMM huge-page/permission regression suite, and captures the graphical shell.
+The latest successful CI run is [run #43005333279](https://github.com/Liladizilla/charis__OS/actions/runs/43005333279), on commit `1fcdbdef`. All 20 workflow stages passed: kernel build with `-Werror`, generic x86-64 baseline audit, browser extraction tests, WM lifecycle/geometry/focus/maximize tests, ELF image construction and inspection, BIOS/ring-3/ELF execution, VMM huge-page and page-permission runtime tests, QEMU desktop capture, and artifact publication.
 
-The desktop capture covers:
-- The workspace and taskbar.
-- Files and Terminal open at the same time, with Alt+Tab changing which application receives keyboard input.
-- Files opening the FAT32 root directory and responding to refresh.
+The QEMU capture covers:
+- The bare workspace and taskbar.
+- Files and Terminal open simultaneously, with Alt+Tab moving focus between them.
+- A second Files refresh routed to Files while Terminal remains open behind/above it.
+- Terminal executing the built-in `help` command while Files remains open.
+- Super+Up maximizing Terminal to the workspace area and Super+Down restoring its previous size and position. Serial output confirms both state transitions.
 - Settings at default and adjusted display preferences.
-- A reboot round-trip confirming `font_scale=2` and `ui_scale=120` are loaded from `/CHARISOS.CFG`.
-- Terminal launch and execution of the built-in `help` command.
+- A reboot round-trip confirming `font_scale=2` and `ui_scale=120` reload from `/CHARISOS.CFG`.
 
-These are automated engineering captures, not polished release photography. The current workspace is intentionally sparse. Files is a read-only root browser, application surfaces are not yet integrated into a complete window-management experience, and the general desktop still needs substantial design and interaction work.
+These are automated engineering captures, not release marketing images. The bare workspace remains intentionally sparse. Files is a read-only root browser, the shell and app renderers are still kernel-owned, and pointer-driven resize has not yet been exercised by QEMU automation.
 
 ## What is implemented
 
@@ -70,7 +71,7 @@ These are automated engineering captures, not polished release photography. The 
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
 - Framebuffer drawing and PSF2 bitmap-font rendering.
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
-- Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, lower-right pointer resizing, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation.
+- Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, a lower-right pointer resize grip, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation; QEMU verifies simultaneous windows and keyboard maximize/restore.
 - Persistent display preferences on supported writable FAT32 storage.
 - CI boot, memory-permission, ring-3, ELF, desktop-capture and host-side WM lifecycle/bounds checks.
 
@@ -79,7 +80,7 @@ These are automated engineering captures, not polished release photography. The 
 CharisOS is still an early-stage kernel and shell. In particular:
 
 - The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
-- The latest QEMU capture still shows a sparse workspace with one Files shortcut. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
+- The bare-workspace QEMU capture still shows a sparse workspace with one Files shortcut; the separate multi-window capture demonstrates Files and Terminal open together. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
 - Files does not yet support writable files, nested directory navigation or long filenames.
 - The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking and a complete process lifecycle are unfinished.
 - The `SYSCALL/SYSRET` user-mode path is configured but not yet validated as the normal syscall entry.

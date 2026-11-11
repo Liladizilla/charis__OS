@@ -58,8 +58,10 @@
 - [x] Bounded lower-right pointer resize handle with app-specific minimum dimensions
 - [x] WM maximize/restore geometry snapshots with transactional allocation-failure behavior
 - [x] Super+Up maximize, Super+Down restore/minimize and Alt+F4 close for focused apps
-- [ ] Snap/tiling interactions and QEMU pointer-drag resize verification
-- [ ] QEMU validation of simultaneous windows, Alt+Tab input routing and pointer drag
+- [ ] Snap/tiling interactions
+- [x] QEMU validation of simultaneous Files/Terminal windows and Alt+Tab input routing
+- [x] QEMU keyboard maximize/restore verification (Super+Up / Super+Down)
+- [ ] QEMU pointer-drag resize verification
 - [ ] Expand the workspace beyond the current sparse Files shortcut and taskbar
 
 The shell still owns the framebuffer and application renderers, while the WM owns window identity, z-order, focus, clipping and composition. This is a functional multi-window foundation, not a mature desktop environment.
@@ -97,7 +99,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Standardize native app titlebars, close controls, focus indication and keyboard dispatch for current applications
 - [x] Add independently movable windows, multi-window z-order, taskbar focus/restore and Alt+Tab
 - [x] Add pointer resize handles, maximize/restore and focused-window keyboard shortcuts
-- [ ] Add snap/tiling, global window menu and consistent per-window keyboard navigation
+- [x] QEMU capture verifies multiple application windows, Alt+Tab routing and maximize/restore
+- [ ] Add snap/tiling, global window menu, QEMU pointer-resize test and consistent per-window keyboard navigation
 - [ ] Add a first-login setup wizard with language/keyboard, appearance and network steps; current wizard remains limited to existing setup preferences
 - [ ] Add functional Text Editor and System Monitor applications
 
@@ -166,10 +169,10 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] WM list traversal detects duplicate nodes and remains bounded if links form a cycle
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions
-- [x] QEMU BIOS, ring-3, ELF and VMM huge-page/permission regression suites pass (CI run #42980478639)
-- [x] QEMU desktop capture verifies Files, Settings and Terminal launch paths
+- [x] QEMU BIOS, ring-3, ELF and VMM huge-page/permission regression suites pass (CI run #43005333279)
+- [x] QEMU desktop capture verifies Files, Terminal, simultaneous windows, Alt+Tab and maximize/restore
 - [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`)
-- [ ] Expand automated regression coverage beyond current boot, ring-3, ELF, VMM and WM metadata gates
+- [ ] Expand automated regression coverage to pointer-drag resize, snap/tiling, real hardware and long-session desktop stability
 
 ## Phase 17: Process Management (IN PROGRESS)
 - [x] Bootstrap user task enters ring 3 with a private address-space branch and mapped user stack

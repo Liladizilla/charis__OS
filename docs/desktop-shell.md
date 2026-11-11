@@ -26,6 +26,9 @@ Keyboard launch paths:
 - F11 opens/focuses Settings.
 - F12 opens/focuses Terminal.
 - Alt+Tab cycles the visible application windows.
+- Super+Up maximizes the focused application.
+- Super+Down restores a maximized window, or minimizes a normal window.
+- Alt+F4 closes the focused application.
 - The Super key toggles the Start menu.
 - Escape is sent to the focused application.
 
@@ -47,13 +50,14 @@ Browser provides local shell pages and limited remote text-preview plumbing. It 
 
 Host-side CI covers allocation failure cleanup, dimensions and buffer caps, title sanitization, focus and hit testing, visibility, focus recovery, maximum window count, slot reuse, bufferless surface lifecycle, bounded movement, transactional resize, minimize/restore, maximize/restore geometry, failed buffer allocation rollback, focus cycling, compositor clipping/z-order and focus-only event dispatch.
 
-The QEMU capture path exercises Files and Terminal open at the same time, switches focus with Alt+Tab, confirms keyboard input reaches Files only when Files is focused, then validates Settings persistence across reboot.
+The QEMU capture path exercises Files and Terminal open at the same time, switches focus with Alt+Tab, confirms keyboard input reaches Files only when Files is focused, executes `help` in Terminal, maximizes Terminal with Super+Up and restores its original bounds with Super+Down, then validates Settings persistence across reboot. CI checks the matching serial markers for both window state transitions. Pointer-driven resize-grip interaction is implemented but remains a separate QEMU test item.
 
 ## Known limitations
 
 - The shell and application renderers are kernel-owned, not isolated userspace processes.
 - The workspace is still sparse and is not yet release-quality desktop design.
 - Snap/tiling controls, window menus and dirty-region rendering are not implemented.
+- Pointer-driven resize uses a lower-right grip with per-app minimum dimensions and work-area clamping; QEMU pointer-drag verification is still pending.
 - Files is read-only and limited to FAT32 root entries with 8.3 names.
 - Terminal command coverage is intentionally small.
 - Browser remote rendering is not a standards-compliant browser; TLS, full HTML/CSS and JavaScript execution are not implemented.
