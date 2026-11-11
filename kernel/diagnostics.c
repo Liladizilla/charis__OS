@@ -94,3 +94,12 @@ void diag_note_interrupt(void) {
 void diag_note_syscall(void) {
     diag_syscalls++;
 }
+
+/* Each aligned 32-bit read is atomic on x86. The shell uses this O(1)
+ * snapshot instead of traversing the scheduler's intrusive task list. */
+void diag_get_runtime_counters(u32* context_switches, u32* interrupts,
+                              u32* syscalls) {
+    if (context_switches) *context_switches = diag_context_switches;
+    if (interrupts) *interrupts = diag_interrupts;
+    if (syscalls) *syscalls = diag_syscalls;
+}

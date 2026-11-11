@@ -16,6 +16,10 @@ typedef struct {
 
 void diag_init(void);
 void diag_collect_stats(system_stats_t* stats);
+/* O(1) snapshot for desktop repaint; unlike diag_collect_stats(), this does
+ * not traverse the scheduler's task list. */
+void diag_get_runtime_counters(u32* context_switches, u32* interrupts,
+                              u32* syscalls);
 void diag_note_context_switch(void);
 void diag_note_interrupt(void);
 void diag_note_syscall(void);

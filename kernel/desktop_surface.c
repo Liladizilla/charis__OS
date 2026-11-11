@@ -328,12 +328,13 @@ static u32 shortcut_grid_bottom(void) {
     return bottom;
 }
 
-static void draw_workspace_status(u32 content_bottom) {
-    if (gfx_text_get_scale() > 2u || g_framebuffer.width <= u(96u)) return;
+static u32 draw_workspace_status(u32 content_bottom) {
+    if (gfx_text_get_scale() > 2u || g_framebuffer.width <= u(96u))
+        return content_bottom;
 
     u32 panel_x = u(48u);
     u32 panel_w = g_framebuffer.width - u(96u);
-    if (panel_w < u(320u)) return;
+    if (panel_w < u(320u)) return content_bottom;
     u32 panel_y = content_bottom + u(28u);
     u32 line = th();
 
@@ -347,7 +348,8 @@ static void draw_workspace_status(u32 content_bottom) {
     u32 panel_h = bar_y - panel_y + bar_h + u(14u);
     u32 bottom_limit = g_framebuffer.height > u(56u)
                      ? g_framebuffer.height - u(56u) : 0;
-    if (panel_y >= bottom_limit || panel_h > bottom_limit - panel_y) return;
+    if (panel_y >= bottom_limit || panel_h > bottom_limit - panel_y)
+        return content_bottom;
 
     u32 left = panel_x + u(20u);
     u32 right = panel_x + panel_w / 2u + u(12u);
@@ -428,6 +430,60 @@ static void draw_workspace_status(u32 content_bottom) {
     fb_reset_clip();
 
     (void)total_mib;
+    return panel_y + panel_h;
+}
+
+/* Compact live diagnostics. Read the counters directly: diag_collect_stats()
+ * walks the scheduler list and is intentionally not used in this repaint path. */
+static void draw_workspace_activity(u32 content_bottom) {
+    if (gfx_text_get_scale() > 2u || g_framebuffer.width <= u(96u)) return;
+
+    u32 panel_x = u(48u);
+    u32 panel_w = g_framebuffer.width - u(96u);
+    if (panel_w < u(480u)) return;
+
+    u32 panel_y = content_bottom + u(20u);
+    u32 line = th();
+    u32 header_y = panel_y + u(14u);
+    u32 divider_y = header_y + line + u(8u);
+    u32 label_y = divider_y + u(14u);
+    u32 value_y = label_y + line + u(5u);
+    u32 panel_h = value_y - panel_y + line + u(12u);
+    u32 bottom_limit = g_framebuffer.height > u(56u)
+                     ? g_framebuffer.height - u(56u) : 0;
+    if (panel_y >= bottom_limit || panel_h > bottom_limit - panel_y) return;
+
+    u32 inner_width = panel_w - u(40u);
+    u32 gap = u(24u);
+    u32 col_w = (inner_width - gap * 2u) / 3u;
+    if (col_w < u(96u)) return;
+
+    u32 context_switches = 0, interrupts = 0, syscalls = 0;
+    diag_get_runtime_counters(&context_switches, &interrupts, &syscalls);
+
+    fb_fill_rect(panel_x, panel_y, panel_w, panel_h, CHARIS_UI_PANEL);
+    fb_draw_rect(panel_x, panel_y, panel_w, panel_h, CHARIS_UI_BORDER);
+    fb_fill_rect(panel_x, panel_y, panel_w, u(3u), CHARIS_UI_ACCENT);
+    gfx_draw_string(panel_x + u(20u), header_y, "KERNEL ACTIVITY",
+                    CHARIS_UI_TEXT, FB_TRANSPARENT);
+    fb_fill_rect(panel_x + u(20u), divider_y, panel_w - u(40u), u(1u),
+                 CHARIS_UI_BORDER);
+
+    const char* labels[3] = {
+        "CONTEXT SWITCHES", "INTERRUPTS", "SYSCALLS"
+    };
+    const u32 values[3] = { context_switches, interrupts, syscalls };
+    for (u32 i = 0; i < 3u; i++) {
+        u32 x = panel_x + u(20u) + i * (col_w + gap);
+        fb_set_clip(x, label_y, col_w, line);
+        gfx_draw_string(x, label_y, labels[i],
+                        CHARIS_UI_MUTED, FB_TRANSPARENT);
+        fb_reset_clip();
+
+        fb_set_clip(x, value_y, col_w, line);
+        draw_u32(x, value_y, values[i], CHARIS_UI_ACCENT);
+        fb_reset_clip();
+    }
 }
 
 void desktop_surface_render(void) {
@@ -450,7 +506,8 @@ void desktop_surface_render(void) {
     u32 content_bottom = shortcut_grid_bottom();
     u32 system_bottom = draw_system_panel();
     if (system_bottom > content_bottom) content_bottom = system_bottom;
-    draw_workspace_status(content_bottom);
+    content_bottom = draw_workspace_status(content_bottom);
+    draw_workspace_activity(content_bottom);
 }
 
 int desktop_surface_hit_test(int mx, int my) {
