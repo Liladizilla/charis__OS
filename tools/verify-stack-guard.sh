@@ -33,6 +33,8 @@ fi
 
 for marker in \
     "[BOOT] init complete, entering scheduler" \
+    "PAGE_FAULT_IST_GUARD_OK" \
+    "PAGE_FAULT_IST_STACK_PERMISSIONS_OK" \
     "KERNEL_STACK_GUARD_TEST_ARMED" \
     "PAGE_FAULT_IST_FRAME_OK" \
     "KERNEL_STACK_GUARD_FAULT_CONTAINED" \

@@ -7,37 +7,136 @@
 #include <kernel/syscall.h>
 #include <kernel/printf.h>
 #include <kernel/memory.h>
+#include <kernel/pmm.h>
+#include <kernel/vmm.h>
+#include <kernel/string.h>
 
 #define IDT_ENTRIES 256
 static idt_entry_t idt[IDT_ENTRIES];
 static idt_ptr_t idt_ptr;
-static u8 page_fault_ist_stack[8192] __attribute__((aligned(16)));
+
+/*
+ * IST1 occupies the reserved task-stack arena slot immediately after the
+ * TASK_MAX_TASKS kernel-task slots:
+ *
+ *   [unmapped guard][writable + NX page 0][writable + NX page 1]
+ *
+ * The arena begins just after the 4 MiB kernel heap. Its high-half PML4 entry
+ * is shared into ring-3 address spaces, so page faults from user mode can also
+ * land here without exposing the stack to user access.
+ */
+#define PAGE_FAULT_IST_SLOT (TASK_MAX_TASKS)
+static u64 page_fault_ist_guard;
+static u64 page_fault_ist_stack_base;
+static u64 page_fault_ist_pages[2];
 
 extern u64 isr_table[256];
 extern u8 tss[];
 
-/* Install IST1 before the IDT is loaded. The TSS's IST1 field is at byte
- * offset 36; like RSP0 at offset 4, it is not naturally aligned. */
+static bool idt_release_page_fault_ist(void) {
+    bool ok = true;
+    for (u32 i = 0; i < 2; i++) {
+        u64 owned = page_fault_ist_pages[i];
+        if (!owned) continue;
+        u64 virt = page_fault_ist_stack_base + (u64)i * PAGE_SIZE;
+        u64 unmapped = vmm_unmap_page_current(virt);
+        if (unmapped != owned) {
+            serial_puts("FATAL: page-fault IST frame ownership mismatch\\n");
+            ok = false;
+            continue;
+        }
+        pmm_free_page(unmapped);
+        page_fault_ist_pages[i] = 0;
+    }
+    page_fault_ist_guard = 0;
+    page_fault_ist_stack_base = 0;
+    return ok;
+}
+
+/* Allocate and verify a real supervisor-only, writable, NX emergency stack.
+ * The TSS is not pointed at the stack until both leaves and its guard have
+ * passed the runtime page-table checks. */
 static bool idt_configure_page_fault_ist(void) {
-    u64 stack_top = (u64)(uintptr_t)(page_fault_ist_stack +
-                                     sizeof(page_fault_ist_stack));
-    u64 observed = 0;
-    asm volatile("movq %0, 36(%1)"
-                 :
-                 : "r"(stack_top), "r"(tss)
-                 : "memory");
-    asm volatile("movq 36(%1), %0"
-                 : "=r"(observed)
-                 : "r"(tss)
-                 : "memory");
-    return observed == stack_top && (stack_top & 0xFULL) == 0;
+    u64 slot_base = TASK_STACK_ARENA_BASE +
+                    (u64)PAGE_FAULT_IST_SLOT * TASK_STACK_SLOT_PAGES * PAGE_SIZE;
+    u64 stack_base = slot_base + PAGE_SIZE;
+    u64 stack_top = stack_base + 2ULL * PAGE_SIZE;
+    u64 cr3;
+    asm volatile("mov %%cr3, %0" : "=r"(cr3));
+    pml4_t* active = (pml4_t*)(uintptr_t)(cr3 & ~0xFFFULL);
+    u64 physical = 0, map_flags = 0;
+
+    /* Refuse to replace any existing mapping, including a stale guard. */
+    for (u32 page = 0; page < TASK_STACK_SLOT_PAGES; page++) {
+        if (vmm_translate(active, slot_base + (u64)page * PAGE_SIZE,
+                          &physical, &map_flags)) return false;
+    }
+
+    page_fault_ist_guard = slot_base;
+    page_fault_ist_stack_base = stack_base;
+
+    for (u32 i = 0; i < 2; i++) {
+        u64 phys = pmm_alloc_page();
+        if (!phys) goto fail;
+        void* alias = vmm_phys_to_virt(phys);
+        if (!alias) {
+            pmm_free_page(phys);
+            goto fail;
+        }
+        kmemset(alias, 0, PAGE_SIZE);
+
+        u64 virt = stack_base + (u64)i * PAGE_SIZE;
+        if (!vmm_map_page(virt, phys, VMM_FLAG_WRITABLE | VMM_FLAG_NX)) {
+            pmm_free_page(phys);
+            goto fail;
+        }
+        page_fault_ist_pages[i] = phys;
+    }
+
+    /* Recheck the absent guard and effective permissions at every level. */
+    if (vmm_translate(active, page_fault_ist_guard, &physical, &map_flags))
+        goto fail;
+    for (u32 i = 0; i < 2; i++) {
+        if (!vmm_translate(active, stack_base + (u64)i * PAGE_SIZE,
+                           &physical, &map_flags) ||
+            (physical & ~(PAGE_SIZE - 1ULL)) != page_fault_ist_pages[i] ||
+            !(map_flags & VMM_FLAG_PRESENT) ||
+            !(map_flags & VMM_FLAG_WRITABLE) ||
+            (map_flags & VMM_FLAG_USER) ||
+            !(map_flags & VMM_FLAG_NX)) goto fail;
+    }
+    if ((stack_top & 0xFULL) != 0) goto fail;
+
+    /* TSS.IST1 is at byte offset 36 and is not naturally aligned. */
+    {
+        u64 observed = 0;
+        asm volatile("movq %0, 36(%1)"
+                     :
+                     : "r"(stack_top), "r"(tss)
+                     : "memory");
+        asm volatile("movq 36(%1), %0"
+                     : "=r"(observed)
+                     : "r"(tss)
+                     : "memory");
+        if (observed != stack_top) goto fail;
+    }
+
+    serial_puts("PAGE_FAULT_IST_GUARD_OK\\n");
+    serial_puts("PAGE_FAULT_IST_STACK_PERMISSIONS_OK\\n");
+    return true;
+
+fail:
+    if (!idt_release_page_fault_ist()) {
+        serial_puts("FATAL: unable to roll back page-fault IST mappings\\n");
+    }
+    return false;
 }
 
 static bool idt_page_fault_frame_on_ist(const reg_frame_t* frame) {
-    u64 start = (u64)(uintptr_t)page_fault_ist_stack;
-    u64 end = start + sizeof(page_fault_ist_stack);
+    u64 start = page_fault_ist_stack_base;
+    u64 end = start + 2ULL * PAGE_SIZE;
     u64 address = (u64)(uintptr_t)frame;
-    return address >= start && address <= end &&
+    return start && address >= start && address <= end &&
            sizeof(*frame) <= end - address;
 }
 

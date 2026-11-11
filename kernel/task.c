@@ -19,9 +19,6 @@ static void task_release_user_code_pages(task_t* task, pml4_t* pml4);
 static bool task_stack_allocate(task_t* task);
 static bool task_stack_release(task_t* task);
 
-#define TASK_STACK_ARENA_BASE 0xFFFF900000400000ULL
-#define TASK_STACK_SLOT_PAGES 3U /* one unmapped guard + two mapped stack pages */
-
 static u64 task_irq_save(void) {
     u64 flags;
     asm volatile("pushfq; popq %0; cli" : "=r"(flags) : : "memory");

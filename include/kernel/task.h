@@ -15,6 +15,10 @@
 #define TASK_NAME_MAX           32
 #define TASK_STACK_SIZE         8192
 #define TASK_MAX_TASKS          32
+/* Three-page slots are shared by kernel task stacks and the emergency IST1
+ * stack: one unmapped guard page followed by two supervisor-only stack pages. */
+#define TASK_STACK_ARENA_BASE    0xFFFF900000400000ULL
+#define TASK_STACK_SLOT_PAGES    3U
 #define TASK_USER_CODE_MAX_PAGES 4
 #define TASK_DEFAULT_QUANTUM    10
 #define TASK_WAITING_SLEEP       0x534C4550U /* 'SLEP': blocked until event_data deadline */
