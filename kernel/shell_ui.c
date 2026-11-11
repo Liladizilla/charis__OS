@@ -1105,6 +1105,7 @@ static void handle_event(const input_event_t* e) {
             wm_focus_window(hit);
             if (e->mouse.button == 1 && shell_app_id_for_window(hit) >= 0 &&
                 shell_resize_grip_hit(hit, mx, my)) {
+                serial_printf("SHELL_RESIZE_GRIP_ARMED %d,%d\\n", mx, my);
                 shell_resize_window = hit;
                 shell_drag_window = NULL;
                 shell_resize_origin_x = mx;
