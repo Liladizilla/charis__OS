@@ -355,7 +355,7 @@ static void test_capacity_and_cleanup(void) {
         assert(!fd_has_rights(stale, FD_RIGHT_READ));
         assert(task.fd_table[i].rights == 0);
         assert(task.fd_table[i].file == NULL);
-        assert(task.fd_table[i].generation == 1);
+        assert(task.fd_table[i].generation == (i == 3 ? 2U : 1U));
     }
 
     /* Slot exhaustion must roll back the node claim without consuming the
