@@ -2,7 +2,7 @@
 
 ## Status
 
-Partially implemented on the current security branch. Descriptor entries now reference kernel-owned open-file descriptions, reference acquisition/release is implemented, and all in-kernel descriptor I/O consumers pin the object for their operation. Descriptor duplication, cross-task transfer, and the userspace transfer ABI remain unimplemented.
+Implemented kernel-internal lifetime and duplication primitives on the current security branch. Descriptor entries reference kernel-owned open-file descriptions; syscall and ELF I/O pin them; and `fd_duplicate_to()` publishes a recipient descriptor only after validating recipient liveness, rights attenuation, available capacity, and a new reference. The userspace transfer ABI remains intentionally unimplemented.
 
 ## Why the current model must change
 
@@ -44,7 +44,7 @@ The high bit of `lifecycle` is `VFS_OPEN_FILE_CLOSING`; the low 63 bits are the 
 
 - A newly opened node is transferred to exactly one newly created open-file description only after all allocation and validation that can fail have completed.
 - Every live descriptor owns exactly one reference to its open-file description.
-- A future duplicate or delegation operation must acquire one reference before publishing the recipient descriptor. No duplication or delegation API is implemented yet.
+- `fd_duplicate_to()` acquires one reference before publishing the recipient descriptor. It rejects recipients in UNUSED, ALLOCATING, EXITING or ZOMBIE state and rejects a requested rights mask that is not a nonzero subset of the sender's grant.
 - Closing a descriptor first revokes that descriptor entry, then drops exactly one reference.
 - The node close callback runs exactly once, only after the final reference is dropped.
 - A reference may not be acquired from a zero-reference or closing object.
@@ -54,16 +54,16 @@ The high bit of `lifecycle` is `VFS_OPEN_FILE_CLOSING`; the low 63 bits are the 
 ### Authority
 
 - Rights belong to descriptor entries, not to the shared open-file description.
-- A recipient receives a subset of the sender's rights: `recipient_rights = requested_rights & sender_rights`. Reject zero rights and unknown bits.
+- A recipient receives only the exact requested subset of the sender's rights. `fd_duplicate_to()` rejects zero rights, unknown bits, and any requested bit not present in the source descriptor. Rights remain independent on the two descriptor entries.
 - Process capabilities remain an independent policy gate. Descriptor rights do not replace process capability checks.
 - A descriptor handle's PID/generation/slot encoding prevents accidental stale and cross-task resolution; it is not a security secret.
-- Delegation must name and validate the recipient task in kernel space. A user-supplied PID alone is not proof of identity or authorization.
+- The kernel-internal `fd_duplicate_to()` names the recipient by PID and resolves it through the kernel task table; it never accepts a userspace task pointer. This primitive is not exposed to ring 3, and a PID alone is not treated as a public authorization credential.
 - No userspace pointer may be stored as an object, owner, or callback context.
 - The first implementation should not add an unrestricted global descriptor lookup or an API that accepts arbitrary kernel pointers from ring 3.
 
 ### Offset and I/O semantics
 
-- Duplicated descriptors referring to the same open-file description share one offset. This is intentional and must be tested.
+- Descriptors created by `fd_duplicate_to()` refer to the same open-file description and share one offset. Host regression tests verify the same object and shared offset.
 - A separate `open()` creates a separate open-file description and therefore an independent offset, even when it resolves to the same node.
 - Reads and writes must hold a stable object reference for the entire callback and offset update. The current syscall and ELF paths use `fd_acquire()` / `fd_release()`.
 - Offset arithmetic must be checked before invoking filesystem/device callbacks.
@@ -84,9 +84,9 @@ The high bit of `lifecycle` is `VFS_OPEN_FILE_CLOSING`; the low 63 bits are the 
 3. [x] Add reference acquisition/release with a no-resurrection finalization rule.
 4. [x] Make ordinary open create one description and make close drop one reference.
 5. [x] Add host tests for operation pins surviving descriptor revocation, final callback exactly once, and independent open offsets.
-6. Add a kernel-internal descriptor duplication primitive with an explicit recipient task pointer and rights attenuation.
-7. Add adversarial tests for stale handles, wrong recipients, rights escalation, duplicate close, and concurrent final release.
-8. Only after those tests pass, expose a constrained syscall/IPC transfer protocol to ring 3.
+6. [x] Add a kernel-internal descriptor duplication primitive that resolves an explicit recipient PID through the kernel task table and attenuates rights.
+7. [x] Add host tests for rights escalation rejection, recipient capacity exhaustion, sender close, recipient cleanup, shared offset, and rejected exiting/zombie recipients.
+8. Keep any syscall/IPC transfer protocol out of ring 3 until an explicit, authenticated IPC design exists.
 
 ## Required regression matrix
 
@@ -96,7 +96,7 @@ The high bit of `lifecycle` is `VFS_OPEN_FILE_CLOSING`; the low 63 bits are the 
 | One descriptor plus multiple operation pins | Descriptor close keeps node alive until the final pin is released |
 | Final descriptor close | Node close runs exactly once |
 | Two independent opens of same path | Independent offsets and lifetimes |
-| Duplicate descriptor (not implemented) | Future duplicate shares offset and adds one reference |
+| Kernel-internal duplicate | Shares offset, adds one reference, preserves descriptor-local rights |
 | Failed duplicate due to full recipient table | Sender unchanged; no leaked reference |
 | Requested rights exceed sender rights | Reject or grant only the explicitly permitted intersection; never elevate |
 | Unknown or zero rights | Reject |
@@ -109,7 +109,7 @@ The high bit of `lifecycle` is `VFS_OPEN_FILE_CLOSING`; the low 63 bits are the 
 ## Non-goals for this increment
 
 - No claim of a complete object-capability system.
-- No descriptor duplication or arbitrary resource sharing across address spaces yet.
+- No userspace descriptor-transfer syscall or general resource-sharing protocol yet.
 - No ring-3 syscall ABI until the kernel-internal model and tests are stable.
 - No cryptographic descriptor tokens.
 - No broad VFS rewrite or speculative filesystem feature additions.
