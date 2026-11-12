@@ -21,6 +21,7 @@ static bool map_second_page;
 static u64 user_page_flags = VMM_FLAG_USER | VMM_FLAG_WRITABLE;
 static u32 keyboard_reads;
 static u32 file_reads;
+static u32 file_writes;
 
 task_t* scheduler_current(void) {
     return &test_task;
@@ -31,7 +32,8 @@ fd_entry_t* fd_get(fd_handle_t handle) {
 }
 
 bool security_check_capability(task_t* task, u32 capability) {
-    return task == &test_task && capability == CAP_FS_READ;
+    return task == &test_task &&
+        (capability == CAP_FS_READ || capability == CAP_FS_WRITE);
 }
 
 void* kmalloc(usize size) {
@@ -71,6 +73,14 @@ void* kmemcpy(void* destination, const void* source, usize size) {
     return memcpy(destination, source, size);
 }
 
+static int test_file_write(vfs_node_t* node, u64 offset, u64 size, const u8* buffer) {
+    (void)node;
+    (void)offset;
+    (void)buffer;
+    file_writes++;
+    return (int)size;
+}
+
 static int test_file_read(vfs_node_t* node, u64 offset, u64 size, u8* buffer) {
     (void)node;
     (void)offset;
@@ -87,6 +97,7 @@ static void reset_test_state(void) {
     test_task.is_user = true;
     test_task.mm.pml4 = &test_pml4;
     test_node.read = test_file_read;
+    test_node.write = test_file_write;
     test_entry.node = &test_node;
     test_entry.rights = FD_RIGHT_READ;
     test_entry.offset = 13;
@@ -94,6 +105,7 @@ static void reset_test_state(void) {
     user_page_flags = VMM_FLAG_USER | VMM_FLAG_WRITABLE;
     keyboard_reads = 0;
     file_reads = 0;
+    file_writes = 0;
 }
 
 int main(void) {
@@ -129,6 +141,18 @@ int main(void) {
     /* Zero-length reads do not require or inspect a user pointer. */
     assert(syscall_read_handler(3, 0, 0, 0, 0, 0) == 0);
     assert(file_reads == 1);
+
+    /* File offsets may never wrap or reach a callback with an invalid range. */
+    test_entry.offset = ~(u64)0 - 7;
+    assert(syscall_read_handler(3, 0x1000, 16, 0, 0, 0) == (u64)-1);
+    assert(file_reads == 1);
+    assert(test_entry.offset == ~(u64)0 - 7);
+
+    test_entry.rights = FD_RIGHT_WRITE;
+    test_entry.offset = ~(u64)0 - 3;
+    assert(syscall_write_handler(3, 0x1000, 8, 0, 0, 0) == (u64)-1);
+    assert(file_writes == 0);
+    assert(test_entry.offset == ~(u64)0 - 3);
 
     /* Reject a range that would cross the lower canonical user boundary. */
     assert(syscall_read_handler(3, 0x00007FFFFFFFFFFFULL, 2, 0, 0, 0) == (u64)-1);

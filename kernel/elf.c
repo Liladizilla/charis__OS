@@ -33,7 +33,8 @@ static bool elf_write_user(pml4_t* pml4, u64 address, const void* source, usize 
 
 static int fd_read_all(fd_handle_t fd, u64 offset, void* buf, usize count) {
     fd_entry_t* f = fd_get(fd);
-    if (!f || !(f->rights & FD_RIGHT_READ) || !f->node->read) return -1;
+    if (!f || !(f->rights & FD_RIGHT_READ) || !f->node->read ||
+        (u64)count > (~(u64)0 - offset)) return -1;
     usize total = 0;
     while (total < count) {
         int read = f->node->read(f->node, offset + total, count - total,

@@ -52,6 +52,9 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     if (fd != FD_STDIN &&
         (!task || !security_check_capability(task, CAP_FS_READ))) return (u64)-1;
     if (count == 0) return 0;
+    /* Reject wrapping ranges before a device or VFS callback observes them. */
+    if (fd != FD_STDIN && (u64)count > (~(u64)0 - f->offset))
+        return (u64)-1;
 
     if (task && task->is_user) {
         /* Validate before touching an input source. stdin returns at most one
@@ -110,6 +113,8 @@ static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
     if (!f || !f->node || !(f->rights & FD_RIGHT_WRITE) ||
         count > SYSCALL_IO_MAX) return (u64)-1;
     if (count == 0) return 0;
+    if (fd != FD_STDOUT && fd != FD_STDERR &&
+        (u64)count > (~(u64)0 - f->offset)) return (u64)-1;
 
     u8* bounce = NULL;
     const u8* buf = (const u8*)user_buf;
