@@ -474,9 +474,8 @@ static bool load_local_file(const char* url) {
         ? (usize)node->size : sizeof(file_preview) - 1u;
     int bytes = node->read(node, 0, limit, (u8*)file_preview);
     if (node->close) node->close(node);
-    if (bytes < 0) return false;
+    if (bytes < 0 || (usize)bytes > limit) return false;
     usize count = (usize)bytes;
-    if (count > limit) count = limit;
     usize output = 0;
     for (usize i = 0; i < count; i++) {
         u8 ch = (u8)file_preview[i];

@@ -111,6 +111,11 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/il_loader_test.c -Wl,--gc-sections -o /tmp/il_loader_test
           /tmp/il_loader_test
 
+      - name: Test ELF exact-read bounds
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/elf_fd_read_test.c -Wl,--gc-sections -o /tmp/elf_fd_read_test
+          /tmp/elf_fd_read_test
+
       - name: Build ELF smoke-test disk
         run: make elf-test
 
