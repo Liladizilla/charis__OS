@@ -127,6 +127,12 @@ bool ipc_endpoint_pair_create(task_t* a, task_t* b, u32 rights_a,
         !ipc_rights_valid(rights_a) || !ipc_rights_valid(rights_b)) return false;
 
     u64 flags = ipc_irq_save();
+    /* Revalidate under local IRQ exclusion: EXITING teardown and endpoint
+     * publication must never pass each other on this single CPU. */
+    if (!ipc_task_live_kernel(a) || !ipc_task_live_kernel(b) || a == b) {
+        ipc_irq_restore(flags);
+        return false;
+    }
     int slot_a = ipc_find_task_slot(a), slot_b = ipc_find_task_slot(b);
     int channel_index = ipc_find_channel();
     if (slot_a < 0 || slot_b < 0 || channel_index < 0) {
