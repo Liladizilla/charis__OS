@@ -33,7 +33,7 @@ static bool elf_write_user(pml4_t* pml4, u64 address, const void* source, usize 
 
 static int fd_read_all(int fd, u64 offset, void* buf, usize count) {
     fd_entry_t* f = fd_get(fd);
-    if (!f || !f->node || !f->node->read) return -1;
+    if (!f || !(f->rights & FD_RIGHT_READ) || !f->node->read) return -1;
     usize total = 0;
     while (total < count) {
         int read = f->node->read(f->node, offset + total, count - total,
@@ -193,8 +193,11 @@ static int elf_load_internal(const char* path, process_mm_t* mm, u64* entry_poin
     vfs_node_t* node = vfs_resolve(path);
     if (!node || !(node->flags & VFS_FILE) || !node->read) return -1;
 
-    int fd = fd_alloc(node, 0);
-    if (fd < 0) return -1;
+    int fd = fd_alloc(node, 0, FD_RIGHT_READ);
+    if (fd < 0) {
+        if (node->close) node->close(node);
+        return -1;
+    }
 
     int result = -1;
     bool load_started = false;

@@ -1,5 +1,6 @@
 /* syscall_wrappers.h - C library wrappers for syscalls */
 #pragma once
+#include <kernel/vfs.h>
 
 // Process control
 #define sys_exit(code) syscall_invoke(SYS_EXIT, (code), 0, 0, 0, 0, 0)
@@ -13,7 +14,8 @@
 #define sys_print(s) syscall_invoke(SYS_PRINT, (u64)(s), 0, 0, 0, 0, 0)
 
 // File operations
-#define sys_open(path) syscall_invoke(SYS_OPEN, (u64)(path), 0, 0, 0, 0, 0)
+#define sys_open_rights(path, rights) syscall_invoke(SYS_OPEN, (u64)(path), (rights), 0, 0, 0, 0)
+#define sys_open(path) sys_open_rights((path), FD_RIGHT_READ)
 #define sys_close(fd) syscall_invoke(SYS_CLOSE, (fd), 0, 0, 0, 0, 0)
 #define sys_exec(path) syscall_invoke(SYS_EXEC, (u64)(path), 0, 0, 0, 0, 0)
 #define sys_execve(path, argv, envp) syscall_invoke(SYS_EXEC, (u64)(path), (u64)(argv), (u64)(envp), 0, 0, 0)

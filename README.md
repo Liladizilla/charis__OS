@@ -402,24 +402,38 @@ Combine with `make gdb` and:
 ## Security
 
 Capability bits are defined in `include/kernel/security.h` and assigned per task
-at creation; children inherit the parent's set across `fork`.
+at creation. The `fork` syscall is not implemented and currently returns
+failure; child capability inheritance is therefore not claimed.
 
-| Capability | Guards |
+| Authority | Enforcement |
 |---|---|
-| `CAP_FS_READ` | `sys_open` |
-| `CAP_FS_WRITE` | non-console file writes through `sys_write` |
+| `CAP_FS_READ` | Required to request a read-capable file descriptor |
+| `CAP_FS_WRITE` | Required to request a write-capable descriptor and rechecked for non-console writes |
+| `FD_RIGHT_READ` | Per-descriptor grant checked by `sys_read` and the ELF loader |
+| `FD_RIGHT_WRITE` | Per-descriptor grant checked by `sys_write` |
 | `CAP_SPAWN` + `CAP_ALLOW_EXEC` | `sys_exec` authorization |
-| `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | reserved |
+| `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | Reserved |
 
-`security_verify_path()` rejects parent-directory traversal. When RDRAND is available, it can seed the stack guard. If RDRAND is
+`sys_open(path)` remains read-only by default. `sys_open_rights(path, rights)`
+can request an explicit read/write combination, but the process must hold the
+matching filesystem capabilities and the VFS node must implement each requested
+operation. The descriptor stores only the granted rights; later reads and writes
+must pass both the descriptor check and the underlying operation check.
+Standard input receives read authority, while standard output/error receive
+write authority. Closing a descriptor revokes its rights before the filesystem
+close callback runs. Descriptor tables are task-local and are rebuilt when a
+task slot is reused.
+
+`security_verify_path()` rejects parent-directory traversal and alternate
+separators. When RDRAND is available, it can seed the stack guard. If RDRAND is
 unavailable, cryptographic token generation is disabled. The kernel does not
 claim that a weak fallback provides cryptographic entropy.
 
-**Known gaps:** capability checks are applied to selected file and execution
-operations, while several global IPC, socket, networking, diagnostics and
-shared-memory interfaces remain kernel-only rather than being exposed to ring 3.
-This is not a complete per-user security boundary; ownership, process isolation,
-reaping and broader capability enforcement remain unfinished.
+**Known gaps:** per-open rights are not yet transferable or inherited, and the
+broader resource model is incomplete. Global IPC, socket, networking,
+diagnostics and shared-memory interfaces remain kernel-only rather than being
+exposed to ring 3. Process isolation, safe reaping and broader capability
+enforcement remain unfinished.
 
 See [`SECURITY.md`](./SECURITY.md) for reporting guidance.
 

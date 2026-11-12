@@ -21,8 +21,13 @@
 - [x] VFS layer (vfs.h, vfs.c) - vfs_node_t, mount points
 - [x] Device nodes: /dev/null, /dev/zero, /dev/kbd, /dev/vga
 - [x] Per-task fd table with fd_alloc(), fd_get(), fd_close()
-- [x] FAT32 integration with VFS (read-only)
-- [x] sys_open() / sys_close() syscalls
+- [x] Explicit per-descriptor read/write rights, checked independently of process capabilities
+- [x] Reject zero, unknown and unavailable rights; standard streams cannot be closed through sys_close
+- [x] Revoke rights on close and reset descriptor metadata on task exit and task-slot reuse
+- [x] Host regression tests for rights, table capacity, task isolation and close ordering
+- [x] FAT32 integration with VFS (read-only listing; mutation support remains incomplete)
+- [x] sys_open() defaults to read-only; sys_open_rights() requests capability-backed rights
+- [x] sys_close() rejects invalid, closed and standard descriptors
 
 ## Phase 4: ELF Loader (IN PROGRESS)
 - [x] Validate static ELF64 x86-64 `ET_EXEC` headers and program-header bounds

@@ -82,6 +82,11 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/wm_lifecycle_test.c -Wl,--gc-sections -o /tmp/wm_lifecycle_test
           /tmp/wm_lifecycle_test
 
+      - name: Test VFS descriptor rights and lifecycle
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/fd_table_test.c kernel/vfs.c -Wl,--gc-sections -o /tmp/fd_table_test
+          /tmp/fd_table_test
+
       - name: Build ELF smoke-test disk
         run: make elf-test
 

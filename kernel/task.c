@@ -178,13 +178,17 @@ void task_init(void) {
             task_pool[i].fd_table[j].node = NULL;
             task_pool[i].fd_table[j].offset = 0;
             task_pool[i].fd_table[j].flags = 0;
+            task_pool[i].fd_table[j].rights = 0;
         }
         // stdin, stdout, stderr point to keyboard and vga devices
         extern vfs_node_t dev_kbd;
         extern vfs_node_t dev_vga;
         task_pool[i].fd_table[FD_STDIN].node = &dev_kbd;
+        task_pool[i].fd_table[FD_STDIN].rights = FD_RIGHT_READ;
         task_pool[i].fd_table[FD_STDOUT].node = &dev_vga;
+        task_pool[i].fd_table[FD_STDOUT].rights = FD_RIGHT_WRITE;
         task_pool[i].fd_table[FD_STDERR].node = &dev_vga;
+        task_pool[i].fd_table[FD_STDERR].rights = FD_RIGHT_WRITE;
     }
     task_list = NULL;
 }
@@ -394,10 +398,14 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
         task->fd_table[i].node = NULL;
         task->fd_table[i].offset = 0;
         task->fd_table[i].flags = 0;
+        task->fd_table[i].rights = 0;
     }
     task->fd_table[FD_STDIN].node = &dev_kbd;
+    task->fd_table[FD_STDIN].rights = FD_RIGHT_READ;
     task->fd_table[FD_STDOUT].node = &dev_vga;
+    task->fd_table[FD_STDOUT].rights = FD_RIGHT_WRITE;
     task->fd_table[FD_STDERR].node = &dev_vga;
+    task->fd_table[FD_STDERR].rights = FD_RIGHT_WRITE;
 
     for (u32 i = 0; i < TASK_NAME_MAX - 1 && name && name[i]; i++) {
         task->name[i] = name[i];
