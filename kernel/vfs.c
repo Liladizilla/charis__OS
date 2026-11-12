@@ -284,8 +284,6 @@ int fd_table_init(void) {
  * prevents a closed handle from naming a later object after slot reuse.
  */
 static bool fd_resolve(task_t* task, fd_handle_t handle, u32* slot_out) {
-    /* The all-ones pattern is reserved for FD_HANDLE_INVALID, even though
-     * its component fields can otherwise encode a maximum-valued descriptor. */
     if (!task || !slot_out || handle == FD_HANDLE_INVALID) return false;
 
     if (handle <= FD_STDERR) {
@@ -330,19 +328,14 @@ fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights,
     }
     if (slot == MAX_FDS) return FD_HANDLE_INVALID;
 
-    /* Build the identifier before claiming node ownership or publishing
-     * the descriptor. UINT64_MAX is the failure sentinel, so the one tuple
-     * that encodes it must never become a live entry. Retire that generation
-     * and leave cleanup ownership with the caller. */
+    /* PID zero is never allocated, so the invalid sentinel uses an owner
+     * value that cannot collide with any valid descriptor, including the
+     * maximum nonzero PID/generation/slot tuple. */
     fd_entry_t* entry = &task->fd_table[slot];
     u32 generation = entry->generation + 1;
     fd_handle_t handle = ((u64)task->pid << 32) |
                          ((u64)generation << FD_HANDLE_SLOT_BITS) |
                          (u64)slot;
-    if (handle == FD_HANDLE_INVALID) {
-        entry->generation = generation;
-        return FD_HANDLE_INVALID;
-    }
 
     bool closeable = node->close != NULL;
     if (closeable && !fd_node_owner_claim(node)) {

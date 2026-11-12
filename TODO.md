@@ -26,7 +26,7 @@
 - [x] Task-bound opaque descriptor handles with owner-PID binding and per-slot generations
 - [x] Reject stale handles after close/reopen, cross-task handle reuse and generation wrap
 - [x] Make task PID allocation atomic and monotonic; fail closed at exhaustion without identity reuse
-- [ ] Reserve the all-ones descriptor invalid sentinel against collision with the maximum PID/generation/slot tuple; add an allocation/cleanup boundary regression
+- [x] Reserve a descriptor invalid sentinel in the never-issued PID-zero namespace; verify the maximum PID/generation/slot tuple remains valid
 - [x] Audit built-in task grants; remove unused filesystem/process syscall capabilities from kernel workers
 - [x] Host concurrency regression verifies unique PIDs across parallel allocators
 - [x] Recheck `CAP_FS_READ` on non-console descriptor reads

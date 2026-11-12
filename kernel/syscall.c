@@ -212,28 +212,28 @@ static u64 syscall_sleep_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
 
 static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a3; (void)a4; (void)a5; (void)a6;
-    if (!a1) return (u64)-1;
+    if (!a1) return (u64)FD_HANDLE_INVALID;
 
     task_t* task = scheduler_current();
-    if (!task) return (u64)-1;
+    if (!task) return (u64)FD_HANDLE_INVALID;
 
     /* Preserve sys_open(path) compatibility as a read-only request. */
     u64 requested = a2 ? a2 : FD_RIGHT_READ;
-    if (!requested || (requested & ~(u64)FD_RIGHT_MASK)) return (u64)-1;
+    if (!requested || (requested & ~(u64)FD_RIGHT_MASK)) return (u64)FD_HANDLE_INVALID;
     u32 rights = (u32)requested;
 
     /* Process capabilities authorize a request; the descriptor stores only
      * the exact subset granted by this open operation. */
     if ((rights & FD_RIGHT_READ) &&
-        !security_check_capability(task, CAP_FS_READ)) return (u64)-1;
+        !security_check_capability(task, CAP_FS_READ)) return (u64)FD_HANDLE_INVALID;
     if ((rights & FD_RIGHT_WRITE) &&
-        !security_check_capability(task, CAP_FS_WRITE)) return (u64)-1;
+        !security_check_capability(task, CAP_FS_WRITE)) return (u64)FD_HANDLE_INVALID;
 
     char path[256];
     if (task->is_user) {
-        if (!syscall_copy_user_string(task, a1, path, sizeof(path))) return (u64)-1;
+        if (!syscall_copy_user_string(task, a1, path, sizeof(path))) return (u64)FD_HANDLE_INVALID;
     } else {
-        if ((u64)a1 >= 0xFFFF800000000000ULL) return (u64)-1;
+        if ((u64)a1 >= 0xFFFF800000000000ULL) return (u64)FD_HANDLE_INVALID;
         const char* path_str = (const char*)a1;
         usize i = 0;
         for (; i < sizeof(path)-1 && path_str[i]; i++) path[i] = path_str[i];
@@ -241,15 +241,15 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     }
 
     /* Validate the path before handing it to the filesystem parser. */
-    if (!security_verify_path(path, task)) return (u64)-1;
+    if (!security_verify_path(path, task)) return (u64)FD_HANDLE_INVALID;
 
     vfs_node_t* node = vfs_resolve(path);
-    if (!node) return (u64)-1;
+    if (!node) return (u64)FD_HANDLE_INVALID;
 
     if (((rights & FD_RIGHT_READ) && !node->read) ||
         ((rights & FD_RIGHT_WRITE) && !node->write)) {
         if (node->close) node->close(node);
-        return (u64)-1;
+        return (u64)FD_HANDLE_INVALID;
     }
 
     /* Reserve exclusive lifetime ownership before calling the open callback.
@@ -260,12 +260,12 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
         if (node->close &&
             allocation_status != FD_ALLOC_NODE_ALREADY_OWNED)
             node->close(node);
-        return (u64)-1;
+        return (u64)FD_HANDLE_INVALID;
     }
 
     if (node->open && node->open(node, rights) != 0) {
         fd_close(fd);
-        return (u64)-1;
+        return (u64)FD_HANDLE_INVALID;
     }
     return fd;
 }

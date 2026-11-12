@@ -453,10 +453,10 @@ there even when the same slot is occupied. Task PIDs are allocated with atomic
 compare/exchange, remain monotonic, and fail closed rather than wrapping, so
 identities are unique even when task creation races across CPUs and are never
 recycled. The generation counter is preserved across task-slot reuse and also
-fails closed rather than wrapping. The all-ones 64-bit value is reserved as
-`FD_HANDLE_INVALID`; the allocator detects the one maximum PID/generation/slot
-tuple that would produce it and retires that slot generation before claiming
-node ownership or publishing a descriptor. Standard input/output/error retain
+fails closed rather than wrapping. `FD_HANDLE_INVALID` uses owner PID zero, which the monotonic PID
+allocator never issues. This leaves every nonzero-PID descriptor tuple
+available, including the all-ones 64-bit handle at the maximum PID, generation
+and slot values. Standard input/output/error retain
 the stable handles 0, 1 and 2. Numeric handles are not transferable capabilities;
 future cross-task delegation requires a separate, rights-attenuating
 resource-transfer mechanism.

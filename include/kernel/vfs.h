@@ -28,8 +28,8 @@ typedef u64 fd_handle_t;
 #define FD_HANDLE_SLOT_BITS       6U
 #define FD_HANDLE_SLOT_MASK       ((1ULL << FD_HANDLE_SLOT_BITS) - 1ULL)
 #define FD_HANDLE_GENERATION_MAX ((1U << 26) - 1U)
-/* UINT64_MAX is reserved as the invalid/failure sentinel. */
-#define FD_HANDLE_INVALID         (~(fd_handle_t)0)
+/* PID zero is never allocated; owner-PID zero reserves this invalid value. */
+#define FD_HANDLE_INVALID         ((fd_handle_t)3ULL)
 #define FD_HANDLE_SLOT(handle)    ((u32)((handle) & FD_HANDLE_SLOT_MASK))
 
 /* VFS read/write callbacks must never access more than the requested
