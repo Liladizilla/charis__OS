@@ -122,7 +122,7 @@ void ipc_init(void) {
 bool ipc_endpoint_pair_create(task_t* a, task_t* b, u32 rights_a,
                               u32 rights_b, ipc_handle_t* handle_a,
                               ipc_handle_t* handle_b) {
-    if (!handle_a || !handle_b) return false;
+    if (!handle_a || !handle_b || handle_a == handle_b) return false;
     *handle_a = *handle_b = IPC_HANDLE_INVALID;
     if (!ipc_task_live_kernel(a) || !ipc_task_live_kernel(b) || a == b ||
         !ipc_rights_valid(rights_a) || !ipc_rights_valid(rights_b)) return false;
