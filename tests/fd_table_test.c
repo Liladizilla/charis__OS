@@ -12,11 +12,21 @@ static bool fail_next_kmalloc;
 static pthread_barrier_t owner_start_barrier;
 static fd_handle_t observed_fd = FD_HANDLE_INVALID;
 static vfs_node_t capacity_nodes[MAX_FDS];
+static task_t* registered_tasks[128];
+static u32 registered_pids[128];
+static u32 registered_task_count;
 
 extern vfs_node_t dev_kbd;
 extern vfs_node_t dev_vga;
 
 task_t* scheduler_current(void) { return active_task; }
+
+task_t* task_find_by_pid(u32 pid) {
+    for (u32 i = 0; i < registered_task_count; i++) {
+        if (registered_pids[i] == pid) return registered_tasks[i];
+    }
+    return NULL;
+}
 
 void* kmalloc(usize size) {
     if (fail_next_kmalloc) {
@@ -55,7 +65,12 @@ static vfs_node_t write_only_node = {
 static void reset_task(task_t* task, u32 pid) {
     *task = (task_t){0};
     task->pid = pid;
+    task->state = TASK_STATE_READY;
     fd_table_init(task->fd_table);
+    assert(registered_task_count < 128);
+    registered_tasks[registered_task_count] = task;
+    registered_pids[registered_task_count] = pid;
+    registered_task_count++;
 }
 
 static fd_handle_t alloc_fd(vfs_node_t* node, u32 flags, u32 rights) {
@@ -181,6 +196,129 @@ static void test_closeable_node_has_one_descriptor_owner(void) {
     assert(second != FD_HANDLE_INVALID);
     assert(fd_close(second));
     assert(close_count == 2);
+}
+
+static void test_descriptor_duplication_shares_file_and_attenuates_rights(void) {
+    task_t sender, recipient;
+    reset_task(&sender, 91);
+    reset_task(&recipient, 92);
+    active_task = &sender;
+    close_count = 0;
+    observed_fd = FD_HANDLE_INVALID;
+
+    fd_handle_t source = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
+    assert(source != FD_HANDLE_INVALID);
+
+    /* A recipient may never receive rights the source descriptor does not have. */
+    assert(fd_duplicate_to(source, recipient.pid, FD_RIGHT_WRITE) ==
+           FD_HANDLE_INVALID);
+    vfs_open_file_t* source_before = fd_acquire(source, FD_RIGHT_READ);
+    assert(source_before != NULL);
+    assert((source_before->lifecycle & VFS_OPEN_FILE_REF_MASK) == 2);
+    fd_release(source_before);
+
+    fd_handle_t duplicate = fd_duplicate_to(source, recipient.pid,
+                                            FD_RIGHT_READ);
+    assert(duplicate != FD_HANDLE_INVALID);
+    assert((u32)(duplicate >> 32) == recipient.pid);
+    assert(FD_HANDLE_SLOT(duplicate) == 3);
+
+    vfs_open_file_t* sender_file = fd_acquire(source, FD_RIGHT_READ);
+    active_task = &recipient;
+    assert(fd_has_rights(duplicate, FD_RIGHT_READ));
+    assert(!fd_has_rights(duplicate, FD_RIGHT_WRITE));
+    vfs_open_file_t* recipient_file = fd_acquire(duplicate, FD_RIGHT_READ);
+    assert(sender_file != NULL && recipient_file == sender_file);
+
+    /* The shared open-file description, not a copied offset, is transferred. */
+    sender_file->offset = 37;
+    assert(recipient_file->offset == 37);
+    fd_release(recipient_file);
+    fd_release(sender_file);
+
+    /* Sender close cannot destroy a file that still has a recipient entry. */
+    active_task = &sender;
+    assert(fd_close(source));
+    assert(close_count == 0);
+    active_task = &recipient;
+    assert(fd_has_rights(duplicate, FD_RIGHT_READ));
+    assert(fd_close(duplicate));
+    assert(close_count == 1);
+}
+
+static void test_recipient_exit_releases_only_its_duplicate_reference(void) {
+    task_t sender, recipient;
+    reset_task(&sender, 93);
+    reset_task(&recipient, 94);
+    active_task = &sender;
+    close_count = 0;
+
+    fd_handle_t source = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
+    assert(source != FD_HANDLE_INVALID);
+    fd_handle_t duplicate = fd_duplicate_to(source, recipient.pid,
+                                            FD_RIGHT_READ);
+    assert(duplicate != FD_HANDLE_INVALID);
+    vfs_open_file_t* pin = fd_acquire(source, FD_RIGHT_READ);
+    assert(pin != NULL);
+    assert((pin->lifecycle & VFS_OPEN_FILE_REF_MASK) == 3);
+    fd_release(pin);
+
+    /* This is the descriptor-table portion of task exit. */
+    fd_table_close_all(recipient.fd_table);
+    active_task = &recipient;
+    assert(!fd_has_rights(duplicate, FD_RIGHT_READ));
+    assert(close_count == 0);
+
+    active_task = &sender;
+    assert(fd_has_rights(source, FD_RIGHT_READ));
+    assert(fd_close(source));
+    assert(close_count == 1);
+}
+
+static void test_duplicate_rejects_full_and_exiting_recipients(void) {
+    task_t sender, recipient;
+    vfs_node_t fillers[MAX_FDS];
+    reset_task(&sender, 95);
+    reset_task(&recipient, 96);
+    active_task = &sender;
+    close_count = 0;
+
+    fd_handle_t source = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
+    assert(source != FD_HANDLE_INVALID);
+
+    active_task = &recipient;
+    for (u32 i = 3; i < MAX_FDS; i++) {
+        fillers[i] = (vfs_node_t){
+            .flags = VFS_FILE, .read = test_read, .close = test_close
+        };
+        fd_alloc_status_t status = FD_ALLOC_FAILED;
+        assert(fd_alloc(&fillers[i], 0, FD_RIGHT_READ, &status) !=
+               FD_HANDLE_INVALID);
+        assert(status == FD_ALLOC_OK);
+    }
+
+    active_task = &sender;
+    vfs_open_file_t* pinned = fd_acquire(source, FD_RIGHT_READ);
+    assert(pinned != NULL);
+    assert((pinned->lifecycle & VFS_OPEN_FILE_REF_MASK) == 2);
+    assert(fd_duplicate_to(source, recipient.pid, FD_RIGHT_READ) ==
+           FD_HANDLE_INVALID);
+    assert((pinned->lifecycle & VFS_OPEN_FILE_REF_MASK) == 2);
+    assert(fd_has_rights(source, FD_RIGHT_READ));
+    fd_release(pinned);
+
+    active_task = &recipient;
+    fd_table_close_all(recipient.fd_table);
+    active_task = &sender;
+    assert(fd_close(source));
+    assert(close_count == (int)MAX_FDS - 2);
+
+    recipient.state = TASK_STATE_EXITING;
+    assert(fd_duplicate_to(source, recipient.pid, FD_RIGHT_READ) ==
+           FD_HANDLE_INVALID);
+    recipient.state = TASK_STATE_ZOMBIE;
+    assert(fd_duplicate_to(source, recipient.pid, FD_RIGHT_READ) ==
+           FD_HANDLE_INVALID);
 }
 
 static void test_open_file_allocation_failure_preserves_node_ownership(void) {
@@ -514,6 +652,9 @@ int main(void) {
     test_rights_and_stale_handle_rejection();
     test_handles_are_bound_to_the_owner_task();
     test_closeable_node_has_one_descriptor_owner();
+    test_descriptor_duplication_shares_file_and_attenuates_rights();
+    test_recipient_exit_releases_only_its_duplicate_reference();
+    test_duplicate_rejects_full_and_exiting_recipients();
     test_concurrent_closeable_node_claim_is_unique();
     test_open_file_allocation_failure_preserves_node_ownership();
     test_open_file_pins_outlive_descriptor_revocation();
