@@ -109,13 +109,24 @@ static void ipc_close_slot_locked(task_t* owner, u32 slot) {
     if (ch && ch->in_use) {
         ipc_queue_clear(&ch->inbound[side]);
         if (ch->endpoint_refs) ch->endpoint_refs--;
-        if (!ch->endpoint_refs) kmemset(ch, 0, sizeof(*ch));
+        if (!ch->endpoint_refs) {
+            /* Payload bytes are unreachable once both queue counts are zero.
+             * Avoid clearing the full ~16 KiB channel while interrupts are off. */
+            ch->in_use = false;
+        }
     }
 }
 
 void ipc_init(void) {
-    for (u32 i = 0; i < IPC_MAX_CHANNELS; i++)
-        kmemset(&ipc_channels[i], 0, sizeof(ipc_channels[i]));
+    for (u32 i = 0; i < IPC_MAX_CHANNELS; i++) {
+        ipc_channel_t* ch = &ipc_channels[i];
+        ch->in_use = false;
+        ch->endpoint_refs = 0;
+        for (u32 side = 0; side < 2; side++) {
+            kmemset(&ch->endpoints[side], 0, sizeof(ch->endpoints[side]));
+            ipc_queue_clear(&ch->inbound[side]);
+        }
+    }
     for (u32 i = 0; i < SHM_MAX_BLOCKS; i++) shm_used[i] = false;
 }
 
@@ -143,9 +154,12 @@ bool ipc_endpoint_pair_create(task_t* a, task_t* b, u32 rights_a,
     u32 gen_a = a->ipc_endpoint_generations[slot_a];
     u32 gen_b = b->ipc_endpoint_generations[slot_b];
     ipc_channel_t* ch = &ipc_channels[channel_index];
-    kmemset(ch, 0, sizeof(*ch));
     ch->in_use = true;
     ch->endpoint_refs = 2;
+    for (u32 side = 0; side < 2; side++) {
+        ipc_queue_clear(&ch->inbound[side]);
+        kmemset(&ch->endpoints[side], 0, sizeof(ch->endpoints[side]));
+    }
     kmemset(&ch->endpoints[0], 0, sizeof(ch->endpoints[0]));
     ch->endpoints[0].channel = ch;
     ch->endpoints[0].owner = a;
