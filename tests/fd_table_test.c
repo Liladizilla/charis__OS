@@ -40,7 +40,7 @@ static int test_write(vfs_node_t* node, u64 offset, u64 size, const u8* buffer) 
 }
 static void test_close(vfs_node_t* node) {
     (void)node;
-    close_count++;
+    __atomic_fetch_add(&close_count, 1, __ATOMIC_RELAXED);
     if (observed_fd != FD_HANDLE_INVALID &&
         !fd_has_rights(observed_fd, FD_RIGHT_READ))
         observed_revoked_handle++;
@@ -228,6 +228,52 @@ static void test_open_file_pins_outlive_descriptor_revocation(void) {
     assert(close_count == 0);
     fd_release(second_pin);
     assert(close_count == 1);
+}
+
+typedef struct {
+    vfs_open_file_t* file;
+    pthread_barrier_t* barrier;
+} release_thread_args_t;
+
+static void* concurrent_file_release(void* opaque) {
+    release_thread_args_t* args = (release_thread_args_t*)opaque;
+    (void)pthread_barrier_wait(args->barrier);
+    fd_release(args->file);
+    return NULL;
+}
+
+static void test_concurrent_final_release_runs_destructor_once(void) {
+    task_t task;
+    reset_task(&task, 65);
+    active_task = &task;
+    close_count = 0;
+    observed_fd = FD_HANDLE_INVALID;
+
+    fd_handle_t handle = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
+    assert(handle != FD_HANDLE_INVALID);
+    vfs_open_file_t* first = fd_acquire(handle, FD_RIGHT_READ);
+    vfs_open_file_t* second = fd_acquire(handle, FD_RIGHT_READ);
+    assert(first != NULL && first == second);
+    assert((first->lifecycle & VFS_OPEN_FILE_REF_MASK) == 3);
+
+    /* Drop the table's reference before racing the two operation pins. */
+    assert(fd_close(handle));
+    assert(close_count == 0);
+
+    pthread_barrier_t barrier;
+    assert(pthread_barrier_init(&barrier, NULL, 3) == 0);
+    release_thread_args_t first_args = {.file = first, .barrier = &barrier};
+    release_thread_args_t second_args = {.file = second, .barrier = &barrier};
+    pthread_t first_thread, second_thread;
+    assert(pthread_create(&first_thread, NULL, concurrent_file_release,
+                          &first_args) == 0);
+    assert(pthread_create(&second_thread, NULL, concurrent_file_release,
+                          &second_args) == 0);
+    (void)pthread_barrier_wait(&barrier);
+    assert(pthread_join(first_thread, NULL) == 0);
+    assert(pthread_join(second_thread, NULL) == 0);
+    assert(pthread_barrier_destroy(&barrier) == 0);
+    assert(__atomic_load_n(&close_count, __ATOMIC_RELAXED) == 1);
 }
 
 static void test_independent_opens_have_independent_offsets(void) {
@@ -471,6 +517,7 @@ int main(void) {
     test_concurrent_closeable_node_claim_is_unique();
     test_open_file_allocation_failure_preserves_node_ownership();
     test_open_file_pins_outlive_descriptor_revocation();
+    test_concurrent_final_release_runs_destructor_once();
     test_independent_opens_have_independent_offsets();
     test_table_cleanup_drops_only_its_reference();
     test_concurrent_final_release_runs_close_once();
