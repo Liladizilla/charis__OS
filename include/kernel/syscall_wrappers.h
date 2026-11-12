@@ -7,6 +7,7 @@
 #define sys_yield() syscall_invoke(SYS_YIELD, 0, 0, 0, 0, 0, 0)
 #define sys_sleep(ms) syscall_invoke(SYS_SLEEP, (ms), 0, 0, 0, 0, 0)
 #define sys_getpid() syscall_invoke(SYS_GETPID, 0, 0, 0, 0, 0, 0)
+#define sys_waitpid(pid, status, options) syscall_invoke(SYS_WAITPID, (u64)(s64)(pid), (u64)(status), (options), 0, 0, 0)
 
 // I/O
 #define sys_read(fd, buf, count) syscall_invoke(SYS_READ, (fd), (buf), (count), 0, 0, 0)
