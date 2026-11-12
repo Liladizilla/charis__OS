@@ -230,7 +230,14 @@ int ipc_recv(ipc_handle_t handle, void* buffer, u64 capacity, u32* sender_pid) {
     struct ipc_endpoint* ep = ipc_resolve_locked(receiver, handle, IPC_RIGHT_RECEIVE);
     if (!ep) { ipc_irq_restore(flags); return IPC_STATUS_ERROR; }
     ipc_queue_t* q = &ep->channel->inbound[ep->side];
-    if (!q->count) { ipc_irq_restore(flags); return IPC_STATUS_EMPTY; }
+    if (!q->count) {
+        struct ipc_endpoint* peer = &ep->channel->endpoints[1U - ep->side];
+        bool peer_live = peer->open && peer->owner == ep->peer &&
+                         peer->owner_pid == ep->peer_pid &&
+                         ipc_task_live_kernel(peer->owner);
+        ipc_irq_restore(flags);
+        return peer_live ? IPC_STATUS_EMPTY : IPC_STATUS_PEER_CLOSED;
+    }
     ipc_message_t* msg = &q->messages[q->tail];
     if ((u64)msg->size > capacity) {
         ipc_irq_restore(flags);
