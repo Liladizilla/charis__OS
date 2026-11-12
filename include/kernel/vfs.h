@@ -31,6 +31,9 @@ typedef u64 fd_handle_t;
 #define FD_HANDLE_INVALID         (~(fd_handle_t)0)
 #define FD_HANDLE_SLOT(handle)    ((u32)((handle) & FD_HANDLE_SLOT_MASK))
 
+/* VFS read/write callbacks must never access more than the requested
+ * `size` bytes. They return a negative value on error or a byte count in
+ * [0, size]; callers validate the reported count before using it. */
 typedef struct vfs_node {
     char name[256];
     u32 flags;

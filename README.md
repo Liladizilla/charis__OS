@@ -460,6 +460,11 @@ array or files ending mid-instruction, requires a complete read, and releases
 the per-open node on both success and failure. The Browser's local-file preview
 and ELF loader's pre-descriptor validation path also release resolved nodes
 through their VFS close callback.
+VFS callback return values are bounded by each caller: ELF exact reads reject
+over-reported byte counts and wrapped offsets, configuration loading rejects
+oversized results before placing the string terminator, and Browser previews
+reject lengths larger than their destination buffer. Descriptor read/write and
+ELF read ranges fail closed before 64-bit offset arithmetic can wrap.
 
 Before a ring-3 `sys_read` touches its input source, the kernel validates the
 entire writable destination range across page boundaries, using effective
