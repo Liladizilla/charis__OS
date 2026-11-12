@@ -180,14 +180,8 @@ static void term_execute(void) {
 void terminal_open(void) {
     char discard;
     while (keyboard_get_key(&discard)) { }
-    if (!term_line_count) {
-        for (u32 i = 0; i < CHARISOS_ASCII_ROWS; i++)
-            term_add_line(CHARISOS_ASCII_MARK[i]);
-        term_add_line("CHARISOS  /  x86_64");
-        term_add_line("SECURITY BY ARCHITECTURE");
-        term_add_line("INTELLIGENCE BY DESIGN");
-        term_add_line("OWNERSHIP BY DEFAULT");
-    }
+    if (!term_line_count)
+        term_add_line("Kernel session ready. Type help for commands.");
     term_visible = true;
     serial_puts("TERMINAL_OPEN");
 }
@@ -264,31 +258,81 @@ bool terminal_handle_mouse(int mx, int my) {
     return true;
 }
 
-static bool terminal_ascii_mark_row(const char* line) {
-    bool has_hash = false;
-    if (!line) return false;
-    for (u32 i = 0; line[i]; i++) {
-        if (line[i] == '#') has_hash = true;
-        else if (line[i] != ' ') return false;
-    }
-    return has_hash;
-}
-
 static u32 terminal_line_color(const char* line) {
     if (!line) return CHARIS_UI_TEXT;
     if (kstrncmp(line, "charisos> ", 10) == 0) return CHARIS_UI_SUCCESS;
     if (kstrncmp(line, "Command not found", 17) == 0) return CHARIS_UI_WARNING;
-    if (terminal_ascii_mark_row(line) ||
-        kstrncmp(line, "SECURITY BY", 11) == 0 ||
-        kstrncmp(line, "INTELLIGENCE BY", 15) == 0 ||
-        kstrncmp(line, "OWNERSHIP BY", 12) == 0 ||
-        kstrncmp(line, "CHARISOS", 8) == 0 ||
-        kstrncmp(line, "CharisOS", 8) == 0) return CHARIS_UI_ACCENT;
     if (kstrncmp(line, "Managed RAM", 11) == 0 ||
         kstrncmp(line, "Tasks ", 6) == 0 ||
         kstrncmp(line, "Context switches", 16) == 0 ||
         kstrncmp(line, "Uptime:", 7) == 0) return 0xFFB8C7D8u;
     return CHARIS_UI_TEXT;
+}
+
+/* This identity block is permanent terminal chrome, not scrollback output.
+ * The compact C mark uses a fixed 2x pixel scale while accompanying text
+ * follows the selected terminal font scale. */
+static u32 terminal_identity_height(void) {
+    u32 mark_height = CHARISOS_ASCII_ROWS * (u32)font_cell_h * 2u;
+    u32 text_height = term_text_h();
+    u32 text_block = text_height * 4u + term_px(4) * 3u;
+    u32 block = mark_height > text_block ? mark_height : text_block;
+    return block + term_px(12);
+}
+
+static void terminal_draw_identity(u32 x, u32 y, u32 width) {
+    u32 mark_width = 0;
+    gfx_text_monospace_size_at_scale(CHARISOS_ASCII_MARK[0], 2u,
+                                     &mark_width, NULL);
+    u32 mark_x = x + term_px(18);
+    u32 mark_y = y + term_px(4);
+    for (u32 i = 0; i < CHARISOS_ASCII_ROWS; i++) {
+        gfx_draw_monospace_string_at_scale(
+            mark_x, mark_y + i * (u32)font_cell_h * 2u,
+            CHARISOS_ASCII_MARK[i], CHARIS_UI_ACCENT, FB_TRANSPARENT, 2u);
+    }
+
+    u32 text_x = mark_x + mark_width + term_px(24);
+    u32 right = x + width - term_px(18);
+    u32 text_width = right > text_x ? right - text_x : 0;
+    u32 title_width = term_measure("CHARISOS");
+    u32 security_width = term_measure("SECURITY FIRST");
+    u32 intelligence_width = term_measure("INTELLIGENCE");
+    u32 ownership_width = term_measure("OWNERSHIP");
+    u32 required = title_width;
+    if (security_width > required) required = security_width;
+    if (intelligence_width > required) required = intelligence_width;
+    if (ownership_width > required) required = ownership_width;
+
+    if (text_width >= required) {
+        u32 text_height = term_text_h();
+        u32 gap = term_px(4);
+        term_draw(text_x, mark_y, "CHARISOS",
+                  CHARIS_UI_ACCENT, FB_TRANSPARENT);
+        term_draw(text_x, mark_y + text_height + gap, "SECURITY FIRST",
+                  CHARIS_UI_TEXT, FB_TRANSPARENT);
+        term_draw(text_x, mark_y + (text_height + gap) * 2u, "INTELLIGENCE",
+                  CHARIS_UI_TEXT, FB_TRANSPARENT);
+        term_draw(text_x, mark_y + (text_height + gap) * 3u, "OWNERSHIP",
+                  CHARIS_UI_TEXT, FB_TRANSPARENT);
+    } else {
+        /* On narrow windows, keep the mark centered and omit the secondary
+         * identity text rather than allowing collisions or clipped glyphs. */
+        u32 available = width > term_px(36) ? width - term_px(36) : width;
+        u32 centered_x = x + (available > mark_width
+                            ? (available - mark_width) / 2u : 0u);
+        for (u32 i = 0; i < CHARISOS_ASCII_ROWS; i++) {
+            gfx_draw_monospace_string_at_scale(
+                centered_x, mark_y + i * (u32)font_cell_h * 2u,
+                CHARISOS_ASCII_MARK[i], CHARIS_UI_ACCENT,
+                FB_TRANSPARENT, 2u);
+        }
+    }
+
+    u32 divider_y = y + terminal_identity_height() - term_px(5);
+    fb_fill_rect(x + term_px(14), divider_y,
+                 width > term_px(28) ? width - term_px(28) : width,
+                 term_px(1), CHARIS_UI_BORDER);
 }
 
 void terminal_render(void) {
@@ -308,12 +352,14 @@ void terminal_render(void) {
      * 300% text scale, a fixed 38px gap placed the status baseline outside
      * the window and clipped the bottom of the terminal. */
     u32 footer_gap = text_h + term_px(20);
-    u32 content_top = y + title_h + term_px(44);
+    u32 canvas_y = y + title_h + term_px(38);
     u32 reserved_bottom = prompt_h + footer_gap;
     u32 content_bottom = y + h > reserved_bottom
-                       ? y + h - reserved_bottom : content_top;
-    u32 rows = content_bottom > content_top ? (content_bottom - content_top) / line_h : 1;
-    if (!rows) rows = 1;
+                       ? y + h - reserved_bottom : canvas_y;
+    u32 identity_h = terminal_identity_height();
+    u32 output_top = canvas_y + identity_h + term_px(8);
+    u32 rows = content_bottom > output_top
+             ? (content_bottom - output_top) / line_h : 0;
 
     /* Window frame and application chrome. */
     fb_fill_rect(x + term_px(5), y + term_px(6), w, h, CHARIS_UI_SHADOW);
@@ -357,21 +403,23 @@ void terminal_render(void) {
     term_draw(platform_x, strip_y + (term_px(32) - text_h) / 2,
               platform_label, CHARIS_UI_MUTED, FB_TRANSPARENT);
 
-    /* A clean terminal canvas: no editor-style line-number gutter, cards or
-     * decorative rail. The wordmark and shell output own the console space. */
-    u32 canvas_y = content_top - term_px(6);
+    /* Permanent identity header sits above scrollback. Command output can
+     * grow or clear without ever erasing the CharisOS ASCII mark. */
     u32 canvas_h = content_bottom > canvas_y ? content_bottom - canvas_y : term_px(40);
     fb_fill_rect(x + term_px(10), canvas_y, w - term_px(20), canvas_h,
                  0xFF080B10u);
-
     u32 text_x = x + term_px(24);
     u32 text_right = x + w - term_px(24);
     u32 text_width = text_right > text_x ? text_right - text_x : 1;
+    terminal_draw_identity(x + term_px(10), canvas_y,
+                           w > term_px(20) ? w - term_px(20) : w);
+
     u32 total_rows = 0;
     for (u32 i = 0; i < term_line_count; i++)
         total_rows += term_wrapped_rows(term_lines[i], text_width);
     u32 skip_rows = total_rows > rows ? total_rows - rows : 0;
-    fb_set_clip(text_x, canvas_y, text_width, canvas_h);
+    fb_set_clip(text_x, output_top, text_width,
+                content_bottom > output_top ? content_bottom - output_top : 1);
     u32 drawn_rows = 0;
     for (u32 i = 0; i < term_line_count; i++) {
         const char* line = term_lines[i];
@@ -382,7 +430,7 @@ void terminal_render(void) {
             if (skip_rows) {
                 skip_rows--;
             } else if (drawn_rows < rows) {
-                u32 line_y = content_top + drawn_rows * line_h;
+                u32 line_y = output_top + drawn_rows * line_h;
                 char segment[TERM_LINE_MAX];
                 u32 count = end - pos;
                 if (count >= sizeof(segment)) count = sizeof(segment) - 1;
