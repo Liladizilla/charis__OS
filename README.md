@@ -41,22 +41,21 @@ The project is under active development. It is not currently a general-purpose o
 
 For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). A subsystem is not considered complete merely because it compiles.
 
-## Desktop screenshots
+## Desktop captures
 
-The checked-in PNG below is a real QEMU framebuffer capture, not a design mockup. The latest integrated `main` build is commit `6749f0a` and passed [CI run #807](https://github.com/Liladizilla/charis__OS/actions/runs/43235569439). Its downloadable [desktop preview artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43235569439) contains fresh desktop, Browser, Files, multi-window, Settings, scaling and Terminal captures plus serial/QEMU logs. The checked-in PNG remains the earlier run #724 snapshot; do not mistake it for a screenshot of the latest build.
+The primary image below is a **real 1024×768 QEMU framebuffer capture**, not a mockup. It was produced by the successful CI workflow run [43258397426](https://github.com/Liladizilla/charis__OS/actions/runs/43258397426) on the DHCP integration branch at `43c92a3`, then merged without source changes into `main` as `81e861e` on 12 November 2026.
 
-![CharisOS QEMU desktop workspace, CI run 724](docs/screenshots/charisos-desktop-run-724.png)
+![CharisOS desktop workspace, QEMU capture from 12 November 2026](docs/screenshots/charisos-desktop-2026-11-12.png)
 
-The [run #722 capture](docs/screenshots/charisos-desktop-run-722.png) and older [preview gallery](docs/screenshots/charisos-preview-gallery.jpg) remain available as historical comparisons.
+The same run's [desktop preview artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43258397426#artifacts) contains the Browser, Files, multi-window, maximized, resized, Settings, persisted-Settings-after-reboot, scaled-desktop and Terminal captures, together with serial and QEMU logs. The artifact is retained by GitHub Actions for a limited period; the desktop image above is checked into this repository.
 
-## Latest desktop validation
+### Latest desktop validation
 
-[CI run #807](https://github.com/Liladizilla/charis__OS/actions/runs/43235569439) passed on integrated `main` commit `6749f0a`. It completed dependency installation, the freestanding kernel build, x86-64 baseline audit, descriptor lifecycle/duplication and other host regressions, BIOS/ring-3 checks, VMM huge-page/permission regressions, the dedicated kernel-stack guard/IST1 fault-injection test, QEMU desktop captures and Settings persistence checks.
+The `Build, Boot & Ring-3 Test` job completed successfully in workflow run [43258397426](https://github.com/Liladizilla/charis__OS/actions/runs/43258397426). The QEMU capture step exercised the desktop, Browser, Files and Terminal launch paths; simultaneous Files/Terminal windows and Alt+Tab routing; maximize/restore and keyboard resize; display preference changes; and persistence of font and UI-scale values across a reboot using a writable FAT32 test disk.
 
-The refreshed 1024×768 QEMU capture shows four direct application cards, System Overview, System Status and Kernel Activity. Kernel Activity displays context-switch, interrupt and syscall counters through an O(1) snapshot API; desktop repaint does not traverse the scheduler task list. It is suppressed when text scale or available geometry leaves insufficient room. At 200% text and 120% UI scale it is intentionally absent. CI run #732 also boots a dedicated fault-injection image: a kernel task writes to its own unmapped stack guard, the CPU enters through TSS.IST1, the dispatcher verifies the exception frame is on that stack, emits containment markers and halts with a diagnostic panic rather than triple-faulting. This proves safe exception reporting, not recovery of a corrupted kernel task. Unused desktop space, richer user-facing workspace content and the complete font/UI/framebuffer matrix remain open. This is engineering evidence, not a release-quality claim.
+The screenshot documents the current engineering state, not a finished commercial desktop. The workspace is compact and framebuffer-based; Files remains read-only and limited to the FAT32 root with 8.3 names; Terminal is a bounded kernel command environment; Browser supports plain HTTP only. The visual system, application depth, hardware coverage and end-user workflows remain active work. Successful CI is evidence of these specific tests, not proof of broad hardware compatibility or production readiness.
 
-The default ELF disk test verifies that the normal bootstrap task is denied by `CAP_ALLOW_EXEC`. A separate `images-elf-exec-test` build grants that capability only to the CI smoke task, runs against a FAT32 `TEST.ELF`, and requires the kernel to emit `ELF_EXEC_OK` after the task enters the loaded image. CI #806 passed both the default denial and authorized-entry paths.
-
+Older [run #724 desktop capture](docs/screenshots/charisos-desktop-run-724.png), [run #722 capture](docs/screenshots/charisos-desktop-run-722.png) and [historical preview gallery](docs/screenshots/charisos-preview-gallery.jpg) remain available for comparison.
 
 ## What is implemented
 
