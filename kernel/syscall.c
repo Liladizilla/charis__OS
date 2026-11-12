@@ -213,6 +213,32 @@ static u64 syscall_exit_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     return 0;
 }
 
+static u64 syscall_waitpid_handler(u64 a1, u64 a2, u64 a3,
+                                    u64 a4, u64 a5, u64 a6) {
+    (void)a4; (void)a5; (void)a6;
+    task_t* task = scheduler_current();
+    s64 selector = (s64)a1;
+    if (!task || (selector != -1 && selector <= 0) ||
+        (a3 & ~(u64)WAITPID_WNOHANG)) return (u64)-1;
+    /* Preflight output before blocking or consuming a zombie. */
+    if (a2 && task->is_user &&
+        !syscall_validate_user_range(task, a2, sizeof(u32), true))
+        return (u64)-1;
+    u32 status = 0;
+    s64 result = task_waitpid(selector, &status,
+                              (a3 & WAITPID_WNOHANG) != 0);
+    if (result <= 0) return (u64)result;
+    if (a2) {
+        if (task->is_user) {
+            if (!syscall_copy_to_user_data(task, a2, &status,
+                                           sizeof(status))) return (u64)-1;
+        } else {
+            *(u32*)(uintptr_t)a2 = status;
+        }
+    }
+    return (u64)result;
+}
+
 static u64 syscall_yield_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     scheduler_yield();
@@ -754,6 +780,7 @@ void syscall_init(void) {
     syscall_register(SYS_READ, syscall_read_handler);
     syscall_register(SYS_WRITE, syscall_write_handler);
     syscall_register(SYS_EXIT, syscall_exit_handler);
+    syscall_register(SYS_WAITPID, syscall_waitpid_handler);
     syscall_register(SYS_YIELD, syscall_yield_handler);
     syscall_register(SYS_PRINT, syscall_print_handler);
     syscall_register(SYS_GETPID, syscall_getpid_handler);
