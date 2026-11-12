@@ -302,7 +302,7 @@ void terminal_render(void) {
     fb_set_clip(x, y, w, h);
 
     u32 text_h = term_text_h();
-    u32 line_h = text_h + term_px(10);
+    u32 line_h = text_h + term_px(8);
     u32 prompt_h = text_h + term_px(22);
     /* Reserve a real footer row for the selected font size. At 200% and
      * 300% text scale, a fixed 38px gap placed the status baseline outside
