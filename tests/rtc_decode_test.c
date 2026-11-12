@@ -33,6 +33,15 @@ int main(void) {
     expect_time(0x00,0x00,0x00,0x01,0x01,0x70,0,0x02,
                 1970,1,1,0,0,0);
 
+    rtc_datetime_t epoch = {0};
+    assert(rtc_epoch_to_datetime(0, &epoch));
+    assert(epoch.year == 1970 && epoch.month == 1 && epoch.day == 1);
+    assert(epoch.hour == 0 && epoch.minute == 0 && epoch.second == 0);
+    assert(rtc_epoch_to_datetime(951782400ULL, &epoch));
+    assert(epoch.year == 2000 && epoch.month == 2 && epoch.day == 29);
+    assert(rtc_epoch_to_datetime(1709164800ULL, &epoch));
+    assert(epoch.year == 2024 && epoch.month == 2 && epoch.day == 29);
+
     rtc_datetime_t invalid = {0};
     assert(!rtc_decode_registers(0,0,0x24,0x01,0x01,0x26,0x20,0x02,&invalid));
     assert(!invalid.valid);
@@ -40,6 +49,7 @@ int main(void) {
     assert(!rtc_decode_registers(0x6A,0,0,1,1,0x26,0x20,0x02,&invalid));
     assert(!rtc_decode_registers(0,0,0,1,1,0x26,0x18,0x02,&invalid));
 
+    assert(!rtc_epoch_to_datetime(13569465600ULL, &invalid));
     puts("rtc_decode_test: PASS");
     return 0;
 }
