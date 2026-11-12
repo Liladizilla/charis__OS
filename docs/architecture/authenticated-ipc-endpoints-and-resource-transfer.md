@@ -2,153 +2,174 @@
 
 ## Status
 
-Design contract only. The current IPC subsystem is not suitable for ring-3 use or descriptor transfer. Its syscalls remain kernel-only. This document defines the security and lifetime requirements for replacing the global integer-channel API; it does not claim those endpoint semantics are implemented.
+The first kernel-only endpoint stage is implemented and host-tested. Public
+ring-3 IPC, service discovery, blocking receive and resource attachments remain
+design-only and are deliberately unavailable.
 
 ## Current boundary
 
-The current implementation has a global fixed array of channels selected by small integer indexes. `ipc_create()` does not bind an owner or enforce a namespace, `ipc_send()` and `ipc_recv()` accept the raw channel index, and the payload is copied through a kernel pointer. Channel generations help a blocked receiver detect slot reuse, but they do not authenticate a sender, receiver, or endpoint holder.
+The global integer-channel API has been removed. Channel lookup now starts from
+the current task's endpoint table; a caller cannot use a guessed channel index
+or another task's handle to reach an endpoint. Handles encode owner PID, slot
+generation and slot index, but are identifiers rather than secrets or
+authorization tokens.
 
-The syscall handlers deny all ring-3 IPC calls. This restriction is intentional. The existing shared-memory API also returns a raw kernel pointer and uses globally scoped integer IDs; its user-facing handlers must remain denied until shared-memory objects have per-task ownership, mapping permissions, and teardown rules.
+The first implementation stage is deliberately kernel-only:
 
-Do not expose the current integer channel IDs or shared-memory IDs as a process security boundary.
+- `ipc_endpoint_pair_create()` atomically installs one endpoint in each of two
+  live kernel tasks, with independent SEND/RECEIVE rights and authenticated
+  peer task pointers/PIDs.
+- Each endpoint handle resolves only against `scheduler_current()` and that
+  task's local endpoint table.
+- A channel has two independent inbound queues, one per endpoint. Each queue
+  holds at most 16 messages of at most 512 bytes.
+- Send is nonblocking and reports a full queue without modifying it. Receive is
+  nonblocking; empty and undersized-buffer outcomes leave queue state unchanged.
+  Messages are never silently truncated.
+- Closing one endpoint revokes its task-local handle and discards only that
+  endpoint's inbound queue. Its peer remains alive until its own close, but
+  sending to a closed peer fails.
+- `ipc_task_close_all()` runs after a task enters EXITING and before other
+  resources are torn down. Endpoint generations never wrap.
+- Legacy syscall slots 91-93 are unregistered and reserved. No ring-3 IPC call
+  or raw kernel pointer is exposed.
+
+Nonblocking receive avoids a waiter reservation that could be stranded by task
+exit. A future blocking design must add explicit cancellation and wakeup
+invariants before replacing this behavior.
+
+The shared-memory API remains separate and kernel-only. Its global IDs and raw
+pointers are not endpoint capabilities and must not cross into ring 3.
 
 ## Required object model
 
-Use three kernel-owned layers:
+1. **Channel object**: owns bounded queues, endpoint references and channel
+   lifetime. It has no public integer identifier.
+2. **Endpoint object**: represents one channel side and binds an owner task,
+   peer task, rights, slot generation and a channel reference.
+3. **Task-local endpoint handle**: a task-bound owner-PID/generation/slot
+   identifier. Authorization comes from a live endpoint entry and its rights,
+   not from secrecy of the integer.
 
-1. **Channel object**: owns the bounded message queue, channel state, endpoint references, wait queues, and a monotonic generation/identity. It is not directly addressable by a userspace integer.
-2. **Endpoint object**: represents one side of a channel. It binds to a kernel-resolved task identity, peer identity, allowed operations, and a channel reference. A channel pair has distinct endpoint objects for each side.
-3. **Task-local endpoint handle**: a generation-protected task-bound identifier referring to an endpoint object. It is an identifier, not a secret or authorization credential.
+Implemented endpoint rights:
 
-The endpoint's rights are independent and explicit:
+- `IPC_RIGHT_SEND`: enqueue a message to the peer's inbound queue.
+- `IPC_RIGHT_RECEIVE`: consume a message from this endpoint's inbound queue.
 
-- `IPC_RIGHT_SEND`: enqueue a message.
-- `IPC_RIGHT_RECEIVE`: receive a message.
-- `IPC_RIGHT_TRANSFER`: attach a permitted kernel resource to a message.
-- `IPC_RIGHT_ADMIN`: close or reconfigure an endpoint only where the endpoint creation policy grants this authority.
-
-Unknown, empty, or unsupported rights fail closed. Endpoint duplication must use rights attenuation only. A sender cannot grant a right it does not hold.
+Transfer and administration rights are reserved, not implemented. Unknown,
+empty or unsupported grants fail closed.
 
 ## Authenticated connection setup
 
 A user-supplied PID or channel number is not proof of identity or permission.
 
-A future connection path must use a kernel-authorized rendezvous:
+A future public connection path must use a kernel-authorized rendezvous:
 
-1. A server creates a private listening endpoint and registers a service name through a kernel-controlled name service.
-2. Registration records the server task identity, a service generation, the listener's rights, and an explicit access policy.
-3. A client asks the name service to connect. The kernel derives the client identity from the current task; it does not trust a PID supplied in the request.
-4. The server receives a pending connection request containing kernel-authenticated peer identity and may accept or reject it.
-5. Acceptance creates a channel object and two endpoint objects atomically. The client receives only its endpoint; the server receives only its endpoint. Each endpoint stores the peer identity established by the kernel.
-6. Listener closure, task exit, or service replacement invalidates pending requests through generation checks. A stale service name or endpoint must never resolve to a new owner.
+1. A server creates a private listening endpoint and registers a service name
+   through a kernel-controlled name service.
+2. Registration records server identity, service generation, listener rights
+   and explicit access policy.
+3. A client asks the name service to connect. The kernel derives client identity
+   from the current task; it does not trust a PID supplied in the request.
+4. The server receives a pending request with kernel-authenticated peer
+   identity and may accept or reject it.
+5. Acceptance creates a channel and two endpoint objects atomically.
+6. Listener closure, task exit or service replacement invalidates pending
+   requests through generation checks.
 
-The initial implementation should prefer explicit server acceptance over automatic connection. Do not add wildcard public services, ambient channel lookup, or a global `connect(pid)` interface.
+The public implementation should prefer explicit server acceptance. Do not add
+wildcard public services, ambient channel lookup or global `connect(pid)`.
 
 ## Transactional resource attachment
 
-Descriptor transfer is an operation on an authenticated endpoint, not a way to submit a descriptor integer to an arbitrary process.
+Descriptor transfer must be an authenticated endpoint operation. A future
+attachment contains only kernel-owned metadata: a pinned
+`vfs_open_file_t *`, requested recipient rights, attachment type/version and
+an explicit copy-versus-move policy. Copy is the only acceptable first policy.
 
-A future message attachment contains only kernel-owned metadata:
+The send path must validate endpoint identity and transfer rights, resolve
+source descriptors in the sender's task, attenuate requested rights, pin each
+open-file description, reserve complete queue capacity, then publish bytes and
+references as one commit. Any pre-commit failure releases temporary pins and
+leaves sender descriptors and queues unchanged.
 
-- a pinned `vfs_open_file_t *` reference (never a userspace pointer);
-- the requested recipient rights;
-- an attachment type/version;
-- an explicit copy-versus-move policy, with copy as the only initial policy.
-
-The send path must:
-
-1. Verify the sender's endpoint handle, task identity, and `IPC_RIGHT_SEND | IPC_RIGHT_TRANSFER`.
-2. Resolve each source descriptor in the current task and verify that requested recipient rights are a nonzero subset of its descriptor rights.
-3. Pin each open-file description before queue publication.
-4. Reserve a complete queue slot and attachment capacity before modifying sender state.
-5. Publish message bytes and all attachment references as one commit.
-6. On any pre-commit failure, release every temporary pin and leave the sender's descriptors and channel queue unchanged.
-
-The receive path must:
-
-1. Verify the receiver's endpoint handle, task identity, and `IPC_RIGHT_RECEIVE`.
-2. Validate the complete writable userspace output span before reserving or consuming a message. Never dequeue first and discover an invalid user pointer afterward.
-3. Reserve one queued message against concurrent receivers without holding a spinlock across user copyout or callbacks.
-4. Reserve all recipient descriptor slots and acquire the corresponding open-file references before publication.
-5. Copy the message into a kernel bounce buffer and commit the endpoint handles and payload as one transaction.
-6. If allocation, validation, or copyout fails before commit, remove the reservation and leave the original message and its attachment references available to retry.
-7. After successful commit, remove the queued message and release its queue-owned references. The recipient descriptors now own their references.
-
-No step may publish a partially attached message. A recipient must never receive a handle whose rights exceed the sender's granted rights or the endpoint transfer policy.
+The receive path must validate the full writable user destination before
+reserving a message, reserve all destination descriptor slots and references,
+copy through a kernel bounce buffer, and publish payload plus handles as one
+transaction. Failure before commit must leave the original message available
+for retry. No recipient may receive a handle with escalated rights.
 
 ## Lifecycle and concurrency invariants
 
 - Each live endpoint owns exactly one channel reference.
-- Each queued attachment owns exactly one open-file reference.
-- A delivered descriptor owns one reference before the queue relinquishes its reference.
-- Closing one endpoint must not invalidate the peer endpoint while the peer still owns a reference.
-- Final channel destruction occurs only after both endpoint and in-flight operation references have been released.
-- Closing a channel wakes all waiters and makes them re-check both endpoint generation and channel state.
-- A task entering EXITING cannot receive new endpoint handles after its endpoint-table close pass.
-- Endpoint-table publication, revocation and operation pinning must share a documented lock order.
-- No filesystem callback, user copy, memory allocation, task scheduler operation, or destructor may run while holding a channel spinlock.
-- Message queue reservations must have a cancellation path for receiver task exit and endpoint closure.
-- Sender identity in message metadata is written by the kernel from the current task, never copied from a user-supplied field.
-- PID/generation handles are not cryptographic credentials. Authorization comes from possession of a live task-local endpoint entry plus its rights and the kernel-established peer policy.
+- One endpoint closing must not invalidate its peer while that reference lives.
+- Final channel destruction occurs only after both endpoint references are gone.
+- Closing an endpoint revokes its handle before another task can reuse the slot.
+- A task entering EXITING cannot receive new endpoints after its close-all pass.
+- Sender identity is written by the kernel from the current task.
+- No filesystem callback, user copy, allocation, scheduling operation or
+  destructor may run while a channel lock is held.
+- PID/generation handles are not cryptographic credentials.
+- Current IRQ exclusion is single-CPU only, not an SMP synchronization design.
+- Current queues are data-only. Descriptor attachments and waiter reservations
+  are not implemented.
 
 ## Bounded resource policy
 
-The first implementation must set hard limits for:
+| Resource | Limit |
+|---|---:|
+| Live channel objects | 32 |
+| Endpoints per task | 16 |
+| Messages per direction | 16 |
+| Message payload | 512 bytes |
 
-- queued message bytes;
-- messages per endpoint;
-- attachment count per message;
-- outstanding connection requests per listener;
-- open endpoints per task;
-- total live channel objects;
-- blocked receivers per endpoint.
-
-Overflow must fail without corrupting queue indices, leaking references, or silently truncating a resource attachment. A truncated data-only message may be allowed only if the API explicitly reports the delivered length; attached resources are never silently dropped.
+Queue full is explicit; undersized receive buffers do not dequeue or truncate
+messages. Before blocking, transfers or public ring-3 exposure, also bound
+attachment counts, listener requests, outstanding reservations and waiters.
 
 ## Required regression matrix
 
 | Scenario | Required result |
 |---|---|
-| Client guesses a channel integer | No authority is gained |
-| Client supplies another task's PID | Request identity is derived from current task; supplied PID is ignored/rejected |
-| Unauthorized service lookup | Connection rejected without disclosing endpoint internals |
-| Server rejects pending request | No client endpoint or channel reference leaks |
-| Listener closes during connection | Pending request invalidated by generation |
 | Wrong task uses endpoint handle | Reject |
-| Stale endpoint after slot reuse | Reject |
+| Stale endpoint after close/slot reuse | Reject |
+| Empty or unknown rights | Reject |
 | Send without SEND right | Reject before queue mutation |
-| Transfer without TRANSFER right | Reject before resource pinning |
-| Requested descriptor rights exceed source rights | Reject with sender unchanged |
-| Queue full | Sender descriptors unchanged; no leaked pins |
-| Receive into invalid or read-only span | Message remains queued |
-| Recipient descriptor table full | Message remains queued |
-| Receiver exits during reservation | Reservation cancelled; message remains deliverable |
-| Endpoint closes with blocked receivers | Every waiter wakes and returns a defined error |
-| One endpoint closes | Peer remains valid until its own final release |
-| Queued attachment discarded on channel teardown | Its file reference is released exactly once |
-| Concurrent send/receive/close | No double dequeue, queue corruption, or reference leak |
-| Attachment copy succeeds | Recipient gets a task-bound handle with attenuated rights |
-| Sender exits after copy delivery | Recipient reference remains valid |
-| Sender exits before delivery | Queue cleanup or delivery policy releases/retains the pinned reference exactly as specified |
+| Receive without RECEIVE right | Reject before queue mutation |
+| Queue full | Explicit FULL; all existing messages intact |
+| Undersized receive buffer | Explicit BUFFER_SMALL; message remains queued |
+| Message larger than maximum | Reject; never truncate |
+| One endpoint closes | Peer remains; send-to-closed-peer fails |
+| Task enters EXITING | All local endpoints revoked before other teardown |
+| Ring-3 IPC syscall | Reserved/unregistered and fails closed |
+| Shared-memory pointer exposure | Ring-3 shared-memory calls remain denied |
+
+Future tests must cover service authorization, blocked waiter cancellation,
+listener-close races, attachment rollback, recipient table exhaustion and
+concurrent multi-core operation before enabling those features.
 
 ## Implementation sequence
 
-1. [ ] Replace global integer channel lookup with task-local endpoint handles.
-2. [ ] Add endpoint objects, endpoint rights, generation checks, and channel references.
-3. [ ] Add kernel-only channel-pair creation for tests and trusted services.
-4. [ ] Add explicit listener registration and accept/reject lifecycle with a kernel-owned service namespace.
-5. [ ] Add cancellation-safe message reservation and per-endpoint bounded queues.
-6. [ ] Add host tests for ownership, wrong-task use, stale handles, close/waiter races, and queue limits.
-7. [ ] Add message attachment records and queue-owned open-file references.
-8. [ ] Add transactional receive-side descriptor-slot reservation and rollback.
-9. [ ] Add QEMU tests for task exit, blocked receiver wakeup, and endpoint teardown.
-10. [ ] Only then design ring-3 syscalls, user-memory preflight, syscall ABI versioning, and public service policy.
+1. [x] Replace global integer channel lookup with task-local endpoint handles.
+2. [x] Add endpoint objects, rights, generation checks and channel references.
+3. [x] Add kernel-only channel-pair creation for tests and trusted services.
+4. [x] Add bounded per-direction data queues with nonblocking send/receive.
+5. [x] Revoke task-owned endpoints during EXITING teardown.
+6. [ ] Add cancellation-safe blocking receive and endpoint wait queues.
+7. [ ] Add service-name registration and accept/reject connection lifecycle.
+8. [ ] Add host tests for blocked waiter cancellation and concurrent close/send/receive.
+9. [ ] Add message attachment records and queue-owned open-file references.
+10. [ ] Add transactional receive-side descriptor-slot reservation and rollback.
+11. [ ] Add QEMU tests for service connection, task exit and endpoint teardown.
+12. [ ] Only then design ring-3 syscalls, user-memory preflight, ABI versioning
+    and public service policy.
 
 ## Explicit non-goals
 
 - No arbitrary PID-based channel access.
 - No public global channel-index namespace.
 - No raw kernel pointers in userspace IPC payloads.
-- No ring-3 IPC or descriptor-transfer syscalls in the current increment.
-- No shared-memory pointer exposure until per-task mapping authority and revocation exist.
-- No claim that the current IPC implementation is safe for concurrent multi-core use.
+- No ring-3 IPC or descriptor-transfer syscalls in this increment.
+- No shared-memory pointer exposure until per-task mapping authority and
+  revocation exist.
+- No claim that the current IPC implementation is safe for multi-core use.
