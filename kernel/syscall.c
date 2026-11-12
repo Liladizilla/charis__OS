@@ -379,35 +379,6 @@ static u64 syscall_shm_free_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 
     return 0;
 }
 
-static u64 syscall_ipc_create_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
-    if (!syscall_kernel_only()) return (u64)-1;
-    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    if (!a1) return (u64)-1;
-    /* This handler is kernel-only above. Remove the unreachable ring-3
-     * string-copy branch until IPC has per-task channel ownership. */
-    if (a1 >= 0xFFFF800000000000ULL) return (u64)-1;
-    char name[32];
-    const char* source = (const char*)a1;
-    usize i = 0;
-    for (; i < sizeof(name) - 1 && source[i]; i++) name[i] = source[i];
-    name[i] = 0;
-    return ipc_create(name);
-}
-
-static u64 syscall_ipc_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
-    if (!syscall_kernel_only()) return (u64)-1;
-    (void)a4; (void)a5; (void)a6;
-    /* IPC object IDs and buffers have no ring-3 ownership model yet. */
-    return (u64)ipc_send((int)a1, (void*)a2, a3);
-}
-
-static u64 syscall_ipc_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
-    if (!syscall_kernel_only()) return (u64)-1;
-    (void)a4; (void)a5; (void)a6;
-    /* IPC object IDs and buffers have no ring-3 ownership model yet. */
-    return (u64)(s64)ipc_recv((int)a1, (void*)a2, a3);
-}
-
 static u64 syscall_exec_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     return (u64)-1;
@@ -792,9 +763,7 @@ void syscall_init(void) {
     syscall_register(SYS_SHM_ALLOC, syscall_shm_alloc_handler);
     syscall_register(SYS_SHM_GET, syscall_shm_get_handler);
     syscall_register(SYS_SHM_FREE, syscall_shm_free_handler);
-    syscall_register(SYS_IPC_CREATE, syscall_ipc_create_handler);
-    syscall_register(SYS_IPC_SEND, syscall_ipc_send_handler);
-    syscall_register(SYS_IPC_RECV, syscall_ipc_recv_handler);
+    /* IPC syscall slots 91-93 intentionally remain unregistered. */
     syscall_register(SYS_SOCKET, syscall_socket_handler);
     syscall_register(SYS_CONNECT, syscall_connect_handler);
     syscall_register(SYS_BIND, syscall_bind_handler);
