@@ -500,11 +500,28 @@ bool syscall_exec_from_frame(reg_frame_t* frame) {
         return false;
     }
 
+    /* Build exec in a fresh address space. The current image remains
+     * runnable until ELF segments and the complete initial stack are valid. */
+    pml4_t* replacement_space = vmm_create_address_space();
+    if (!replacement_space ||
+        !vmm_copy_kernel_mappings(replacement_space, NULL)) {
+        if (replacement_space)
+            vmm_destroy_address_space(replacement_space);
+        kfree(storage);
+        kfree(strings);
+        return false;
+    }
+
+    process_mm_t replacement_mm = {0};
+    replacement_mm.pml4 = replacement_space;
     u64 entry_point;
     u64 stack_top;
-    if (elf_load_exec(path, &task->mm, &entry_point, &stack_top,
+    if (elf_load_exec(path, &replacement_mm, &entry_point, &stack_top,
             (const char* const*)argv, (int)argc,
             (const char* const*)envp, (int)envc) < 0) {
+        /* The loader rolls back partial ELF/stack mappings; destroy the
+         * private root as well. The current process address space is untouched. */
+        vmm_destroy_address_space(replacement_space);
         kfree(storage);
         kfree(strings);
         return false;
@@ -512,9 +529,21 @@ bool syscall_exec_from_frame(reg_frame_t* frame) {
     kfree(storage);
     kfree(strings);
 
-    vmm_switch(task->mm.pml4);
-    task->mm.stack_top = stack_top;
+    pml4_t* previous_space = task->mm.pml4;
+    /* Switch before releasing any old USER frame. Kernel mappings are shared
+     * supervisor-only mappings in both roots, so this handler keeps executing. */
+    vmm_switch(replacement_space);
+    task->mm = replacement_mm;
+    task->address_space = replacement_space;
+    task->user_stack_base = 0;
     task->user_rsp = stack_top;
+    task->user_stack_pages[0] = 0;
+    task->user_stack_pages[1] = 0;
+    task->user_code_page_count = 0;
+    for (u32 i = 0; i < TASK_USER_CODE_MAX_PAGES; i++)
+        task->user_code_pages[i] = 0;
+    vmm_destroy_address_space(previous_space);
+
     frame->rip = entry_point;
     frame->cs = 0x1B;
     frame->rflags = 0x202;

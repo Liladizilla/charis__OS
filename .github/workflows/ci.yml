@@ -121,6 +121,11 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/vfs_fat32_offset_test.c -Wl,--gc-sections -o /tmp/vfs_fat32_offset_test
           /tmp/vfs_fat32_offset_test
 
+      - name: Test exec address-space replacement transaction
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/syscall_exec_transaction_test.c -Wl,--gc-sections -o /tmp/syscall_exec_transaction_test
+          /tmp/syscall_exec_transaction_test
+
       - name: Build ELF smoke-test disk
         run: make elf-test
 
