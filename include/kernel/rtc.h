@@ -18,8 +18,8 @@ typedef struct {
 } rtc_datetime_t;
 
 /* Decode a coherent CMOS register sample. status_b is RTC register B.
- * A zero century value means that the firmware does not expose a century
- * register; years 70..99 map to 1970..1999 and 00..69 to 2000..2069. */
+ * An absent or invalid century value uses the two-digit pivot: years 70..99
+ * map to 1970..1999 and 00..69 to 2000..2069. */
 bool rtc_decode_registers(u8 second, u8 minute, u8 hour,
                           u8 day, u8 month, u8 year, u8 century,
                           u8 status_b, rtc_datetime_t* out);
