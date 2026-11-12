@@ -154,7 +154,7 @@ void gfx_draw_string(u32 x, u32 y, const char* s, u32 fg, u32 bg) {
 
 void gfx_draw_string_scaled(u32 x, u32 y, const char* s, u32 fg, u32 bg, u32 scale) {
     if (!g_framebuffer.initialized || !s || !scale) return;
-    u32 effective = scale;
+    u32 effective = scale * text_scale;
     if (effective > 8) effective = 8;
     u32 origin_x = x;
     for (; *s; s++) {
@@ -172,7 +172,7 @@ void gfx_draw_string_scaled(u32 x, u32 y, const char* s, u32 fg, u32 bg, u32 sca
 void gfx_draw_monospace_string_scaled(u32 x, u32 y, const char* s,
                                       u32 fg, u32 bg, u32 scale) {
     if (!g_framebuffer.initialized || !s || !scale) return;
-    u32 effective = scale * text_scale;
+    u32 effective = scale;
     if (effective > 8) effective = 8;
     u32 origin_x = x;
     for (; *s; s++) {
