@@ -15,7 +15,8 @@
 static task_t test_task;
 static pml4_t test_pml4;
 static vfs_node_t test_node;
-static fd_entry_t test_entry;
+static vfs_open_file_t test_file;
+static u32 descriptor_rights;
 static u8 user_memory[PAGE_SIZE * 2];
 static bool map_second_page;
 static u64 user_page_flags = VMM_FLAG_USER | VMM_FLAG_WRITABLE;
@@ -27,8 +28,25 @@ task_t* scheduler_current(void) {
     return &test_task;
 }
 
-fd_entry_t* fd_get(fd_handle_t handle) {
-    return (handle == FD_STDIN || handle == 3) ? &test_entry : NULL;
+vfs_open_file_t* fd_acquire(fd_handle_t handle, u32 required_rights) {
+    if ((handle != FD_STDIN && handle != 3) ||
+        (descriptor_rights & required_rights) != required_rights)
+        return NULL;
+    return &test_file;
+}
+
+void fd_release(vfs_open_file_t* file) {
+    assert(file == &test_file);
+}
+
+u64 fd_file_io_lock(vfs_open_file_t* file) {
+    assert(file == &test_file);
+    return 0;
+}
+
+void fd_file_io_unlock(vfs_open_file_t* file, u64 irq_flags) {
+    (void)irq_flags;
+    assert(file == &test_file);
 }
 
 bool security_check_capability(task_t* task, u32 capability) {
@@ -95,16 +113,17 @@ static int test_file_read(vfs_node_t* node, u64 offset, u64 size, u8* buffer) {
 
 static void reset_test_state(void) {
     memset(&test_task, 0, sizeof(test_task));
-    memset(&test_entry, 0, sizeof(test_entry));
+    memset(&test_file, 0, sizeof(test_file));
     memset(&test_node, 0, sizeof(test_node));
     memset(user_memory, 0, sizeof(user_memory));
     test_task.is_user = true;
     test_task.mm.pml4 = &test_pml4;
     test_node.read = test_file_read;
     test_node.write = test_file_write;
-    test_entry.node = &test_node;
-    test_entry.rights = FD_RIGHT_READ;
-    test_entry.offset = 13;
+    test_file.node = &test_node;
+    test_file.offset = 13;
+    test_file.lifecycle = 1;
+    descriptor_rights = FD_RIGHT_READ;
     map_second_page = false;
     user_page_flags = VMM_FLAG_USER | VMM_FLAG_WRITABLE;
     keyboard_reads = 0;
@@ -132,13 +151,13 @@ int main(void) {
     /* A buffer that crosses into an unmapped page must not advance the VFS. */
     assert(syscall_read_handler(3, 0x1FF0, 32, 0, 0, 0) == (u64)-1);
     assert(file_reads == 0);
-    assert(test_entry.offset == 13);
+    assert(test_file.offset == 13);
 
     /* Cross-page reads work once both pages are mapped writable for userspace. */
     map_second_page = true;
     assert(syscall_read_handler(3, 0x1FF0, 32, 0, 0, 0) == 32);
     assert(file_reads == 1);
-    assert(test_entry.offset == 45);
+    assert(test_file.offset == 45);
     assert(user_memory[PAGE_SIZE - 16] == 'A');
     assert(user_memory[PAGE_SIZE + 15] == 'F');
 
@@ -147,25 +166,25 @@ int main(void) {
     assert(file_reads == 1);
 
     /* File offsets may never wrap or reach a callback with an invalid range. */
-    test_entry.offset = ~(u64)0 - 7;
+    test_file.offset = ~(u64)0 - 7;
     assert(syscall_read_handler(3, 0x1000, 16, 0, 0, 0) == (u64)-1);
     assert(file_reads == 1);
-    assert(test_entry.offset == ~(u64)0 - 7);
+    assert(test_file.offset == ~(u64)0 - 7);
 
-    test_entry.rights = FD_RIGHT_WRITE;
-    test_entry.offset = ~(u64)0 - 3;
+    descriptor_rights = FD_RIGHT_WRITE;
+    test_file.offset = ~(u64)0 - 3;
     assert(syscall_write_handler(3, 0x1000, 8, 0, 0, 0) == (u64)-1);
     assert(file_writes == 0);
-    assert(test_entry.offset == ~(u64)0 - 3);
+    assert(test_file.offset == ~(u64)0 - 3);
 
     /* Restore the read fixture after the write-overflow case. */
-    test_entry.rights = FD_RIGHT_READ;
-    test_entry.offset = 45;
+    descriptor_rights = FD_RIGHT_READ;
+    test_file.offset = 45;
 
     /* Reject a range that would cross the lower canonical user boundary. */
     assert(syscall_read_handler(3, 0x00007FFFFFFFFFFFULL, 2, 0, 0, 0) == (u64)-1);
     assert(file_reads == 1);
-    assert(test_entry.offset == 45);
+    assert(test_file.offset == 45);
 
     puts("PASS: SYS_READ validates the full writable destination before input side effects");
     return 0;
