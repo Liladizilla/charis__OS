@@ -129,7 +129,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Bounded asynchronous DNS A-record resolver
 - [x] Minimal single-connection TCP client with basic handshake, ACK/data/FIN handling
 - [x] Plain HTTP GET composition and bounded response-header/body handling for Browser
-- [ ] DHCP client and lease renewal
+- [x] Bounded DHCPv4 DORA client, lease option parser, DNS/router/subnet configuration, T1 unicast renewal, T2 broadcast rebinding and expiry cleanup
+- [ ] Real-LAN DHCP interoperability, relay-agent, vendor-option and reconnect stress tests
 - [ ] IPv6, neighbour discovery and ICMPv6
 - [ ] Robust TCP retransmission, congestion control and concurrent connections
 - [ ] TLS/HTTPS and certificate validation
