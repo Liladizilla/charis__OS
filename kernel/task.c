@@ -1,4 +1,5 @@
 #include <kernel/task.h>
+#include <kernel/task_id.h>
 #include <kernel/memory.h>
 #include <kernel/vga.h>
 #include <kernel/scheduler.h>
