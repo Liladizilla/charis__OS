@@ -30,17 +30,17 @@ static u32 term_line_count;
 static bool term_bounds_valid;
 static u32 term_bounds_x, term_bounds_y, term_bounds_w, term_bounds_h;
 
-#define TERM_TEXT_SCALE 1u
+#define TERM_FONT_SCALE 1u
 static u32 term_px(u32 logical) { return gfx_ui_scale(logical); }
-static u32 term_text_h(void) { return font_cell_h * gfx_text_get_scale() * TERM_TEXT_SCALE; }
+static u32 term_text_h(void) { return font_cell_h * TERM_FONT_SCALE; }
 static void term_draw(u32 x, u32 y, const char* s, u32 fg, u32 bg) {
-    gfx_draw_monospace_string_scaled(x, y, s, fg, bg, TERM_TEXT_SCALE);
+    gfx_draw_monospace_string_scaled(x, y, s, fg, bg, TERM_FONT_SCALE);
 }
 
 static u32 term_measure(const char* s) {
     u32 width = 0;
-    gfx_text_monospace_size(s, &width, NULL);
-    return width * TERM_TEXT_SCALE;
+    gfx_text_monospace_size(s, &width, NULL, TERM_FONT_SCALE);
+    return width;
 }
 
 /* Return one visual line of text without splitting a word unless the word
@@ -408,7 +408,7 @@ void terminal_render(void) {
     term_draw(x + term_px(24), prompt_y + (prompt_h - text_h) / 2,
                     "charisos", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
     u32 prefix_w = 0;
-    gfx_text_monospace_size("charisos", &prefix_w, NULL);
+    gfx_text_monospace_size("charisos", &prefix_w, NULL, TERM_FONT_SCALE);
     prefix_w *= TERM_TEXT_SCALE;
     term_draw(x + term_px(24) + prefix_w, prompt_y + (prompt_h - text_h) / 2,
                     ">", CHARIS_UI_ACCENT, FB_TRANSPARENT);
