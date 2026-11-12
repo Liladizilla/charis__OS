@@ -48,12 +48,6 @@ static u8 client_mac[6];
 static u8 leased_ip[4];
 static u8 server_ip[4];
 static u32 transaction_id;
-static u32 offer_lease_seconds;
-static u32 offer_renewal_seconds;
-static u32 offer_rebinding_seconds;
-static u8 offer_mask[4];
-static u8 offer_router[4];
-static u8 offer_dns[4];
 static u64 state_started_ms;
 static u64 next_retry_ms;
 static u64 lease_started_ms;
@@ -215,14 +209,14 @@ static bool decode_options(const u8* packet, usize length,
         }
         if (!valid_mask(reply->subnet_mask)) return false;
 
-        if (!have_lease || !reply->lease_seconds)
+        if (!have_lease || reply->lease_seconds < 3u)
             reply->lease_seconds = DHCP_DEFAULT_LEASE;
         if (!have_t1 || !reply->renewal_seconds ||
             reply->renewal_seconds >= reply->lease_seconds)
             reply->renewal_seconds = reply->lease_seconds / 2u;
         if (!have_t2 || !reply->rebinding_seconds ||
             reply->rebinding_seconds >= reply->lease_seconds)
-            reply->rebinding_seconds = (reply->lease_seconds * 7u) / 8u;
+            reply->rebinding_seconds = (u32)(((u64)reply->lease_seconds * 7u) / 8u);
         if (reply->renewal_seconds >= reply->rebinding_seconds) {
             reply->renewal_seconds = reply->lease_seconds / 2u;
             reply->rebinding_seconds = (reply->lease_seconds * 7u) / 8u;
@@ -425,12 +419,6 @@ static void handle_dhcp_reply(u16 source_port, const u8 source_ip[4],
         if (!ipv4_unicast(reply.server) || !ipv4_unicast(reply.address)) return;
         kmemcpy(leased_ip, reply.address, 4);
         kmemcpy(server_ip, reply.server, 4);
-        kmemcpy(offer_mask, reply.subnet_mask, 4);
-        kmemcpy(offer_router, reply.router, 4);
-        kmemcpy(offer_dns, reply.dns_server, 4);
-        offer_lease_seconds = reply.lease_seconds;
-        offer_renewal_seconds = reply.renewal_seconds;
-        offer_rebinding_seconds = reply.rebinding_seconds;
         dhcp_state = DHCP_STATE_REQUESTING;
         retries = 0;
         (void)send_initial_request();
