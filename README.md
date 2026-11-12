@@ -68,6 +68,7 @@ The default ELF disk test verifies that the normal bootstrap task is denied by `
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
 - Framebuffer drawing and PSF2 bitmap-font rendering.
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
+- Terminal-specific fixed-cell monospace rendering, a near-black console and a 19-column CharisOS ASCII C mark. Host CI checks exact row dimensions; the terminal uses an independent fixed 8×16 monospace font so the startup identity remains visible even when desktop text is enlarged. The terminal remains a bounded kernel command environment, not a full userspace shell.
 - Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, a lower-right pointer resize grip, Alt+F8 keyboard resizing, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation; QEMU verifies simultaneous windows and keyboard maximize/restore.
 - Persistent display preferences on supported writable FAT32 storage.
 - Workspace System Status panel reads PMM allocator counters and the active display profile without walking task state during repaint.
