@@ -84,6 +84,11 @@ images-vmm-test:
 images-stack-guard-test:
 	rm -rf $(BUILD_DIR)/stack-guard-test
 	$(MAKE) BUILD_DIR=$(BUILD_DIR)/stack-guard-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DTEST_KERNEL_STACK_GUARD" images
+ 
+# Dedicated image for process wait, exit status and orphan-reap regressions.
+images-waitpid-test:
+	rm -rf $(BUILD_DIR)/waitpid-test
+	$(MAKE) BUILD_DIR=$(BUILD_DIR)/waitpid-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DTEST_WAITPID" images
 
 # Dedicated image that grants CAP_ALLOW_EXEC only to the bootstrap smoke task.
 # The default and release images continue to deny user-triggered exec.
@@ -245,4 +250,4 @@ clean:
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-elf-exec-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
+.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-waitpid-test images-elf-exec-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
