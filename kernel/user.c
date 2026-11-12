@@ -99,7 +99,7 @@ void user_main(void) {
         sys_print((const char*)bad_noncanonical) != (u64)-1) {
         syscall_pointers_ok = false;
     }
-    if (sys_open((const char*)bad_low) != (u64)-1) syscall_pointers_ok = false;
+    if (sys_open((const char*)bad_low) != FD_HANDLE_INVALID) syscall_pointers_ok = false;
     char traversal_path[13];
     traversal_path[0] = '/'; traversal_path[1] = '.'; traversal_path[2] = '.';
     traversal_path[3] = '/'; traversal_path[4] = 'T'; traversal_path[5] = 'E';
