@@ -375,9 +375,17 @@ static bool task_recycle_zombie(task_t* task) {
     if (task->state != TASK_STATE_ZOMBIE || task->scheduler_queued ||
         task->stack_base || task->kernel_stack_pages[0] ||
         task->kernel_stack_pages[1] || task->address_space ||
-        task->mm.pml4 || task->mm.vmas) {
+        task->user_stack_base || task->user_rsp ||
+        task->user_stack_pages[0] || task->user_stack_pages[1] ||
+        task->user_code_page_count || task->mm.pml4 || task->mm.vmas) {
         task_irq_restore(flags);
         return false;
+    }
+    for (u32 page = 0; page < TASK_USER_CODE_MAX_PAGES; page++) {
+        if (task->user_code_pages[page]) {
+            task_irq_restore(flags);
+            return false;
+        }
     }
     for (u32 i = 3; i < MAX_FDS; i++) {
         if (task->fd_table[i].file) {
@@ -392,7 +400,7 @@ static bool task_recycle_zombie(task_t* task) {
     task->exit_code = 0;
     task->parent_pid = 0;
     task->priority = 0;
-    task->name[0] = '\0';
+    kmemset(task->name, 0, sizeof(task->name));
     task->next = NULL;
     task->prev = NULL;
     task->runtime_ticks = 0;
@@ -467,6 +475,10 @@ s64 task_waitpid(s64 selector, u32* exit_status, bool nohang) {
         task_t* zombie = NULL;
         for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
             task_t* child = &task_pool[i];
+            /* A constructor may be preempted while its reserved slot is still
+             * ALLOCATING. Never count a half-published task as a waitable child. */
+            if (child->state == TASK_STATE_UNUSED ||
+                child->state == TASK_STATE_ALLOCATING) continue;
             if (!task_wait_child_matches(parent->pid, child->parent_pid,
                                          child->pid, selector)) continue;
             has_child = true;
@@ -557,10 +569,10 @@ static bool task_init_common(task_t* task, const char* name, u32 capabilities, b
      * identity. Generations survive so stale tokens cannot become valid. */
     fd_table_close_all(task->fd_table);
 
+    kmemset(task->name, 0, sizeof(task->name));
     for (u32 i = 0; i < TASK_NAME_MAX - 1 && name && name[i]; i++) {
         task->name[i] = name[i];
     }
-    task->name[TASK_NAME_MAX - 1] = '\0';
 
     task->next = NULL;
     task->prev = NULL;
