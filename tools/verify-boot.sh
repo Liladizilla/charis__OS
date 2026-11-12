@@ -353,7 +353,7 @@ if [ "$REQUIRE_VMM_TESTS" = "1" ]; then
             || fail "VMM regression test failed or did not execute: $test_name"
     done
 fi
- 
+
 if [ "$REQUIRE_WAITPID" = "1" ]; then
     grep -q 'WAITPID_TEST_OK' "$LOG" \
         || fail "waitpid child-selection/status/reaping regression did not pass"
