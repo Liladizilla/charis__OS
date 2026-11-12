@@ -10,6 +10,7 @@
 - A bounded asynchronous DNS A-record resolver.
 - A minimal single-connection TCP client with SYN/SYN-ACK handshake, checksummed segments, basic ACK handling, data callbacks and FIN close.
 - A plain HTTP GET client that composes DNS and TCP, parses bounded response headers and streams response body chunks.
+- A bounded DHCPv4 client that performs DISCOVER/OFFER/REQUEST/ACK, installs subnet/router/DNS settings, renews at T1 by unicast and rebinds at T2 by broadcast, and stops using the lease after expiry.
 - Browser integration for `http://` URLs, with a bounded HTML-tag-stripped text preview; `https://` remains explicitly unsupported.
 
 ## Configuration
@@ -18,23 +19,25 @@ The settings below are examples, not values to copy blindly. Replace them with v
 
 ```ini
 net_enabled=true
+net_dhcp=true
+# Set net_dhcp=false and provide net_ip to use a static address.
 net_ip=192.168.1.20
 net_mask=255.255.255.0
 net_gateway=192.168.1.1
 net_dns=1.1.1.1
 ```
 
-If `net_ip` is absent or invalid, local IPv4 protocol handling remains disabled. An invalid subnet mask falls back to `255.255.255.0`. A missing gateway allows only destinations considered on-link by the configured mask. There is no DHCP client yet.
+When a valid `net_ip` is present, static IPv4 configuration is used by default. When no valid static address exists, DHCP is enabled by default; `net_dhcp=true` explicitly enables DHCP and `net_dhcp=false` disables it. DHCP lease addresses, subnet mask, router and DNS options are validated before application. DHCP leases are runtime state and are not written to persistent configuration. If DHCP fails, the interface remains without an IPv4 address rather than inventing one.
 
 ## DNS API
 
 Kernel code can queue one lookup with `net_dns_query(hostname, callback, context)`. The callback executes in the network polling task. Only one lookup may be active at a time, and only IPv4 A records are returned. CNAME chasing, IPv6 AAAA records, cache persistence and resolver search domains are not implemented.
 
-The resolver uses UDP port 53 and the configured `net_dns` address. Network configuration, gateway reachability and ARP resolution must be correct for it to succeed.
+The resolver uses UDP port 53. It starts with `net_dns` and adopts the first DNS server supplied by a validated DHCP lease. Network configuration, gateway reachability and ARP resolution must be correct for it to succeed.
 
 ## Current limits
 
-- DHCP, IPv6 and IP fragment reassembly are not implemented. Static IPv4 configuration is required.
+- DHCP is implemented but only exercised by packet-parser host tests and QEMU's virtual NIC capture. Physical LAN DHCP, relay agents, reconnect under loss and long-term lease behavior still need validation. IPv6 and IP fragment reassembly are not implemented.
 - TCP is a constrained single-connection client, not a complete socket implementation. Congestion control, robust retransmission, multiple concurrent connections and broad interoperability are missing.
 - TLS/HTTPS, certificate validation, redirects, chunked transfer decoding, full HTML/CSS layout, JavaScript and standards-compliant document rendering are not implemented.
 - No Wi-Fi driver exists. Current physical networking is the RTL8139 wired Ethernet path only.
