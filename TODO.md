@@ -32,7 +32,7 @@
 - [x] Reject zero, unknown and unavailable rights; standard streams cannot be closed through sys_close
 - [x] Revoke rights on close and reset descriptor metadata on task exit and task-slot reuse
 - [x] Host regression tests for rights, table capacity, task isolation and close ordering
-- [x] Enforce exclusive ownership for closeable VFS nodes; reject duplicate raw-node attachment before a second close can be registered
+- [x] Enforce global atomic ownership for closeable VFS nodes; reject cross-task and concurrent duplicate attachment, and serialize pointer reuse through close-callback completion
 - [x] Close per-open VFS nodes in IL loader and Browser local-file paths; validate IL file size, instruction alignment and complete reads
 - [x] Release VFS nodes through close callbacks when the ELF loader rejects a resolved node before descriptor allocation
 - [x] Validate VFS callback byte counts in ELF, Browser and config readers; reject over-reported lengths and 64-bit offset overflow before use

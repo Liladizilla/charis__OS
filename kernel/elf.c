@@ -200,9 +200,12 @@ static int elf_load_internal(const char* path, process_mm_t* mm, u64* entry_poin
         return -1;
     }
 
-    fd_handle_t fd = fd_alloc(node, 0, FD_RIGHT_READ);
+    fd_alloc_status_t allocation_status;
+    fd_handle_t fd = fd_alloc(node, 0, FD_RIGHT_READ, &allocation_status);
     if (fd == FD_HANDLE_INVALID) {
-        if (node->close) node->close(node);
+        if (node->close &&
+            allocation_status != FD_ALLOC_NODE_ALREADY_OWNED)
+            node->close(node);
         return -1;
     }
 

@@ -5,6 +5,125 @@
 #include <kernel/task.h>
 #include <kernel/string.h>
 
+#define FD_NODE_OWNER_SLOTS 4093U
+#define FD_NODE_OWNER_TOMBSTONE ((uintptr_t)1)
+#define FD_NODE_OWNER_CLOSING   ((uintptr_t)1)
+
+/* A closeable per-open node may belong to only one descriptor globally.
+ * uintptr_t keys remain valid for registry comparisons after close callbacks
+ * free their nodes. The low pointer bit marks a callback currently running. */
+static uintptr_t fd_node_owners[FD_NODE_OWNER_SLOTS];
+
+static u32 fd_node_owner_hash(uintptr_t key) {
+    return (u32)((key >> 4) % FD_NODE_OWNER_SLOTS);
+}
+
+static bool fd_node_owner_claim(vfs_node_t* node) {
+    if (!node || !node->close) return true;
+
+    uintptr_t key = (uintptr_t)node;
+    /* vfs_node_t alignment is at least 8 bytes; bit zero is reserved. */
+    if (key & FD_NODE_OWNER_CLOSING) return false;
+    uintptr_t closing_key = key | FD_NODE_OWNER_CLOSING;
+    u32 start = fd_node_owner_hash(key);
+
+retry:
+    {
+        u32 first_tombstone = FD_NODE_OWNER_SLOTS;
+        for (u32 probe = 0; probe < FD_NODE_OWNER_SLOTS; probe++) {
+            u32 slot = (start + probe) % FD_NODE_OWNER_SLOTS;
+            uintptr_t current =
+                __atomic_load_n(&fd_node_owners[slot], __ATOMIC_ACQUIRE);
+
+            if (current == key) return false;
+            if (current == closing_key) {
+                /* The old node is being released. Its address may be reused
+                 * only after the callback frees it and the owner is removed. */
+                while (__atomic_load_n(&fd_node_owners[slot],
+                                       __ATOMIC_ACQUIRE) == closing_key) {
+                    asm volatile("pause" : : : "memory");
+                }
+                goto retry;
+            }
+            if (current == FD_NODE_OWNER_TOMBSTONE) {
+                if (first_tombstone == FD_NODE_OWNER_SLOTS)
+                    first_tombstone = slot;
+                continue;
+            }
+
+            if (!current) {
+                u32 target = first_tombstone == FD_NODE_OWNER_SLOTS
+                           ? slot : first_tombstone;
+                uintptr_t expected =
+                    first_tombstone == FD_NODE_OWNER_SLOTS
+                    ? 0 : FD_NODE_OWNER_TOMBSTONE;
+                if (__atomic_compare_exchange_n(&fd_node_owners[target],
+                        &expected, key, false, __ATOMIC_ACQ_REL,
+                        __ATOMIC_ACQUIRE)) return true;
+                if (expected == key) return false;
+                goto retry;
+            }
+        }
+
+        if (first_tombstone == FD_NODE_OWNER_SLOTS) return false;
+        uintptr_t expected = FD_NODE_OWNER_TOMBSTONE;
+        if (__atomic_compare_exchange_n(&fd_node_owners[first_tombstone],
+                &expected, key, false, __ATOMIC_ACQ_REL,
+                __ATOMIC_ACQUIRE)) return true;
+        if (expected == key) return false;
+        goto retry;
+    }
+}
+
+/* Mark the owner as closing before calling its destructor. Only one caller
+ * wins this transition, even if two close paths race on the same descriptor. */
+static bool fd_node_owner_begin_release(uintptr_t key) {
+    if (!key || (key & FD_NODE_OWNER_CLOSING)) return false;
+    uintptr_t closing_key = key | FD_NODE_OWNER_CLOSING;
+    u32 start = fd_node_owner_hash(key);
+
+retry:
+    for (u32 probe = 0; probe < FD_NODE_OWNER_SLOTS; probe++) {
+        u32 slot = (start + probe) % FD_NODE_OWNER_SLOTS;
+        uintptr_t current =
+            __atomic_load_n(&fd_node_owners[slot], __ATOMIC_ACQUIRE);
+        if (!current) return false;
+        if (current == closing_key) return false;
+        if (current == key) {
+            uintptr_t expected = key;
+            if (__atomic_compare_exchange_n(&fd_node_owners[slot], &expected,
+                    closing_key, false, __ATOMIC_ACQ_REL,
+                    __ATOMIC_ACQUIRE)) return true;
+            if (expected == closing_key) return false;
+            goto retry;
+        }
+    }
+    return false;
+}
+
+/* Called after the close callback returns. This operates only on the saved
+ * integer key and never dereferences a potentially freed vfs_node_t. */
+static void fd_node_owner_finish_release(uintptr_t key) {
+    if (!key || (key & FD_NODE_OWNER_CLOSING)) return;
+    uintptr_t closing_key = key | FD_NODE_OWNER_CLOSING;
+    u32 start = fd_node_owner_hash(key);
+
+retry:
+    for (u32 probe = 0; probe < FD_NODE_OWNER_SLOTS; probe++) {
+        u32 slot = (start + probe) % FD_NODE_OWNER_SLOTS;
+        uintptr_t current =
+            __atomic_load_n(&fd_node_owners[slot], __ATOMIC_ACQUIRE);
+        if (!current) return;
+        if (current == closing_key) {
+            uintptr_t expected = closing_key;
+            if (__atomic_compare_exchange_n(&fd_node_owners[slot], &expected,
+                    FD_NODE_OWNER_TOMBSTONE, false, __ATOMIC_RELEASE,
+                    __ATOMIC_RELAXED)) return;
+            goto retry;
+        }
+    }
+}
+
 // VFS mount points
 #define MAX_MOUNTS 16
 typedef struct {
@@ -183,36 +302,45 @@ static bool fd_resolve(task_t* task, fd_handle_t handle, u32* slot_out) {
     return true;
 }
 
-fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights) {
+fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights,
+                       fd_alloc_status_t* status) {
+    if (!status) return FD_HANDLE_INVALID;
+    *status = FD_ALLOC_FAILED;
+
     task_t* task = scheduler_current();
     if (!task || !task->pid || !node || !rights ||
         (rights & ~FD_RIGHT_MASK)) return FD_HANDLE_INVALID;
-
-    /* A closeable node is an exclusively owned per-open object. Never let
-     * two descriptors in one task release the same object independently. */
-    if (node->close) {
-        for (u32 i = 3; i < MAX_FDS; i++)
-            if (task->fd_table[i].node == node) return FD_HANDLE_INVALID;
-    }
-
     if ((rights & FD_RIGHT_READ) && !node->read) return FD_HANDLE_INVALID;
     if ((rights & FD_RIGHT_WRITE) && !node->write) return FD_HANDLE_INVALID;
 
+    /* Find a usable slot before claiming the node. */
+    u32 slot = MAX_FDS;
     for (u32 i = 3; i < MAX_FDS; i++) {
         fd_entry_t* entry = &task->fd_table[i];
-        if (entry->node) continue;
-        /* Do not wrap: an ancient descriptor token must never be resurrected. */
-        if (entry->generation >= FD_HANDLE_GENERATION_MAX) continue;
-
-        u32 generation = ++entry->generation;
-        entry->node = node;
-        entry->offset = 0;
-        entry->flags = flags;
-        entry->rights = rights;
-        return ((u64)task->pid << 32) |
-               ((u64)generation << FD_HANDLE_SLOT_BITS) | (u64)i;
+        if (!entry->node && entry->generation < FD_HANDLE_GENERATION_MAX) {
+            slot = i;
+            break;
+        }
     }
-    return FD_HANDLE_INVALID;
+    if (slot == MAX_FDS) return FD_HANDLE_INVALID;
+
+    bool closeable = node->close != NULL;
+    if (closeable && !fd_node_owner_claim(node)) {
+        *status = FD_ALLOC_NODE_ALREADY_OWNED;
+        return FD_HANDLE_INVALID;
+    }
+
+    /* A task context is never scheduled simultaneously on two CPUs, so
+     * this previously selected slot remains private until publication. */
+    fd_entry_t* entry = &task->fd_table[slot];
+    u32 generation = ++entry->generation;
+    entry->node = node;
+    entry->offset = 0;
+    entry->flags = flags;
+    entry->rights = rights;
+    *status = FD_ALLOC_OK;
+    return ((u64)task->pid << 32) |
+           ((u64)generation << FD_HANDLE_SLOT_BITS) | (u64)slot;
 }
 
 bool fd_close(fd_handle_t handle) {
@@ -227,7 +355,13 @@ bool fd_close(fd_handle_t handle) {
     entry->offset = 0;
     entry->flags = 0;
     entry->rights = 0;
-    if (node->close) node->close(node);
+    if (node->close) {
+        uintptr_t owner_key = (uintptr_t)node;
+        if (fd_node_owner_begin_release(owner_key)) {
+            node->close(node);
+            fd_node_owner_finish_release(owner_key);
+        }
+    }
     return true;
 }
 
@@ -240,7 +374,13 @@ void fd_table_close_all(fd_entry_t* table) {
         table[i].offset = 0;
         table[i].flags = 0;
         table[i].rights = 0;
-        if (node && node->close) node->close(node);
+        if (node && node->close) {
+            uintptr_t owner_key = (uintptr_t)node;
+            if (fd_node_owner_begin_release(owner_key)) {
+                node->close(node);
+                fd_node_owner_finish_release(owner_key);
+            }
+        }
     }
 
     extern vfs_node_t dev_kbd;

@@ -432,10 +432,15 @@ operation. The descriptor stores only the granted rights; later reads and writes
 must pass both the descriptor check and the underlying operation check.
 Standard input receives read authority, while standard output/error receive
 write authority. Closing a descriptor revokes its rights before the filesystem
-close callback runs. A closeable VFS node is a per-open owned object: a task
-cannot attach the same node pointer to two descriptors, and failed descriptor
-allocation leaves cleanup ownership with the caller. Cross-task sharing is not
-implemented by copying node pointers; it requires a separately owned,
+close callback runs. A closeable VFS node is a per-open owned object. A global atomic
+ownership registry prevents the same node pointer from being attached to more
+than one descriptor in any task, including simultaneous allocations on
+separate CPUs. A losing opener receives an explicit already-owned status and
+must not run the other descriptor's close callback. During close, the registry
+marks the pointer as releasing; any new claim for a reused address waits until
+the old callback returns. The registry uses integer pointer keys so it never
+dereferences a node after its callback may have freed it. Cross-task sharing
+is not implemented by copying node pointers; it requires a separately owned,
 reference-counted open-file object with per-recipient attenuated rights. Descriptor tables are task-local and are rebuilt when a
 task slot is reused. Non-standard descriptor values are 64-bit task-scoped
 identifiers whose ABI encoding callers must treat as opaque. The current

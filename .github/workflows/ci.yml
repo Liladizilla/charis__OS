@@ -98,7 +98,7 @@ jobs:
 
       - name: Test VFS descriptor rights and lifecycle
         run: |
-          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/fd_table_test.c kernel/vfs.c -Wl,--gc-sections -o /tmp/fd_table_test
+          gcc -std=gnu11 -Wall -Wextra -Werror -pthread -ffunction-sections -fdata-sections -Iinclude tests/fd_table_test.c kernel/vfs.c -Wl,--gc-sections -o /tmp/fd_table_test
           /tmp/fd_table_test
 
       - name: Test syscall read destination preflight

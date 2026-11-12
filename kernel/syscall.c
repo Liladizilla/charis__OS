@@ -246,25 +246,27 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     vfs_node_t* node = vfs_resolve(path);
     if (!node) return (u64)-1;
 
-    /* Reject an aliased owned node before calling open: its existing
-     * descriptor must retain sole responsibility for the close callback. */
-    if (node->close) {
-        for (u32 i = 3; i < MAX_FDS; i++)
-            if (task->fd_table[i].node == node) return (u64)-1;
-    }
-
     if (((rights & FD_RIGHT_READ) && !node->read) ||
         ((rights & FD_RIGHT_WRITE) && !node->write)) {
         if (node->close) node->close(node);
         return (u64)-1;
     }
-    if (node->open && node->open(node, rights) != 0) {
-        if (node->close) node->close(node);
+
+    /* Reserve exclusive lifetime ownership before calling the open callback.
+     * An already-owned pointer must never be closed by this failed opener. */
+    fd_alloc_status_t allocation_status;
+    fd_handle_t fd = fd_alloc(node, 0, rights, &allocation_status);
+    if (fd == FD_HANDLE_INVALID) {
+        if (node->close &&
+            allocation_status != FD_ALLOC_NODE_ALREADY_OWNED)
+            node->close(node);
         return (u64)-1;
     }
 
-    fd_handle_t fd = fd_alloc(node, 0, rights);
-    if (fd == FD_HANDLE_INVALID && node->close) node->close(node);
+    if (node->open && node->open(node, rights) != 0) {
+        fd_close(fd);
+        return (u64)-1;
+    }
     return fd;
 }
 

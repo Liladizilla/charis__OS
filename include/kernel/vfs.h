@@ -63,12 +63,19 @@ vfs_node_t* vfs_resolve(const char* path);
 int vfs_mount(const char* path, vfs_node_t* fs_root);
 
 int fd_table_init(void);
-/* On success, a closeable per-open node transfers cleanup ownership to this
- * descriptor. Failed allocations leave ownership with the caller. The caller
- * must supply a unique per-open node and must not attach that pointer to any
- * descriptor in any task. The allocator rejects same-task duplicate pointers;
- * globally shared nodes require a separate refcounted open-file object. */
-fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights);
+typedef enum {
+    FD_ALLOC_FAILED = 0,
+    FD_ALLOC_OK = 1,
+    FD_ALLOC_NODE_ALREADY_OWNED = 2
+} fd_alloc_status_t;
+
+/* The status output is required. Success transfers cleanup ownership to the
+ * descriptor. NODE_ALREADY_OWNED means the caller must not invoke close;
+ * other failures leave ownership with the caller. Ownership is enforced
+ * globally, including concurrent allocations. Shared resources need a
+ * reference-counted open-file object rather than shared raw node pointers. */
+fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights,
+                     fd_alloc_status_t* status);
 bool fd_close(fd_handle_t handle);
 /* Close non-standard descriptors owned by a task and restore standard streams. */
 void fd_table_close_all(fd_entry_t* table);
