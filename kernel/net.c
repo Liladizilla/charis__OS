@@ -1,7 +1,7 @@
 /* net.c - Polling RTL8139 Ethernet driver.
  *
  * This file provides Ethernet frame I/O only. DHCP, ARP, IPv4, TCP, DNS,
- * TLS and HTTP are separate layers and are not claimed to exist here.
+ * TLS and HTTP are separate layers; DHCP is implemented in dhcp.c/net_stack.c.
  */
 #include <kernel/net.h>
 #include <kernel/io.h>

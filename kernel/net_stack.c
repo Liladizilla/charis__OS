@@ -1,12 +1,13 @@
-/* net_stack.c - Small polling Ethernet/ARP/IPv4/ICMP foundation.
+/* net_stack.c - Polling Ethernet/ARP/IPv4/ICMP and DHCP transport foundation.
  *
  * This is intentionally not a complete Internet stack. It implements ARP
  * replies for a configured local IPv4 address, IPv4 header validation, and
  * ICMP echo replies, static routing, UDP, TCP client, DNS and plain HTTP.
- * DHCP, IPv6, TLS and robust multi-connection transport remain future work.
+ * IPv6, TLS and robust multi-connection transport remain future work.
  */
 #include <kernel/net_stack.h>
 #include <kernel/dns.h>
+#include <kernel/dhcp.h>
 #include <kernel/tcp.h>
 #include <kernel/net.h>
 #include <kernel/config.h>
@@ -148,6 +149,54 @@ void net_stack_init(void) {
 
 static bool ip_is_zero(const u8 ip[4]) {
     return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0;
+}
+
+static bool ip_is_unicast(const u8 ip[4]) {
+    if (!ip || ip_is_zero(ip) || ip[0] == 127u ||
+        (ip[0] >= 224u && ip[0] <= 239u) ||
+        (ip[0] == 255u && ip[1] == 255u &&
+         ip[2] == 255u && ip[3] == 255u))
+        return false;
+    return true;
+}
+
+bool net_stack_has_ipv4_config(void) {
+    if (!stack_ready) net_stack_init();
+    return ip_is_configured();
+}
+
+bool net_stack_configure_ipv4(const u8 address[4], const u8 mask[4],
+                              const u8 gateway[4]) {
+    if (!address || !mask || !gateway || !ip_is_unicast(address) ||
+        !valid_netmask(mask))
+        return false;
+    if (!ip_is_zero(gateway)) {
+        for (usize i = 0; i < 4; i++)
+            if ((gateway[i] & mask[i]) != (address[i] & mask[i]))
+                return false;
+    }
+    net_interface_t* iface = net_get_interface();
+    if (!iface || !iface->initialized) return false;
+
+    kmemcpy(local_ip, address, 4);
+    kmemcpy(local_mask, mask, 4);
+    kmemcpy(default_gateway, gateway, 4);
+    kmemcpy(iface->ip_addr, address, 4);
+    kmemset(arp_cache, 0, sizeof(arp_cache));
+    arp_cache_next = 0;
+    stack_ready = true;
+    return true;
+}
+
+void net_stack_clear_ipv4(void) {
+    kmemset(local_ip, 0, sizeof(local_ip));
+    kmemset(local_mask, 0, sizeof(local_mask));
+    kmemset(default_gateway, 0, sizeof(default_gateway));
+    kmemset(arp_cache, 0, sizeof(arp_cache));
+    arp_cache_next = 0;
+    net_interface_t* iface = net_get_interface();
+    if (iface) kmemset(iface->ip_addr, 0, sizeof(iface->ip_addr));
+    stack_ready = true;
 }
 
 static bool mac_is_zero(const u8 mac[6]) {
@@ -362,10 +411,49 @@ int net_udp_send(const u8 destination_ip[4], u16 destination_port,
     return net_send_packet(frame_out, ETH_HEADER_LEN + ip_len);
 }
 
+/* DHCP uses IPv4 0.0.0.0 -> 255.255.255.255 before a lease exists. This
+ * dedicated broadcast path intentionally bypasses route/ARP lookup, while
+ * retaining normal Ethernet, IP and UDP checksums. */
+int net_udp_send_broadcast(u16 source_port, u16 destination_port,
+                           const void* payload, usize length) {
+    if (!source_port || !destination_port || (!payload && length) ||
+        length > NET_FRAME_CAP - ETH_HEADER_LEN - IPV4_MIN_LEN - UDP_HEADER_LEN)
+        return -1;
+    net_interface_t* iface = net_get_interface();
+    if (!iface || !iface->initialized) return -1;
+
+    static const u8 broadcast[4] = {255, 255, 255, 255};
+    usize udp_len = UDP_HEADER_LEN + length;
+    usize ip_len = IPV4_MIN_LEN + udp_len;
+    kmemset(frame_out, 0, ETH_HEADER_LEN + ip_len);
+
+    ethernet_header_t* eth = (ethernet_header_t*)frame_out;
+    kmemset(eth->dest, 0xFF, sizeof(eth->dest));
+    kmemcpy(eth->src, iface->mac_addr, sizeof(eth->src));
+    write_be16(&eth->type_hi, ETH_TYPE_IPV4);
+
+    u8* ip = frame_out + ETH_HEADER_LEN;
+    ip[0] = 0x45;
+    write_be16(ip + 2u, (u16)ip_len);
+    write_be16(ip + 6u, 0x4000u);
+    ip[8] = 64;
+    ip[9] = IPV4_PROTO_UDP;
+    kmemcpy(ip + 12u, local_ip, 4);
+    kmemcpy(ip + 16u, broadcast, 4);
+    write_be16(ip + 10u, checksum(ip, IPV4_MIN_LEN));
+
+    u8* udp = ip + IPV4_MIN_LEN;
+    write_be16(udp, source_port);
+    write_be16(udp + 2u, destination_port);
+    write_be16(udp + 4u, (u16)udp_len);
+    if (length) kmemcpy(udp + UDP_HEADER_LEN, payload, length);
+    u16 sum = udp_checksum_value(ip + 12u, ip + 16u, udp, udp_len);
+    write_be16(udp + 6u, sum ? sum : 0xFFFFu);
+    return net_send_packet(frame_out, ETH_HEADER_LEN + ip_len);
+}
+
 static void handle_udp(const u8* ip, usize ip_len, u8 ihl) {
-    if (!ip_is_configured() || !same_bytes(ip + 16, local_ip, 4) ||
-        ip_len < (usize)ihl + UDP_HEADER_LEN)
-        return;
+    if (ip_len < (usize)ihl + UDP_HEADER_LEN) return;
     const u8* udp = ip + ihl;
     usize udp_len = read_be16(udp + 4);
     if (udp_len < UDP_HEADER_LEN || udp_len > ip_len - ihl) return;
@@ -375,6 +463,19 @@ static void handle_udp(const u8* ip, usize ip_len, u8 ihl) {
         return;
     u16 dst_port = read_be16(udp + 2);
     u16 src_port = read_be16(udp);
+    bool dhcp_reply = src_port == 67u && dst_port == 68u;
+    bool broadcast_ip = ip[16] == 255u && ip[17] == 255u &&
+                        ip[18] == 255u && ip[19] == 255u;
+    if (dhcp_reply) {
+        /* DHCP must work before this interface has an IPv4 address. The
+         * client advertises the broadcast flag, so pre-lease replies must be
+         * broadcast; once bound, the server may also unicast to our address. */
+        if (!broadcast_ip &&
+            (!ip_is_configured() || !same_bytes(ip + 16, local_ip, 4)))
+            return;
+    } else if (!ip_is_configured() || !same_bytes(ip + 16, local_ip, 4)) {
+        return;
+    }
     for (usize i = 0; i < NET_UDP_MAX_HANDLERS; i++) {
         if (udp_bindings[i].port == dst_port && udp_bindings[i].handler) {
             udp_bindings[i].handler(src_port, ip + 12, udp + UDP_HEADER_LEN,
@@ -494,10 +595,12 @@ void net_poll_task(void* unused) {
     net_stack_init();
     (void)net_dns_init();
     (void)net_tcp_init();
+    dhcp_init();
     for (;;) {
         net_handle_tcpip();
         net_dns_poll();
         net_tcp_poll();
+        dhcp_poll();
         scheduler_yield();
     }
 }

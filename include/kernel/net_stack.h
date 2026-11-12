@@ -3,6 +3,10 @@
 #include <kernel/types.h>
 
 void net_stack_init(void);
+bool net_stack_has_ipv4_config(void);
+bool net_stack_configure_ipv4(const u8 address[4], const u8 subnet_mask[4],
+                              const u8 gateway[4]);
+void net_stack_clear_ipv4(void);
 /* Transmit an IPv4 packet. Returns -2 when ARP resolution must complete first. */
 int net_ipv4_send(const u8 destination_ip[4], u8 protocol,
                   const void* payload, usize length);
@@ -12,6 +16,8 @@ bool net_stack_resolve_ipv4(const u8 ip[4], u8 mac_out[6]);
  * or -2 when ARP resolution has been started and the caller should retry. */
 int net_udp_send(const u8 destination_ip[4], u16 destination_port,
                  u16 source_port, const void* payload, usize length);
+int net_udp_send_broadcast(u16 source_port, u16 destination_port,
+                           const void* payload, usize length);
 void net_handle_tcpip(void);
 void net_poll_task(void* unused);
 

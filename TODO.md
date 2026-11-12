@@ -129,7 +129,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Bounded asynchronous DNS A-record resolver
 - [x] Minimal single-connection TCP client with basic handshake, ACK/data/FIN handling
 - [x] Plain HTTP GET composition and bounded response-header/body handling for Browser
-- [ ] DHCP client and lease renewal
+- [x] Bounded DHCPv4 DISCOVER/OFFER/REQUEST/ACK client, server-ID and BOOTP identity validation, router/subnet/DNS options, T1 unicast renewal, T2 broadcast rebinding and expiry cleanup
+- [ ] Physical LAN DHCP interoperability, relay-agent and packet-loss/reconnect stress tests
 - [ ] IPv6, neighbour discovery and ICMPv6
 - [ ] Robust TCP retransmission, congestion control and concurrent connections
 - [ ] TLS/HTTPS and certificate validation
@@ -317,7 +318,7 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 ## Recommended Next Steps
 
 1. **Authenticated IPC objects** - replace global integer channels and raw shared-memory pointers with task-owned endpoint/object handles, explicit rights and transactional resource transfer
-2. **Internet connectivity** - implement DHCP, route/DNS configuration, bounded reconnect behavior and real-LAN tests over the existing wired RTL8139 path
+2. **Internet connectivity** - validate DHCP, route/DNS installation, lease renewal and reconnect behavior against real LAN DHCP servers, then complete HTTPS/TLS prerequisites
 3. **Secure transport** - add TLS with certificate and clock validation before presenting the Browser as Internet-ready
 4. **Hardware services** - add timezone-aware RTC policy, ACPI battery discovery and reliable HDA PCM playback
 5. **Wireless networking** - define a supported adapter matrix, then implement and test the first Wi-Fi driver without claiming generic support
@@ -341,7 +342,8 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 - [ ] ACPI discovery and battery telemetry (charge, state, remaining capacity/time when firmware exposes it)
 - [ ] Complete HDA codec/controller initialization, DMA ring handling, PCM playback, mixer and safe stream lifecycle
 - [ ] Wi-Fi device discovery and a driver architecture; support a documented first adapter family before claiming wireless support
-- [ ] DHCP client, DNS configuration and route installation integrated with the network service
+- [x] DHCPv4 lease acquisition and renewal integrated with the wired network worker
+- [ ] Physical LAN DHCP, DNS reachability, route installation and reconnect behavior verified on supported hardware
 - [ ] Real Internet path verification: DHCP/static config, DNS, HTTP, TLS, timeouts, packet loss and reconnect behavior
 - [x] Shortlist and record high-resolution CC0 wallpaper sources with source pages, author and original dimensions; see assets/wallpapers/README.md
 - [ ] Download and vendor the source files, record checksums and re-verify files after download
