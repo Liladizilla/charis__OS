@@ -2,6 +2,9 @@
 #include <stdio.h>
 #include <kernel/security.h>
 
+/* security.c also defines the panic path; satisfy its kernel logger in host tests. */
+void serial_puts(const char* message) { (void)message; }
+
 static void test_single_capability_checks(void) {
     task_t task = {0};
     task.capabilities = CAP_FS_READ | CAP_NET_RAW;
