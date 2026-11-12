@@ -6,6 +6,7 @@ bits 64
 
 extern syscall_dispatch
 extern task_exit_handler
+extern task_release_pending
 
 ; ---------------------------------------------------------------------------
 ; void context_switch(u64* old_rsp, u64 new_rsp, bool use_iret);
@@ -36,6 +37,17 @@ context_switch:
     pop r12
     pop rbx
     pop rbp
+
+    ; Reclaim the outgoing task only after the destination stack is active.
+    ; This is deliberately inside the assembly boundary: first-run tasks do
+    ; not return through a suspended scheduler_schedule() frame, and ring-3
+    ; first entry goes directly to iretq rather than task_trampoline().
+    ; Preserve RDX because DL selects the kernel-return versus iretq path.
+    push rdx
+    sub rsp, 8                 ; keep the SysV call-site stack 16-byte aligned
+    call task_release_pending
+    add rsp, 8
+    pop rdx
 
     ; A first-run user task has a synthetic kernel-RFLAGS slot in its frame.
     ; Discard it and let iretq restore the user RFLAGS from the privilege frame.
