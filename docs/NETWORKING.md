@@ -18,13 +18,16 @@
 The settings below are examples, not values to copy blindly. Replace them with values valid on the actual LAN.
 
 ```ini
+# DHCP example (default when net_ip is absent or invalid):
 net_enabled=true
 net_dhcp=true
-# Set net_dhcp=false and provide net_ip to use a static address.
-net_ip=192.168.1.20
-net_mask=255.255.255.0
-net_gateway=192.168.1.1
-net_dns=1.1.1.1
+
+# Static alternative:
+# net_dhcp=false
+# net_ip=192.168.1.20
+# net_mask=255.255.255.0
+# net_gateway=192.168.1.1
+# net_dns=1.1.1.1
 ```
 
 When a valid `net_ip` is present, static IPv4 configuration is used by default. When no valid static address exists, DHCP is enabled by default; `net_dhcp=true` explicitly enables DHCP and `net_dhcp=false` disables it. DHCP lease addresses, subnet mask, router and DNS options are validated before application. DHCP leases are runtime state and are not written to persistent configuration. If DHCP fails, the interface remains without an IPv4 address rather than inventing one.
