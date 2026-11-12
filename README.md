@@ -455,11 +455,18 @@ Callbacks under that lock must remain bounded and must not block or yield;
 callback execution and object destruction happen outside the descriptor-table
 lock. Standard streams bind to permanent shared kernel open-file objects.
 
-Descriptor duplication, cross-task transfer and the userspace transfer ABI
-are not implemented yet. Those features must add a reference before publishing
-a recipient entry and attenuate rights per descriptor; copying raw node pointers
-is not an acceptable substitute. Descriptor tables are task-local and are
-rebuilt when a task slot is reused. Non-standard descriptor values are 64-bit task-scoped
+The kernel-internal `fd_duplicate_to()` primitive can publish a descriptor
+for a live recipient PID. It rejects zero/unknown rights and any requested
+right the sender does not hold, checks recipient state and table capacity,
+acquires the shared open-file reference before publication, and returns a
+recipient-bound task-scoped handle. The sender and recipient retain independent
+rights while sharing the same open-file offset. Task exit publishes
+`TASK_STATE_EXITING` before its close-all pass, preventing a new duplicate
+from appearing after cleanup. Host regressions cover rights escalation,
+full-table rollback, sender close, recipient cleanup and rejected teardown
+states. No ring-3 syscall exposes this primitive; userspace descriptor transfer
+still requires a separately designed, authenticated IPC protocol. Descriptor
+tables are task-local and are rebuilt when a task slot is reused. Non-standard descriptor values are 64-bit task-scoped
 identifiers whose ABI encoding callers must treat as opaque. The current
 encoding is deterministic: it contains the owning task PID, a per-slot
 generation and the descriptor slot. It is not random, secret, MAC-protected or
