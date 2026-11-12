@@ -1,5 +1,6 @@
 #include <kernel/ipc.h>
 #include <kernel/scheduler.h>
+#include <kernel/string.h>
 
 typedef struct ipc_channel ipc_channel_t;
 typedef struct {
@@ -108,13 +109,13 @@ static void ipc_close_slot_locked(task_t* owner, u32 slot) {
     if (ch && ch->in_use) {
         ipc_queue_clear(&ch->inbound[side]);
         if (ch->endpoint_refs) ch->endpoint_refs--;
-        if (!ch->endpoint_refs) *ch = (ipc_channel_t){0};
+        if (!ch->endpoint_refs) kmemset(ch, 0, sizeof(*ch));
     }
 }
 
 void ipc_init(void) {
     for (u32 i = 0; i < IPC_MAX_CHANNELS; i++)
-        ipc_channels[i] = (ipc_channel_t){0};
+        kmemset(&ipc_channels[i], 0, sizeof(ipc_channels[i]));
     for (u32 i = 0; i < SHM_MAX_BLOCKS; i++) shm_used[i] = false;
 }
 
@@ -142,7 +143,7 @@ bool ipc_endpoint_pair_create(task_t* a, task_t* b, u32 rights_a,
     u32 gen_a = a->ipc_endpoint_generations[slot_a];
     u32 gen_b = b->ipc_endpoint_generations[slot_b];
     ipc_channel_t* ch = &ipc_channels[channel_index];
-    *ch = (ipc_channel_t){0};
+    kmemset(ch, 0, sizeof(*ch));
     ch->in_use = true;
     ch->endpoint_refs = 2;
     ch->endpoints[0] = (struct ipc_endpoint){
