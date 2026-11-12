@@ -401,8 +401,11 @@ Combine with `make gdb` and:
 
 ## Security
 
-Capability bits are defined in `include/kernel/security.h` and assigned per task
-at creation. The `fork` syscall is not implemented and currently returns
+Capability bits are defined in `include/kernel/security.h` and sanitized against
+the kernel's defined-bit mask when a task is constructed. Capability checks use
+conjunctive semantics: a request containing multiple bits succeeds only when
+every requested bit is held. Empty requests and requests containing undefined
+bits fail closed. The `fork` syscall is not implemented and currently returns
 failure; child capability inheritance is therefore not claimed.
 
 | Authority | Enforcement |
@@ -430,7 +433,9 @@ unavailable, cryptographic token generation is disabled. The kernel does not
 claim that a weak fallback provides cryptographic entropy.
 
 **Known gaps:** per-open rights are not yet transferable or inherited, and the
-broader resource model is incomplete. Global IPC, socket, networking,
+broader resource model is incomplete. Capability bits are still assigned by
+kernel task constructors; there is no user-controlled delegation, attenuation
+API or per-resource capability object yet. Global IPC, socket, networking,
 diagnostics and shared-memory interfaces remain kernel-only rather than being
 exposed to ring 3. Process isolation, safe reaping and broader capability
 enforcement remain unfinished.

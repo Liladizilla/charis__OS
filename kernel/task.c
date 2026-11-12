@@ -373,6 +373,7 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->runtime_ticks = 0;
     task->remaining_quantum = TASK_DEFAULT_QUANTUM;
     task->capabilities = capabilities;
+    security_enforce_capabilities(task);
     task->mm.pml4 = NULL;
     task->mm.heap_start = 0;
     task->mm.heap_end = 0;

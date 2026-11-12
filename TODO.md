@@ -156,6 +156,9 @@ The shell still owns the framebuffer and application renderers, while the WM own
 
 ## Phase 14: Security & Capabilities (PARTIAL - ENFORCEMENT IN PROGRESS)
 - [x] Capability bitmask per task (CAP_FS_READ, CAP_FS_WRITE, CAP_SPAWN, etc.)
+- [x] Capability checks require every requested bit; zero and undefined masks fail closed
+- [x] Sanitize task capability grants against the kernel-defined capability mask at construction
+- [x] Host regression tests cover single-bit, multi-bit, empty, unknown and sanitized capability requests
 - [ ] Capability inheritance and reduction rules for a future working fork implementation
 - [x] Capability checks on `sys_open`, non-console `sys_write`, and `sys_exec` authorization (the bootstrap task intentionally lacks `CAP_ALLOW_EXEC`)
 - [x] Path traversal blocking in security_verify_path() (NEW)
