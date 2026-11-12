@@ -41,6 +41,7 @@
 - [x] FAT32 integration with VFS (read-only listing; mutation support remains incomplete)
 - [x] sys_open() defaults to read-only; sys_open_rights() requests capability-backed rights
 - [x] sys_close() rejects invalid, closed and standard descriptors
+- [x] Specify the reference-counted open-file-description architecture, lifetime/authority invariants, lock-order requirements and adversarial regression matrix (implementation remains pending)
 
 ## Phase 4: ELF Loader (IN PROGRESS)
 - [x] Validate static ELF64 x86-64 `ET_EXEC` headers and program-header bounds
