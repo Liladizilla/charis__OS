@@ -77,6 +77,11 @@ jobs:
           gcc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/browser_html_test.c -Wl,--gc-sections -o /tmp/browser_html_test
           /tmp/browser_html_test
 
+      - name: Test terminal ASCII banner geometry
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/terminal_ascii_layout_test.c -o /tmp/terminal_ascii_layout_test
+          /tmp/terminal_ascii_layout_test
+
       - name: Test RTC register decoding and wall-clock calendar conversion
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/rtc_decode_test.c kernel/rtc.c -Wl,--gc-sections -o /tmp/rtc_decode_test
