@@ -60,7 +60,7 @@ static int ipc_find_task_slot(const task_t* task) {
     for (u32 i = 0; task && i < IPC_MAX_ENDPOINTS; i++) {
         u32 gen = task->ipc_endpoint_generations[i];
         if (!task->ipc_endpoints[i] && gen &&
-            gen <= IPC_HANDLE_GENERATION_MAX) return (int)i;
+            gen < IPC_HANDLE_GENERATION_MAX) return (int)i;
     }
     return -1;
 }
