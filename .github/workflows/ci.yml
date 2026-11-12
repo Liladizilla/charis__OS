@@ -116,6 +116,11 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/elf_fd_read_test.c -Wl,--gc-sections -o /tmp/elf_fd_read_test
           /tmp/elf_fd_read_test
 
+      - name: Test FAT32 VFS offset narrowing
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/vfs_fat32_offset_test.c -Wl,--gc-sections -o /tmp/vfs_fat32_offset_test
+          /tmp/vfs_fat32_offset_test
+
       - name: Build ELF smoke-test disk
         run: make elf-test
 

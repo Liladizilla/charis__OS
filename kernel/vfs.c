@@ -170,6 +170,9 @@ vfs_node_t dev_vga = {
 
 // FAT32 wrapper implementations
 static int fat32_vfs_read(vfs_node_t* node, u64 offset, u64 size, u8* buf) {
+    /* FAT32 file_t positions are 32-bit. Reject before narrowing so a caller
+     * cannot wrap a large 64-bit VFS offset back to the start of a file. */
+    if (!node || !buf || offset > 0xFFFFFFFFULL) return -1;
     file_t file;
     file.cluster = (u32)(uintptr_t)node->data;
     file.size = node->size;
@@ -178,7 +181,8 @@ static int fat32_vfs_read(vfs_node_t* node, u64 offset, u64 size, u8* buf) {
 }
 
 static int fat32_vfs_write(vfs_node_t* node, u64 offset, u64 size, const u8* buf) {
-    if (!node || !size) return -1;
+    /* Validate the FAT32 position before fs_open() or the u64-to-u32 cast. */
+    if (!node || !buf || !size || offset > 0xFFFFFFFFULL) return -1;
     file_t file;
     if (fs_open(node->name, &file) != 0) return -1;
     file.pos = offset;

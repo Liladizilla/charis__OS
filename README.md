@@ -471,6 +471,11 @@ oversized results before placing the string terminator, and Browser previews
 reject lengths larger than their destination buffer. Descriptor read/write and
 ELF read ranges fail closed before 64-bit offset arithmetic can wrap.
 
+The FAT32 VFS adapters also reject offsets above the 32-bit `file_t.pos`
+domain before narrowing a 64-bit VFS offset or entering the filesystem layer.
+A host regression verifies that oversized reads do not invoke `fs_read`, and
+oversized writes do not invoke `fs_open` or `fs_write`.
+
 Before a ring-3 `sys_read` touches its input source, the kernel validates the
 entire writable destination range across page boundaries, using effective
 USER/WRITABLE page-table permissions and checking that each physical frame is

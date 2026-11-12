@@ -36,6 +36,7 @@
 - [x] Close per-open VFS nodes in IL loader and Browser local-file paths; validate IL file size, instruction alignment and complete reads
 - [x] Release VFS nodes through close callbacks when the ELF loader rejects a resolved node before descriptor allocation
 - [x] Validate VFS callback byte counts in ELF, Browser and config readers; reject over-reported lengths and 64-bit offset overflow before use
+- [ ] Reject oversized 64-bit offsets in FAT32 VFS adapters before conversion to 32-bit `file_t.pos`; add a host regression that proves no filesystem callback runs
 - [x] FAT32 integration with VFS (read-only listing; mutation support remains incomplete)
 - [x] sys_open() defaults to read-only; sys_open_rights() requests capability-backed rights
 - [x] sys_close() rejects invalid, closed and standard descriptors
