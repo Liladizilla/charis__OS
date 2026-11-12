@@ -154,7 +154,7 @@ void gfx_draw_string(u32 x, u32 y, const char* s, u32 fg, u32 bg) {
 
 void gfx_draw_string_scaled(u32 x, u32 y, const char* s, u32 fg, u32 bg, u32 scale) {
     if (!g_framebuffer.initialized || !s || !scale) return;
-    u32 effective = scale * text_scale;
+    u32 effective = scale;
     if (effective > 8) effective = 8;
     u32 origin_x = x;
     for (; *s; s++) {
@@ -186,12 +186,13 @@ void gfx_draw_monospace_string_scaled(u32 x, u32 y, const char* s,
     }
 }
 
-void gfx_text_monospace_size(const char* s, u32* out_w, u32* out_h) {
-    if (!s) {
+void gfx_text_monospace_size(const char* s, u32* out_w, u32* out_h, u32 scale) {
+    if (!s || !scale) {
         if (out_w) *out_w = 0;
         if (out_h) *out_h = 0;
         return;
     }
+    if (scale > 8) scale = 8;
     u32 lines = 1, longest = 0, current = 0;
     for (const char* p = s; *p; p++) {
         if (*p == '\n') {
@@ -199,12 +200,12 @@ void gfx_text_monospace_size(const char* s, u32* out_w, u32* out_h) {
             current = 0;
             lines++;
         } else {
-            current += glyph_advance_with_style(*p, text_scale, 1u);
+            current += glyph_advance_with_style(*p, scale, 1u);
         }
     }
     if (current > longest) longest = current;
     if (out_w) *out_w = longest;
-    if (out_h) *out_h = lines * (u32)font_cell_h * text_scale;
+    if (out_h) *out_h = lines * (u32)font_cell_h * scale;
 }
 
 void gfx_draw_string_centered(u32 y, const char* s, u32 fg, u32 bg) {
