@@ -50,10 +50,27 @@ typedef struct vfs_node {
     struct vfs_node* (*finddir)(struct vfs_node*, const char* name);
 } vfs_node_t;
 
-typedef struct fd_entry {
+/*
+ * One successful open owns one VFS node. Descriptor duplicates (when added)
+ * share this object, including its offset, but retain independent rights.
+ *
+ * lifecycle packs the reference count into the low 63 bits. The high bit is
+ * a one-way transition to final destruction, preventing resurrection after
+ * the final release. io_lock serializes offset-sensitive callbacks.
+ */
+#define VFS_OPEN_FILE_CLOSING (1ULL << 63)
+#define VFS_OPEN_FILE_REF_MASK (~VFS_OPEN_FILE_CLOSING)
+
+typedef struct vfs_open_file {
     vfs_node_t* node;
     u64 offset;
-    u32 flags;
+    u32 open_flags;
+    volatile u32 io_lock;
+    volatile u64 lifecycle;
+} vfs_open_file_t;
+
+typedef struct fd_entry {
+    vfs_open_file_t* file;
     u32 rights;
     /* Preserved across close and task-slot reuse; never silently wraps. */
     u32 generation;
@@ -63,7 +80,8 @@ void vfs_init(void);
 vfs_node_t* vfs_resolve(const char* path);
 int vfs_mount(const char* path, vfs_node_t* fs_root);
 
-int fd_table_init(void);
+/* Initialize a freshly cleared table and install permanent standard streams. */
+void fd_table_init(fd_entry_t* table);
 typedef enum {
     FD_ALLOC_FAILED = 0,
     FD_ALLOC_OK = 1,
@@ -80,5 +98,10 @@ fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights,
 bool fd_close(fd_handle_t handle);
 /* Close non-standard descriptors owned by a task and restore standard streams. */
 void fd_table_close_all(fd_entry_t* table);
-fd_entry_t* fd_get(fd_handle_t handle); // Resolves only in the owning current task.
+/* Pin a task-local descriptor across callbacks; caller must release exactly once. */
+vfs_open_file_t* fd_acquire(fd_handle_t handle, u32 required_rights);
+void fd_release(vfs_open_file_t* file);
+/* Serialize callbacks and shared-offset updates. Callbacks must not block/yield. */
+u64 fd_file_io_lock(vfs_open_file_t* file);
+void fd_file_io_unlock(vfs_open_file_t* file, u64 irq_flags);
 bool fd_has_rights(fd_handle_t handle, u32 rights);
