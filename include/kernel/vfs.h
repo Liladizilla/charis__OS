@@ -51,7 +51,7 @@ typedef struct vfs_node {
 } vfs_node_t;
 
 /*
- * One successful open owns one VFS node. Descriptor duplicates (when added)
+ * One successful open owns one VFS node. Kernel-internal descriptor duplicates
  * share this object, including its offset, but retain independent rights.
  *
  * lifecycle packs the reference count into the low 63 bits. The high bit is
@@ -92,8 +92,8 @@ typedef enum {
  * new open-file description held by the descriptor. NODE_ALREADY_OWNED means
  * the caller must not invoke close; other failures leave ownership with the
  * caller. The global registry permits one owning description per closeable
- * node. Any future descriptor duplication must acquire another description
- * reference and must never attach the same raw node pointer a second time. */
+ * node. Descriptor duplication acquires another description reference and never
+ * attaches the same raw node pointer a second time. The user ABI is not exposed. */
 fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights,
                      fd_alloc_status_t* status);
 /* Kernel-internal only: copy a descriptor to a live recipient task. Requested
