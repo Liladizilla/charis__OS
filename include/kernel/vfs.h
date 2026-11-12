@@ -88,11 +88,12 @@ typedef enum {
     FD_ALLOC_NODE_ALREADY_OWNED = 2
 } fd_alloc_status_t;
 
-/* The status output is required. Success transfers cleanup ownership to the
- * descriptor. NODE_ALREADY_OWNED means the caller must not invoke close;
- * other failures leave ownership with the caller. Ownership is enforced
- * globally, including concurrent allocations. Shared resources need a
- * reference-counted open-file object rather than shared raw node pointers. */
+/* The status output is required. Success transfers cleanup ownership to a
+ * new open-file description held by the descriptor. NODE_ALREADY_OWNED means
+ * the caller must not invoke close; other failures leave ownership with the
+ * caller. The global registry permits one owning description per closeable
+ * node. Any future descriptor duplication must acquire another description
+ * reference and must never attach the same raw node pointer a second time. */
 fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights,
                      fd_alloc_status_t* status);
 bool fd_close(fd_handle_t handle);
