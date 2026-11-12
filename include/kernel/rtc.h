@@ -28,5 +28,8 @@ bool rtc_decode_registers(u8 second, u8 minute, u8 hour,
 bool rtc_init(void);
 bool rtc_available(void);
 
+/* Convert Unix epoch seconds without relying on a host C library. */
+bool rtc_epoch_to_datetime(u64 epoch, rtc_datetime_t* out);
+
 /* Return wall-clock time advanced by monotonic PIT elapsed time since boot. */
 bool rtc_get_datetime(rtc_datetime_t* out);
