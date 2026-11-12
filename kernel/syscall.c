@@ -308,39 +308,15 @@ static u64 syscall_ipc_create_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u6
 static u64 syscall_ipc_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     if (!syscall_kernel_only()) return (u64)-1;
     (void)a4; (void)a5; (void)a6;
-    task_t* task = scheduler_current();
-    if (task && task->is_user) {
-        if (a3 > SYSCALL_IO_MAX) return (u64)-1;
-        u8* bounce = (u8*)kmalloc((usize)a3);
-        if (!bounce && a3) return (u64)-1;
-        if (!syscall_copy_user_data(task, a2, bounce, (usize)a3)) {
-            if (bounce) kfree(bounce);
-            return (u64)-1;
-        }
-        int result = ipc_send((int)a1, bounce, a3);
-        if (bounce) kfree(bounce);
-        return (u64)result;
-    }
+    /* IPC object IDs and buffers have no ring-3 ownership model yet. */
     return (u64)ipc_send((int)a1, (void*)a2, a3);
 }
 
 static u64 syscall_ipc_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     if (!syscall_kernel_only()) return (u64)-1;
     (void)a4; (void)a5; (void)a6;
-    task_t* task = scheduler_current();
-    if (task && task->is_user) {
-        if (a3 > SYSCALL_IO_MAX) return (u64)-1;
-        u8* bounce = (u8*)kmalloc((usize)a3);
-        if (!bounce && a3) return (u64)-1;
-        int result = ipc_recv((int)a1, bounce, a3);
-        /* A subsystem must never be trusted to report more bytes than the
-         * caller requested: that would read beyond the kernel bounce buffer. */
-        if (result > 0 && (u64)result > a3) result = (int)a3;
-        if (result > 0 && !syscall_copy_to_user_data(task, a2, bounce, (usize)result)) result = -1;
-        if (bounce) kfree(bounce);
-        return (u64)(s64)result;
-    }
-    return (u64)ipc_recv((int)a1, (void*)a2, a3);
+    /* IPC object IDs and buffers have no ring-3 ownership model yet. */
+    return (u64)(s64)ipc_recv((int)a1, (void*)a2, a3);
 }
 
 static u64 syscall_exec_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
@@ -568,39 +544,17 @@ static u64 syscall_accept_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6
 static u64 syscall_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     if (!syscall_kernel_only()) return (u64)-1;
     (void)a4; (void)a5; (void)a6;
-    task_t* task = scheduler_current();
-    if (task && task->is_user) {
-        if (a3 > SYSCALL_IO_MAX) return (u64)-1;
-        u8* bounce = (u8*)kmalloc((usize)a3);
-        if (!bounce && a3) return (u64)-1;
-        if (!syscall_copy_user_data(task, a2, bounce, (usize)a3)) {
-            if (bounce) kfree(bounce);
-            return (u64)-1;
-        }
-        int result = socket_send((int)a1, bounce, (usize)a3);
-        if (bounce) kfree(bounce);
-        return (u64)(s64)result;
-    }
-    return (u64)socket_send((int)a1, (void*)a2, (usize)a3);
+    /* Socket handles and buffers remain kernel-owned until per-task socket
+     * objects, resource grants and checked user copies are implemented. */
+    return (u64)(s64)socket_send((int)a1, (void*)a2, (usize)a3);
 }
 
 static u64 syscall_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     if (!syscall_kernel_only()) return (u64)-1;
     (void)a4; (void)a5; (void)a6;
-    task_t* task = scheduler_current();
-    if (task && task->is_user) {
-        if (a3 > SYSCALL_IO_MAX) return (u64)-1;
-        u8* bounce = (u8*)kmalloc((usize)a3);
-        if (!bounce && a3) return (u64)-1;
-        int result = socket_recv((int)a1, bounce, (usize)a3);
-        /* Keep a buggy driver/protocol implementation from making the copy
-         * back to userspace run past the requested buffer length. */
-        if (result > 0 && (u64)result > a3) result = (int)a3;
-        if (result > 0 && !syscall_copy_to_user_data(task, a2, bounce, (usize)result)) result = -1;
-        if (bounce) kfree(bounce);
-        return (u64)(s64)result;
-    }
-    return (u64)socket_recv((int)a1, (void*)a2, (usize)a3);
+    /* Socket handles and buffers remain kernel-owned until per-task socket
+     * objects, resource grants and checked user copies are implemented. */
+    return (u64)(s64)socket_recv((int)a1, (void*)a2, (usize)a3);
 }
 
 static u64 syscall_socket_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
