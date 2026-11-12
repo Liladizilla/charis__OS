@@ -51,7 +51,12 @@
 - [x] Add kernel-internal `fd_duplicate_to()` with kernel task-table recipient resolution and strict rights attenuation
 - [x] Reject descriptor duplication into full, allocating, exiting or zombie recipient tasks
 - [x] Verify shared open-file identity/offset, recipient cleanup and sender-close lifetime
-- [ ] Design an authenticated IPC transfer protocol before exposing descriptor delegation to ring 3
+- [x] Specify authenticated IPC endpoint, rendezvous, rights and transactional resource-transfer requirements
+- [ ] Replace global integer IPC channels with task-local endpoint handles and kernel-established peer identities
+- [ ] Add cancellation-safe message reservations and bounded per-endpoint queues
+- [ ] Add transactional descriptor attachments with queue-owned references and receiver rollback
+- [ ] Keep ring-3 IPC and descriptor transfer denied until endpoint tests and user-memory preflight pass
+- [ ] Replace global shared-memory IDs/raw kernel-pointer access with task-owned objects and explicit user mappings
 
 ## Phase 4: ELF Loader (IN PROGRESS)
 - [x] Validate static ELF64 x86-64 `ET_EXEC` headers and program-header bounds
