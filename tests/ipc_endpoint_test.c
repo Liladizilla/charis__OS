@@ -34,13 +34,13 @@ static void test_pair_validation(void) {
 }
 static void test_rights_queue_and_close(void) {
     ipc_handle_t send_a, receive_b;
-    assert(ipc_endpoint_pair_create(&task_a, &task_b, IPC_RIGHT_SEND, IPC_RIGHT_RECEIVE, &send_a, &receive_b));
+    assert(ipc_endpoint_pair_create(&task_a, &task_b, IPC_RIGHT_SEND, IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE, &send_a, &receive_b));
     assert((u32)(send_a >> 32) == task_a.pid);
     assert((u32)(receive_b >> 32) == task_b.pid);
     const char payload[] = "charis-ipc";
     active_task = &task_b;
     assert(ipc_send(send_a, payload, sizeof(payload)) == IPC_STATUS_ERROR);
-    assert(ipc_send(receive_b, payload, sizeof(payload)) == IPC_STATUS_ERROR);
+    assert(ipc_recv(send_a, (void*)payload, sizeof(payload), NULL) == IPC_STATUS_ERROR);
     assert(ipc_recv(receive_b, (void*)payload, sizeof(payload), NULL) == IPC_STATUS_EMPTY);
     assert(ipc_close(send_a) == IPC_STATUS_ERROR);
     active_task = &task_a;
