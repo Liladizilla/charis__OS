@@ -275,6 +275,10 @@ void task_exit_with_status(u32 status) {
     task_t* current = scheduler_current();
     if (current) {
         current->exit_code = status;
+        /* Publish a terminal state before releasing descriptors. A kernel
+         * descriptor duplication racing teardown must never publish into a
+         * task after its close-all pass has completed. */
+        current->state = TASK_STATE_EXITING;
         /* Release per-task descriptor state before the task becomes a zombie.
          * The table slot remains available for waitpid(), but open descriptors
          * must not remain live for the lifetime of the zombie record. */
