@@ -7,6 +7,7 @@ typedef void (*net_dns_callback_t)(const char* hostname, const u8 ipv4[4],
 
 /* Initialize the resolver after the Ethernet interface is available. */
 bool net_dns_init(void);
+bool net_dns_set_server(const u8 server[4]);
 /* Queue one hostname lookup. Completion runs in the network polling task. */
 bool net_dns_query(const char* hostname, net_dns_callback_t callback,
                    void* context);
