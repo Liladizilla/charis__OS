@@ -345,5 +345,5 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 - [ ] High-quality bundled wallpaper set with no embedded logos, watermarks or UI overlays; user-selectable wallpaper and fallback procedural themes
 - [ ] Desktop capture pipeline publishes the actual QEMU framebuffer capture and keeps README screenshots synchronized with the tested commit
 - [ ] Native terminal visual pass: near-black console canvas, compact chrome, dedicated monospace font metrics, carefully measured CharisOS ASCII banner and stable prompt/output layout
-- [ ] Verify ASCII banner width/height against font-cell metrics at all supported text scales and narrow window sizes
+- [ ] Verify pinned 13×6 ASCII identity header and adjacent text at all supported text scales and narrow window sizes
 - [ ] Add QEMU/host tests for clock rollover, timezone-independent monotonic uptime, missing battery/RTC devices and audio device absence
