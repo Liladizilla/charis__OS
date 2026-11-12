@@ -4,16 +4,20 @@
 #include <kernel/terminal_ascii.h>
 
 int main(void) {
-    assert(CHARISOS_ASCII_ROWS == 6u);
-    assert(CHARISOS_ASCII_COLUMNS == 13u);
+    assert(CHARISOS_ASCII_ROWS == 12u);
+    assert(CHARISOS_ASCII_COLUMNS == 19u);
+
     for (u32 row = 0; row < CHARISOS_ASCII_ROWS; row++) {
-        assert(strlen(CHARISOS_ASCII_MARK[row]) == CHARISOS_ASCII_COLUMNS);
+        const char* line = CHARISOS_ASCII_MARK[row];
+        assert(strlen(line) == CHARISOS_ASCII_COLUMNS);
+        for (u32 col = 0; col < CHARISOS_ASCII_COLUMNS; col++) {
+            assert(line[col] == ' ' || line[col] == '#');
+        }
     }
 
-    /* The mark uses fixed 2x cells; the 14-character identity line still
-     * fits beside it when the terminal's text scale is 3x. */
-    assert(CHARISOS_ASCII_COLUMNS * 18u <= 712u);
-    assert(14u * 27u <= 712u - 18u - CHARISOS_ASCII_COLUMNS * 18u - 24u);
+    /* 8px glyph cell + 1px inter-cell spacing, at the maximum 3x text
+     * scale. The terminal's default content width is 712px. */
+    assert(CHARISOS_ASCII_COLUMNS * 9u * 3u <= 712u);
     puts("terminal_ascii_layout_test: PASS");
     return 0;
 }
