@@ -17,6 +17,7 @@
 #include <kernel/string.h>
 #include <kernel/elf.h>
 #include <kernel/security.h>
+#include <kernel/serial.h>
 
 extern u64 isr_table[256];
 
@@ -24,109 +25,185 @@ static syscall_handler_t syscall_table[SYSCALL_MAX];
 
 #define SYSCALL_IO_MAX 4096
 static bool syscall_copy_user_string(task_t* task, u64 user_address, char* destination, usize capacity);
+static bool syscall_validate_user_range(task_t* task, u64 user_address, usize size, bool require_writable);
 static bool syscall_copy_user_data(task_t* task, u64 user_address, void* destination, usize size);
 static bool syscall_copy_to_user_data(task_t* task, u64 user_address, const void* source, usize size);
+/* Global service tables are not safe to expose to ring 3 until they have
+ * per-process ownership, opaque handles and capability enforcement. */
+static bool syscall_kernel_only(void) {
+    task_t* task = scheduler_current();
+    return !task || !task->is_user;
+}
+
 
 static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a4; (void)a5; (void)a6;
-    int fd = (int)a1;
+    fd_handle_t fd = (fd_handle_t)a1;
     u64 user_buf = a2;
     usize count = (usize)a3;
     task_t* task = scheduler_current();
 
-    fd_entry_t* f = fd_get(fd);
-    if (!f || !f->node || count > SYSCALL_IO_MAX) return -1;
-    if (count == 0) return 0;
+    vfs_open_file_t* file = fd_acquire(fd, FD_RIGHT_READ);
+    if (!file || !file->node || count > SYSCALL_IO_MAX) {
+        if (file) fd_release(file);
+        return (u64)-1;
+    }
+
+    u64 result_value = (u64)-1;
+    u8* bounce = NULL;
+
+    /* Standard input has its own device authority. Other reads must continue
+     * to satisfy the process capability as well as the descriptor grant. */
+    if (fd != FD_STDIN &&
+        (!task || !security_check_capability(task, CAP_FS_READ))) goto done;
+    if (count == 0) {
+        result_value = 0;
+        goto done;
+    }
 
     if (task && task->is_user) {
-        u8* bounce = (u8*)kmalloc(count);
-        if (!bounce) return -1;
+        /* Validate before touching an input source. stdin returns at most one
+         * byte; file/device nodes may return up to the requested count. */
+        usize writable_span = fd == FD_STDIN ? 1 : count;
+        if (!syscall_validate_user_range(task, user_buf, writable_span, true))
+            goto done;
+
+        usize bounce_size = fd == FD_STDIN ? 1 : count;
+        bounce = (u8*)kmalloc(bounce_size);
+        if (!bounce) goto done;
+
+        /* The per-description lock keeps a shared offset stable through the
+         * callback and copyout. VFS callbacks are bounded and non-blocking. */
+        u64 irq_flags = fd_file_io_lock(file);
+        if (fd != FD_STDIN && (u64)count > (~(u64)0 - file->offset)) {
+            fd_file_io_unlock(file, irq_flags);
+            goto done;
+        }
+
         usize bytes = 0;
         if (fd == FD_STDIN) {
             char ch;
-            if (keyboard_get_key(&ch)) { bounce[0] = (u8)ch; bytes = 1; }
-        } else if (f->node->read) {
-            s64 result = f->node->read(f->node, f->offset, count, bounce);
-            if (result < 0 || (u64)result > count) {
-                kfree(bounce);
-                return (u64)-1;
+            if (keyboard_get_key(&ch)) {
+                bounce[0] = (u8)ch;
+                bytes = 1;
             }
-            if (result > 0) bytes = (usize)result;
+        } else if (file->node->read) {
+            s64 read_result = file->node->read(
+                file->node, file->offset, count, bounce);
+            if (read_result < 0 || (u64)read_result > count) {
+                fd_file_io_unlock(file, irq_flags);
+                goto done;
+            }
+            if (read_result > 0) bytes = (usize)read_result;
         } else {
-            kfree(bounce);
-            return (u64)-1;
+            fd_file_io_unlock(file, irq_flags);
+            goto done;
         }
-        bool copied = !bytes || syscall_copy_to_user_data(task, user_buf, bounce, bytes);
-        kfree(bounce);
-        if (!copied) return (u64)-1;
-        if (fd != FD_STDIN && bytes > 0) f->offset += bytes;
-        return bytes;
+
+        bool copied = !bytes ||
+            syscall_copy_to_user_data(task, user_buf, bounce, bytes);
+        if (copied && fd != FD_STDIN && bytes > 0)
+            file->offset += bytes;
+        fd_file_io_unlock(file, irq_flags);
+        if (copied) result_value = bytes;
+        goto done;
     }
 
-    void* buf = (void*)user_buf;
-    if (fd == FD_STDIN) {
-        char ch;
-        if (keyboard_get_key(&ch)) { *(char*)buf = ch; return 1; }
-        return 0;
+    {
+        u64 irq_flags = fd_file_io_lock(file);
+        if (fd != FD_STDIN && (u64)count > (~(u64)0 - file->offset)) {
+            fd_file_io_unlock(file, irq_flags);
+            goto done;
+        }
+
+        if (fd == FD_STDIN) {
+            char ch;
+            if (keyboard_get_key(&ch)) {
+                *(char*)user_buf = ch;
+                result_value = 1;
+            } else {
+                result_value = 0;
+            }
+        } else if (file->node->read) {
+            s64 read_result = file->node->read(
+                file->node, file->offset, count, (u8*)user_buf);
+            if (read_result >= 0 && (u64)read_result <= count) {
+                result_value = (u64)read_result;
+                if (read_result > 0)
+                    file->offset += (u64)read_result;
+            }
+        }
+        fd_file_io_unlock(file, irq_flags);
     }
-    if (f->node->read) {
-        s64 result = f->node->read(f->node, f->offset, count, (u8*)buf);
-        if (result < 0 || (u64)result > count) return (u64)-1;
-        if (result > 0) f->offset += (u64)result;
-        return (u64)result;
-    }
-    return (u64)-1;
+
+done:
+    if (bounce) kfree(bounce);
+    fd_release(file);
+    return result_value;
 }
 
 static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a4; (void)a5; (void)a6;
-    int fd = (int)a1;
+    fd_handle_t fd = (fd_handle_t)a1;
     u64 user_buf = a2;
     usize count = (usize)a3;
     task_t* task = scheduler_current();
 
-    fd_entry_t* f = fd_get(fd);
-    if (!f || !f->node || count > SYSCALL_IO_MAX) return (u64)-1;
-    if (count == 0) return 0;
-
-    u8* bounce = NULL;
-    const u8* buf = (const u8*)user_buf;
-    if (task && task->is_user) {
-        bounce = (u8*)kmalloc(count);
-        if (!bounce) return (u64)-1;
-        if (!syscall_copy_user_data(task, user_buf, bounce, count)) {
-            kfree(bounce);
-            return (u64)-1;
-        }
-        buf = bounce;
+    vfs_open_file_t* file = fd_acquire(fd, FD_RIGHT_WRITE);
+    if (!file || !file->node || count > SYSCALL_IO_MAX) {
+        if (file) fd_release(file);
+        return (u64)-1;
     }
 
     u64 result = (u64)-1;
-    if (fd == FD_STDOUT || fd == FD_STDERR) {
-        for (usize i = 0; i < count; i++) {
-            if (buf[i] == 0) break;
-            vga_putchar((char)buf[i]);
-        }
-        result = count;
-    } else if (f->node->write) {
-        /*
-         * Standard output/error are console devices, not filesystem writes.
-         * Every other writable node must require the explicit write capability;
-         * otherwise a task with CAP_FS_READ can modify files through SYS_WRITE.
-         */
-        if (!task || !security_check_capability(task, CAP_FS_WRITE)) {
-            if (bounce) kfree(bounce);
-            return (u64)-1;
-        }
-        s64 written = f->node->write(f->node, f->offset, count, buf);
-        if (written < 0 || (u64)written > count) {
-            result = (u64)-1;
-        } else {
-            result = (u64)written;
-            if (written > 0) f->offset += (u64)written;
-        }
+    u8* bounce = NULL;
+    const u8* buffer = (const u8*)user_buf;
+
+    if (count == 0) {
+        result = 0;
+        goto done;
     }
+
+    if (fd != FD_STDOUT && fd != FD_STDERR &&
+        (!task || !security_check_capability(task, CAP_FS_WRITE)))
+        goto done;
+
+    if (task && task->is_user) {
+        bounce = (u8*)kmalloc(count);
+        if (!bounce) goto done;
+        if (!syscall_copy_user_data(task, user_buf, bounce, count))
+            goto done;
+        buffer = bounce;
+    }
+
+    {
+        u64 irq_flags = fd_file_io_lock(file);
+        if (fd != FD_STDOUT && fd != FD_STDERR &&
+            (u64)count > (~(u64)0 - file->offset)) {
+            fd_file_io_unlock(file, irq_flags);
+            goto done;
+        }
+
+        if (fd == FD_STDOUT || fd == FD_STDERR) {
+            for (usize i = 0; i < count; i++) {
+                if (buffer[i] == 0) break;
+                vga_putchar((char)buffer[i]);
+            }
+            result = count;
+        } else if (file->node->write) {
+            s64 written = file->node->write(
+                file->node, file->offset, count, buffer);
+            if (written >= 0 && (u64)written <= count) {
+                result = (u64)written;
+                if (written > 0) file->offset += (u64)written;
+            }
+        }
+        fd_file_io_unlock(file, irq_flags);
+    }
+
+done:
     if (bounce) kfree(bounce);
+    fd_release(file);
     return result;
 }
 
@@ -184,43 +261,68 @@ static u64 syscall_sleep_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
 }
 
 static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
-    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    if (!a1) return -1;
-    
+    (void)a3; (void)a4; (void)a5; (void)a6;
+    if (!a1) return (u64)FD_HANDLE_INVALID;
+
     task_t* task = scheduler_current();
-    if (!task) return -1;
-    
-    // Capability check: need FS_READ to open files
-    if (!security_check_capability(task, CAP_FS_READ)) {
-        return -1; // EPERM
-    }
+    if (!task) return (u64)FD_HANDLE_INVALID;
+
+    /* Preserve sys_open(path) compatibility as a read-only request. */
+    u64 requested = a2 ? a2 : FD_RIGHT_READ;
+    if (!requested || (requested & ~(u64)FD_RIGHT_MASK)) return (u64)FD_HANDLE_INVALID;
+    u32 rights = (u32)requested;
+
+    /* Process capabilities authorize a request; the descriptor stores only
+     * the exact subset granted by this open operation. */
+    if ((rights & FD_RIGHT_READ) &&
+        !security_check_capability(task, CAP_FS_READ)) return (u64)FD_HANDLE_INVALID;
+    if ((rights & FD_RIGHT_WRITE) &&
+        !security_check_capability(task, CAP_FS_WRITE)) return (u64)FD_HANDLE_INVALID;
 
     char path[256];
     if (task->is_user) {
-        if (!syscall_copy_user_string(task, a1, path, sizeof(path))) return (u64)-1;
+        if (!syscall_copy_user_string(task, a1, path, sizeof(path))) return (u64)FD_HANDLE_INVALID;
     } else {
-        if ((u64)a1 >= 0xFFFF800000000000ULL) return (u64)-1;
+        if ((u64)a1 >= 0xFFFF800000000000ULL) return (u64)FD_HANDLE_INVALID;
         const char* path_str = (const char*)a1;
         usize i = 0;
         for (; i < sizeof(path)-1 && path_str[i]; i++) path[i] = path_str[i];
         path[i] = 0;
     }
-    
+
+    /* Validate the path before handing it to the filesystem parser. */
+    if (!security_verify_path(path, task)) return (u64)FD_HANDLE_INVALID;
+
     vfs_node_t* node = vfs_resolve(path);
-    if (!node) return -1;
-    
-    // Path traversal check
-    if (!security_verify_path(path, task)) {
-        return -1; // EPERM
+    if (!node) return (u64)FD_HANDLE_INVALID;
+
+    if (((rights & FD_RIGHT_READ) && !node->read) ||
+        ((rights & FD_RIGHT_WRITE) && !node->write)) {
+        if (node->close) node->close(node);
+        return (u64)FD_HANDLE_INVALID;
     }
-    
-    return fd_alloc(node, 0);
+
+    /* Reserve exclusive lifetime ownership before calling the open callback.
+     * An already-owned pointer must never be closed by this failed opener. */
+    fd_alloc_status_t allocation_status;
+    fd_handle_t fd = fd_alloc(node, 0, rights, &allocation_status);
+    if (fd == FD_HANDLE_INVALID) {
+        if (node->close &&
+            allocation_status != FD_ALLOC_NODE_ALREADY_OWNED)
+            node->close(node);
+        return (u64)FD_HANDLE_INVALID;
+    }
+
+    if (node->open && node->open(node, rights) != 0) {
+        fd_close(fd);
+        return (u64)FD_HANDLE_INVALID;
+    }
+    return fd;
 }
 
 static u64 syscall_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    fd_close((int)a1);
-    return 0;
+    return fd_close((fd_handle_t)a1) ? 0 : (u64)-1;
 }
 
 static u64 syscall_shm_alloc_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
@@ -252,55 +354,32 @@ static u64 syscall_shm_free_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 
 }
 
 static u64 syscall_ipc_create_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     if (!a1) return (u64)-1;
+    /* This handler is kernel-only above. Remove the unreachable ring-3
+     * string-copy branch until IPC has per-task channel ownership. */
+    if (a1 >= 0xFFFF800000000000ULL) return (u64)-1;
     char name[32];
-    task_t* task = scheduler_current();
-    if (task && task->is_user) {
-        if (!syscall_copy_user_string(task, a1, name, sizeof(name))) return (u64)-1;
-    } else {
-        if (a1 >= 0xFFFF800000000000ULL) return (u64)-1;
-        usize i = 0;
-        for (; i < sizeof(name)-1 && ((const char*)a1)[i]; i++) name[i] = ((const char*)a1)[i];
-        name[i] = 0;
-    }
+    const char* source = (const char*)a1;
+    usize i = 0;
+    for (; i < sizeof(name) - 1 && source[i]; i++) name[i] = source[i];
+    name[i] = 0;
     return ipc_create(name);
 }
 
 static u64 syscall_ipc_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a4; (void)a5; (void)a6;
-    task_t* task = scheduler_current();
-    if (task && task->is_user) {
-        if (a3 > SYSCALL_IO_MAX) return (u64)-1;
-        u8* bounce = (u8*)kmalloc((usize)a3);
-        if (!bounce && a3) return (u64)-1;
-        if (!syscall_copy_user_data(task, a2, bounce, (usize)a3)) {
-            if (bounce) kfree(bounce);
-            return (u64)-1;
-        }
-        int result = ipc_send((int)a1, bounce, a3);
-        if (bounce) kfree(bounce);
-        return (u64)result;
-    }
+    /* IPC object IDs and buffers have no ring-3 ownership model yet. */
     return (u64)ipc_send((int)a1, (void*)a2, a3);
 }
 
 static u64 syscall_ipc_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a4; (void)a5; (void)a6;
-    task_t* task = scheduler_current();
-    if (task && task->is_user) {
-        if (a3 > SYSCALL_IO_MAX) return (u64)-1;
-        u8* bounce = (u8*)kmalloc((usize)a3);
-        if (!bounce && a3) return (u64)-1;
-        int result = ipc_recv((int)a1, bounce, a3);
-        /* A subsystem must never be trusted to report more bytes than the
-         * caller requested: that would read beyond the kernel bounce buffer. */
-        if (result > 0 && (u64)result > a3) result = (int)a3;
-        if (result > 0 && !syscall_copy_to_user_data(task, a2, bounce, (usize)result)) result = -1;
-        if (bounce) kfree(bounce);
-        return (u64)(s64)result;
-    }
-    return (u64)ipc_recv((int)a1, (void*)a2, a3);
+    /* IPC object IDs and buffers have no ring-3 ownership model yet. */
+    return (u64)(s64)ipc_recv((int)a1, (void*)a2, a3);
 }
 
 static u64 syscall_exec_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
@@ -316,32 +395,63 @@ static bool syscall_copy_user_string(task_t* task, u64 user_address,
     for (usize i = 0; i < capacity; i++) {
         u64 address = user_address + i;
         if (address < user_address || address >= 0x0000800000000000ULL) return false;
-        pte_t* pte = vmm_walk(task->mm.pml4, address, false);
-        if (!pte || !(*pte & VMM_FLAG_PRESENT) || !(*pte & VMM_FLAG_USER)) return false;
-        u64 phys = (*pte & 0x000FFFFFFFFFF000ULL) | (address & 0xFFFULL);
-        destination[i] = *(const char*)(uintptr_t)phys;
+        u64 phys = 0, flags = 0;
+        if (!vmm_translate(task->mm.pml4, address, &phys, &flags) ||
+            !(flags & VMM_FLAG_USER)) return false;
+        const char* mapped_byte = (const char*)vmm_phys_to_virt(phys);
+        if (!mapped_byte) return false;
+        destination[i] = *mapped_byte;
         if (!destination[i]) return true;
     }
     destination[capacity - 1] = '\0';
     return false;
 }
 
+/* Validate the entire user range before any operation with side effects.
+ * vmm_translate returns effective permissions from every page-table level;
+ * the direct-map check also ensures the kernel can safely reach each frame. */
+static bool syscall_validate_user_range(task_t* task, u64 user_address,
+                                        usize size, bool require_writable) {
+    const u64 user_limit = 0x0000800000000000ULL;
+    if (!task || !task->mm.pml4) return false;
+    if (size == 0) return true;
+    if (!user_address || user_address >= user_limit ||
+        (u64)size > user_limit - user_address) return false;
+
+    usize checked = 0;
+    while (checked < size) {
+        u64 address = user_address + checked;
+        u64 physical = 0, flags = 0;
+        if (!vmm_translate(task->mm.pml4, address, &physical, &flags) ||
+            !(flags & VMM_FLAG_USER) ||
+            (require_writable && !(flags & VMM_FLAG_WRITABLE)) ||
+            !vmm_phys_to_virt(physical)) return false;
+
+        usize chunk = PAGE_SIZE - (usize)(address & (PAGE_SIZE - 1));
+        if (chunk > size - checked) chunk = size - checked;
+        checked += chunk;
+    }
+    return true;
+}
+
 static bool syscall_copy_user_data(task_t* task, u64 user_address,
                                    void* destination, usize size) {
     if (!task || !task->mm.pml4) return false;
     if (size == 0) return true;
-    if (!destination || user_address >= 0x0000800000000000ULL ||
-        size > 0x0000800000000000ULL - user_address) return false;
+    if (!destination ||
+        !syscall_validate_user_range(task, user_address, size, false)) return false;
 
     usize copied = 0;
     while (copied < size) {
         u64 address = user_address + copied;
-        pte_t* pte = vmm_walk(task->mm.pml4, address, false);
-        if (!pte || !(*pte & VMM_FLAG_PRESENT) || !(*pte & VMM_FLAG_USER)) return false;
-        u64 phys = (*pte & 0x000FFFFFFFFFF000ULL) | (address & 0xFFFULL);
+        u64 phys = 0, flags = 0;
+        if (!vmm_translate(task->mm.pml4, address, &phys, &flags) ||
+            !(flags & VMM_FLAG_USER)) return false;
         usize chunk = PAGE_SIZE - (usize)(address & (PAGE_SIZE - 1));
         if (chunk > size - copied) chunk = size - copied;
-        kmemcpy((u8*)destination + copied, (const void*)(uintptr_t)phys, chunk);
+        const void* source_page = vmm_phys_to_virt(phys);
+        if (!source_page) return false;
+        kmemcpy((u8*)destination + copied, source_page, chunk);
         copied += chunk;
     }
     return true;
@@ -351,19 +461,20 @@ static bool syscall_copy_to_user_data(task_t* task, u64 user_address,
                                        const void* source, usize size) {
     if (!task || !task->mm.pml4) return false;
     if (size == 0) return true;
-    if (!source || user_address >= 0x0000800000000000ULL ||
-        size > 0x0000800000000000ULL - user_address) return false;
+    if (!source ||
+        !syscall_validate_user_range(task, user_address, size, true)) return false;
 
     usize copied = 0;
     while (copied < size) {
         u64 address = user_address + copied;
-        pte_t* pte = vmm_walk(task->mm.pml4, address, false);
-        if (!pte || !(*pte & VMM_FLAG_PRESENT) ||
-            !(*pte & VMM_FLAG_USER) || !(*pte & VMM_FLAG_WRITABLE)) return false;
-        u64 phys = (*pte & 0x000FFFFFFFFFF000ULL) | (address & 0xFFFULL);
+        u64 phys = 0, flags = 0;
+        if (!vmm_translate(task->mm.pml4, address, &phys, &flags) ||
+            !(flags & VMM_FLAG_USER) || !(flags & VMM_FLAG_WRITABLE)) return false;
         usize chunk = PAGE_SIZE - (usize)(address & (PAGE_SIZE - 1));
         if (chunk > size - copied) chunk = size - copied;
-        kmemcpy((void*)(uintptr_t)phys, (const u8*)source + copied, chunk);
+        void* destination_page = vmm_phys_to_virt(phys);
+        if (!destination_page) return false;
+        kmemcpy(destination_page, (const u8*)source + copied, chunk);
         copied += chunk;
     }
     return true;
@@ -400,8 +511,16 @@ bool syscall_exec_from_frame(reg_frame_t* frame) {
     if (!frame || (frame->cs & 3) != 3) return false;
     task_t* task = scheduler_current();
     if (!task || !task->is_user || !task->mm.pml4 ||
-        task->address_space != task->mm.pml4 ||
-        !security_check_capability(task, CAP_SPAWN)) return false;
+        task->address_space != task->mm.pml4) return false;
+
+    /* Explicitly report the safe default so boot tests can distinguish a
+     * deliberate policy denial from a broken ELF loader. */
+    if (!security_check_capability(task, CAP_SPAWN) ||
+        !security_check_capability(task, CAP_ALLOW_EXEC)) {
+        serial_puts("ELF_EXEC_DENIED_CAPABILITY\n");
+        security_audit("exec-denied-capability", task);
+        return false;
+    }
 
     char path[256];
     if (!syscall_copy_user_string(task, frame->rdi, path, sizeof(path)) ||
@@ -431,24 +550,50 @@ bool syscall_exec_from_frame(reg_frame_t* frame) {
         return false;
     }
 
-    u64 entry_point;
-    if (elf_load(path, &task->mm, &entry_point) < 0) {
+    /* Build exec in a fresh address space. The current image remains
+     * runnable until ELF segments and the complete initial stack are valid. */
+    pml4_t* replacement_space = vmm_create_address_space();
+    if (!replacement_space ||
+        !vmm_copy_kernel_mappings(replacement_space, NULL)) {
+        if (replacement_space)
+            vmm_destroy_address_space(replacement_space);
         kfree(storage);
         kfree(strings);
         return false;
     }
 
+    process_mm_t replacement_mm = {0};
+    replacement_mm.pml4 = replacement_space;
+    u64 entry_point;
     u64 stack_top;
-    bool stack_ready = elf_setup_stack(&task->mm, &stack_top,
-        (const char* const*)argv, (int)argc,
-        (const char* const*)envp, (int)envc) == 0;
+    if (elf_load_exec(path, &replacement_mm, &entry_point, &stack_top,
+            (const char* const*)argv, (int)argc,
+            (const char* const*)envp, (int)envc) < 0) {
+        /* The loader rolls back partial ELF/stack mappings; destroy the
+         * private root as well. The current process address space is untouched. */
+        vmm_destroy_address_space(replacement_space);
+        kfree(storage);
+        kfree(strings);
+        return false;
+    }
     kfree(storage);
     kfree(strings);
-    if (!stack_ready) return false;
 
-    vmm_switch(task->mm.pml4);
-    task->mm.stack_top = stack_top;
+    pml4_t* previous_space = task->mm.pml4;
+    /* Switch before releasing any old USER frame. Kernel mappings are shared
+     * supervisor-only mappings in both roots, so this handler keeps executing. */
+    vmm_switch(replacement_space);
+    task->mm = replacement_mm;
+    task->address_space = replacement_space;
+    task->user_stack_base = 0;
     task->user_rsp = stack_top;
+    task->user_stack_pages[0] = 0;
+    task->user_stack_pages[1] = 0;
+    task->user_code_page_count = 0;
+    for (u32 i = 0; i < TASK_USER_CODE_MAX_PAGES; i++)
+        task->user_code_pages[i] = 0;
+    vmm_destroy_address_space(previous_space);
+
     frame->rip = entry_point;
     frame->cs = 0x1B;
     frame->rflags = 0x202;
@@ -459,92 +604,76 @@ bool syscall_exec_from_frame(reg_frame_t* frame) {
 }
 
 static u64 syscall_socket_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a3; (void)a4; (void)a5; (void)a6;
     return socket_create((int)a1, (int)a2);
 }
 
 static u64 syscall_connect_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a3; (void)a4; (void)a5; (void)a6;
     return socket_connect((int)a1, (u32)a2, (u16)a3);
 }
 
 static u64 syscall_bind_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a3; (void)a4; (void)a5; (void)a6;
     return socket_bind((int)a1, (u16)a2);
 }
 
 static u64 syscall_listen_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     return socket_listen((int)a1);
 }
 
 static u64 syscall_accept_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     return socket_accept((int)a1);
 }
 
 static u64 syscall_send_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a4; (void)a5; (void)a6;
-    task_t* task = scheduler_current();
-    if (task && task->is_user) {
-        if (a3 > SYSCALL_IO_MAX) return (u64)-1;
-        u8* bounce = (u8*)kmalloc((usize)a3);
-        if (!bounce && a3) return (u64)-1;
-        if (!syscall_copy_user_data(task, a2, bounce, (usize)a3)) {
-            if (bounce) kfree(bounce);
-            return (u64)-1;
-        }
-        int result = socket_send((int)a1, bounce, (usize)a3);
-        if (bounce) kfree(bounce);
-        return (u64)(s64)result;
-    }
-    return (u64)socket_send((int)a1, (void*)a2, (usize)a3);
+    /* Socket handles and buffers remain kernel-owned until per-task socket
+     * objects, resource grants and checked user copies are implemented. */
+    return (u64)(s64)socket_send((int)a1, (void*)a2, (usize)a3);
 }
 
 static u64 syscall_recv_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a4; (void)a5; (void)a6;
-    task_t* task = scheduler_current();
-    if (task && task->is_user) {
-        if (a3 > SYSCALL_IO_MAX) return (u64)-1;
-        u8* bounce = (u8*)kmalloc((usize)a3);
-        if (!bounce && a3) return (u64)-1;
-        int result = socket_recv((int)a1, bounce, (usize)a3);
-        /* Keep a buggy driver/protocol implementation from making the copy
-         * back to userspace run past the requested buffer length. */
-        if (result > 0 && (u64)result > a3) result = (int)a3;
-        if (result > 0 && !syscall_copy_to_user_data(task, a2, bounce, (usize)result)) result = -1;
-        if (bounce) kfree(bounce);
-        return (u64)(s64)result;
-    }
-    return (u64)socket_recv((int)a1, (void*)a2, (usize)a3);
+    /* Socket handles and buffers remain kernel-owned until per-task socket
+     * objects, resource grants and checked user copies are implemented. */
+    return (u64)(s64)socket_recv((int)a1, (void*)a2, (usize)a3);
 }
 
 static u64 syscall_socket_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     socket_close((int)a1);
     return 0;
 }
 
 static u64 syscall_beep_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a3; (void)a4; (void)a5; (void)a6;
     audio_beep((u32)a1, (u32)a2);
     return 0;
 }
 
 static u64 syscall_diag_stats_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     if (!a1) return (u64)-1;
-    task_t* task = scheduler_current();
-    if (task && task->is_user) {
-        system_stats_t stats;
-        diag_collect_stats(&stats);
-        return syscall_copy_to_user_data(task, a1, &stats, sizeof(stats)) ? 0 : (u64)-1;
-    }
+    /* Ring-3 callers are rejected by the kernel-only gate above. */
     diag_collect_stats((system_stats_t*)a1);
     return 0;
 }
 
 static u64 syscall_diag_tasks_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a1; (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     diag_dump_tasks();
     return 0;
@@ -557,6 +686,7 @@ static u64 syscall_game_init_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64
 }
 
 static u64 syscall_game_clear_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     fb_clear((u32)a1);
     return 0;
@@ -682,6 +812,7 @@ void syscall_init(void) {
 }
 
 u64 syscall_dispatch(u64 num, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
+    diag_note_syscall();
     if (num >= SYSCALL_MAX || !syscall_table[num]) {
         vga_puts("Bad syscall\n");
         return (u64)-1;

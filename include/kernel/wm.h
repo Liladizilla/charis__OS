@@ -5,6 +5,7 @@
 #include <kernel/ui_theme.h>
 
 #define MAX_WINDOWS 16
+#define WM_MAX_TITLE_LENGTH 127
 #define WINDOW_TITLEBAR_HEIGHT 28
 
 #define COLOR_SURFACE CHARIS_UI_PANEL
@@ -14,57 +15,54 @@
 typedef struct window {
     int x, y;
     int width, height;
-    int z_order; /* Higher = front */
+    u32 titlebar_height;
+    u32 z_order;
     bool visible;
     bool focused;
     bool minimized;
     bool maximized;
+    bool restore_geometry_valid;
+    int restore_x, restore_y;
+    int restore_width, restore_height;
     char title[128];
-    u32* buffer; /* Window pixel buffer */
+    u32* buffer;
     struct window* next;
-    
-    /* Event callback */
     void (*on_paint)(struct window*);
     void (*on_event)(struct window*, int event_type, void* data);
 } window_t;
 
-extern window_t* wm_windows; /* Linked list of windows */
+extern window_t* wm_windows;
 
-/* Initialize window manager */
 void wm_init(void);
-
-/* Create a new window */
 window_t* wm_create_window(const char* title, int x, int y, int w, int h);
-
-/* Destroy window */
+window_t* wm_create_surface_window(const char* title, int x, int y, int w, int h);
 void wm_destroy_window(window_t* win);
-
-/* Bring window to front */
 void wm_focus_window(window_t* win);
 
-/* Render all windows (compositor) */
+/* Geometry and visibility operations validate ownership and screen bounds. */
+bool wm_move_window(window_t* win, int x, int y);
+bool wm_resize_window(window_t* win, int width, int height);
+bool wm_resize_window_bounded(window_t* win, int width, int height,
+                              int min_width, int min_height,
+                              int max_width, int max_height);
+/* usable_height excludes the shell taskbar; height stores client pixels only. */
+bool wm_maximize_window(window_t* win, u32 usable_height);
+bool wm_restore_window_geometry(window_t* win);
+bool wm_set_titlebar_height(window_t* win, u32 height);
+bool wm_minimize_window(window_t* win);
+bool wm_restore_window(window_t* win);
+bool wm_set_window_visible(window_t* win, bool visible);
+window_t* wm_focus_next(void);
+u32 wm_get_window_count(void);
+
 void wm_render(void);
-
-/* Dispatch input event to focused window */
+/* Composite WM-owned surfaces over an already painted desktop background. */
+void wm_render_surfaces(void);
 void wm_dispatch_event(int event_type, void* data);
-
-/* Get focused window */
 window_t* wm_get_focused(void);
-
-/* Get window at screen position */
 window_t* wm_get_window_at(int x, int y);
-
-/* Draw window decorations (titlebar, borders) */
 void wm_draw_decorations(window_t* win);
-
-/* Draw window contents (calls on_paint if set) */
 void wm_draw_contents(window_t* win);
-
-/* Process mouse events for window management */
 void wm_process_mouse(int x, int y, int button, bool pressed);
-
-/* Main compositor loop */
 void wm_main_loop(void);
-
-/* Update screen bounds for mouse clipping */
 void wm_set_screen_bounds(uint32_t width, uint32_t height);

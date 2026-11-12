@@ -10,12 +10,20 @@
 #define TASK_STATE_BLOCKED      2
 #define TASK_STATE_ZOMBIE       3
 #define TASK_STATE_UNUSED       4 /* Free task-table slot; distinct from an exited process. */
+#define TASK_STATE_ALLOCATING   5 /* Reserved atomically while a new task is built. */
+#define TASK_STATE_EXITING      6 /* Reject new descriptor grants during teardown. */
 
 #define TASK_NAME_MAX           32
 #define TASK_STACK_SIZE         8192
 #define TASK_MAX_TASKS          32
+/* Three-page slots are shared by kernel task stacks and the emergency IST1
+ * stack: one unmapped guard page followed by two supervisor-only stack pages. */
+#define TASK_STACK_ARENA_BASE    0xFFFF900000400000ULL
+#define TASK_STACK_SLOT_PAGES    3U
+#define TASK_USER_CODE_MAX_PAGES 4
 #define TASK_DEFAULT_QUANTUM    10
 #define TASK_WAITING_SLEEP       0x534C4550U /* 'SLEP': blocked until event_data deadline */
+#define TASK_WAITING_KEYBOARD    0x4B455942U /* 'KEYB': waiting for keyboard input */
 
 /* VMA - Virtual Memory Area */
 typedef struct vma {
@@ -50,16 +58,22 @@ typedef struct task {
     u64 runtime_ticks;
     u32 remaining_quantum;
     u32 capabilities;
-    u64 guard_page_addr;
+    u64 guard_page_addr; /* Reserved virtual page; intentionally not present. */
     u64 stack_canary_addr;
+    /* Two supervisor-only physical frames backing this task's kernel stack. */
+    u64 kernel_stack_pages[2];
     u64 event_data;
     u32 waiting_event;
     bool is_user;
     bool started;
+    bool scheduler_queued; /* Membership in the scheduler's intrusive task list. */
     u64 user_stack_base;
     u64 user_rsp;
     /* Dedicated zeroed physical pages mapped only into this task as user stack. */
     u64 user_stack_pages[2];
+    /* Private executable copies of the page-aligned bootstrap user text. */
+    u64 user_code_pages[TASK_USER_CODE_MAX_PAGES];
+    u32 user_code_page_count;
     process_mm_t mm;
     fd_entry_t fd_table[MAX_FDS];
     void* address_space;
@@ -82,6 +96,9 @@ void scheduler_yield(void);
 void task_init(void);
 task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user);
 task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32 capabilities, bool is_user, pml4_t* pml4);
+void task_discard_unstarted(task_t* task);
+/* Point the CPU's privilege-transition stack at this task's private kernel stack. */
+bool task_set_tss_rsp0(task_t* task);
 task_t* task_allocate(void);
 u32 task_next_pid(void);
 void task_exit(void);
@@ -107,12 +124,5 @@ void task_trampoline(void);
 /* Task exit handler */
 void task_exit_handler(void);
 
-/* Task wait queue */
-typedef struct wait_queue {
-    struct task* task;
-    struct wait_queue* next;
-} wait_queue_t;
-
-void wait_queue_init(void);
-void wait_queue_add(struct task* task);
-void wait_queue_wake(void);
+/* Wake keyboard readers from IRQ1 without allocating memory in interrupt context. */
+void task_wake_keyboard_waiters(void);

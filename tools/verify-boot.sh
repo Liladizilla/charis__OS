@@ -17,7 +17,7 @@
 # own output on a runner with no TTY.
 #
 # Usage:
-#   verify-boot.sh <image> [--disk] [--uefi] [--elf-test-disk PATH] [--timeout SECONDS]
+#   verify-boot.sh <image> [--disk] [--uefi] [--elf-test-disk PATH] [--expect-elf-exec] [--timeout SECONDS]
 #
 #   --disk     attach the image as a raw hard disk (a flashed USB stick)
 #              instead of a CD-ROM
@@ -47,6 +47,8 @@ NEEDS_DISPLAY=0
 TIMEOUT=60
 LOG=""
 ELF_TEST_DISK=""
+EXPECT_ELF_SUCCESS=0
+REQUIRE_VMM_TESTS=0
 
 usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
@@ -56,6 +58,8 @@ while [ $# -gt 0 ]; do
         --uefi)   FIRMWARE="${OVMF:-/usr/share/edk2/ovmf/OVMF_CODE.fd}"; shift ;;
         --kvm)    USE_KVM=1; shift ;;
         --elf-test-disk) ELF_TEST_DISK="$2"; shift 2 ;;
+        --expect-elf-exec) EXPECT_ELF_SUCCESS=1; shift ;;
+        --require-vmm-tests) REQUIRE_VMM_TESTS=1; shift ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         -h|--help) usage ;;
         -*) echo "unknown option: $1" >&2; exit 2 ;;
@@ -68,6 +72,10 @@ done
 if [ -n "$ELF_TEST_DISK" ]; then
     [ -f "$ELF_TEST_DISK" ] || { echo "verify-boot.sh: ELF test disk not found: $ELF_TEST_DISK" >&2; exit 2; }
     [ "$ATTACH" = "cd" ] || { echo "verify-boot.sh: --elf-test-disk requires CD boot mode" >&2; exit 2; }
+fi
+if [ "$EXPECT_ELF_SUCCESS" = "1" ] && [ -z "$ELF_TEST_DISK" ]; then
+    echo "verify-boot.sh: --expect-elf-exec requires --elf-test-disk" >&2
+    exit 2
 fi
 
 BUILD_DIR="${BUILD_DIR:-build}"
@@ -195,6 +203,7 @@ boot_once() {
     if [ "$NEEDS_DISPLAY" = "1" ]; then
         timeout "$TIMEOUT" qemu-system-x86_64 \
             "${DRIVE[@]}" "${BOOT_ORDER[@]}" -m 256M -no-reboot -nic none \
+            -d int,cpu_reset,guest_errors -D "$BUILD_DIR/verify-qemu-debug.log" \
             -serial "file:$LOG" >/dev/null 2>&1
         QEMU_STATUS=$?
     else
@@ -205,6 +214,7 @@ boot_once() {
         timeout "$TIMEOUT" qemu-system-x86_64 \
             "${DRIVE[@]}" "${BOOT_ORDER[@]}" \
             -m 256M -nographic -no-reboot -nic none \
+            -d int,cpu_reset,guest_errors -D "$BUILD_DIR/verify-qemu-debug.log" \
             -monitor none -serial "file:$LOG" \
             >"$QEMU_LOG" 2>&1
         QEMU_STATUS=$?
@@ -263,6 +273,10 @@ fail() {
     fi
     echo "--- captured output ($LOG) ---"
     cat "$LOG"
+    if [ -s "$BUILD_DIR/verify-qemu-debug.log" ]; then
+        echo "--- QEMU CPU/exception trace (last 160 lines) ---"
+        tail -n 160 "$BUILD_DIR/verify-qemu-debug.log"
+    fi
     echo "--------------------------------"
     exit 1
 }
@@ -284,12 +298,58 @@ grep -q '\[BOOT\] init complete, entering scheduler' "$LOG" \
 grep -q 'Hello from user mode!' "$LOG" \
     || fail "ring-3 task did not complete its print syscall"
 
+grep -q 'RING3_CODE_ISOLATION_OK' "$LOG" \
+    || fail "bootstrap user code was not copied into private executable pages"
+
+grep -q 'TSS_RSP0_USER_STACK_OK' "$LOG" \
+    || fail "ring-3 task did not receive its own kernel interrupt stack"
+
+grep -q 'TASK_STACK_GUARD_OK' "$LOG" \
+    || fail "kernel task stack is missing its unmapped page-table guard"
+
 if [ -n "$ELF_TEST_DISK" ]; then
-    grep -q 'ELF_EXEC_OK' "$LOG" \
-        || fail "ELF image did not execute its user-mode smoke test"
+    if [ "$EXPECT_ELF_SUCCESS" = "1" ]; then
+        grep -q 'RING3_SLEEP_OK' "$LOG" \
+            || fail "ring-3 task did not return from sleep before the authorized exec"
+        grep -q 'ELF_EXEC_OK' "$LOG" \
+            || fail "authorized sys_exec did not enter the static ELF smoke program"
+        if grep -q 'ELF_EXEC_DENIED_CAPABILITY' "$LOG"; then
+            fail "authorized exec was unexpectedly denied by capability policy"
+        fi
+        ELF_RESULT="authorized ELF entered"
+    elif grep -q 'ELF_EXEC_OK' "$LOG"; then
+        ELF_RESULT="executed"
+    elif grep -q 'ELF_EXEC_DENIED_CAPABILITY' "$LOG"; then
+        ELF_RESULT="denied by capability policy"
+        echo "NOTE: ELF execution correctly denied: bootstrap task lacks CAP_ALLOW_EXEC."
+    else
+        fail "ELF image neither executed nor produced an explicit capability denial"
+    fi
 else
+    grep -q 'RING3_SLEEP_OK' "$LOG" \
+        || fail "ring-3 sleep syscall did not return to user mode"
     grep -q 'Back in user mode after yield.' "$LOG" \
         || fail "ring-3 task did not resume after yielding to the kernel task"
+    grep -q 'RING3_FAULT_ARMED' "$LOG" \
+        || fail "ring-3 page-fault isolation probe did not run"
+    grep -q 'USER PAGE FAULT:' "$LOG" \
+        || fail "invalid ring-3 access was not contained as a user page fault"
+    grep -q 'RING3_SYSCALL_PTR_REJECT_OK' "$LOG" \
+        || fail "ring-3 syscall pointer validation did not reject untrusted addresses"
+    grep -q 'RING3_PRIVATE_PAGES_RELEASED' "$LOG" \
+        || fail "ring-3 exit did not release its private code and stack frames"
+fi
+
+if [ "$REQUIRE_VMM_TESTS" = "1" ]; then
+    for test_name in map_existing map_missing remap_same unmap_page \
+                     map_user_page walk_rejects_huge translate_effective_user \
+                     physmap_supervisor_alias pmm_direct_mapped_ram pmm_free_count \
+                     pmm_reserved_frame_protected user_kernel_half_denied \
+                     unaligned_page_denied mapping_validation_matrix \
+                     destroy_address_space kernel_clone_rejects_user; do
+        grep -Fq "[VMM] $test_name: OK" "$LOG" \
+            || fail "VMM regression test failed or did not execute: $test_name"
+    done
 fi
 
 grep -q 'Invalid Multiboot2 magic' "$LOG" \
@@ -326,7 +386,7 @@ if command -v sha256sum >/dev/null 2>&1; then
 fi
 
 if [ -n "$ELF_TEST_DISK" ]; then
-    echo "PASS: kernel booted and executed the ELF smoke test  ($IMAGE with $ELF_TEST_DISK)"
+    echo "PASS: kernel booted; ELF policy result: $ELF_RESULT  ($IMAGE with $ELF_TEST_DISK)"
 else
     echo "PASS: kernel booted, ran ring 3, and stayed alive  ($IMAGE as $MODE${FIRMWARE:+, UEFI})"
 fi

@@ -1,117 +1,107 @@
-<div align="center">
+# CharisOS
 
-# ⚙️ CharisOS
+**An experimental x86_64 operating-system project built from the ground up in freestanding C and NASM.**
 
-**A from-scratch x86_64 operating system kernel — written in C & NASM, with no libc and no host OS**
+[![CI](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml/badge.svg)](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml)
+![Architecture](https://img.shields.io/badge/architecture-x86__64-informational)
+![Languages](https://img.shields.io/badge/kernel-C%20%2B%20NASM-informational)
+![Boot](https://img.shields.io/badge/boot-GRUB2%20%2F%20Multiboot2-informational)
+![License](https://img.shields.io/badge/license-MIT-informational)
 
-![Arch](https://img.shields.io/badge/arch-x86__64-blue?style=flat-square)
-![Lang](https://img.shields.io/badge/lang-C%20%2B%20NASM-purple?style=flat-square)
-![Boot](https://img.shields.io/badge/boot-Multiboot2%20%2F%20GRUB2-orange?style=flat-square)
-![CI](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml/badge.svg)
-![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
-![Stars](https://img.shields.io/github/stars/Liladizilla/charis__OS?style=flat-square&color=yellow)
-
-*Built and maintained by **Charis Chara** · Nairobi, Kenya*
-
-</div>
-
-```
-╔═════════════════════════════════════════════════════╗
-║    ████ █   █  ███  ████  █████  ████  ███   ████   ║
-║   █     █   █ █   █ █   █   █   █     █   █ █       ║
-║   █     █   █ █   █ █   █   █   █     █   █ █       ║
-║   █     █████ █████ ████    █    ███  █   █  ███    ║
-║   █     █   █ █   █ █ █     █       █ █   █     █   ║
-║   █     █   █ █   █ █  █    █       █ █   █     █   ║
-║    ████ █   █ █   █ █   █ █████ ████   ███  ████    ║
-║                                                      ║
-║  x86_64 kernel  //  built from scratch in C & NASM   ║
-║               v1.0  -  Nairobi, Kenya                ║
-╚═════════════════════════════════════════════════════╝
-```
+Maintained by **Charis Chara** · [Source repository](https://github.com/Liladizilla/charis__OS)
 
 ---
 
-## 📽️ Demo
+## Project overview
 
-- [Boot demo — part 1](https://file.kiwi/67a1f9ef#LIVXxNmocS8L9P13rQx1CQ)
-- [Boot demo — part 2](https://file.kiwi/7d8484fd#TjQmPCrzKGcYy7rqvSBifQ)
+CharisOS is a from-scratch operating-system research project targeting x86_64 PCs and virtual machines. The repository contains a freestanding kernel, Multiboot2/GRUB boot path, physical and virtual memory management, interrupt and task infrastructure, a small syscall interface, FAT32-backed storage support, a static ELF executable loader, and a framebuffer-based graphical shell.
 
----
+The project is under active development. It is not currently a general-purpose or production-ready operating system, and it should not be treated as a replacement for Windows or Linux. This README distinguishes implemented and tested behavior from partial subsystems and planned work.
 
-## 📖 About
+**Implementation constraints:** kernel and boot implementation use C and NASM. The kernel is built freestanding with GCC and a custom linker script; it does not depend on a host operating-system runtime after boot.
 
-CharisOS is an educational, from-scratch x86_64 kernel. Everything below the
-GRUB handoff is written by hand: the bootloader assembly, the physical and
-virtual memory managers, the interrupt tables, the preemptive scheduler, the
-SYSCALL/SYSRET ABI, the VFS with a FAT32 backend, an ELF program loader, and a
-framebuffer graphics/window-manager stack.
+## Current state at a glance
 
-There is no standard library, no runtime, and no host-OS dependency. The kernel
-compiles with `gcc -ffreestanding` and links with a hand-written `link.ld`.
-
-**Scale:** ~9,100 lines of C across 107 files, ~720 lines of NASM across 6 files.
-
-### Project status
-
-This is an active educational kernel. BIOS CD and raw-disk boots are verified
-in CI, including a ring-3 syscall and yield/resume round trip. Several
-subsystems are complete and exercised; others are present but partial.
-[`TODO.md`](./TODO.md) is the authoritative status document and is kept honest
-— a phase is only marked complete once it has been booted and exercised, not
-merely compiled.
-
-| Area | Status |
+| Subsystem | Current evidence-based status |
 |---|---|
-| Boot (Multiboot2 → long mode), BIOS | ✅ Working; CI tested as CD and raw disk |
-| UEFI boot | ✅ BIOS/UEFI CD and disk paths pass locally; CI UEFI remains advisory |
-| Graphics on BIOS (framebuffer request in the MB2 header) | ✅ Working |
-| Physical + virtual memory, heap | ✅ Working |
-| IDT/IRQ, PIT timer, PS/2 keyboard, serial | ✅ Working |
-| Preemptive round-robin scheduler, task stacks | ✅ Kernel-task scheduling and ring-3 yield/resume tested |
-| Interactive shell | ✅ Working |
-| DPL3 `int 0x80` syscall path | ✅ Used by the ring-3 bootstrap and tested in QEMU |
-| SYSCALL/SYSRET fast path | ⚠️ Configured, but not yet validated from user mode |
-| VFS + FAT32 (read path) | ✅ Working |
-| ELF loader (`sys_exec`) | ✅ Static x86-64 `ET_EXEC` loaded from FAT32 and entered in ring 3 (QEMU smoke test) |
-| **Ring-3 bootstrap** | ✅ Kernel-embedded task enters, syscalls, yields, and resumes |
-| **libc / userland build** | ❌ Not started |
-| Framebuffer, window manager, desktop | ⚠️ Partial |
-| Capability-based security | ⚠️ Partial — enforced on `open`/`exec` only |
-| Config persistence (`/etc/charisos.conf`) | ⚠️ Read path works; no file creation yet |
-| RTL8139 networking | ⚠️ TX wired; no TCP/IP or RX |
-| USB, audio, gamepad | ⚠️ Stubs |
+| BIOS boot | CI verifies GRUB/Multiboot2 boot from CD image and raw disk image in QEMU |
+| UEFI boot | UEFI paths exist; CI coverage is advisory and firmware-dependent |
+| CPU and memory | x86_64 long-mode entry, PMM, VMM, heap and page-permission regression tests |
+| Interrupts and scheduling | IDT/PIC/PIT, PS/2 input and kernel-task scheduling; ring-3 yield/resume exercised in QEMU |
+| User mode | DPL3 `int 0x80` bootstrap path exercised; static ELF64 `ET_EXEC` loader uses transactional address-space replacement; a separate CI-only build now exercises authorized ELF entry |
+| Storage | Primary ATA PIO and FAT32 support; current Files interface is read-only and limited to the root directory and 8.3 names |
+| Graphical shell | Framebuffer workspace with independent Terminal, Files, Browser, Settings and About windows; workspace and application coverage remain limited |
+| Window manager | Bounded ownership, back-to-front composition, focus-only input, move, lower-right resize grip, maximize/restore, minimize, taskbar switching and Alt+Tab; snap/tiling and QEMU pointer-resize validation remain unfinished |
+| Settings | Font family, text size and interface scale; CI verifies saved values survive a reboot on a writable FAT32 test disk |
+| Security | Selected capability checks and input validation; page faults use a dedicated TSS.IST1 stack with QEMU guard-fault verification; overall enforcement and isolation remain incomplete |
+| Networking | RTL8139 transmit path only; receive and TCP/IP stack are not implemented |
+| USB and peripherals | USB and gamepad support are stubs; audio support is incomplete |
+| Userspace | No complete libc, package manager, installer or general-purpose userspace environment |
 
-> A tiny static `ET_EXEC` smoke binary is loaded from a FAT32 test disk and
-> entered through the current task’s IRET frame. `ET_DYN`, relocations,
-> dynamic relocations, rich auxv entries, address-space teardown, libc,
-> complete user-pointer validation, and per-task kernel interrupt stacks
-> remain incomplete. Bounded `argv`/`envp` vectors are placed on the initial
-> stack and checked by the smoke ELF.
-> [`TODO.md`](./TODO.md) tracks the remaining work.
+For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). A subsystem is not considered complete merely because it compiles.
 
----
+## Desktop screenshots
 
-## ✨ Features
+The latest checked-in PNG remains the 1024×768 capture from commit `1f0414c` (CI run #724). The latest full [QEMU desktop and boot artifact set](https://github.com/Liladizilla/charis__OS/actions/runs/43223435468) is CI run #806 on the descriptor-lifetime branch; it includes the desktop, app and multi-window captures, Settings persistence after reboot, ELF execution checks, and the kernel-stack guard/IST fault-injection logs. The checked-in PNG is a historical snapshot, not a screenshot of the latest build.
 
-| Category | Details |
+![CharisOS QEMU desktop workspace, CI run 724](docs/screenshots/charisos-desktop-run-724.png)
+
+The [run #722 capture](docs/screenshots/charisos-desktop-run-722.png) and older [preview gallery](docs/screenshots/charisos-preview-gallery.jpg) remain available as historical comparisons.
+
+## Latest desktop validation
+
+[CI run #806](https://github.com/Liladizilla/charis__OS/actions/runs/43223435468) passed on commit `689a0bd`. It completed dependency installation, the freestanding kernel build, x86-64 baseline audit, descriptor lifecycle/duplication and other host regressions, BIOS/ring-3 checks, VMM huge-page/permission regressions, the dedicated kernel-stack guard/IST1 fault-injection test, QEMU desktop captures and Settings persistence checks.
+
+The refreshed 1024×768 QEMU capture shows four direct application cards, System Overview, System Status and Kernel Activity. Kernel Activity displays context-switch, interrupt and syscall counters through an O(1) snapshot API; desktop repaint does not traverse the scheduler task list. It is suppressed when text scale or available geometry leaves insufficient room. At 200% text and 120% UI scale it is intentionally absent. CI run #732 also boots a dedicated fault-injection image: a kernel task writes to its own unmapped stack guard, the CPU enters through TSS.IST1, the dispatcher verifies the exception frame is on that stack, emits containment markers and halts with a diagnostic panic rather than triple-faulting. This proves safe exception reporting, not recovery of a corrupted kernel task. Unused desktop space, richer user-facing workspace content and the complete font/UI/framebuffer matrix remain open. This is engineering evidence, not a release-quality claim.
+
+The default ELF disk test verifies that the normal bootstrap task is denied by `CAP_ALLOW_EXEC`. A separate `images-elf-exec-test` build grants that capability only to the CI smoke task, runs against a FAT32 `TEST.ELF`, and requires the kernel to emit `ELF_EXEC_OK` after the task enters the loaded image. CI #806 passed both the default denial and authorized-entry paths.
+
+
+## What is implemented
+
+- GRUB2 and Multiboot2 boot path into x86_64 long mode.
+- Physical memory bitmap allocator, virtual memory management and kernel heap.
+- IDT, PIC, PIT, PS/2 keyboard/mouse and diagnostic output.
+- Kernel-task scheduling and a tested ring-3 bootstrap path.
+- DPL3 `int 0x80` syscall dispatch and a bounded static ELF64 `ET_EXEC` loader. The loader builds a fresh process address space, loads segments and the initial stack there, switches CR3 only after success, then reclaims the previous image. A separate CI-only image now exercises successful authorized ELF entry; see the current CI gate for its result.
+- VFS abstractions with a limited FAT32 backend over primary ATA PIO.
+- Framebuffer drawing and PSF2 bitmap-font rendering.
+- Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
+- Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, a lower-right pointer resize grip, Alt+F8 keyboard resizing, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation; QEMU verifies simultaneous windows and keyboard maximize/restore.
+- Persistent display preferences on supported writable FAT32 storage.
+- Workspace System Status panel reads PMM allocator counters and the active display profile without walking task state during repaint.
+- CI verifies the freestanding build, x86-64 baseline, BIOS/ring-3 path, VMM permission regressions, host-side WM tests and QEMU desktop/settings capture; [run #724](https://github.com/Liladizilla/charis__OS/actions/runs/43071788055) passed on commit `1f0414c`.
+
+## Important limitations
+
+CharisOS is still an early-stage kernel and shell. In particular:
+
+- The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, keyboard resize, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
+- The workspace exposes direct shortcuts for Files, Terminal, Settings and Browser; the separate multi-window capture demonstrates Files and Terminal open together. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
+- Files does not yet support writable files, nested directory navigation or long filenames.
+- The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking, relocations, a complete process lifecycle and a successful end-to-end authorized ELF boot on the full firmware matrix remain unfinished. Successful exec builds a new address space transactionally, preserves the old image on any failure, switches CR3 only after segment and stack construction succeed, and reclaims the old image after the switch. The default image still denies `CAP_ALLOW_EXEC`; a dedicated CI-only image now tests the authorized path.
+- The `SYSCALL/SYSRET` user-mode path is configured but not yet validated as the normal syscall entry.
+- Capability enforcement covers only selected operations. It is not a complete security boundary.
+- The current entropy source is hardware-feature-dependent. If RDRAND is unavailable, cryptographic token generation is disabled; no weak fallback is presented as cryptographic randomness.
+- Storage support is limited to legacy primary-channel ATA PIO and FAT32. AHCI and NVMe are not implemented.
+- Networking is limited to an RTL8139 transmit path. TCP/IP and receive support are not implemented.
+- USB support is not implemented, and audio/peripheral support remains partial.
+- The graphics path uses the currently supported framebuffer mode; broad hardware and resolution coverage remains future work.
+
+Do not use this project to store sensitive data or as the only operating system on a machine.
+
+## Documentation map
+
+| Document | Purpose |
 |---|---|
-| **Boot** | Multiboot2 via GRUB2 · protected → long mode · CPUID feature checks · identity paging with 2MB huge pages · 16KB boot stack |
-| **Memory** | Bitmap PMM (next-fit, double-free guarded) · split/merge heap (`kmalloc`/`kfree`) · per-process PML4 address spaces |
-| **Scheduling** | Preemptive round-robin on a 1kHz PIT tick · 32 tasks · 8KB stacks · guard pages + stack canaries |
-| **Interrupts** | 256-entry IDT · PIC remapped to IRQ 32–47 · page-fault and exception handlers with diagnostics |
-| **Syscalls** | DPL3 `int 0x80` tested from ring 3 · `SYSCALL`/`SYSRET` MSRs configured but user path unvalidated · 34 registered calls |
-| **Security** | Capability bitmask per task, inherited across `fork` · stack canaries · path-traversal rejection · enforced on `open`/`exec` |
-| **VFS** | Node abstraction with read/write/open/close/readdir/finddir function pointers · device nodes · per-task fd tables |
-| **Storage** | ATA PIO driver · FAT32 read path |
-| **Loader** | `sys_exec` — validates ELF64 `ET_EXEC`, copies `PT_LOAD` contents, zeros BSS, maps permissions, and enters through IRET |
-| **Graphics** | Framebuffer driver · PSF2 bitmap font renderer · 2D primitives (line/rect/circle) · window manager with drag, focus and z-order · desktop with taskbar |
-| **Drivers** | VGA text · PS/2 keyboard and mouse · PIT · PCI enumeration with a probe/remove driver framework · HDA audio · RTL8139 Ethernet |
-| **Shell** | Built-in interpreter: `help`, `ls`, `echo`, `net`, `uptime`, `clear` |
+| [TODO.md](./TODO.md) | Current implementation status, milestones and remaining work |
+| [docs/charis-design-language.md](./docs/charis-design-language.md) | Desktop visual principles, scaling goals and current UI limitations |
+| [SECURITY.md](./SECURITY.md) | Security reporting and responsible-disclosure guidance |
+| [LICENSE](./LICENSE) | MIT license |
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ### Boot sequence
 
@@ -125,7 +115,7 @@ GRUB2  ── multiboot2 /boot/kernel.elf ──▶  EAX=0x36d76289, EBX=mboot i
 boot/boot.asm          32-bit protected mode
    ├─ saves EAX/EBX first (before any debug output clobbers them)
    ├─ CPUID: cpuid supported / long mode / APIC
-   ├─ builds PML4 → PDPT → PD, identity-maps 1GB with 2MB pages
+   ├─ builds PML4 → PDPT → PD, identity-maps the first 4 GiB with 2 MiB pages
    ├─ enables PAE + LME + NX + PG, loads GDT + TSS
    ▼
 boot/long_mode.asm     64-bit
@@ -135,17 +125,18 @@ boot/long_mode.asm     64-bit
    ▼
 kernel/main.c :: kernel_main()
    ├─ vga_init, serial_init, Multiboot2 magic validation
-   ├─ memory_init → idt_init → irq_init → timer_init(1000) → keyboard_init
-   ├─ ata_init → fs_init → vfs_init
-   ├─ task_init → scheduler_init → syscall_init
-   ├─ graphics_init → wm_init → input_init → ipc_init → audio_init
-   ├─ signal_init → pipe_init → driver_init → pci_scan → driver_scan_and_bind
-   ├─ config_init → config_load("/etc/charisos.conf")
-   ├─ display_init → desktop_init → services_init → diag_init
-   ├─ power_init → security_init
-   ├─ net_init  (gated on config "net_enabled")
-  ├─ create the ring-3 bootstrap and the active shell/desktop task
-  └─ sti; scheduler_start()  →  ring-3 bootstrap, then kernel shell/desktop
+   ├─ security_init (seeds stack guard; cryptographic tokens stay disabled without RDRAND)
+   ├─ memory_init: Multiboot map → PMM → VMM/direct map → kernel heap
+   ├─ fb_init → idt_init → input_init
+   ├─ irq_init → timer_init(1000) → keyboard_init → ata_init → fs_init → vfs_init
+   ├─ task_init → scheduler_init → syscall_init → graphics_init → mouse_init
+   ├─ install UI input hooks → wm_init → ipc_init → audio_init → signal_init → pipe_init
+   ├─ driver_init → pci_scan → driver_scan_and_bind
+   ├─ config_init → config_load("/CHARISOS.CFG") → apply display preferences
+   ├─ display_init → desktop_init → services_init → diag_init → power_init
+   ├─ net_init (gated on config "net_enabled") → apps_init
+   ├─ create ring-3 bootstrap and either the framebuffer desktop or text shell task
+   └─ sti; scheduler_start()
 ```
 
 ### Boot markers
@@ -212,7 +203,7 @@ structure before the task limit is raised.
 
 ---
 
-## 📁 Repository layout
+## Repository layout
 
 ```
 charis__OS/
@@ -246,7 +237,7 @@ charis__OS/
 
 ---
 
-## 🛠️ Building
+## Building
 
 ### Prerequisites
 
@@ -265,6 +256,8 @@ The build uses the **host** GCC with `-ffreestanding`; a cross-compiler is not
 required. `nasm`, `grub-mkrescue`, and `xorriso` are all mandatory.
 
 ### Build and run
+
+The kernel is compiled for the generic x86-64 baseline (`-march=x86-64 -mtune=generic -mno-bmi -mno-bmi2`). CI checks the linked kernel for accidental BMI/BMI2-family instructions so the default image does not silently require newer CPU extensions.
 
 ```bash
 git clone https://github.com/Liladizilla/charis__OS.git
@@ -298,7 +291,7 @@ qemu-system-x86_64 -cdrom build/charisos.iso -m 256M -nographic
 
 ---
 
-## 💾 Boot images: VM vs bare metal
+## Boot images: VM vs bare metal
 
 `make images` produces two named artifacts:
 
@@ -311,7 +304,7 @@ Both are produced by `grub-mkrescue`, which emits a *hybrid* image: an ISO9660
 filesystem plus a protective MBR, a GPT header, and GRUB loaders for both
 `i386-pc` (legacy BIOS) and `x86_64-efi` (UEFI). The two files are identical
 bytes; they are named for their intended use. The image is verified to boot in
-all four combinations — CD and raw disk, BIOS and UEFI — by `make verify-boot`.
+BIOS CD and raw-disk paths in CI. UEFI variants can be exercised with the\n`run-vm-uefi`, `run-usb-uefi` and `verify-boot` targets when compatible OVMF\nfirmware is installed; CI treats UEFI checks as advisory.
 
 ### Testing in a VM (GNOME Boxes / QEMU on Fedora)
 
@@ -384,7 +377,7 @@ run.bat
 
 ---
 
-## 🔭 Boot-time debugging
+## Boot-time debugging
 
 If the kernel hangs, the markers in the VGA text buffer tell you where. For
 example, seeing `S12344567[L>` means serial, memory, IDT, IRQ, timer, keyboard,
@@ -406,46 +399,170 @@ Combine with `make gdb` and:
 
 ---
 
-## 🔒 Security
+## Security
 
-Capability bits are defined in `include/kernel/security.h` and assigned per task
-at creation; children inherit the parent's set across `fork`.
+Capability bits are defined in `include/kernel/security.h` and sanitized against
+the kernel's defined-bit mask when a task is constructed. Capability checks use
+conjunctive semantics: a request containing multiple bits succeeds only when
+every requested bit is held. Empty requests and requests containing undefined
+bits fail closed. The `fork` syscall is not implemented and currently returns
+failure; child capability inheritance is therefore not claimed.
 
-| Capability | Guards |
+| Authority | Enforcement |
 |---|---|
-| `CAP_FS_READ` | `sys_open` |
-| `CAP_SPAWN` | `sys_exec`, `sys_fork` |
-| `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | reserved |
+| `CAP_FS_READ` | Required to request and rechecked for non-console reads |
+| `CAP_FS_WRITE` | Required to request a write-capable descriptor and rechecked for non-console writes |
+| `FD_RIGHT_READ` | Per-descriptor grant checked by `sys_read` and the ELF loader |
+| `FD_RIGHT_WRITE` | Per-descriptor grant checked by `sys_write` |
+| `CAP_SPAWN` + `CAP_ALLOW_EXEC` | `sys_exec` authorization |
+| `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | Reserved |
 
-`security_verify_path()` rejects `..` traversal. Stack canaries are seeded from
-an RDTSC/timer entropy mix in `security_init()`.
+The built-in network worker, text shell and graphical desktop worker are
+kernel-mode tasks. Their current call paths use trusted in-kernel APIs and do
+not invoke capability-gated filesystem or process syscalls, so they receive an
+empty process capability mask. This is least privilege at the syscall boundary,
+not a claim that ring-0 code is sandboxed from kernel internals. The bootstrap
+ring-3 task retains `CAP_FS_READ | CAP_SPAWN` for read-policy and execution-denial
+regression coverage, but intentionally does not receive `CAP_ALLOW_EXEC`.
 
-**Known gaps:** enforcement currently covers `open` and `exec` only — the VFS
-read/write paths, socket syscalls, and shared memory are unchecked. The
-capability set is not persisted or namespaced per-user.
+`sys_open(path)` remains read-only by default. `sys_open_rights(path, rights)`
+can request an explicit read/write combination, but the process must hold the
+matching filesystem capabilities and the VFS node must implement each requested
+operation. The descriptor stores only the granted rights; later reads and writes
+must pass both the descriptor check and the underlying operation check.
+Standard input receives read authority, while standard output/error receive
+write authority. Closing a descriptor revokes its table entry before the
+filesystem close callback can run. Each successful open creates a kernel-owned
+`vfs_open_file_t` containing the node, shared offset, open flags, I/O lock and
+packed reference lifecycle. The task-local `fd_entry_t` stores only the open-file
+pointer, granted rights and handle generation. `fd_acquire()` validates the
+current task and required rights while holding the descriptor-table lock, then
+pins the open-file object for the complete operation. `fd_release()` drops that
+pin; the final release atomically enters a permanent closing state before
+calling the node destructor exactly once. A reference cannot be acquired from
+zero or from a closing object.
+
+A global atomic node-ownership registry still ensures that one closeable raw
+node belongs to exactly one open-file description. It prevents two independent
+open descriptions from claiming one node pointer, including simultaneous
+allocations on separate CPUs. A losing opener receives an explicit already-owned
+status and must not run the other description's close callback. During final
+close, the registry marks the pointer as releasing; a new claim for a reused
+address waits until the old callback returns. The registry uses integer pointer
+keys so it never dereferences a node after its callback may have freed it.
+The per-open-file I/O lock serializes VFS callbacks and shared-offset updates.
+Callbacks under that lock must remain bounded and must not block or yield;
+callback execution and object destruction happen outside the descriptor-table
+lock. Standard streams bind to permanent shared kernel open-file objects.
+
+The kernel-internal `fd_duplicate_to()` primitive can publish a descriptor
+for a live recipient PID. It rejects zero/unknown rights and any requested
+right the sender does not hold, checks recipient state and table capacity,
+acquires the shared open-file reference before publication, and returns a
+recipient-bound task-scoped handle. The sender and recipient retain independent
+rights while sharing the same open-file offset. Task exit publishes
+`TASK_STATE_EXITING` before its close-all pass, preventing a new duplicate
+from appearing after cleanup. Host regressions cover rights escalation,
+full-table rollback, sender close, recipient cleanup and rejected teardown
+states. No ring-3 syscall exposes this primitive; userspace descriptor transfer
+still requires a separately designed, authenticated IPC protocol. The
+current IPC implementation still uses global integer channel indexes and has
+no endpoint ownership or peer authorization, so its syscall surface remains
+kernel-only. Shared-memory syscalls also remain kernel-only because the current
+API returns kernel pointers and has no per-task mapping/revocation model. The
+required endpoint, rendezvous, message-attachment and rollback contract is
+specified in
+[Authenticated IPC Endpoints and Resource Transfer](./docs/architecture/authenticated-ipc-endpoints-and-resource-transfer.md).
+These are explicit implementation gaps, not completed security features.
+Descriptor tables are task-local and are rebuilt when a task slot is reused. Non-standard descriptor values are 64-bit task-scoped
+identifiers whose ABI encoding callers must treat as opaque. The current
+encoding is deterministic: it contains the owning task PID, a per-slot
+generation and the descriptor slot. It is not random, secret, MAC-protected or
+unforgeable, and it is not a security credential or an intra-task isolation
+boundary. Its guarantees are narrower and explicit: a closed handle cannot
+resolve after slot reuse, and a handle copied into another task cannot resolve
+there even when the same slot is occupied. Task PIDs are allocated with atomic
+compare/exchange, remain monotonic, and fail closed rather than wrapping, so
+identities are unique even when task creation races across CPUs and are never
+recycled. The generation counter is preserved across task-slot reuse and also
+fails closed rather than wrapping. `FD_HANDLE_INVALID` uses owner PID zero, which the monotonic PID
+allocator never issues. This leaves every nonzero-PID descriptor tuple
+available, including the all-ones 64-bit handle at the maximum PID, generation
+and slot values. Standard input/output/error retain
+the stable handles 0, 1 and 2. `sys_open()` and `sys_open_rights()` return
+`FD_HANDLE_INVALID` (owner PID zero) on failure; callers must not interpret
+zero or an arbitrary negative integer as a failed non-standard handle. Numeric
+handles are not transferable capabilities; future cross-task delegation
+requires a separate, rights-attenuating resource-transfer mechanism.
+
+Kernel-side file consumers use the VFS node's `close` callback rather than
+assuming a particular allocator. The IL bytecode loader validates the path,
+requires a kernel caller, rejects files larger than its fixed instruction
+array or files ending mid-instruction, requires a complete read, and releases
+the per-open node on both success and failure. The Browser's local-file preview
+and ELF loader's pre-descriptor validation path also release resolved nodes
+through their VFS close callback.
+VFS callback return values are bounded by each caller: ELF exact reads reject
+over-reported byte counts and wrapped offsets, configuration loading rejects
+oversized results before placing the string terminator, and Browser previews
+reject lengths larger than their destination buffer. Descriptor read/write and
+ELF read ranges fail closed before 64-bit offset arithmetic can wrap.
+
+The FAT32 VFS adapters also reject offsets above the 32-bit `file_t.pos`
+domain before narrowing a 64-bit VFS offset or entering the filesystem layer.
+A host regression verifies that oversized reads do not invoke `fs_read`, and
+oversized writes do not invoke `fs_open` or `fs_write`.
+
+Before a ring-3 `sys_read` touches its input source, the kernel validates the
+entire writable destination range across page boundaries, using effective
+USER/WRITABLE page-table permissions and checking that each physical frame is
+reachable through the kernel direct map. An unmapped, read-only or overflowing
+range fails before keyboard input or a VFS read callback can consume data.
+Copy-out repeats whole-range validation before modifying userspace. This is a
+specific `SYS_READ` ordering guarantee, not a claim that all syscall pointer
+paths are complete.
+
+`security_verify_path()` rejects parent-directory traversal and alternate
+separators. When RDRAND is available, it can seed the stack guard. If RDRAND is
+unavailable, cryptographic token generation is disabled. The kernel does not
+claim that a weak fallback provides cryptographic entropy.
+
+**Known gaps:** per-open rights are not yet transferable or inherited, and the
+broader resource model is incomplete. Capability bits are still assigned by
+kernel task constructors; there is no user-controlled delegation, attenuation
+API or per-resource capability object yet. Global IPC, socket, networking,
+diagnostics and shared-memory interfaces remain kernel-only rather than being
+exposed to ring 3. Process isolation, safe reaping and broader capability
+enforcement remain unfinished.
 
 See [`SECURITY.md`](./SECURITY.md) for reporting guidance.
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
-Near-term work, in rough priority order:
+The immediate priority is a trustworthy, consistent native desktop rather than
+a large collection of unfinished applications.
 
-- [ ] TCP/IP stack on the RTL8139 driver (ARP, ICMP, UDP, TCP) + RX path
-- [ ] `wait()` / `waitpid()` syscalls and zombie reaping
-- [ ] Wire the Settings app to `config_set_*` + `config_save()`
-- [ ] Add `mkdir`/`create` to the VFS so `/etc/charisos.conf` can be created
-- [ ] Enforce capabilities on VFS read/write, sockets and shared memory
-- [ ] Add `-Werror` to the build to prevent regression
-- [ ] Run `vmm_run_tests()` at boot behind a build flag
-- [ ] Userspace: real Ring 3 processes — CR3 load on first switch, `TSS.rsp0`, wire `address_space`, map a real user stack. Detailed in [`TODO.md`](./TODO.md).
+1. Repository and documentation accuracy, repeatable builds and reviewable
+   releases.
+2. Shared UI foundations: measured layout, word wrapping, clipping, scrolling,
+   font metrics and resolution/scale regression tests.
+3. A real desktop shell and consistent multi-window lifecycle.
+4. Complete the first core applications: Files, Terminal, Settings, Text Editor
+   and System Monitor.
+5. Continue kernel security and stability work: capability enforcement,
+   process reaping, ELF/address-space lifecycle, malformed-input testing and
+   long-session regression.
+6. Expand real hardware support, writable storage, networking and installation.
 
-[`TODO.md`](./TODO.md) tracks all of this in detail.
+The exact Working / Partial / Planned status is maintained in [`TODO.md`](./TODO.md).
+The design rules and current UI limitations are documented in
+[`docs/charis-design-language.md`](./docs/charis-design-language.md).
 
 ---
 
-## 📚 References
+## References
 
 | Resource | Topic |
 |---|---|
@@ -460,7 +577,7 @@ Near-term work, in rough priority order:
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a branch: `git checkout -b feat/your-feature`
@@ -473,7 +590,7 @@ boot. Read [`SECURITY.md`](./SECURITY.md) before reporting security issues.
 
 ---
 
-## 👤 Author
+## Author
 
 **Charis Chara**
 
@@ -483,12 +600,12 @@ boot. Read [`SECURITY.md`](./SECURITY.md) before reporting security issues.
 
 ---
 
-## 📄 License
+## License
 
 MIT — see [`LICENSE`](./LICENSE).
 
 ---
 
 <div align="center">
-  <sub>Written from scratch — no OS, no stdlib, no shortcuts.</sub>
+  <sub>An independent x86_64 operating system built from scratch in C and NASM.</sub>
 </div>

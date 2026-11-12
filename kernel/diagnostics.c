@@ -20,21 +20,26 @@ void diag_init(void) {
 void diag_collect_stats(system_stats_t* stats) {
     stats->uptime_ms = timer_get_ms();
     
-    // Count active tasks
-    u32 active = 0, total = 0;
+    // Count active and blocked tasks.
+    u32 active = 0, total = 0, blocked = 0;
     task_t* cur = scheduler_current();
     task_t* t = cur;
-    do {
-        total++;
-        if (t->state == TASK_STATE_RUNNING || t->state == TASK_STATE_READY) {
-            active++;
-        }
-        t = t->next;
-    } while (t && t != cur);
-    
+    if (cur) {
+        do {
+            total++;
+            if (t->state == TASK_STATE_RUNNING || t->state == TASK_STATE_READY) {
+                active++;
+            } else if (t->state == TASK_STATE_BLOCKED) {
+                blocked++;
+            }
+            t = t->next;
+        } while (t && t != cur);
+    }
+
     stats->processes_active = active;
     stats->processes_total = total;
-    
+    stats->processes_blocked = blocked;
+
     // Memory stats from PMM
     stats->memory_used = pmm_used_pages() * 4; // KB
     stats->memory_free = pmm_free_pages() * 4; // KB
@@ -88,4 +93,13 @@ void diag_note_interrupt(void) {
 // Called from syscall handler
 void diag_note_syscall(void) {
     diag_syscalls++;
+}
+
+/* Each aligned 32-bit read is atomic on x86. The shell uses this O(1)
+ * snapshot instead of traversing the scheduler's intrusive task list. */
+void diag_get_runtime_counters(u32* context_switches, u32* interrupts,
+                              u32* syscalls) {
+    if (context_switches) *context_switches = diag_context_switches;
+    if (interrupts) *interrupts = diag_interrupts;
+    if (syscalls) *syscalls = diag_syscalls;
 }

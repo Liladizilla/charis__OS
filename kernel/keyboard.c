@@ -9,9 +9,11 @@ static char keyboard_buffer[256];
 static u32 keyboard_read_pos = 0;
 static u32 keyboard_write_pos = 0;
 static bool shift_held = false;
+static volatile u32 g_keyboard_buffer_dropped = 0;
 volatile u32 g_keyboard_irqs = 0;
 
 u32 keyboard_irq_count(void) { return g_keyboard_irqs; }
+u32 keyboard_buffer_dropped(void) { return g_keyboard_buffer_dropped; }
 
 const char keyboard_scancode_set1[128] = {
     0, 27, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', '\b',
@@ -32,6 +34,9 @@ const char keyboard_scancode_set1_shift[128] = {
 };
 
 void keyboard_init(void) {
+    keyboard_read_pos = 0;
+    keyboard_write_pos = 0;
+    g_keyboard_buffer_dropped = 0;
     /* Register IRQ handler */
     irq_register_handler(IRQ_KEYBOARD, keyboard_handler);
     vga_puts("Keyboard initialized\n");
@@ -46,12 +51,10 @@ void keyboard_set_key_event_hook(void (*hook)(u8 scancode, bool pressed)) {
     key_event_hook = hook;
 }
 
-void keyboard_handler(reg_frame_t* frame) {
-    (void)frame;
-    g_keyboard_irqs++;
-    u8 scancode;
-    asm volatile("inb %1, %0" : "=a"(scancode) : "Nd"((u16)KEYBOARD_DATA_PORT));
-
+/* Process one set-1 byte without assuming it came from IRQ1. The PS/2 mouse
+ * handshake polls the shared 8042 output buffer during boot; keyboard bytes
+ * encountered there are routed through this same decoder instead of dropped. */
+void keyboard_process_scancode(u8 scancode) {
     // Forward modifier transitions too; graphical consumers need them to
     // maintain their own key state, even though Shift has no standalone ASCII.
     if (scancode == 0x2A || scancode == 0x36 ||
@@ -61,17 +64,14 @@ void keyboard_handler(reg_frame_t* frame) {
             key_event_hook((u8)(scancode & 0x7F), pressed);
         }
         shift_held = pressed;
-        pic_send_eoi(IRQ_KEYBOARD);
         return;
     }
 
     /* Extended keys arrive as 0xE0 followed by the real code. Track the prefix
-     * so the hook sees a single scancode and can tell press from release
-     * (release is the code with bit 7 set). */
+     * so the hook sees a single scancode and can tell press from release. */
     static bool extended = false;
     if (scancode == 0xE0) {
         extended = true;
-        pic_send_eoi(IRQ_KEYBOARD);
         return;
     }
 
@@ -79,45 +79,72 @@ void keyboard_handler(reg_frame_t* frame) {
     bool pressed = (scancode & 0x80) == 0;
 
     if (key_event_hook) {
-        /* Left/right modifiers share codes with the numeric keypad in set 1.
-         * The extended prefix is what distinguishes them, so encode it in the
-         * high bit when forwarding. */
+        /* The high bit marks an extended key; pressed separately represents
+         * the make/break transition from the original scancode. */
         key_event_hook((u8)(code | (extended ? 0x80 : 0)), pressed);
     }
 
-    if (pressed && !extended && code < 128) {
+    if (pressed && !extended) {
         const char* table = shift_held ? keyboard_scancode_set1_shift : keyboard_scancode_set1;
         char c = table[code];
         if (c) {
             u32 next_write_pos = (keyboard_write_pos + 1) % 256;
             /* Keep one slot empty to distinguish full from empty. Drop the
-             * newest key if the consumer has not caught up, rather than
-             * wrapping the indices and making queued input look empty. */
+             * newest key if the consumer has not caught up. */
             if (next_write_pos != keyboard_read_pos) {
                 keyboard_buffer[keyboard_write_pos] = c;
                 keyboard_write_pos = next_write_pos;
-
-                /* Wake up any task waiting for input */
-                wait_queue_wake();
+                task_wake_keyboard_waiters();
+            } else {
+                g_keyboard_buffer_dropped++;
             }
         }
     }
     extended = false;
+}
+
+void keyboard_handler(reg_frame_t* frame) {
+    (void)frame;
+    g_keyboard_irqs++;
+    u8 scancode;
+    asm volatile("inb %1, %0" : "=a"(scancode) : "Nd"((u16)KEYBOARD_DATA_PORT));
+    keyboard_process_scancode(scancode);
     pic_send_eoi(IRQ_KEYBOARD);
+}
+
+/* The keyboard IRQ is the sole producer of this ring buffer. These
+ * short critical sections prevent IRQ1 from changing write_pos between a
+ * consumer's empty check and dequeue. This is single-CPU synchronization,
+ * not an SMP lock. */
+static inline u64 keyboard_irq_save(void) {
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static inline void keyboard_irq_restore(u64 flags) {
+    asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
 }
 
 bool keyboard_get_key(char* out) {
     if (!out) return false;
+
+    u64 irq_flags = keyboard_irq_save();
     if (keyboard_read_pos != keyboard_write_pos) {
         *out = keyboard_buffer[keyboard_read_pos];
         keyboard_read_pos = (keyboard_read_pos + 1) % 256;
+        keyboard_irq_restore(irq_flags);
         return true;
     }
+    keyboard_irq_restore(irq_flags);
     return false;
 }
 
 bool keyboard_has_input(void) {
-    return keyboard_read_pos != keyboard_write_pos;
+    u64 irq_flags = keyboard_irq_save();
+    bool has_input = keyboard_read_pos != keyboard_write_pos;
+    keyboard_irq_restore(irq_flags);
+    return has_input;
 }
 
 void keyboard_read_line(char* buffer, usize max_len) {
@@ -125,16 +152,46 @@ void keyboard_read_line(char* buffer, usize max_len) {
     usize i = 0;
     while (i < max_len - 1) {
         char c;
-        /* Block if no input available - yield to scheduler */
-        while (!keyboard_get_key(&c)) {
+        for (;;) {
+            /* Atomically test the ring and publish the blocked state. IRQ1
+             * cannot arrive between the empty check and registration, so a
+             * keystroke cannot be lost in the check-then-sleep window. */
+            u64 irq_flags = keyboard_irq_save();
+            if (keyboard_get_key(&c)) {
+                keyboard_irq_restore(irq_flags);
+                break;
+            }
+
             task_t* current = scheduler_current();
-            if (current) {
-                current->state = TASK_STATE_BLOCKED;
-                wait_queue_add(current);
-                scheduler_yield();
+            if (!current) {
+                keyboard_irq_restore(irq_flags);
+                asm volatile("pause");
+                continue;
+            }
+
+            current->waiting_event = TASK_WAITING_KEYBOARD;
+            current->state = TASK_STATE_BLOCKED;
+            keyboard_irq_restore(irq_flags);
+            scheduler_yield();
+
+            /* If no other task is runnable, scheduler_yield() can return
+             * while this task is still blocked. Sleep until an IRQ changes
+             * the state instead of spinning through the empty-buffer path. */
+            if (current->state == TASK_STATE_BLOCKED) {
+                asm volatile("sti; hlt" : : : "memory");
             }
         }
+
         if (c == '\n') break;
+        if (c == '\b') {
+            if (i > 0) {
+                i--;
+                vga_putchar('\b');
+                vga_putchar(' ');
+                vga_putchar('\b');
+            }
+            continue;
+        }
         buffer[i++] = c;
         vga_putchar(c);
     }

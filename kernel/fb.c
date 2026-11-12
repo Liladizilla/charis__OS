@@ -1,9 +1,8 @@
 /* fb.c - Linear framebuffer driver
  *
- * The boot code identity-maps only the first gigabyte with 2MB pages, and
- * firmware framebuffers are usually well above that (QEMU places the standard
- * VGA window at 0xFD000000). So the driver maps the advertised physical range
- * into a kernel window with ordinary 4KB pages before anything draws to it.
+ * The boot code identity-maps the first 4 GiB with 2 MiB pages. The driver
+ * maps the surface into a dedicated kernel window with 4 KiB pages; where a
+ * low identity alias exists, both aliases use the same non-cacheable type.
  *
  * Pixel format is taken from the GFX tag rather than assumed: the tag reports
  * the bit position of each colour component, and not every firmware uses the
@@ -13,11 +12,36 @@
 #include <kernel/fb.h>
 #include <kernel/bootmem.h>
 #include <kernel/memory.h>
+#include <kernel/vmm.h>
 #include <kernel/vga.h>
 #include <kernel/printf.h>
 #include <kernel/string.h>
 
 framebuffer_t g_framebuffer = {0};
+
+static bool fb_clip_enabled;
+static u32 fb_clip_x, fb_clip_y, fb_clip_w, fb_clip_h;
+
+void fb_set_clip(u32 x, u32 y, u32 w, u32 h) {
+    if (!g_framebuffer.initialized || !w || !h ||
+        x >= g_framebuffer.width || y >= g_framebuffer.height) {
+        fb_clip_enabled = true;
+        fb_clip_x = fb_clip_y = fb_clip_w = fb_clip_h = 0;
+        return;
+    }
+    if (w > g_framebuffer.width - x) w = g_framebuffer.width - x;
+    if (h > g_framebuffer.height - y) h = g_framebuffer.height - y;
+    fb_clip_x = x;
+    fb_clip_y = y;
+    fb_clip_w = w;
+    fb_clip_h = h;
+    fb_clip_enabled = true;
+}
+
+void fb_reset_clip(void) {
+    fb_clip_enabled = false;
+    fb_clip_x = fb_clip_y = fb_clip_w = fb_clip_h = 0;
+}
 
 /* Build a mask of `bits` bits positioned at `pos`. */
 static u32 mask_at(u8 pos, u8 bits) {
@@ -100,24 +124,52 @@ int fb_init(void) {
         kprintf("FB: refusing %ux%u at %u bpp\n", width, height, bpp);
         return -1;
     }
-    if (pitch < width * (bpp / 8)) {
+    /* Width comes from firmware. Promote before multiplying so the
+     * minimum scanline size cannot wrap in 32-bit arithmetic. */
+    u64 min_pitch = (u64)width * (u64)(bpp / 8u);
+    if (min_pitch > 0xFFFFFFFFULL || (u64)pitch < min_pitch) {
         kprintf("FB: pitch smaller than one scanline\n");
         return -1;
     }
 
-    /* Map the whole surface. Guard against an overflow in the byte count. */
+    /* Include the physical page offset in the mapping span. Firmware usually
+     * page-aligns the surface, but the framebuffer tag does not require it. */
     u64 bytes = (u64)pitch * height;
-    if (bytes == 0 || bytes > 256ULL * 1024 * 1024) {
+    u64 fb_offset = boot_info.framebuffer_addr & (PAGE_SIZE - 1);
+    u64 fb_span = bytes + fb_offset;
+    if (bytes == 0 || bytes > 256ULL * 1024 * 1024 || fb_span < bytes ||
+        fb_span > 256ULL * 1024 * 1024 + PAGE_SIZE) {
         kprintf("FB: implausible framebuffer size\n");
         return -1;
     }
 
-    u64 pages = (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
+    u64 fb_phys_base = boot_info.framebuffer_addr & ~(PAGE_SIZE - 1);
+    if (fb_phys_base > (~0ULL) - fb_span) {
+        kprintf("FB: physical framebuffer range wraps\n");
+        return -1;
+    }
+    u64 pages = (fb_span + PAGE_SIZE - 1) / PAGE_SIZE;
+    u64 map_flags = PTE_PRESENT | PTE_WRITABLE | PTE_NOCACHE;
+    u64 current_cr3;
+    asm volatile("mov %%cr3, %0" : "=r"(current_cr3));
+    pml4_t* kernel_pml4 = (pml4_t*)(uintptr_t)(current_cr3 & ~(PAGE_SIZE - 1));
+
     for (u64 i = 0; i < pages; i++) {
         u64 virt = FB_VIRT_BASE + i * PAGE_SIZE;
-        u64 phys = (boot_info.framebuffer_addr + i * PAGE_SIZE) & ~(PAGE_SIZE - 1);
-        if (!vmm_map_page(virt, phys, PTE_PRESENT | PTE_WRITABLE | PTE_NOCACHE)) {
+        u64 phys = fb_phys_base + i * PAGE_SIZE;
+
+        if (!vmm_map_page(virt, phys, map_flags)) {
             kprintf("FB: failed to map page %llu of %llu\n", i, pages);
+            return -1;
+        }
+
+        /* The bootstrap identity map uses write-back huge pages. If the
+         * framebuffer is below 4 GiB, split that huge mapping and give the
+         * identity alias the same non-cacheable type as the dedicated window. */
+        if (phys < 0x100000000ULL &&
+            !vmm_map_page_pml4(kernel_pml4, phys, phys, map_flags)) {
+            kprintf("FB: failed to normalize identity cache type at %p\n",
+                    (void*)(uintptr_t)phys);
             return -1;
         }
     }
@@ -134,7 +186,7 @@ int fb_init(void) {
 
     /* Only 32bpp can be handed out as a u32*; the other depths go through
      * fb_put_pixel(), which packs each pixel individually. */
-    fb->pixels = (bpp == 32) ? (u32*)(uintptr_t)FB_VIRT_BASE : 0;
+    fb->pixels = (bpp == 32) ? (u32*)(uintptr_t)(FB_VIRT_BASE + fb_offset) : 0;
 
     /*
      * Derive masks from the reported bit positions.
@@ -185,7 +237,7 @@ int fb_init(void) {
     fb->initialized = true;
 
     kprintf("FB: %ux%u %ubpp mapped at %p, %s%u%s%u%s\n",
-               width, height, bpp, (void*)FB_VIRT_BASE,
+               width, height, bpp, (void*)(uintptr_t)(FB_VIRT_BASE + fb_offset),
                "R", fb->red_pos, " G", fb->green_pos, " B", fb->blue_pos);
     return 0;
 }
@@ -194,9 +246,12 @@ void fb_put_pixel(u32 x, u32 y, u32 argb) {
     framebuffer_t* fb = &g_framebuffer;
     if (!fb->initialized) return;
     if (x >= fb->width || y >= fb->height) return;
+    if (fb_clip_enabled &&
+        (x < fb_clip_x || y < fb_clip_y ||
+         x - fb_clip_x >= fb_clip_w || y - fb_clip_y >= fb_clip_h)) return;
     if (argb == FB_TRANSPARENT) return;
 
-    u8* base = (u8*)(uintptr_t)FB_VIRT_BASE;
+    u8* base = (u8*)(uintptr_t)(FB_VIRT_BASE + (fb->phys_addr & (PAGE_SIZE - 1)));
     u8* row  = base + (u64)y * fb->pitch;
     u32 px   = fb_pack(argb);
 
@@ -223,8 +278,23 @@ void fb_fill_rect(u32 x, u32 y, u32 w, u32 h, u32 argb) {
     if (w > max_w) w = max_w;
     if (h > max_h) h = max_h;
 
-    u32 end_x = x + w; /* Safe after clipping against width - x. */
-    u32 end_y = y + h; /* Safe after clipping against height - y. */
+    if (fb_clip_enabled) {
+        if (!fb_clip_w || !fb_clip_h) return;
+        u32 right = x + w;
+        u32 bottom = y + h;
+        u32 clip_right = fb_clip_x + fb_clip_w;
+        u32 clip_bottom = fb_clip_y + fb_clip_h;
+        if (x < fb_clip_x) x = fb_clip_x;
+        if (y < fb_clip_y) y = fb_clip_y;
+        if (right > clip_right) right = clip_right;
+        if (bottom > clip_bottom) bottom = clip_bottom;
+        if (right <= x || bottom <= y) return;
+        w = right - x;
+        h = bottom - y;
+    }
+
+    u32 end_x = x + w; /* Safe after framebuffer and clip intersection. */
+    u32 end_y = y + h; /* Safe after framebuffer and clip intersection. */
     for (u32 py = y; py < end_y; py++) {
         for (u32 px = x; px < end_x; px++) {
             fb_put_pixel(px, py, argb);

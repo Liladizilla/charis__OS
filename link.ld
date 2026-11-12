@@ -24,6 +24,13 @@ SECTIONS
     _text_start = .;
     .text : {
         *(.text)
+        /* Ring-3 bootstrap code lives on isolated, page-aligned pages.
+         * It is copied into private frames before USER permissions are set. */
+        . = ALIGN(4096);
+        _usertext_start = .;
+        KEEP(*(.usertext))
+        . = ALIGN(4096);
+        _usertext_end = .;
     } :text
     _text_end = .;
 

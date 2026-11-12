@@ -1,5 +1,6 @@
 #include <kernel/fs.h>
 #include <kernel/ata.h>
+#include <kernel/serial.h>
 #include <kernel/memory.h>
 #include <kernel/string.h>
 #include <kernel/vga.h>
@@ -112,22 +113,25 @@ static u32 cluster_to_sector(u32 cluster) {
 }
 
 static u32 next_cluster(u32 cluster) {
-    if (!fs_mounted || !cluster_valid(cluster)) return 0x0FFFFFFF;
+    /* 0xFFFFFFFF is an internal I/O/corruption sentinel. Keep it distinct
+     * from FAT32's valid end-of-chain range (0x0FFFFFF8..0x0FFFFFFF). */
+    if (!fs_mounted || !cluster_valid(cluster)) return 0xFFFFFFFFu;
     u32 fat_entry_offset = cluster * 4;
     u32 fat_sector_index = fat_entry_offset / FAT32_SECTOR_SIZE;
-    if (fat_sector_index >= boot_sector.fat_size_32) return 0x0FFFFFFF;
+    if (fat_sector_index >= boot_sector.fat_size_32) return 0xFFFFFFFFu;
 
     u32 fat_sector = fat_start + fat_sector_index;
     u32 offset = fat_entry_offset % FAT32_SECTOR_SIZE;
     u8 buffer[FAT32_SECTOR_SIZE];
-    if (!ata_read_sector(fat_sector, buffer)) return 0x0FFFFFFF;
+    if (!ata_read_sector(fat_sector, buffer)) return 0xFFFFFFFFu;
 
     u32 next;
     kmemcpy(&next, buffer + offset, sizeof(next));
     next &= 0x0FFFFFFF;
+    if (next >= 0x0FFFFFF8u) return next; /* End of chain. */
     /* Reject free, reserved, bad and out-of-volume cluster references. */
-    if (next < 2 || next >= 0x0FFFFFF0 || !cluster_valid(next))
-        return 0x0FFFFFFF;
+    if (next < 2 || next >= 0x0FFFFFF0u || !cluster_valid(next))
+        return 0xFFFFFFFFu;
     return next;
 }
 
@@ -137,12 +141,14 @@ void fs_init(void) {
 
     if (!ata_read_sector(0, sector_buffer)) {
         vga_puts("FS: Failed to read boot sector\n");
+        serial_puts("FS: failed to read primary disk boot sector");
         return;
     }
     kmemcpy(&boot_sector, sector_buffer, sizeof(boot_sector));
 
     if (kstrncmp(boot_sector.fs_type, "FAT32", 5) != 0) {
         vga_puts("FS: Not FAT32 (no FAT32 volume found)\n");
+        serial_puts("FS: primary disk is not FAT32");
         return;
     }
 
@@ -187,6 +193,70 @@ void fs_init(void) {
 
     fs_mounted = true;
     vga_puts("FAT32 initialized\n");
+    serial_puts("FS: writable FAT32 volume mounted");
+}
+
+int fs_list_root(fs_dirent_t* output, u32 capacity) {
+    if (!fs_mounted || (!output && capacity)) return -1;
+    if (!capacity) return 0;
+
+    u32 count = 0;
+    u32 cluster = boot_sector.root_cluster;
+    if (!cluster_valid(cluster)) return -1;
+    bool chain_ended = false;
+    u8 buffer[FAT32_SECTOR_SIZE];
+
+    /* Directory chains are untrusted media data. Bound traversal and validate
+     * every sector range before reading it. */
+    for (u32 visited = 0; visited < total_clusters; visited++) {
+        if (!cluster_valid(cluster)) return -1;
+        u32 first_sector = cluster_to_sector(cluster);
+        if (first_sector == 0xFFFFFFFFu ||
+            first_sector >= boot_sector.total_sectors_32 ||
+            boot_sector.sectors_per_cluster > boot_sector.total_sectors_32 - first_sector)
+            return -1;
+
+        for (u32 sector_index = 0; sector_index < boot_sector.sectors_per_cluster; sector_index++) {
+            if (!ata_read_sector(first_sector + sector_index, buffer)) return -1;
+            fat32_dir_entry_t* entries = (fat32_dir_entry_t*)buffer;
+            for (u32 i = 0; i < 16; i++) {
+                fat32_dir_entry_t* entry = &entries[i];
+                if (entry->name[0] == 0x00) return (int)count;
+                if ((u8)entry->name[0] == 0xE5) continue;
+                if (entry->attr == 0x0F || (entry->attr & 0x08)) continue;
+
+                if (count >= capacity) return (int)count;
+                /* Ignore malformed entries with no printable 8.3 basename. */
+                if (entry->name[0] == ' ') continue;
+                fs_dirent_t* item = &output[count];
+                usize pos = 0;
+                for (usize n = 0; n < 8 && entry->name[n] != ' '; n++)
+                    item->name[pos++] = entry->name[n];
+                usize ext = 0;
+                while (ext < 3 && entry->name[8 + ext] != ' ') ext++;
+                if (ext) {
+                    item->name[pos++] = '.';
+                    for (usize n = 0; n < ext; n++)
+                        item->name[pos++] = entry->name[8 + n];
+                }
+                item->name[pos] = 0;
+                item->size = entry->size;
+                item->directory = (entry->attr & 0x10u) != 0;
+                count++;
+                if (count >= capacity) return (int)count;
+            }
+        }
+
+        u32 next = next_cluster(cluster);
+        if (next == 0xFFFFFFFFu) return -1;
+        if (next >= 0x0FFFFFF8u) { chain_ended = true; break; }
+        if (!cluster_valid(next)) return -1;
+        cluster = next;
+    }
+    /* A full-volume traversal without an end-of-chain marker means a cycle
+     * or corrupt chain. Do not report a partial listing as complete. */
+    if (!chain_ended) return -1;
+    return (int)count;
 }
 
 int fs_open(const char* path, file_t* file) {
@@ -212,8 +282,11 @@ int fs_open(const char* path, file_t* file) {
                 if ((u8)entries[i].name[0] == 0xE5) continue; // Deleted
                 if (entries[i].attr & 0x18) continue; // Directory or volume label
                 if (fat32_name_matches(path, entries[i].name)) {
-                    file->cluster = (entries[i].cluster_high << 16) | entries[i].cluster_low;
+                    file->cluster = ((u32)entries[i].cluster_high << 16) | entries[i].cluster_low;
                     file->size = entries[i].size;
+                    /* Empty files may have no data cluster. Non-empty files
+                     * must begin on a valid data cluster before being exposed. */
+                    if (file->size && !cluster_valid(file->cluster)) return -1;
                     file->pos = 0;
                     file->dir_cluster = cluster;
                     file->dir_sector = s;
@@ -222,8 +295,13 @@ int fs_open(const char* path, file_t* file) {
                 }
             }
         }
-        cluster = next_cluster(cluster);
-        if (cluster == 0x0FFFFFFF) break;
+        u32 next = next_cluster(cluster);
+        /* The internal I/O/corruption sentinel is 0xFFFFFFFF, which is
+         * numerically above FAT32's EOC range. Reject it before EOC tests. */
+        if (next == 0xFFFFFFFFu) return -1;
+        if (next >= 0x0FFFFFF8u) break;
+        if (!cluster_valid(next)) return -1;
+        cluster = next;
     }
     return -1;
 }
@@ -241,7 +319,7 @@ int fs_read(file_t* file, void* buffer, usize size) {
     u32 clusters_to_skip = file->pos / cluster_size;
     while (clusters_to_skip--) {
         cluster = next_cluster(cluster);
-        if (cluster < 2 || cluster >= 0x0FFFFFF8) return -1;
+        if (!cluster_valid(cluster)) return -1;
     }
 
     u32 offset = file->pos % cluster_size;
@@ -269,9 +347,15 @@ int fs_read(file_t* file, void* buffer, usize size) {
         offset += to_read;
 
         if (offset >= cluster_size) {
-            cluster = next_cluster(cluster);
             offset = 0;
             sector_offset = 0;
+            /* Do not turn a truncated/corrupt FAT chain into a successful
+             * short read when the directory entry promised more bytes. */
+            if (bytes_read < size) {
+                u32 next = next_cluster(cluster);
+                if (!cluster_valid(next)) return -1;
+                cluster = next;
+            }
         } else {
             sector_offset = offset / FAT32_SECTOR_SIZE;
         }

@@ -30,6 +30,7 @@
 #include <kernel/diagnostics.h>
 #include <kernel/display.h>
 #include <kernel/config.h>
+#include <kernel/gfx_text.h>
 #include <kernel/power.h>
 #include <kernel/security.h>
 #include <kernel/signal.h>
@@ -42,6 +43,25 @@
 
 /* The multiboot2 info pointer arrives zero-extended in RDI, so it is a 64-bit
  * value here. Declaring it u32 would silently truncate any address above 4GB. */
+#ifdef TEST_KERNEL_STACK_GUARD
+static void kernel_stack_guard_probe(void* unused) {
+    (void)unused;
+    task_t* task = scheduler_current();
+    if (!task || !task->guard_page_addr) {
+        serial_puts("KERNEL_STACK_GUARD_TEST_SETUP_FAILED\n");
+        for (;;) asm volatile("cli; hlt" : : : "memory");
+    }
+
+    serial_puts("KERNEL_STACK_GUARD_TEST_ARMED\n");
+    *(volatile u64*)(uintptr_t)task->guard_page_addr =
+        0x535441434B475541ULL;
+
+    serial_puts("KERNEL_STACK_GUARD_TEST_FAILED: guard write returned\n");
+    for (;;) asm volatile("cli; hlt" : : : "memory");
+}
+#endif
+
+__attribute__((no_stack_protector))
 void kernel_main(u32 magic, u64 info_ptr) {
     // Boot marker helper - writes sequential chars to VGA text buffer at even offsets
     static int boot_marker_col = 0;
@@ -74,8 +94,18 @@ void kernel_main(u32 magic, u64 info_ptr) {
     }
     BOOT_MARK('M');
 
+    /* Seed stack protection before memory management and device subsystems.
+     * kernel_main itself is unprotected so its entry guard remains stable
+     * while security_init installs the randomized guard for later functions. */
+    serial_puts("[BOOT] security initialization begin");
+    security_init();
+    BOOT_MARK('S');
+    serial_puts("[BOOT] security initialization complete");
+
     // Initialize subsystems in exact order
+    serial_puts("[BOOT] memory initialization begin");
     memory_init((multiboot_info_t*)(uintptr_t)info_ptr);
+    serial_puts("[BOOT] memory initialization complete");
 
     // Set up the linear framebuffer the firmware advertised. Until this runs,
     // every drawing call in the window manager, desktop, widgets and apps is a
@@ -90,6 +120,11 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('m');
     idt_init();
     BOOT_MARK('I');
+#ifdef TEST_KERNEL_STACK_GUARD
+    /* Exercise a non-error-code vector on IST2. The dedicated #DF gate (8)
+     * is wired to the same stack; this probe verifies IST2 frame placement. */
+    asm volatile("int $0x81" : : : "memory");
+#endif
 
     /* Prepare the shared event ring before any device driver unmasks an IRQ.
      * Keyboard and mouse handlers can enqueue events as soon as their IRQs
@@ -152,7 +187,8 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('b');
     config_init();
     BOOT_MARK('c');
-    config_load("/etc/charisos.conf");
+    config_load(CONFIG_FILE_PATH);
+    gfx_text_apply_preferences();
     BOOT_MARK('L');
     display_init();
     BOOT_MARK('D');
@@ -164,8 +200,6 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('D');
     power_init();
     BOOT_MARK('p');
-    security_init();
-    BOOT_MARK('S');
 
     // Initialize network once, if enabled in config.
     // net_init() resets the RTL8139 and reinitializes its RX/TX state, so
@@ -175,8 +209,10 @@ void kernel_main(u32 magic, u64 info_ptr) {
         BOOT_MARK('N');
         net_init();
         if (net_get_interface()->initialized) {
+            /* The network worker uses only trusted in-kernel networking APIs.
+             * It has no capability-gated filesystem or process syscall need. */
             task_t* net_task = task_create("network", net_poll_task, NULL,
-                                           CAP_FS_READ, false);
+                                           0, false);
             if (net_task) scheduler_add_task(net_task);
             else vga_puts_error("Network: failed to create polling task");
         }
@@ -191,15 +227,26 @@ void kernel_main(u32 magic, u64 info_ptr) {
     extern void user_main(void);
     pml4_t* user_pml4 = vmm_create_address_space();
     if (user_pml4 && vmm_copy_kernel_mappings(user_pml4, NULL)) {
+        /* The normal image deliberately denies exec. A separate CI-only
+         * image grants it to prove the authorized ELF handoff end to end. */
+        u32 user_capabilities = CAP_SPAWN | CAP_FS_READ;
+#ifdef TEST_ELF_EXEC_SUCCESS
+        user_capabilities |= CAP_ALLOW_EXEC;
+#endif
         task_t* user_task = task_create_with_pml4(
             "user", (task_func_t)user_main, NULL,
-            CAP_SPAWN | CAP_FS_READ, true, user_pml4);
+            user_capabilities, true, user_pml4);
         if (user_task && task_prepare_user_space(user_task, (void*)user_main)) {
             scheduler_add_task(user_task);
         } else {
+            /* A failed bootstrap must not strand its cloned page-table tree.
+             * task_prepare_user_space rolls back any user leaf frames first. */
+            vmm_destroy_address_space(user_pml4);
+            if (user_task) task_discard_unstarted(user_task);
             vga_puts_error("ERROR: Failed to prepare ring-3 task!");
         }
     } else {
+        if (user_pml4) vmm_destroy_address_space(user_pml4);
         vga_puts_error("ERROR: Failed to create user address space!");
     }
 
@@ -215,8 +262,10 @@ void kernel_main(u32 magic, u64 info_ptr) {
     // kprintf writes to the serial port independently of the task running.
     task_t* shell_task = 0;
     if (!g_framebuffer.initialized) {
+        /* The ring-0 shell uses in-kernel commands and SYS_PRINT only. Keep
+         * filesystem and process syscall authority out of its task grant. */
         shell_task = task_create("shell", (task_func_t)shell_main, NULL,
-                                 CAP_SPAWN | CAP_FS_READ | CAP_FS_WRITE, false);
+                                 0, false);
         if (shell_task == NULL) {
             vga_puts_error("ERROR: Failed to create shell task!");
             while (1) asm volatile("hlt");
@@ -228,14 +277,28 @@ void kernel_main(u32 magic, u64 info_ptr) {
     // firmware hands over the 80x25 text buffer instead and fb_init() declines,
     // so there is nothing to draw on and the text shell is the whole interface.
     if (g_framebuffer.initialized) {
+        /* The ring-0 desktop uses kernel-owned UI and filesystem routines.
+         * Its current call graph does not need capability-gated syscalls. */
         task_t* ui_task = task_create("desktop", (task_func_t)shell_ui_main, NULL,
-                                      CAP_SPAWN | CAP_FS_READ | CAP_FS_WRITE, false);
+                                      0, false);
         if (ui_task) {
             scheduler_add_task(ui_task);
         } else {
             vga_puts_error("ERROR: Failed to create desktop task!");
         }
     }
+
+#ifdef TEST_KERNEL_STACK_GUARD
+    /* Deliberately write into this task's own unmapped kernel-stack guard.
+     * The #PF dispatcher must arrive on TSS.IST1 and report containment. */
+    task_t* guard_probe = task_create("guard-probe",
+        kernel_stack_guard_probe, NULL, 0, false);
+    if (!guard_probe) {
+        serial_puts("KERNEL_STACK_GUARD_TEST_SETUP_FAILED\n");
+        for (;;) asm volatile("cli; hlt" : : : "memory");
+    }
+    scheduler_add_task(guard_probe);
+#endif
 
     vga_puts_success("All systems go. Starting shell.");
 

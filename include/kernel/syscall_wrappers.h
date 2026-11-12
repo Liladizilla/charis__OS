@@ -1,9 +1,11 @@
 /* syscall_wrappers.h - C library wrappers for syscalls */
 #pragma once
+#include <kernel/vfs.h>
 
 // Process control
 #define sys_exit(code) syscall_invoke(SYS_EXIT, (code), 0, 0, 0, 0, 0)
 #define sys_yield() syscall_invoke(SYS_YIELD, 0, 0, 0, 0, 0, 0)
+#define sys_sleep(ms) syscall_invoke(SYS_SLEEP, (ms), 0, 0, 0, 0, 0)
 #define sys_getpid() syscall_invoke(SYS_GETPID, 0, 0, 0, 0, 0, 0)
 
 // I/O
@@ -12,7 +14,10 @@
 #define sys_print(s) syscall_invoke(SYS_PRINT, (u64)(s), 0, 0, 0, 0, 0)
 
 // File operations
-#define sys_open(path) syscall_invoke(SYS_OPEN, (u64)(path), 0, 0, 0, 0, 0)
+// sys_open* returns fd_handle_t; failures return FD_HANDLE_INVALID.
+// Never store a non-standard handle in int.
+#define sys_open_rights(path, rights) syscall_invoke(SYS_OPEN, (u64)(path), (rights), 0, 0, 0, 0)
+#define sys_open(path) sys_open_rights((path), FD_RIGHT_READ)
 #define sys_close(fd) syscall_invoke(SYS_CLOSE, (fd), 0, 0, 0, 0, 0)
 #define sys_exec(path) syscall_invoke(SYS_EXEC, (u64)(path), 0, 0, 0, 0, 0)
 #define sys_execve(path, argv, envp) syscall_invoke(SYS_EXEC, (u64)(path), (u64)(argv), (u64)(envp), 0, 0, 0)
@@ -40,8 +45,8 @@
 // External syscall dispatch function
 extern u64 syscall_dispatch(u64 num, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6);
 
-static inline u64 syscall_invoke(u64 number, u64 a1, u64 a2, u64 a3,
-                                 u64 a4, u64 a5, u64 a6) {
+__attribute__((always_inline)) static inline u64 syscall_invoke(
+    u64 number, u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     register u64 arg4 asm("r10") = a4;
     register u64 arg5 asm("r8") = a5;
     register u64 arg6 asm("r9") = a6;

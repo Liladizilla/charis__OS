@@ -167,13 +167,13 @@ static bool hit(u32 x, u32 y, u32 w, u32 h) {
 
 /* ── Per-step drawing ─────────────────────────────────────────────────── */
 
-/* Live counters make a frozen first-run screen diagnosable from a
- * screenshot: IRQ delivery, complete PS/2 packets, and queue pressure. */
+/* Live counters make a frozen first-run screen diagnosable: IRQ delivery,
+ * complete PS/2 packets, keyboard-ring overflow, and queue pressure. */
 static void draw_input_diagnostics(void) {
-    /* Keep the panel self-contained: periodic updates must erase old digits
-     * when a counter changes from (for example) 100 to 99. */
+    const u32 diag_items = 15;
+    const u32 diag_rows = (diag_items + 1) / 2;
     const u32 panel_w = 280;
-    const u32 panel_h = 12 + 6 * (font_cell_h + 2);
+    const u32 panel_h = 12 + diag_rows * (font_cell_h + 2);
     u32 x = g_framebuffer.width > panel_w + 8
           ? g_framebuffer.width - panel_w - 8 : 4;
     u32 y = 8;
@@ -184,16 +184,19 @@ static void draw_input_diagnostics(void) {
     mouse_get_snapshot(&mouse);
     const char *labels[] = {
         "KIRQ ", "KHOOK", "MIRQ ", "PKT ", "QDEP ",
-        "DROP ", "MX   ", "MY   ", "BTN  ", "WKEY ", "WCLK "
+        "DROP ", "MX   ", "MY   ", "BTN  ", "WKEY ",
+        "WCLK ", "KDROP", "IRQ7S", "IRQ15S", "IRQUNK"
     };
     u32 values[] = {
         keyboard_irq_count(), ui_keyboard_hook_event_count(),
         mouse_irq_count(), mouse_packet_count(), input_queue_depth(),
         input_queue_dropped(), (u32)mouse.x, (u32)mouse.y,
-        (u32)mouse.buttons, wizard_key_events, wizard_mouse_clicks
+        (u32)mouse.buttons, wizard_key_events, wizard_mouse_clicks,
+        keyboard_buffer_dropped(), irq_spurious7_count(),
+        irq_spurious15_count(), irq_unhandled_count()
     };
     char line[32];
-    for (u32 item = 0; item < 11; item++) {
+    for (u32 item = 0; item < diag_items; item++) {
         u32 n = 0;
         while (labels[item][n] && n < sizeof(line) - 1)
             line[n] = labels[item][n], n++;
@@ -252,7 +255,7 @@ static void draw_mode(void) {
          "There is no installer yet; this session runs from the boot medium.",
          W_HINT);
     text(cx + 40, cy + 230,
-         "Setup persists only when an existing writable config file is present.",
+         "Setup saves to CHARISOS.CFG when writable FAT32 storage is available.",
          W_HINT);
 }
 
@@ -381,10 +384,10 @@ static void draw_done(void) {
     text(cx + 40, cy + 172, w.install ? "install to disk" : "run from device", W_FG);
 
     text(cx + 40, cy + 200,
-         "Config can update an existing writable file, but cannot create",
+         "Preferences are saved to CHARISOS.CFG when writable FAT32",
          W_HINT);
     text(cx + 40, cy + 220,
-         "a missing config file. Persistence depends on that file existing.",
+         "storage is mounted; otherwise this session uses defaults.",
          W_HINT);
 }
 
@@ -415,7 +418,7 @@ static void apply_and_save(void) {
     config_set_bool("net_dhcp", !w.network_static);
     config_set_bool("net_enabled", true);
     config_set_bool("setup_complete", true);
-    config_save("/etc/charisos.conf");
+    config_save(CONFIG_FILE_PATH);
 }
 
 static void step_leave(wizard_step_t from) {

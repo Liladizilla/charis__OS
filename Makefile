@@ -32,12 +32,12 @@ NASM_FLAGS = -f elf64
 # build, and the build looked correct the whole time.
 DEPFLAGS = -MMD -MP
 
-GCC_FLAGS = -ffreestanding -m64 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -fno-omit-frame-pointer -Wall -Wextra -Werror -fstack-protector-strong -I$(INCLUDE_DIR) $(DEPFLAGS)
+GCC_FLAGS = -ffreestanding -m64 -march=x86-64 -mtune=generic -mno-bmi -mno-bmi2 -fno-pie -fno-pic -mcmodel=kernel -mno-red-zone -mno-mmx -mno-sse -mno-sse2 -O2 -fno-omit-frame-pointer -Wall -Wextra -Werror -fstack-protector-strong -I$(INCLUDE_DIR) $(DEPFLAGS)
 LD_FLAGS = -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack
 
 # Source files
 BOOT_SOURCES = $(BOOT_DIR)/boot.asm $(BOOT_DIR)/long_mode.asm
-KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/bootmem.c $(KERNEL_DIR)/heap.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c $(KERNEL_DIR)/net_stack.c $(KERNEL_DIR)/dns.c $(KERNEL_DIR)/tcp.c $(KERNEL_DIR)/http.c $(KERNEL_DIR)/ata.c $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/vfs.c $(KERNEL_DIR)/elf.c $(KERNEL_DIR)/user.c $(KERNEL_DIR)/input.c $(KERNEL_DIR)/mouse.c $(KERNEL_DIR)/fb.c $(KERNEL_DIR)/psf.c $(KERNEL_DIR)/graphics.c $(KERNEL_DIR)/compositor.c $(KERNEL_DIR)/wm.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/socket.c $(KERNEL_DIR)/demo.c $(KERNEL_DIR)/desktop.c $(KERNEL_DIR)/apps.c $(KERNEL_DIR)/audio.c $(KERNEL_DIR)/usb.c $(KERNEL_DIR)/pci.c $(KERNEL_DIR)/services.c $(KERNEL_DIR)/diagnostics.c $(KERNEL_DIR)/display.c $(KERNEL_DIR)/config.c $(KERNEL_DIR)/power.c $(KERNEL_DIR)/security.c $(KERNEL_DIR)/widgets.c $(KERNEL_DIR)/signal.c $(KERNEL_DIR)/pipe.c $(KERNEL_DIR)/driver.c $(KERNEL_DIR)/raster.c $(KERNEL_DIR)/hda.c $(KERNEL_DIR)/gamepad.c $(KERNEL_DIR)/logo.c $(KERNEL_DIR)/font_data.c $(KERNEL_DIR)/gfx_text.c $(KERNEL_DIR)/browser.c $(KERNEL_DIR)/shell_ui.c $(KERNEL_DIR)/wizard.c $(KERNEL_DIR)/wallpaper.c $(KERNEL_DIR)/vmm_test.c
+KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/bootmem.c $(KERNEL_DIR)/heap.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c $(KERNEL_DIR)/net_stack.c $(KERNEL_DIR)/dns.c $(KERNEL_DIR)/tcp.c $(KERNEL_DIR)/http.c $(KERNEL_DIR)/ata.c $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/vfs.c $(KERNEL_DIR)/elf.c $(KERNEL_DIR)/user.c $(KERNEL_DIR)/input.c $(KERNEL_DIR)/mouse.c $(KERNEL_DIR)/fb.c $(KERNEL_DIR)/psf.c $(KERNEL_DIR)/graphics.c $(KERNEL_DIR)/compositor.c $(KERNEL_DIR)/wm.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/socket.c $(KERNEL_DIR)/demo.c $(KERNEL_DIR)/desktop.c $(KERNEL_DIR)/apps.c $(KERNEL_DIR)/audio.c $(KERNEL_DIR)/usb.c $(KERNEL_DIR)/pci.c $(KERNEL_DIR)/services.c $(KERNEL_DIR)/diagnostics.c $(KERNEL_DIR)/display.c $(KERNEL_DIR)/config.c $(KERNEL_DIR)/power.c $(KERNEL_DIR)/security.c $(KERNEL_DIR)/widgets.c $(KERNEL_DIR)/signal.c $(KERNEL_DIR)/pipe.c $(KERNEL_DIR)/driver.c $(KERNEL_DIR)/raster.c $(KERNEL_DIR)/hda.c $(KERNEL_DIR)/gamepad.c $(KERNEL_DIR)/logo.c $(KERNEL_DIR)/font_data.c $(KERNEL_DIR)/gfx_text.c $(KERNEL_DIR)/browser.c $(KERNEL_DIR)/desktop_surface.c $(KERNEL_DIR)/terminal_ui.c $(KERNEL_DIR)/files_ui.c $(KERNEL_DIR)/shell_ui.c $(KERNEL_DIR)/wizard.c $(KERNEL_DIR)/wallpaper.c $(KERNEL_DIR)/vmm_test.c
 ASM_SOURCES = $(KERNEL_DIR)/asm/interrupt_stubs.asm $(KERNEL_DIR)/asm/context.asm $(KERNEL_DIR)/asm/gdt.asm $(KERNEL_DIR)/asm/io.asm
 
 # Object files
@@ -72,6 +72,25 @@ USB_IMG = $(BUILD_DIR)/charisos-usb.img
 
 images: $(VM_ISO) $(USB_IMG)
 
+# Build a separate kernel/ISO with the VMM regression suite executed during
+# early boot. It must not reuse normal object files because RUN_VMM_TESTS
+# changes kernel_main's compiled control flow.
+images-vmm-test:
+	rm -rf $(BUILD_DIR)/vmm-test
+	$(MAKE) BUILD_DIR=$(BUILD_DIR)/vmm-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DRUN_VMM_TESTS" images
+
+# Dedicated boot image that deliberately faults on a task's unmapped kernel
+# stack guard. It must not share normal object files or the desktop test image.
+images-stack-guard-test:
+	rm -rf $(BUILD_DIR)/stack-guard-test
+	$(MAKE) BUILD_DIR=$(BUILD_DIR)/stack-guard-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DTEST_KERNEL_STACK_GUARD" images
+
+# Dedicated image that grants CAP_ALLOW_EXEC only to the bootstrap smoke task.
+# The default and release images continue to deny user-triggered exec.
+images-elf-exec-test:
+	rm -rf $(BUILD_DIR)/elf-exec-test
+	$(MAKE) BUILD_DIR=$(BUILD_DIR)/elf-exec-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DTEST_ELF_EXEC_SUCCESS" images
+
 ELF_SMOKE_IMAGE = $(BUILD_DIR)/elf-smoke-disk.img
 
 elf-test: $(ELF_SMOKE_IMAGE)
@@ -94,7 +113,7 @@ $(ELF_SMOKE_IMAGE): $(BUILD_DIR)/elf-smoke.elf
 # framebuffer. The difference is a build flag, not a separate tree, so the two
 # cannot drift apart.
 TEXT_ELIG  = $(filter-out $(BUILD_DIR)/fb.o $(BUILD_DIR)/font_data.o \
-                          $(BUILD_DIR)/gfx_text.o $(BUILD_DIR)/shell_ui.o, $(ALL_OBJS))
+                          $(BUILD_DIR)/gfx_text.o $(BUILD_DIR)/desktop_surface.o $(BUILD_DIR)/terminal_ui.o $(BUILD_DIR)/shell_ui.o, $(ALL_OBJS))
 TEXT_ISO   = $(BUILD_DIR)/charisos-text.iso
 TEXT_FLAGS = -DCHARIS_TEXT_ONLY
 
@@ -226,4 +245,4 @@ clean:
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-.PHONY: all check-tools images elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
+.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-elf-exec-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean

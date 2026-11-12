@@ -6,7 +6,7 @@
  * general .rodata section. Keep syscall strings on that mapped stack instead
  * of passing pointers to kernel-linked string literals. Proper ELF-loaded
  * programs receive their own mapped read-only segments. */
-__attribute__((no_stack_protector, optimize("O0"), aligned(4096)))
+__attribute__((no_stack_protector, optimize("O0"), aligned(4096), section(".usertext")))
 void user_main(void) {
     char greeting[23];
     greeting[0] = 'H'; greeting[1] = 'e'; greeting[2] = 'l';
@@ -18,6 +18,17 @@ void user_main(void) {
     greeting[18] = 'd'; greeting[19] = 'e'; greeting[20] = '!';
     greeting[21] = '\n'; greeting[22] = '\0';
     sys_print(greeting);
+    /* Exercise the real ring-3 sleep path before the yield/resume check.
+     * The text is built on the user stack because kernel .rodata is not mapped. */
+    sys_sleep(25);
+    char sleep_ok[16];
+    sleep_ok[0] = 'R'; sleep_ok[1] = 'I'; sleep_ok[2] = 'N';
+    sleep_ok[3] = 'G'; sleep_ok[4] = '3'; sleep_ok[5] = '_';
+    sleep_ok[6] = 'S'; sleep_ok[7] = 'L'; sleep_ok[8] = 'E';
+    sleep_ok[9] = 'E'; sleep_ok[10] = 'P'; sleep_ok[11] = '_';
+    sleep_ok[12] = 'O'; sleep_ok[13] = 'K'; sleep_ok[14] = '\n';
+    sleep_ok[15] = '\0';
+    sys_print(sleep_ok);
 
     char elf_path[10];
     elf_path[0] = '/'; elf_path[1] = 'T'; elf_path[2] = 'E';
@@ -74,6 +85,107 @@ void user_main(void) {
     resumed[30] = '\n'; resumed[31] = '\0';
     sys_print(resumed);
 
+    /*
+     * Regression probes for untrusted syscall pointers. 0x1000 lies in the
+     * boot identity map, whose huge-page ancestors are supervisor-only.
+     * 0x0000800000000000 is outside the lower canonical user range. Every
+     * copy helper must reject both without dereferencing a bogus PTE in ring 0.
+     */
+    const u64 bad_low = 0x1000ULL;
+    const u64 bad_noncanonical = 0x0000800000000000ULL;
+    bool syscall_pointers_ok = true;
+
+    if (sys_print((const char*)bad_low) != (u64)-1 ||
+        sys_print((const char*)bad_noncanonical) != (u64)-1) {
+        syscall_pointers_ok = false;
+    }
+    if (sys_open((const char*)bad_low) != FD_HANDLE_INVALID) syscall_pointers_ok = false;
+    char traversal_path[13];
+    traversal_path[0] = '/'; traversal_path[1] = '.'; traversal_path[2] = '.';
+    traversal_path[3] = '/'; traversal_path[4] = 'T'; traversal_path[5] = 'E';
+    traversal_path[6] = 'S'; traversal_path[7] = 'T'; traversal_path[8] = '.';
+    traversal_path[9] = 'E'; traversal_path[10] = 'L'; traversal_path[11] = 'F';
+    traversal_path[12] = '\0';
+    if (sys_open(traversal_path) != FD_HANDLE_INVALID) syscall_pointers_ok = false;
+
+    char backslash_path[15];
+    backslash_path[0] = '/'; backslash_path[1] = 'T'; backslash_path[2] = 'E';
+    backslash_path[3] = 'S'; backslash_path[4] = 'T'; backslash_path[5] = '\\';
+    backslash_path[6] = '.'; backslash_path[7] = '.'; backslash_path[8] = '\\';
+    backslash_path[9] = 'S'; backslash_path[10] = 'E'; backslash_path[11] = 'C';
+    backslash_path[12] = 'R'; backslash_path[13] = 'E'; backslash_path[14] = '\0';
+    if (sys_open(backslash_path) != FD_HANDLE_INVALID) syscall_pointers_ok = false;
+
+    char relative_path[10];
+    relative_path[0] = 'T'; relative_path[1] = 'E'; relative_path[2] = 'S';
+    relative_path[3] = 'T'; relative_path[4] = '.'; relative_path[5] = 'E';
+    relative_path[6] = 'L'; relative_path[7] = 'F'; relative_path[8] = '\0';
+    if (sys_open(relative_path) != FD_HANDLE_INVALID) syscall_pointers_ok = false;
+
+    if (syscall_invoke(SYS_WRITE, 1, bad_low, 1, 0, 0, 0) != (u64)-1 ||
+        syscall_invoke(SYS_WRITE, 1, bad_noncanonical, 1, 0, 0, 0) != (u64)-1) {
+        syscall_pointers_ok = false;
+    }
+    if (syscall_invoke(SYS_DIAG_STATS, bad_low, 0, 0, 0, 0, 0) != (u64)-1 ||
+        syscall_invoke(SYS_DIAG_STATS, bad_noncanonical, 0, 0, 0, 0, 0) != (u64)-1) {
+        syscall_pointers_ok = false;
+    }
+
+    /* IPC and networking remain unavailable to ring 3 until their global
+     * tables have per-process ownership and capability-backed handles. */
+    if (sys_ipc_create((const char*)bad_low) != (u64)-1 ||
+        sys_ipc_create("user-channel") != (u64)-1 ||
+        sys_ipc_send(0, (const void*)bad_low, 1) != (u64)-1) {
+        syscall_pointers_ok = false;
+    }
+
+    if (syscall_pointers_ok) {
+        char pointer_ok[29];
+        pointer_ok[0] = 'R'; pointer_ok[1] = 'I'; pointer_ok[2] = 'N';
+        pointer_ok[3] = 'G'; pointer_ok[4] = '3'; pointer_ok[5] = '_';
+        pointer_ok[6] = 'S'; pointer_ok[7] = 'Y'; pointer_ok[8] = 'S';
+        pointer_ok[9] = 'C'; pointer_ok[10] = 'A'; pointer_ok[11] = 'L';
+        pointer_ok[12] = 'L'; pointer_ok[13] = '_'; pointer_ok[14] = 'P';
+        pointer_ok[15] = 'T'; pointer_ok[16] = 'R'; pointer_ok[17] = '_';
+        pointer_ok[18] = 'R'; pointer_ok[19] = 'E'; pointer_ok[20] = 'J';
+        pointer_ok[21] = 'E'; pointer_ok[22] = 'C'; pointer_ok[23] = 'T';
+        pointer_ok[24] = '_'; pointer_ok[25] = 'O'; pointer_ok[26] = 'K';
+        pointer_ok[27] = '\n'; pointer_ok[28] = '\0';
+        sys_print(pointer_ok);
+    } else {
+        char pointer_fail[31];
+        pointer_fail[0] = 'R'; pointer_fail[1] = 'I'; pointer_fail[2] = 'N';
+        pointer_fail[3] = 'G'; pointer_fail[4] = '3'; pointer_fail[5] = '_';
+        pointer_fail[6] = 'S'; pointer_fail[7] = 'Y'; pointer_fail[8] = 'S';
+        pointer_fail[9] = 'C'; pointer_fail[10] = 'A'; pointer_fail[11] = 'L';
+        pointer_fail[12] = 'L'; pointer_fail[13] = '_'; pointer_fail[14] = 'P';
+        pointer_fail[15] = 'T'; pointer_fail[16] = 'R'; pointer_fail[17] = '_';
+        pointer_fail[18] = 'R'; pointer_fail[19] = 'E'; pointer_fail[20] = 'J';
+        pointer_fail[21] = 'E'; pointer_fail[22] = 'C'; pointer_fail[23] = 'T';
+        pointer_fail[24] = '_'; pointer_fail[25] = 'F'; pointer_fail[26] = 'A';
+        pointer_fail[27] = 'I'; pointer_fail[28] = 'L';
+        pointer_fail[29] = '\n'; pointer_fail[30] = '\0';
+        sys_print(pointer_fail);
+    }
+
+    /* Deliberately touch an unmapped canonical user address. The kernel
+     * must terminate only this task, never manufacture a writable page or
+     * halt the desktop. The verifier checks the kernel's isolation report. */
+    char fault_armed[19];
+    fault_armed[0] = 'R'; fault_armed[1] = 'I'; fault_armed[2] = 'N';
+    fault_armed[3] = 'G'; fault_armed[4] = '3'; fault_armed[5] = '_';
+    fault_armed[6] = 'F'; fault_armed[7] = 'A'; fault_armed[8] = 'U';
+    fault_armed[9] = 'L'; fault_armed[10] = 'T'; fault_armed[11] = '_';
+    fault_armed[12] = 'A'; fault_armed[13] = 'R'; fault_armed[14] = 'M';
+    fault_armed[15] = 'E'; fault_armed[16] = 'D'; fault_armed[17] = '\n';
+    fault_armed[18] = '\0';
+    sys_print(fault_armed);
+
+    volatile u64 fault_probe =
+        *(volatile u64*)0x0000400000000000ULL;
+    (void)fault_probe;
+
+    /* Reaching this point means the supposedly unmapped page was accepted. */
     while (1) {
         sys_yield();
     }
