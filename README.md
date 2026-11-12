@@ -431,18 +431,35 @@ matching filesystem capabilities and the VFS node must implement each requested
 operation. The descriptor stores only the granted rights; later reads and writes
 must pass both the descriptor check and the underlying operation check.
 Standard input receives read authority, while standard output/error receive
-write authority. Closing a descriptor revokes its rights before the filesystem
-close callback runs. A closeable VFS node is a per-open owned object. A global atomic
-ownership registry prevents the same node pointer from being attached to more
-than one descriptor in any task, including simultaneous allocations on
-separate CPUs. A losing opener receives an explicit already-owned status and
-must not run the other descriptor's close callback. During close, the registry
-marks the pointer as releasing; any new claim for a reused address waits until
-the old callback returns. The registry uses integer pointer keys so it never
-dereferences a node after its callback may have freed it. Cross-task sharing
-is not implemented by copying node pointers; it requires a separately owned,
-reference-counted open-file object with per-recipient attenuated rights. Descriptor tables are task-local and are rebuilt when a
-task slot is reused. Non-standard descriptor values are 64-bit task-scoped
+write authority. Closing a descriptor revokes its table entry before the
+filesystem close callback can run. Each successful open creates a kernel-owned
+`vfs_open_file_t` containing the node, shared offset, open flags, I/O lock and
+packed reference lifecycle. The task-local `fd_entry_t` stores only the open-file
+pointer, granted rights and handle generation. `fd_acquire()` validates the
+current task and required rights while holding the descriptor-table lock, then
+pins the open-file object for the complete operation. `fd_release()` drops that
+pin; the final release atomically enters a permanent closing state before
+calling the node destructor exactly once. A reference cannot be acquired from
+zero or from a closing object.
+
+A global atomic node-ownership registry still ensures that one closeable raw
+node belongs to exactly one open-file description. It prevents two independent
+open descriptions from claiming one node pointer, including simultaneous
+allocations on separate CPUs. A losing opener receives an explicit already-owned
+status and must not run the other description's close callback. During final
+close, the registry marks the pointer as releasing; a new claim for a reused
+address waits until the old callback returns. The registry uses integer pointer
+keys so it never dereferences a node after its callback may have freed it.
+The per-open-file I/O lock serializes VFS callbacks and shared-offset updates.
+Callbacks under that lock must remain bounded and must not block or yield;
+callback execution and object destruction happen outside the descriptor-table
+lock. Standard streams bind to permanent shared kernel open-file objects.
+
+Descriptor duplication, cross-task transfer and the userspace transfer ABI
+are not implemented yet. Those features must add a reference before publishing
+a recipient entry and attenuate rights per descriptor; copying raw node pointers
+is not an acceptable substitute. Descriptor tables are task-local and are
+rebuilt when a task slot is reused. Non-standard descriptor values are 64-bit task-scoped
 identifiers whose ABI encoding callers must treat as opaque. The current
 encoding is deterministic: it contains the owning task PID, a per-slot
 generation and the descriptor slot. It is not random, secret, MAC-protected or
