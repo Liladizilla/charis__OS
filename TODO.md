@@ -47,12 +47,12 @@
 - [x] Validate static ELF64 x86-64 `ET_EXEC` headers and program-header bounds
 - [x] Copy `PT_LOAD` file contents, zero pages for BSS, and map user permissions
 - [x] `sys_exec` implementation validates policy, loads segments and prepares a replacement IRET frame
-- [ ] QEMU test authorizes a ring-3 task with `CAP_ALLOW_EXEC`, enters a FAT32 ELF and observes `ELF_EXEC_OK` (current smoke test verifies denial without that capability)
+- [ ] CI #775: dedicated `TEST_ELF_EXEC_SUCCESS` image authorizes only the bootstrap smoke task, boots from the FAT32 test disk, and must enter `TEST.ELF` and emit `ELF_EXEC_OK` (default image still verifies denial)
 - [x] Build bounded `argc`/`argv`/`envp` vectors plus `AT_NULL` on the initial stack
 - [ ] `ET_DYN` and relocations/interpreters
 - [x] Make ELF loading and initial-stack construction one transaction; roll back successfully loaded PT_LOAD pages if stack setup fails
 - [ ] Add a forced stack-setup-failure regression that proves PT_LOAD frames are reclaimed
-- [ ] Tear down/reclaim old image mappings on repeated exec
+- [x] Successful exec replaces the process with a fresh address space and reclaims the prior user image only after switching CR3
 
 ## Phase 5: Graphics & Display (COMPLETE)
 - [x] fb.h/fb.c - framebuffer driver using the Multiboot2 framebuffer handoff
@@ -219,7 +219,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Bootstrap user task enters ring 3 with a private address-space branch and mapped user stack
 - [x] DPL3 syscall, yield to a kernel task, and resume the user interrupt frame (QEMU verified)
 - [x] Static ELF loader and ring-3 frame-replacement implementation exist
-- [ ] QEMU verifies successful authorized ELF entry; current configured bootstrap test is denied by `CAP_ALLOW_EXEC` policy
+- [ ] CI #775 verifies successful authorized ELF entry through the dedicated exec-test image; default build remains denied by `CAP_ALLOW_EXEC`
 - [ ] Complete user ABI/libc and validate SYSRET path
 - [ ] Per-task kernel interrupt stacks and SMP-safe TSS handling
 - [ ] wait()/waitpid() syscall for zombie reaping

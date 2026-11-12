@@ -28,7 +28,7 @@ The project is under active development. It is not currently a general-purpose o
 | UEFI boot | UEFI paths exist; CI coverage is advisory and firmware-dependent |
 | CPU and memory | x86_64 long-mode entry, PMM, VMM, heap and page-permission regression tests |
 | Interrupts and scheduling | IDT/PIC/PIT, PS/2 input and kernel-task scheduling; ring-3 yield/resume exercised in QEMU |
-| User mode | DPL3 `int 0x80` bootstrap path exercised; static ELF64 loader exists, but CI currently verifies execution denial without `CAP_ALLOW_EXEC`, not successful ELF entry |
+| User mode | DPL3 `int 0x80` bootstrap path exercised; static ELF64 `ET_EXEC` loader uses transactional address-space replacement; a separate CI-only build now exercises authorized ELF entry |
 | Storage | Primary ATA PIO and FAT32 support; current Files interface is read-only and limited to the root directory and 8.3 names |
 | Graphical shell | Framebuffer workspace with independent Terminal, Files, Browser, Settings and About windows; workspace and application coverage remain limited |
 | Window manager | Bounded ownership, back-to-front composition, focus-only input, move, lower-right resize grip, maximize/restore, minimize, taskbar switching and Alt+Tab; snap/tiling and QEMU pointer-resize validation remain unfinished |
@@ -54,7 +54,7 @@ The [run #722 capture](docs/screenshots/charisos-desktop-run-722.png) and older 
 
 The refreshed 1024×768 QEMU capture shows four direct application cards, System Overview, System Status and Kernel Activity. Kernel Activity displays context-switch, interrupt and syscall counters through an O(1) snapshot API; desktop repaint does not traverse the scheduler task list. It is suppressed when text scale or available geometry leaves insufficient room. At 200% text and 120% UI scale it is intentionally absent. CI run #732 also boots a dedicated fault-injection image: a kernel task writes to its own unmapped stack guard, the CPU enters through TSS.IST1, the dispatcher verifies the exception frame is on that stack, emits containment markers and halts with a diagnostic panic rather than triple-faulting. This proves safe exception reporting, not recovery of a corrupted kernel task. Unused desktop space, richer user-facing workspace content and the complete font/UI/framebuffer matrix remain open. This is engineering evidence, not a release-quality claim.
 
-The current ELF disk test accepts an explicit `ELF_EXEC_DENIED_CAPABILITY` result because the bootstrap task does not receive `CAP_ALLOW_EXEC`; it does not prove that an ELF executable was entered. Successful authorized ELF execution remains an explicit validation gap.
+The default ELF disk test continues to verify that the normal bootstrap task is denied by `CAP_ALLOW_EXEC`. A separate `images-elf-exec-test` build grants that capability only to the CI smoke task, runs against a FAT32 `TEST.ELF`, and requires the kernel to emit `ELF_EXEC_OK` after the task enters the loaded image. CI #775 is the first run of this authorized-entry gate; its result is tracked separately from the default denial test.
 
 
 ## What is implemented
@@ -63,7 +63,7 @@ The current ELF disk test accepts an explicit `ELF_EXEC_DENIED_CAPABILITY` resul
 - Physical memory bitmap allocator, virtual memory management and kernel heap.
 - IDT, PIC, PIT, PS/2 keyboard/mouse and diagnostic output.
 - Kernel-task scheduling and a tested ring-3 bootstrap path.
-- DPL3 `int 0x80` syscall dispatch and an implementation of a bounded static ELF64 `ET_EXEC` loader; successful authorized ring-3 execution remains unverified.
+- DPL3 `int 0x80` syscall dispatch and a bounded static ELF64 `ET_EXEC` loader. The loader builds a fresh process address space, loads segments and the initial stack there, switches CR3 only after success, then reclaims the previous image. A separate CI-only image now exercises successful authorized ELF entry; see the current CI gate for its result.
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
 - Framebuffer drawing and PSF2 bitmap-font rendering.
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
@@ -79,7 +79,7 @@ CharisOS is still an early-stage kernel and shell. In particular:
 - The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, keyboard resize, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
 - The workspace exposes direct shortcuts for Files, Terminal, Settings and Browser; the separate multi-window capture demonstrates Files and Terminal open together. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
 - Files does not yet support writable files, nested directory navigation or long filenames.
-- The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking, repeated-exec cleanup and a complete process lifecycle are unfinished. The configured CI smoke task is denied by capability policy, so successful entry into a loaded ELF remains an explicit validation gap.
+- The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking, relocations, a complete process lifecycle and a successful end-to-end authorized ELF boot on the full firmware matrix remain unfinished. Successful exec builds a new address space transactionally, preserves the old image on any failure, switches CR3 only after segment and stack construction succeed, and reclaims the old image after the switch. The default image still denies `CAP_ALLOW_EXEC`; a dedicated CI-only image now tests the authorized path.
 - The `SYSCALL/SYSRET` user-mode path is configured but not yet validated as the normal syscall entry.
 - Capability enforcement covers only selected operations. It is not a complete security boundary.
 - The current entropy source is hardware-feature-dependent. If RDRAND is unavailable, cryptographic token generation is disabled; no weak fallback is presented as cryptographic randomness.
