@@ -2,7 +2,8 @@
  *
  * This is intentionally not a complete Internet stack. It implements ARP
  * replies for a configured local IPv4 address, IPv4 header validation, and
- * ICMP echo replies. Routing, DHCP, UDP, TCP, DNS, TLS and HTTP are future work.
+ * ICMP echo replies, static routing, UDP, TCP client, DNS and plain HTTP.
+ * DHCP, IPv6, TLS and robust multi-connection transport remain future work.
  */
 #include <kernel/net_stack.h>
 #include <kernel/dns.h>
