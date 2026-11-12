@@ -6,7 +6,7 @@ Implemented kernel-internal lifetime and duplication primitives on the current s
 
 ## Why the current model must change
 
-The former `fd_entry_t` stored a raw `vfs_node_t *`, offset, flags, rights, and generation. The current entry stores an open-file pointer, rights, and generation. The open-file description owns the node, offset, and open flags. The existing node-owner registry still ensures that one closeable raw node is owned by exactly one open-file description; future duplicated descriptors must share the description rather than reclaiming the raw node.
+The former `fd_entry_t` stored a raw `vfs_node_t *`, offset, flags, rights, and generation. The current entry stores an open-file pointer, rights, and generation. The open-file description owns the node, offset, and open flags. The existing node-owner registry still ensures that one closeable raw node is owned by exactly one open-file description. `fd_duplicate_to()` shares that description rather than reclaiming or reattaching the raw node.
 
 Descriptor handles are deterministic task-scoped identifiers. They are not secrets, unforgeable capabilities, or sufficient authorization by themselves. That property must remain explicit in the ABI and documentation.
 
