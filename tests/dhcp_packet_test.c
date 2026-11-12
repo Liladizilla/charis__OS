@@ -2,6 +2,15 @@
 #include <stdio.h>
 #include <string.h>
 #include <kernel/dhcp.h>
+#include <kernel/string.h>
+
+void* kmemset(void* dst, u8 value, usize length) {
+    return memset(dst, value, length);
+}
+
+void* kmemcpy(void* dst, const void* src, usize length) {
+    return memcpy(dst, src, length);
+}
 
 static void put32(u8* p, u32 v) {
     p[0]=(u8)(v>>24); p[1]=(u8)(v>>16); p[2]=(u8)(v>>8); p[3]=(u8)v;
