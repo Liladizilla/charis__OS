@@ -191,8 +191,11 @@ types.h ─┬─ vga.c      serial.c     string.c
 `syscall_dispatch()` looks the handler up in a 256-entry table.
 
 Numbering follows Linux where the two overlap (`READ`=0, `WRITE`=1, `OPEN`=2,
-`CLOSE`=3, `GETPID`=39, `FORK`=57, `EXEC`=59, `EXIT`=60) and uses a
+`CLOSE`=3, `GETPID`=39, `FORK`=57, `EXEC`=59, `EXIT`=60, `WAITPID`=61) and uses a
 CharisOS-specific band above 70 for sockets, IPC, diagnostics and the game SDK.
+`WAITPID(pid, status, options)` accepts an exact child PID or `-1` for any child;
+`WNOHANG` is the only supported option. The status destination is validated
+before the kernel blocks or consumes a zombie.
 This is a custom ABI — it is **not** Linux-ABI compatible.
 
 ### Scheduling
@@ -202,6 +205,17 @@ selects the first `TASK_STATE_READY` task, so blocked tasks stay in place and ar
 skipped rather than dequeued. Simple and correct for the current 32-task
 ceiling, but every tick is O(n) over all tasks, so it would need a real priority
 structure before the task limit is raised.
+
+### Process lifecycle
+
+Each task records the PID of the task that created it. `WAITPID` can collect
+only a direct child, returns its exit status, and recycles the fixed task-table
+slot only after the scheduler has switched away from and released the child's
+supervisor-only kernel stack. A blocked parent is woken for a matching child
+exit; the child is not published as reapable until that deferred release has
+completed. Parents that exit reparent live descendants to the kernel adopter;
+parentless zombies are auto-reaped after their stacks are detached. `fork()`,
+process groups, and user-controlled process creation remain unimplemented.
 
 ---
 
