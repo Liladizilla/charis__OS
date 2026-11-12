@@ -349,19 +349,23 @@ static void test_capacity_and_cleanup(void) {
 
     fd_table_close_all(task.fd_table);
     assert(close_count == MAX_FDS - 3);
-    /* Slot exhaustion must roll back the node claim without consuming the
-     * caller's node. The same node can be allocated successfully afterward. */
-    fd_handle_t retry = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
-    assert(retry != FD_HANDLE_INVALID);
-    assert(fd_close(retry));
-    assert(close_count == MAX_FDS - 2);
     for (u32 i = 3; i < MAX_FDS; i++) {
         fd_handle_t stale = ((u64)61 << 32) |
             ((u64)task.fd_table[i].generation << FD_HANDLE_SLOT_BITS) | i;
         assert(!fd_has_rights(stale, FD_RIGHT_READ));
         assert(task.fd_table[i].rights == 0);
+        assert(task.fd_table[i].file == NULL);
         assert(task.fd_table[i].generation == 1);
     }
+
+    /* Slot exhaustion must roll back the node claim without consuming the
+     * caller's node. The same node can be allocated successfully afterward. */
+    fd_handle_t retry = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
+    assert(retry != FD_HANDLE_INVALID);
+    assert(FD_HANDLE_SLOT(retry) == 3);
+    assert(task.fd_table[3].generation == 2);
+    assert(fd_close(retry));
+    assert(close_count == MAX_FDS - 2);
 }
 
 static void test_generation_exhaustion_fails_closed(void) {
