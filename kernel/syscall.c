@@ -300,16 +300,14 @@ static u64 syscall_ipc_create_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u6
     if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     if (!a1) return (u64)-1;
+    /* This handler is kernel-only above. Remove the unreachable ring-3
+     * string-copy branch until IPC has per-task channel ownership. */
+    if (a1 >= 0xFFFF800000000000ULL) return (u64)-1;
     char name[32];
-    task_t* task = scheduler_current();
-    if (task && task->is_user) {
-        if (!syscall_copy_user_string(task, a1, name, sizeof(name))) return (u64)-1;
-    } else {
-        if (a1 >= 0xFFFF800000000000ULL) return (u64)-1;
-        usize i = 0;
-        for (; i < sizeof(name)-1 && ((const char*)a1)[i]; i++) name[i] = ((const char*)a1)[i];
-        name[i] = 0;
-    }
+    const char* source = (const char*)a1;
+    usize i = 0;
+    for (; i < sizeof(name) - 1 && source[i]; i++) name[i] = source[i];
+    name[i] = 0;
     return ipc_create(name);
 }
 
@@ -583,12 +581,7 @@ static u64 syscall_diag_stats_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u6
     if (!syscall_kernel_only()) return (u64)-1;
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
     if (!a1) return (u64)-1;
-    task_t* task = scheduler_current();
-    if (task && task->is_user) {
-        system_stats_t stats;
-        diag_collect_stats(&stats);
-        return syscall_copy_to_user_data(task, a1, &stats, sizeof(stats)) ? 0 : (u64)-1;
-    }
+    /* Ring-3 callers are rejected by the kernel-only gate above. */
     diag_collect_stats((system_stats_t*)a1);
     return 0;
 }
