@@ -191,7 +191,11 @@ static int elf_load_internal(const char* path, process_mm_t* mm, u64* entry_poin
          !security_check_capability(current, CAP_ALLOW_EXEC))) return -1;
 
     vfs_node_t* node = vfs_resolve(path);
-    if (!node || !(node->flags & VFS_FILE) || !node->read) return -1;
+    if (!node) return -1;
+    if (!(node->flags & VFS_FILE) || !node->read) {
+        if (node->close) node->close(node);
+        return -1;
+    }
 
     fd_handle_t fd = fd_alloc(node, 0, FD_RIGHT_READ);
     if (fd == FD_HANDLE_INVALID) {

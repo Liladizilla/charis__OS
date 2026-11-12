@@ -458,7 +458,8 @@ assuming a particular allocator. The IL bytecode loader validates the path,
 requires a kernel caller, rejects files larger than its fixed instruction
 array or files ending mid-instruction, requires a complete read, and releases
 the per-open node on both success and failure. The Browser's local-file preview
-also releases resolved nodes through their VFS close callback.
+and ELF loader's pre-descriptor validation path also release resolved nodes
+through their VFS close callback.
 
 Before a ring-3 `sys_read` touches its input source, the kernel validates the
 entire writable destination range across page boundaries, using effective
