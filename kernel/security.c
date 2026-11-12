@@ -79,12 +79,15 @@ void security_init(void) {
 }
 
 bool security_check_capability(task_t* task, u32 cap) {
-    if (!task) return false;
-    return (task->capabilities & cap) != 0;
+    /* Capability requests are conjunctions: every requested authority must
+     * be present. Empty and undefined masks fail closed. */
+    if (!task || !cap || (cap & ~CAP_ALL)) return false;
+    return (task->capabilities & cap) == cap;
 }
 
 void security_enforce_capabilities(task_t* task) {
     if (!task) return;
+    /* Strip bits the current kernel does not define before the task runs. */
     task->capabilities &= CAP_ALL;
 }
 

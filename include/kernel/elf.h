@@ -54,6 +54,11 @@ typedef struct {
 
 // Load ELF from disk into process address space
 int elf_load(const char* path, process_mm_t* mm, u64* entry_point);
+/* Transactional exec: segment mappings are rolled back if the initial stack
+ * cannot be constructed. entry_point/user_rsp are written only on success. */
+int elf_load_exec(const char* path, process_mm_t* mm, u64* entry_point,
+                  u64* user_rsp, const char* const argv[], int argc,
+                  const char* const envp[], int envc);
 
 // Set up initial stack for a new process
 int elf_setup_stack(process_mm_t* mm, u64* user_rsp,

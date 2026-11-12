@@ -10,10 +10,15 @@
 #define TASK_STATE_BLOCKED      2
 #define TASK_STATE_ZOMBIE       3
 #define TASK_STATE_UNUSED       4 /* Free task-table slot; distinct from an exited process. */
+#define TASK_STATE_ALLOCATING   5 /* Reserved atomically while a new task is built. */
 
 #define TASK_NAME_MAX           32
 #define TASK_STACK_SIZE         8192
 #define TASK_MAX_TASKS          32
+/* Three-page slots are shared by kernel task stacks and the emergency IST1
+ * stack: one unmapped guard page followed by two supervisor-only stack pages. */
+#define TASK_STACK_ARENA_BASE    0xFFFF900000400000ULL
+#define TASK_STACK_SLOT_PAGES    3U
 #define TASK_USER_CODE_MAX_PAGES 4
 #define TASK_DEFAULT_QUANTUM    10
 #define TASK_WAITING_SLEEP       0x534C4550U /* 'SLEP': blocked until event_data deadline */
@@ -52,8 +57,10 @@ typedef struct task {
     u64 runtime_ticks;
     u32 remaining_quantum;
     u32 capabilities;
-    u64 guard_page_addr;
+    u64 guard_page_addr; /* Reserved virtual page; intentionally not present. */
     u64 stack_canary_addr;
+    /* Two supervisor-only physical frames backing this task's kernel stack. */
+    u64 kernel_stack_pages[2];
     u64 event_data;
     u32 waiting_event;
     bool is_user;

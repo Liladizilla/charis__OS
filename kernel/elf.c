@@ -33,7 +33,7 @@ static bool elf_write_user(pml4_t* pml4, u64 address, const void* source, usize 
 
 static int fd_read_all(int fd, u64 offset, void* buf, usize count) {
     fd_entry_t* f = fd_get(fd);
-    if (!f || !f->node || !f->node->read) return -1;
+    if (!f || !(f->rights & FD_RIGHT_READ) || !f->node->read) return -1;
     usize total = 0;
     while (total < count) {
         int read = f->node->read(f->node, offset + total, count - total,
@@ -175,8 +175,12 @@ static bool elf_validate_segments(pml4_t* pml4, const elf64_phdr_t* phdrs,
     return total_memory != 0;
 }
 
-int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
-    if (!path || !mm || !mm->pml4 || !entry_point) return -1;
+static int elf_load_internal(const char* path, process_mm_t* mm, u64* entry_point,
+                             u64* user_rsp, const char* const argv[], int argc,
+                             const char* const envp[], int envc,
+                             bool setup_initial_stack) {
+    if (!path || !mm || !mm->pml4 || !entry_point ||
+        (setup_initial_stack && !user_rsp)) return -1;
 
     /* Keep policy at the loader boundary too; callers must not be able to
      * bypass syscall path checks or execution capabilities. */
@@ -189,8 +193,11 @@ int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
     vfs_node_t* node = vfs_resolve(path);
     if (!node || !(node->flags & VFS_FILE) || !node->read) return -1;
 
-    int fd = fd_alloc(node, 0);
-    if (fd < 0) return -1;
+    int fd = fd_alloc(node, 0, FD_RIGHT_READ);
+    if (fd < 0) {
+        if (node->close) node->close(node);
+        return -1;
+    }
 
     int result = -1;
     bool load_started = false;
@@ -228,6 +235,14 @@ int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
     }
 
     if (!entry_is_executable) goto done;
+    /*
+     * Treat PT_LOAD mappings and the initial user stack as one exec
+     * transaction. elf_setup_stack() rolls back its own partial stack pages;
+     * if it cannot construct the stack, the common failure path below also
+     * removes every segment mapped by this load.
+     */
+    if (setup_initial_stack &&
+        elf_setup_stack(mm, user_rsp, argv, argc, envp, envc) < 0) goto done;
     *entry_point = ehdr.e_entry;
     result = 0;
 
@@ -238,6 +253,18 @@ done:
     fd_close(fd);
     if (result < 0) vga_puts("ELF: invalid or unreadable executable\n");
     return result;
+}
+
+int elf_load(const char* path, process_mm_t* mm, u64* entry_point) {
+    return elf_load_internal(path, mm, entry_point, NULL, NULL, 0,
+                             NULL, 0, false);
+}
+
+int elf_load_exec(const char* path, process_mm_t* mm, u64* entry_point,
+                  u64* user_rsp, const char* const argv[], int argc,
+                  const char* const envp[], int envc) {
+    return elf_load_internal(path, mm, entry_point, user_rsp, argv, argc,
+                             envp, envc, true);
 }
 
 static void elf_rollback_stack(pml4_t* pml4, u64 stack_base, u32 mapped_pages) {

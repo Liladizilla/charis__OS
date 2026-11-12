@@ -154,34 +154,41 @@ int fd_table_init(void) {
     return 0;
 }
 
-int fd_alloc(vfs_node_t* node, u32 flags) {
+int fd_alloc(vfs_node_t* node, u32 flags, u32 rights) {
     task_t* task = scheduler_current();
-    if (!task) return -1;
-    
-    for (int i = 3; i < MAX_FDS; i++) { // Start from 3, 0-2 are reserved
-        if (task->fd_table[i].node == NULL) {
-            task->fd_table[i].node = node;
-            task->fd_table[i].offset = 0;
-            task->fd_table[i].flags = flags;
-            return i;
-        }
+    if (!task || !node || !rights || (rights & ~FD_RIGHT_MASK)) return -1;
+
+    /* Never mint a handle for an operation the underlying object lacks. */
+    if ((rights & FD_RIGHT_READ) && !node->read) return -1;
+    if ((rights & FD_RIGHT_WRITE) && !node->write) return -1;
+
+    for (int i = 3; i < MAX_FDS; i++) {
+        fd_entry_t* entry = &task->fd_table[i];
+        if (entry->node) continue;
+        entry->node = node;
+        entry->offset = 0;
+        entry->flags = flags;
+        entry->rights = rights;
+        return i;
     }
     return -1;
 }
 
-void fd_close(int fd) {
+bool fd_close(int fd) {
     task_t* task = scheduler_current();
-    if (!task || fd < 0 || fd >= MAX_FDS) return;
+    if (!task || fd < 3 || fd >= MAX_FDS) return false;
 
     fd_entry_t* entry = &task->fd_table[fd];
     vfs_node_t* node = entry->node;
+    if (!node) return false;
+
+    /* Revoke the handle before running filesystem-owned close code. */
     entry->node = NULL;
     entry->offset = 0;
     entry->flags = 0;
-
-    /* Clear the slot before invoking filesystem code so a callback cannot
-     * observe this descriptor as still open or cause it to be closed twice. */
-    if (node && node->close) node->close(node);
+    entry->rights = 0;
+    if (node->close) node->close(node);
+    return true;
 }
 
 void fd_table_close_all(fd_entry_t* table) {
@@ -194,6 +201,7 @@ void fd_table_close_all(fd_entry_t* table) {
         table[i].node = NULL;
         table[i].offset = 0;
         table[i].flags = 0;
+        table[i].rights = 0;
         if (node && node->close) node->close(node);
     }
 
@@ -202,16 +210,26 @@ void fd_table_close_all(fd_entry_t* table) {
     table[FD_STDIN].node = &dev_kbd;
     table[FD_STDIN].offset = 0;
     table[FD_STDIN].flags = 0;
+    table[FD_STDIN].rights = FD_RIGHT_READ;
     table[FD_STDOUT].node = &dev_vga;
     table[FD_STDOUT].offset = 0;
     table[FD_STDOUT].flags = 0;
+    table[FD_STDOUT].rights = FD_RIGHT_WRITE;
     table[FD_STDERR].node = &dev_vga;
     table[FD_STDERR].offset = 0;
     table[FD_STDERR].flags = 0;
+    table[FD_STDERR].rights = FD_RIGHT_WRITE;
 }
 
 fd_entry_t* fd_get(int fd) {
     task_t* task = scheduler_current();
     if (!task || fd < 0 || fd >= MAX_FDS) return NULL;
-    return &task->fd_table[fd];
+    fd_entry_t* entry = &task->fd_table[fd];
+    return entry->node ? entry : NULL;
+}
+
+bool fd_has_rights(int fd, u32 rights) {
+    if (!rights || (rights & ~FD_RIGHT_MASK)) return false;
+    fd_entry_t* entry = fd_get(fd);
+    return entry && (entry->rights & rights) == rights;
 }

@@ -12,6 +12,11 @@
 #define FD_STDOUT 1
 #define FD_STDERR 2
 
+/* Explicit per-open rights, intersected with the process capability set. */
+#define FD_RIGHT_READ  (1U << 0)
+#define FD_RIGHT_WRITE (1U << 1)
+#define FD_RIGHT_MASK  (FD_RIGHT_READ | FD_RIGHT_WRITE)
+
 typedef struct vfs_node {
     char name[256];
     u32 flags;
@@ -31,6 +36,7 @@ typedef struct fd_entry {
     vfs_node_t* node;
     u64 offset;
     u32 flags;
+    u32 rights;
 } fd_entry_t;
 
 void vfs_init(void);
@@ -38,8 +44,9 @@ vfs_node_t* vfs_resolve(const char* path);
 int vfs_mount(const char* path, vfs_node_t* fs_root);
 
 int fd_table_init(void);
-int fd_alloc(vfs_node_t* node, u32 flags);
-void fd_close(int fd);
+int fd_alloc(vfs_node_t* node, u32 flags, u32 rights);
+bool fd_close(int fd);
 /* Close non-standard descriptors owned by a task and restore standard streams. */
 void fd_table_close_all(fd_entry_t* table);
-fd_entry_t* fd_get(int fd); // Gets from current task's fd table
+fd_entry_t* fd_get(int fd); // Returns only a live descriptor in the current task.
+bool fd_has_rights(int fd, u32 rights);

@@ -43,7 +43,8 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     task_t* task = scheduler_current();
 
     fd_entry_t* f = fd_get(fd);
-    if (!f || !f->node || count > SYSCALL_IO_MAX) return -1;
+    if (!f || !f->node || !(f->rights & FD_RIGHT_READ) ||
+        count > SYSCALL_IO_MAX) return -1;
     if (count == 0) return 0;
 
     if (task && task->is_user) {
@@ -94,7 +95,8 @@ static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
     task_t* task = scheduler_current();
 
     fd_entry_t* f = fd_get(fd);
-    if (!f || !f->node || count > SYSCALL_IO_MAX) return (u64)-1;
+    if (!f || !f->node || !(f->rights & FD_RIGHT_WRITE) ||
+        count > SYSCALL_IO_MAX) return (u64)-1;
     if (count == 0) return 0;
 
     u8* bounce = NULL;
@@ -192,16 +194,23 @@ static u64 syscall_sleep_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
 }
 
 static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
-    (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    if (!a1) return -1;
-    
+    (void)a3; (void)a4; (void)a5; (void)a6;
+    if (!a1) return (u64)-1;
+
     task_t* task = scheduler_current();
-    if (!task) return -1;
-    
-    // Capability check: need FS_READ to open files
-    if (!security_check_capability(task, CAP_FS_READ)) {
-        return -1; // EPERM
-    }
+    if (!task) return (u64)-1;
+
+    /* Preserve sys_open(path) compatibility as a read-only request. */
+    u64 requested = a2 ? a2 : FD_RIGHT_READ;
+    if (!requested || (requested & ~(u64)FD_RIGHT_MASK)) return (u64)-1;
+    u32 rights = (u32)requested;
+
+    /* Process capabilities authorize a request; the descriptor stores only
+     * the exact subset granted by this open operation. */
+    if ((rights & FD_RIGHT_READ) &&
+        !security_check_capability(task, CAP_FS_READ)) return (u64)-1;
+    if ((rights & FD_RIGHT_WRITE) &&
+        !security_check_capability(task, CAP_FS_WRITE)) return (u64)-1;
 
     char path[256];
     if (task->is_user) {
@@ -213,23 +222,31 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
         for (; i < sizeof(path)-1 && path_str[i]; i++) path[i] = path_str[i];
         path[i] = 0;
     }
-    
-    /* Validate the path before handing it to the filesystem parser. A
-     * rejected traversal must never reach fs_open()/finddir() first. */
+
+    /* Validate the path before handing it to the filesystem parser. */
     if (!security_verify_path(path, task)) return (u64)-1;
 
     vfs_node_t* node = vfs_resolve(path);
     if (!node) return (u64)-1;
+    if (((rights & FD_RIGHT_READ) && !node->read) ||
+        ((rights & FD_RIGHT_WRITE) && !node->write)) {
+        if (node->close) node->close(node);
+        return (u64)-1;
+    }
+    if (node->open && node->open(node, rights) != 0) {
+        if (node->close) node->close(node);
+        return (u64)-1;
+    }
 
-    int fd = fd_alloc(node, 0);
+    int fd = fd_alloc(node, 0, rights);
     if (fd < 0 && node->close) node->close(node);
     return fd < 0 ? (u64)-1 : (u64)fd;
 }
 
 static u64 syscall_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    fd_close((int)a1);
-    return 0;
+    if (a1 < 3 || a1 >= MAX_FDS) return (u64)-1;
+    return fd_close((int)a1) ? 0 : (u64)-1;
 }
 
 static u64 syscall_shm_alloc_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
@@ -457,19 +474,16 @@ bool syscall_exec_from_frame(reg_frame_t* frame) {
     }
 
     u64 entry_point;
-    if (elf_load(path, &task->mm, &entry_point) < 0) {
+    u64 stack_top;
+    if (elf_load_exec(path, &task->mm, &entry_point, &stack_top,
+            (const char* const*)argv, (int)argc,
+            (const char* const*)envp, (int)envc) < 0) {
         kfree(storage);
         kfree(strings);
         return false;
     }
-
-    u64 stack_top;
-    bool stack_ready = elf_setup_stack(&task->mm, &stack_top,
-        (const char* const*)argv, (int)argc,
-        (const char* const*)envp, (int)envc) == 0;
     kfree(storage);
     kfree(strings);
-    if (!stack_ready) return false;
 
     vmm_switch(task->mm.pml4);
     task->mm.stack_top = stack_top;

@@ -28,12 +28,12 @@ The project is under active development. It is not currently a general-purpose o
 | UEFI boot | UEFI paths exist; CI coverage is advisory and firmware-dependent |
 | CPU and memory | x86_64 long-mode entry, PMM, VMM, heap and page-permission regression tests |
 | Interrupts and scheduling | IDT/PIC/PIT, PS/2 input and kernel-task scheduling; ring-3 yield/resume exercised in QEMU |
-| User mode | DPL3 `int 0x80` path exercised; static x86_64 `ET_EXEC` smoke program loaded from FAT32 and entered in ring 3 |
+| User mode | DPL3 `int 0x80` bootstrap path exercised; static ELF64 loader exists, but CI currently verifies execution denial without `CAP_ALLOW_EXEC`, not successful ELF entry |
 | Storage | Primary ATA PIO and FAT32 support; current Files interface is read-only and limited to the root directory and 8.3 names |
 | Graphical shell | Framebuffer workspace with independent Terminal, Files, Browser, Settings and About windows; workspace and application coverage remain limited |
 | Window manager | Bounded ownership, back-to-front composition, focus-only input, move, lower-right resize grip, maximize/restore, minimize, taskbar switching and Alt+Tab; snap/tiling and QEMU pointer-resize validation remain unfinished |
 | Settings | Font family, text size and interface scale; CI verifies saved values survive a reboot on a writable FAT32 test disk |
-| Security | Capability checks and input validation exist in selected paths; enforcement and isolation are incomplete |
+| Security | Selected capability checks and input validation; page faults use a dedicated TSS.IST1 stack with QEMU guard-fault verification; overall enforcement and isolation remain incomplete |
 | Networking | RTL8139 transmit path only; receive and TCP/IP stack are not implemented |
 | USB and peripherals | USB and gamepad support are stubs; audio support is incomplete |
 | Userspace | No complete libc, package manager, installer or general-purpose userspace environment |
@@ -42,24 +42,20 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The checked-in gallery is a compact historical overview of the framebuffer desktop. The **latest, full-resolution QEMU evidence** is attached to [CI run #43005333279](https://github.com/Liladizilla/charis__OS/actions/runs/43005333279). Download the `charisos-desktop-preview`, `boot-logs` and `charisos-images` workflow artifacts from that run. The desktop-preview artifact includes separate 1024×768 captures for the workspace, Files, simultaneous Files/Terminal windows, maximized Terminal, Settings, adjusted preferences, post-reboot Settings and Terminal.
+The latest checked-in PNG remains the 1024×768 capture from commit `1f0414c` (CI run #724). The latest full [QEMU desktop artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43087769709) is run #732 on commit `d8c21dc`; it contains the refreshed workspace, app and multi-window captures, Settings persistence after reboot, and the kernel-stack guard/IST fault-injection boot logs.
 
-![CharisOS desktop, multi-window, maximized Terminal and Settings captures](docs/screenshots/charisos-preview-gallery.jpg)
+![CharisOS QEMU desktop workspace, CI run 724](docs/screenshots/charisos-desktop-run-724.png)
+
+The [run #722 capture](docs/screenshots/charisos-desktop-run-722.png) and older [preview gallery](docs/screenshots/charisos-preview-gallery.jpg) remain available as historical comparisons.
 
 ## Latest desktop validation
 
-The latest successful CI run is [run #43005333279](https://github.com/Liladizilla/charis__OS/actions/runs/43005333279), on commit `1fcdbdef`. All 20 workflow stages passed: kernel build with `-Werror`, generic x86-64 baseline audit, browser extraction tests, WM lifecycle/geometry/focus/maximize tests, ELF image construction and inspection, BIOS/ring-3/ELF execution, VMM huge-page and page-permission runtime tests, QEMU desktop capture, and artifact publication.
+[CI run #732](https://github.com/Liladizilla/charis__OS/actions/runs/43087769709) passed on commit `d8c21dc`. It completed dependency installation, the freestanding kernel build, x86-64 baseline audit, browser and window-manager host tests, BIOS/ring-3 checks, VMM huge-page/permission regressions, the dedicated kernel-stack guard/IST1 fault-injection test, QEMU desktop captures and Settings persistence checks.
 
-The QEMU capture covers:
-- The bare workspace and taskbar.
-- Files and Terminal open simultaneously, with Alt+Tab moving focus between them. Alt+F8 provides keyboard resizing with arrow keys, Enter to commit and Escape to cancel.
-- A second Files refresh routed to Files while Terminal remains open behind/above it.
-- Terminal executing the built-in `help` command while Files remains open.
-- Super+Up maximizing Terminal to the workspace area and Super+Down restoring its previous size and position. Serial output confirms both state transitions.
-- Settings at default and adjusted display preferences.
-- A reboot round-trip confirming `font_scale=2` and `ui_scale=120` reload from `/CHARISOS.CFG`.
+The refreshed 1024×768 QEMU capture shows four direct application cards, System Overview, System Status and Kernel Activity. Kernel Activity displays context-switch, interrupt and syscall counters through an O(1) snapshot API; desktop repaint does not traverse the scheduler task list. It is suppressed when text scale or available geometry leaves insufficient room. At 200% text and 120% UI scale it is intentionally absent. CI run #732 also boots a dedicated fault-injection image: a kernel task writes to its own unmapped stack guard, the CPU enters through TSS.IST1, the dispatcher verifies the exception frame is on that stack, emits containment markers and halts with a diagnostic panic rather than triple-faulting. This proves safe exception reporting, not recovery of a corrupted kernel task. Unused desktop space, richer user-facing workspace content and the complete font/UI/framebuffer matrix remain open. This is engineering evidence, not a release-quality claim.
 
-These are automated engineering captures, not release marketing images. The bare workspace remains intentionally sparse. Files is a read-only root browser, the shell and app renderers are still kernel-owned, and pointer-driven resize has not yet been exercised by QEMU automation.
+The current ELF disk test accepts an explicit `ELF_EXEC_DENIED_CAPABILITY` result because the bootstrap task does not receive `CAP_ALLOW_EXEC`; it does not prove that an ELF executable was entered. Successful authorized ELF execution remains an explicit validation gap.
+
 
 ## What is implemented
 
@@ -67,22 +63,23 @@ These are automated engineering captures, not release marketing images. The bare
 - Physical memory bitmap allocator, virtual memory management and kernel heap.
 - IDT, PIC, PIT, PS/2 keyboard/mouse and diagnostic output.
 - Kernel-task scheduling and a tested ring-3 bootstrap path.
-- DPL3 `int 0x80` syscall dispatch and a static ELF64 `ET_EXEC` smoke path.
+- DPL3 `int 0x80` syscall dispatch and an implementation of a bounded static ELF64 `ET_EXEC` loader; successful authorized ring-3 execution remains unverified.
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
 - Framebuffer drawing and PSF2 bitmap-font rendering.
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
 - Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, a lower-right pointer resize grip, Alt+F8 keyboard resizing, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation; QEMU verifies simultaneous windows and keyboard maximize/restore.
 - Persistent display preferences on supported writable FAT32 storage.
-- CI boot, memory-permission, ring-3, ELF, desktop-capture and host-side WM lifecycle/bounds checks.
+- Workspace System Status panel reads PMM allocator counters and the active display profile without walking task state during repaint.
+- CI verifies the freestanding build, x86-64 baseline, BIOS/ring-3 path, VMM permission regressions, host-side WM tests and QEMU desktop/settings capture; [run #724](https://github.com/Liladizilla/charis__OS/actions/runs/43071788055) passed on commit `1f0414c`.
 
 ## Important limitations
 
 CharisOS is still an early-stage kernel and shell. In particular:
 
 - The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, keyboard resize, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
-- The bare-workspace QEMU capture still shows a sparse workspace with one Files shortcut; the separate multi-window capture demonstrates Files and Terminal open together. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
+- The workspace exposes direct shortcuts for Files, Terminal, Settings and Browser; the separate multi-window capture demonstrates Files and Terminal open together. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
 - Files does not yet support writable files, nested directory navigation or long filenames.
-- The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking and a complete process lifecycle are unfinished.
+- The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking, repeated-exec cleanup and a complete process lifecycle are unfinished. The configured CI smoke task is denied by capability policy, so successful entry into a loaded ELF remains an explicit validation gap.
 - The `SYSCALL/SYSRET` user-mode path is configured but not yet validated as the normal syscall entry.
 - Capability enforcement covers only selected operations. It is not a complete security boundary.
 - The current entropy source is hardware-feature-dependent. If RDRAND is unavailable, cryptographic token generation is disabled; no weak fallback is presented as cryptographic randomness.
@@ -404,22 +401,44 @@ Combine with `make gdb` and:
 
 ## Security
 
-Capability bits are defined in `include/kernel/security.h` and assigned per task
-at creation; children inherit the parent's set across `fork`.
+Capability bits are defined in `include/kernel/security.h` and sanitized against
+the kernel's defined-bit mask when a task is constructed. Capability checks use
+conjunctive semantics: a request containing multiple bits succeeds only when
+every requested bit is held. Empty requests and requests containing undefined
+bits fail closed. The `fork` syscall is not implemented and currently returns
+failure; child capability inheritance is therefore not claimed.
 
-| Capability | Guards |
+| Authority | Enforcement |
 |---|---|
-| `CAP_FS_READ` | `sys_open` |
-| `CAP_SPAWN` | `sys_exec`, `sys_fork` |
-| `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | reserved |
+| `CAP_FS_READ` | Required to request a read-capable file descriptor |
+| `CAP_FS_WRITE` | Required to request a write-capable descriptor and rechecked for non-console writes |
+| `FD_RIGHT_READ` | Per-descriptor grant checked by `sys_read` and the ELF loader |
+| `FD_RIGHT_WRITE` | Per-descriptor grant checked by `sys_write` |
+| `CAP_SPAWN` + `CAP_ALLOW_EXEC` | `sys_exec` authorization |
+| `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | Reserved |
 
-`security_verify_path()` rejects parent-directory traversal. When RDRAND is available, it can seed the stack guard. If RDRAND is
+`sys_open(path)` remains read-only by default. `sys_open_rights(path, rights)`
+can request an explicit read/write combination, but the process must hold the
+matching filesystem capabilities and the VFS node must implement each requested
+operation. The descriptor stores only the granted rights; later reads and writes
+must pass both the descriptor check and the underlying operation check.
+Standard input receives read authority, while standard output/error receive
+write authority. Closing a descriptor revokes its rights before the filesystem
+close callback runs. Descriptor tables are task-local and are rebuilt when a
+task slot is reused.
+
+`security_verify_path()` rejects parent-directory traversal and alternate
+separators. When RDRAND is available, it can seed the stack guard. If RDRAND is
 unavailable, cryptographic token generation is disabled. The kernel does not
 claim that a weak fallback provides cryptographic entropy.
 
-**Known gaps:** enforcement currently covers `open` and `exec` only — the VFS
-read/write paths, socket syscalls, and shared memory are unchecked. The
-capability set is not persisted or namespaced per-user.
+**Known gaps:** per-open rights are not yet transferable or inherited, and the
+broader resource model is incomplete. Capability bits are still assigned by
+kernel task constructors; there is no user-controlled delegation, attenuation
+API or per-resource capability object yet. Global IPC, socket, networking,
+diagnostics and shared-memory interfaces remain kernel-only rather than being
+exposed to ring 3. Process isolation, safe reaping and broader capability
+enforcement remain unfinished.
 
 See [`SECURITY.md`](./SECURITY.md) for reporting guidance.
 

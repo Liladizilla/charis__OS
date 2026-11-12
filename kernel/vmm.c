@@ -250,6 +250,11 @@ u64 vmm_unmap_page_pml4(pml4_t* pml4, u64 virt) {
     return phys;
 }
 
+u64 vmm_unmap_page_current(u64 virt) {
+    u64 cr3 = get_cr3() & ~0xFFFULL;
+    return vmm_unmap_page_pml4((pml4_t*)(uintptr_t)cr3, virt);
+}
+
 u64 vmm_get_phys(u64 virt) {
     u64* pml4 = phys_to_virt_pt(get_cr3());
     if (!pml4) return 0;

@@ -13,7 +13,7 @@
 - [x] sys_exit(), sys_getpid(), sys_yield(), sys_sleep()
 - [x] sys_read()/sys_write() with fd-based I/O
 - [x] sys_print() - debug output
-- [x] sys_fork() - creates child with separate PML4
+- [ ] sys_fork() - create and validate child register context, address-space ownership and resources
 - [x] task_create_with_pml4() - create task with custom address space
 - [x] Per-process fd table (stdin/stdout/stderr pre-opened)
 
@@ -21,16 +21,23 @@
 - [x] VFS layer (vfs.h, vfs.c) - vfs_node_t, mount points
 - [x] Device nodes: /dev/null, /dev/zero, /dev/kbd, /dev/vga
 - [x] Per-task fd table with fd_alloc(), fd_get(), fd_close()
-- [x] FAT32 integration with VFS (read-only)
-- [x] sys_open() / sys_close() syscalls
+- [x] Explicit per-descriptor read/write rights, checked independently of process capabilities
+- [x] Reject zero, unknown and unavailable rights; standard streams cannot be closed through sys_close
+- [x] Revoke rights on close and reset descriptor metadata on task exit and task-slot reuse
+- [x] Host regression tests for rights, table capacity, task isolation and close ordering
+- [x] FAT32 integration with VFS (read-only listing; mutation support remains incomplete)
+- [x] sys_open() defaults to read-only; sys_open_rights() requests capability-backed rights
+- [x] sys_close() rejects invalid, closed and standard descriptors
 
 ## Phase 4: ELF Loader (IN PROGRESS)
 - [x] Validate static ELF64 x86-64 `ET_EXEC` headers and program-header bounds
 - [x] Copy `PT_LOAD` file contents, zero pages for BSS, and map user permissions
-- [x] `sys_exec` replaces the ring-3 IRET frame with the ELF entry and stack
-- [x] QEMU FAT32 smoke test enters an ELF and prints `ELF_EXEC_OK`
+- [x] `sys_exec` implementation validates policy, loads segments and prepares a replacement IRET frame
+- [ ] QEMU test authorizes a ring-3 task with `CAP_ALLOW_EXEC`, enters a FAT32 ELF and observes `ELF_EXEC_OK` (current smoke test verifies denial without that capability)
 - [x] Build bounded `argc`/`argv`/`envp` vectors plus `AT_NULL` on the initial stack
 - [ ] `ET_DYN` and relocations/interpreters
+- [x] Make ELF loading and initial-stack construction one transaction; roll back successfully loaded PT_LOAD pages if stack setup fails
+- [ ] Add a forced stack-setup-failure regression that proves PT_LOAD frames are reclaimed
 - [ ] Tear down/reclaim old image mappings on repeated exec
 
 ## Phase 5: Graphics & Display (COMPLETE)
@@ -63,7 +70,12 @@
 - [x] QEMU keyboard maximize/restore verification (Super+Up / Super+Down)
 - [x] QEMU keyboard resize verification (Alt+F8, arrows, Enter/Escape) through shared bounded geometry
 - [ ] QEMU pointer-drag resize verification with a reliable PS/2 or hardware-input test
-- [ ] Expand the workspace beyond the current sparse Files shortcut and taskbar
+- [x] Add direct Files, Terminal, Settings and Browser launch cards with responsive one-/two-/four-column geometry and a live PIT/PMM System Overview panel
+- [x] Add a lower System Status panel with live memory-allocation and display-profile values
+- [x] Add a Kernel Activity panel with O(1) context-switch, interrupt and syscall counters; suppress it when the selected text scale or available geometry cannot accommodate it
+- [x] Capture and verify the 1024×768 workspace, native app windows, multi-window focus routing, maximize/restore, keyboard resize, System Status, Kernel Activity and settings persistence across reboot in CI run #732
+- [ ] Use the remaining desktop area for useful user-facing content; the verified system panels are not a substitute for a richer workspace
+- [ ] Validate the full font/UI scale matrix and additional 1280×800 and 1920×1080 framebuffer modes
 
 The shell still owns the framebuffer and application renderers, while the WM owns window identity, z-order, focus, clipping and composition. This is a functional multi-window foundation, not a mature desktop environment.
 
@@ -94,13 +106,18 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Settings controls for font family, text size and global UI scale
 - [x] Settings persist to `/CHARISOS.CFG` on supported primary ATA FAT32 and reload after reboot in CI
 - [x] QEMU capture verifies the desktop after closing Settings at 200% text and 120% interface scale without the previous welcome-card clipping
-- [ ] Add a useful but restrained desktop surface: verified status indicators, accessible shortcut selection and clear empty-workspace affordances
+- [x] Add a responsive one-/two-/four-column workspace shortcut grid for Files, Terminal, Settings and Browser with bounded hit testing
+- [x] Add verified live system status indicators (uptime and PMM memory counters) and a labelled workspace hierarchy
+- [x] Add scale-aware workspace geometry and suppress secondary card descriptions at larger font scales
+- [x] Distribute shortcut cards across responsive one-, two- or four-column layouts with bounded card width (fresh QEMU visual verification pending)
+- [ ] Verify card and System Overview typography at 100/125/150/200% text/UI scales; add measured wrapping where clipping remains
 - [ ] Implement shared layout primitives: measure/arrange, horizontal/vertical flow, padding/gaps, wrapping, clipping/ellipsis and scroll containers
 - [ ] Verify layout at 100/125/150/200% text/UI scales and 1024x768, 1280x800 and 1920x1080 framebuffer sizes
 - [x] Standardize native app titlebars, close controls, focus indication and keyboard dispatch for current applications
 - [x] Add independently movable windows, multi-window z-order, taskbar focus/restore and Alt+Tab
 - [x] Add pointer resize handles, maximize/restore and focused-window keyboard shortcuts
 - [x] QEMU capture verifies multiple application windows, Alt+Tab routing, maximize/restore and keyboard resize
+- [x] Desktop workspace exposes direct Files, Terminal, Settings and Browser shortcuts
 - [ ] Add snap/tiling, global window menu, QEMU pointer-resize test and consistent per-window keyboard navigation
 - [ ] Add a first-login setup wizard with language/keyboard, appearance and network steps; current wizard remains limited to existing setup preferences
 - [ ] Add functional Text Editor and System Monitor applications
@@ -139,13 +156,20 @@ The shell still owns the framebuffer and application renderers, while the WM own
 
 ## Phase 14: Security & Capabilities (PARTIAL - ENFORCEMENT IN PROGRESS)
 - [x] Capability bitmask per task (CAP_FS_READ, CAP_FS_WRITE, CAP_SPAWN, etc.)
-- [x] Capability inheritance on fork
-- [x] Capability enforcement in sys_open() and sys_exec() (NEW)
+- [x] Capability checks require every requested bit; zero and undefined masks fail closed
+- [x] Sanitize task capability grants against the kernel-defined capability mask at construction
+- [x] Host regression tests cover single-bit, multi-bit, empty, unknown and sanitized capability requests
+- [ ] Capability inheritance and reduction rules for a future working fork implementation
+- [x] Capability checks on `sys_open`, non-console `sys_write`, and `sys_exec` authorization (the bootstrap task intentionally lacks `CAP_ALLOW_EXEC`)
 - [x] Path traversal blocking in security_verify_path() (NEW)
 - [ ] Capability enforcement in VFS write/read paths
 - [ ] Capability enforcement in socket/net syscalls
 - [ ] Cryptographically secure entropy source; token generation remains disabled when RDRAND is unavailable
 - [ ] Persistent audit log
+- [x] Allocate each kernel task stack from page-aligned supervisor-only writable/NX frames, with a genuinely unmapped guard page and deferred physical-frame reclamation after context switch
+- [x] Configure a dedicated, aligned TSS.IST1 landing stack for page-fault vector 14 and verify the exception frame remains within it
+- [x] QEMU deliberately writes into a kernel task's unmapped stack guard; CI run #732 verifies IST1 frame placement and the diagnostic panic markers
+- [ ] Add a separate IST2/double-fault stack and nested-fault regression; the guard test halts safely rather than attempting unsafe recovery of a damaged kernel task
 
 ## Phase 15: Configuration & Persistence (PARTIAL, QEMU VERIFIED)
 - [x] In-memory typed config store
@@ -157,7 +181,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 ## Phase 16: Build & Quality (IN PROGRESS)
 - [x] Kernel compiles cleanly (all 7 errors fixed)
 - [x] CI workflow (.github/workflows/ci.yml) - build + QEMU ring-3 yield/resume boot test
-- [x] QEMU regression gate covers BIOS ring-3 yield/resume and static ELF execution
+- [x] QEMU regression gate covers BIOS ring-3 yield/resume, user-fault containment and ELF capability-denial policy
+- [ ] QEMU regression gate authorizes and successfully enters a static ELF program
 - [x] Repo hygiene: .gitattributes, .gitignore, CRLF→LF fixed
 - [x] Boot debug markers fixed (no collisions, full coverage)
 - [ ] Make the default `make test` target execute the VMM suite; CI currently boots a separate `RUN_VMM_TESTS` image and runs the full regression suite in QEMU
@@ -170,15 +195,17 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] WM list traversal detects duplicate nodes and remains bounded if links form a cycle
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions
-- [x] QEMU BIOS, ring-3, ELF and VMM huge-page/permission regression suites pass (CI run #43005333279)
-- [x] QEMU desktop capture verifies Files, Terminal, simultaneous windows, Alt+Tab, maximize/restore and keyboard resize
-- [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`)
+- [x] CI run #732 passed the freestanding build, x86-64 baseline audit, BIOS/ring-3 isolation checks, VMM huge-page/permission regression suite, dedicated kernel-stack guard fault on IST1 and QEMU desktop/settings capture
+- [x] QEMU capture from run #732 verifies Files, Terminal, Browser, multi-window routing, maximize/restore, keyboard resize, System Status and Kernel Activity counters
+- [x] QEMU guard-probe from run #732 verifies the kernel stack-guard #PF arrives on IST1 and produces the expected diagnostic markers
+- [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`); the capture also checks the largest font preset
 - [ ] Expand automated regression coverage to pointer-drag resize, snap/tiling, real hardware and long-session desktop stability
 
 ## Phase 17: Process Management (IN PROGRESS)
 - [x] Bootstrap user task enters ring 3 with a private address-space branch and mapped user stack
 - [x] DPL3 syscall, yield to a kernel task, and resume the user interrupt frame (QEMU verified)
-- [x] `sys_exec` loads a static ELF into the running ring-3 task (QEMU verified)
+- [x] Static ELF loader and ring-3 frame-replacement implementation exist
+- [ ] QEMU verifies successful authorized ELF entry; current configured bootstrap test is denied by `CAP_ALLOW_EXEC` policy
 - [ ] Complete user ABI/libc and validate SYSRET path
 - [ ] Per-task kernel interrupt stacks and SMP-safe TSS handling
 - [ ] wait()/waitpid() syscall for zombie reaping

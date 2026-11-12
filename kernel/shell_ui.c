@@ -493,6 +493,12 @@ static void shell_sync_app_windows(void) {
 }
 
 static void shell_open_app(shell_app_id_t id) {
+    /* Enum values can arrive from future callers or corrupted dispatch state;
+     * validate before indexing the fixed application-window table. */
+    if ((u32)id >= (u32)SHELL_APP_COUNT) {
+        serial_printf("SHELL_APP_OPEN_REJECTED id=%u\n", (u32)id);
+        return;
+    }
     if (shell_app_windows[id]) {
         window_t* win = shell_app_windows[id];
         if (win->minimized) (void)wm_restore_window(win);
@@ -511,10 +517,17 @@ static void shell_open_app(shell_app_id_t id) {
         default: break;
     }
     shell_sync_app_windows();
-    if (shell_app_windows[id]) wm_focus_window(shell_app_windows[id]);
+    if (shell_app_windows[id]) {
+        wm_focus_window(shell_app_windows[id]);
+        serial_printf("SHELL_APP_OPEN %s\n", shell_app_title(id));
+    }
 }
 
 static void shell_toggle_app(shell_app_id_t id) {
+    if ((u32)id >= (u32)SHELL_APP_COUNT) {
+        serial_printf("SHELL_APP_TOGGLE_REJECTED id=%u\n", (u32)id);
+        return;
+    }
     window_t* win = shell_app_windows[id];
     if (!win) {
         shell_open_app(id);
@@ -797,7 +810,7 @@ static void draw_settings_window(window_t* win) {
     if (font_scale<1 || font_scale>3) font_scale=1;
     int scale_index = global_scale<=80 ? 0 : global_scale>=120 ? 2 : 1;
     const char* values[3] = { styles[style], scales[font_scale-1], ui_scales[scale_index] };
-    const char* labels[3] = { "Font family", "Text size", "Interface scale" };
+    const char* labels[3] = { "Font family", "Text size", "UI scale" };
     const char* hints[3] = {
         "Native app typeface",
         "Desktop text size",
@@ -1127,6 +1140,13 @@ static void handle_event(const input_event_t* e) {
             ui.needs_redraw = true;
             return;
         }
+        if (pressed && !extended && base == 0x43u) {
+            ui.menu_open = false;
+            notice_open = false;
+            shell_open_app(SHELL_APP_BROWSER);
+            ui.needs_redraw = true;
+            return;
+        }
         if (pressed && !extended && base == 0x44u) {
             ui.menu_open = false;
             notice_open = false;
@@ -1267,9 +1287,13 @@ static void handle_event(const input_event_t* e) {
         }
 
         int shortcut = desktop_surface_hit_test(mx, my);
-        if (shortcut == 0) {
+        if (shortcut >= 0 && shortcut < 4) {
+            static const shell_app_id_t shortcut_apps[4] = {
+                SHELL_APP_FILES, SHELL_APP_TERMINAL,
+                SHELL_APP_SETTINGS, SHELL_APP_BROWSER
+            };
             ui.menu_open = false;
-            shell_open_app(SHELL_APP_FILES);
+            shell_open_app(shortcut_apps[shortcut]);
             ui.needs_redraw = true;
             return;
         }
