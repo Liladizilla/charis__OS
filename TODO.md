@@ -316,13 +316,13 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 
 ## Recommended Next Steps
 
-1. **Implement TCP/IP stack** - ARP, ICMP, TCP state machine in net.c
-2. **Add wait()/waitpid()** - validate child ownership, copy status safely, and reap address spaces only after mapping ownership is tracked
-3. **Finish Files write support** - implement safe FAT32 mutation and validate cluster-chain updates
-4. **Complete process reaping** - implement wait()/waitpid() with ownership-safe teardown
-5. **Expand regression coverage** - add WM lifecycle tests and malformed filesystem/input cases
-6. **Extend capability checks** - enforce read/write and network permissions in the VFS and socket paths
-7. **Add network receive path and DHCP** - only after RTL8139 RX and TCP/IP foundations are complete
+1. **Authenticated IPC objects** - replace global integer channels and raw shared-memory pointers with task-owned endpoint/object handles, explicit rights and transactional resource transfer
+2. **Internet connectivity** - implement DHCP, route/DNS configuration, bounded reconnect behavior and real-LAN tests over the existing wired RTL8139 path
+3. **Secure transport** - add TLS with certificate and clock validation before presenting the Browser as Internet-ready
+4. **Hardware services** - add timezone-aware RTC policy, ACPI battery discovery and reliable HDA PCM playback
+5. **Wireless networking** - define a supported adapter matrix, then implement and test the first Wi-Fi driver without claiming generic support
+6. **Storage and process lifecycle** - finish FAT32 write safety, wait()/waitpid(), resource reaping and writable Files UI
+7. **Desktop quality** - finish verified CC0 wallpaper loading, font/scale geometry, real device status and QEMU capture publication
 
 ## Implementation Details (merged from PROGRESS.md, source of truth)
 
@@ -335,7 +335,9 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 > PROGRESS.md was removed on 2026-10-05. TODO.md is the single source of truth.
 
 ## Phase 10: Hardware Services & Desktop Media (PLANNED)
-- [ ] RTC-backed wall clock with UTC storage, timezone conversion and monotonic-clock separation
+- [x] Stable CMOS RTC sampling with UIP checks, repeated-sample consistency, BCD/binary and 12/24-hour decoding, Gregorian validation and epoch conversion
+- [x] Seed wall-clock epoch once at boot and advance it using monotonic PIT elapsed time; taskbar refresh repaints only the taskbar
+- [ ] UTC storage policy, timezone configuration/conversion and network time synchronization
 - [ ] ACPI discovery and battery telemetry (charge, state, remaining capacity/time when firmware exposes it)
 - [ ] Complete HDA codec/controller initialization, DMA ring handling, PCM playback, mixer and safe stream lifecycle
 - [ ] Wi-Fi device discovery and a driver architecture; support a documented first adapter family before claiming wireless support
@@ -346,4 +348,6 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 - [ ] Desktop capture pipeline publishes the actual QEMU framebuffer capture and keeps README screenshots synchronized with the tested commit
 - [ ] Native terminal visual pass: near-black console canvas, compact chrome, dedicated monospace font metrics, carefully measured CharisOS ASCII banner and stable prompt/output layout
 - [ ] Verify ASCII banner width/height against font-cell metrics at all supported text scales and narrow window sizes
-- [ ] Add QEMU/host tests for clock rollover, timezone-independent monotonic uptime, missing battery/RTC devices and audio device absence
+- [x] Add host regressions for RTC BCD/binary modes, 12-hour conversion, invalid dates, leap days and Unix epoch/calendar conversion
+- [ ] Add QEMU checks for RTC-present and RTC-absent boot, taskbar date/time rollover and long-uptime monotonic behavior
+- [ ] Add hardware/service tests for timezone changes, missing battery devices and audio device absence
