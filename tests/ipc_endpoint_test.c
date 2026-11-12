@@ -11,11 +11,19 @@ static void reset_task(task_t* task, u32 pid) {
     *task = (task_t){0};
     task->pid = pid;
     task->state = TASK_STATE_READY;
+    task->scheduler_queued = true;
     for (u32 i = 0; i < IPC_MAX_ENDPOINTS; i++)
         task->ipc_endpoint_generations[i] = 1;
 }
 static void test_pair_validation(void) {
     ipc_handle_t a = 99, b = 99;
+    task_t unpublished = {0};
+    unpublished.pid = 808;
+    unpublished.state = TASK_STATE_READY;
+    for (u32 i = 0; i < IPC_MAX_ENDPOINTS; i++)
+        unpublished.ipc_endpoint_generations[i] = 1;
+    assert(!ipc_endpoint_pair_create(&task_a, &unpublished,
+        IPC_RIGHT_SEND, IPC_RIGHT_RECEIVE, &a, &b));
     assert(!ipc_endpoint_pair_create(&task_a, &task_b, 0, IPC_RIGHT_RECEIVE, &a, &b));
     assert(a == IPC_HANDLE_INVALID && b == IPC_HANDLE_INVALID);
     assert(!ipc_endpoint_pair_create(&task_a, &task_a, IPC_RIGHT_SEND, IPC_RIGHT_RECEIVE, &a, &b));
