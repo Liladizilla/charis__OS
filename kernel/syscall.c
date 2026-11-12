@@ -44,7 +44,12 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
 
     fd_entry_t* f = fd_get(fd);
     if (!f || !f->node || !(f->rights & FD_RIGHT_READ) ||
-        count > SYSCALL_IO_MAX) return -1;
+        count > SYSCALL_IO_MAX) return (u64)-1;
+
+    /* Standard input has its own device authority. Other reads must continue
+     * to satisfy the process capability as well as the descriptor grant. */
+    if (fd != FD_STDIN &&
+        (!task || !security_check_capability(task, CAP_FS_READ))) return (u64)-1;
     if (count == 0) return 0;
 
     if (task && task->is_user) {

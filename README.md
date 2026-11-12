@@ -410,7 +410,7 @@ failure; child capability inheritance is therefore not claimed.
 
 | Authority | Enforcement |
 |---|---|
-| `CAP_FS_READ` | Required to request a read-capable file descriptor |
+| `CAP_FS_READ` | Required to request and rechecked for non-console reads |
 | `CAP_FS_WRITE` | Required to request a write-capable descriptor and rechecked for non-console writes |
 | `FD_RIGHT_READ` | Per-descriptor grant checked by `sys_read` and the ELF loader |
 | `FD_RIGHT_WRITE` | Per-descriptor grant checked by `sys_write` |
@@ -426,10 +426,12 @@ Standard input receives read authority, while standard output/error receive
 write authority. Closing a descriptor revokes its rights before the filesystem
 close callback runs. Descriptor tables are task-local and are rebuilt when a
 task slot is reused. Non-standard descriptor values are opaque 64-bit handles
-bound to the owning task PID and a per-slot generation. A closed handle cannot
-resolve after its slot is reused, and a handle copied into another task cannot
-resolve there even when the same slot is occupied. The generation counter is
-preserved across task-slot reuse and fails closed rather than wrapping.
+bound to the owning task PID and a per-slot generation. Task PIDs are
+monotonic and fail closed rather than wrapping, so an identity is never
+recycled. A closed handle cannot resolve after its slot is reused, and a handle
+copied into another task cannot resolve there even when the same slot is
+occupied. The generation counter is preserved across task-slot reuse and
+fails closed rather than wrapping.
 Standard input/output/error retain the stable handles 0, 1 and 2. Numeric
 handles are not transferable capabilities; any future cross-task delegation
 must use an explicit, rights-attenuating transfer operation.

@@ -12,7 +12,7 @@
 
 static task_t task_pool[TASK_MAX_TASKS];
 static task_t* task_list = NULL;
-static u32 next_pid = 1;
+static u64 next_pid = 1;
 
 static void task_release_user_stack_pages(task_t* task, pml4_t* pml4);
 static void task_release_user_code_pages(task_t* task, pml4_t* pml4);
@@ -213,7 +213,7 @@ task_t* task_allocate(void) {
 }
 
 u32 task_next_pid(void) {
-    return next_pid++;
+    return task_pid_allocate(&next_pid);
 }
 
 /* Search the fixed task table by PID. Zombie records remain discoverable until
@@ -360,11 +360,15 @@ task_t* task_current(void) {
 }
 
 // Common task initialization helper
-static void task_init_common(task_t* task, const char* name, u32 capabilities, bool is_user) {
+static bool task_init_common(task_t* task, const char* name, u32 capabilities, bool is_user) {
+    /* PID exhaustion must never recycle an identity used in an old handle. */
+    u32 pid = task_next_pid();
+    if (!pid) return false;
+
     task->is_user = is_user;
     task->started = false;
     task->scheduler_queued = false;
-    task->pid = next_pid++;
+    task->pid = pid;
     task->exit_code = 0;
     task_t* parent = scheduler_current();
     task->parent_pid = parent ? parent->pid : 0;
@@ -419,6 +423,7 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->prev = NULL;
     task->stack_canary_addr = task->stack_base + sizeof(u64);
     *(u64*)task->stack_canary_addr = 0xDEADC0DEDEADC0DEULL;
+    return true;
 }
 
 static void task_release_user_stack_pages(task_t* task, pml4_t* pml4) {
@@ -569,7 +574,11 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
         return NULL;
     }
 
-    task_init_common(task, name, capabilities, is_user);
+    if (!task_init_common(task, name, capabilities, is_user)) {
+        vga_puts("Task ID space exhausted\n");
+        task_discard_unstarted(task);
+        return NULL;
+    }
 
     // Create per-process address space (BUG-11 fix)
     if (is_user) {
@@ -650,7 +659,11 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
         return NULL;
     }
 
-    task_init_common(task, name, capabilities, is_user);
+    if (!task_init_common(task, name, capabilities, is_user)) {
+        vga_puts("Task ID space exhausted\n");
+        task_discard_unstarted(task);
+        return NULL;
+    }
     task->mm.pml4 = pml4;
     task->address_space = pml4; // Use provided PML4
 

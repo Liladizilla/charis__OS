@@ -86,6 +86,10 @@ jobs:
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/security_caps_test.c kernel/security.c -Wl,--gc-sections -o /tmp/security_caps_test
           /tmp/security_caps_test
+      - name: Test monotonic task PID allocation
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/task_pid_test.c -o /tmp/task_pid_test
+          /tmp/task_pid_test
 
       - name: Test VFS descriptor rights and lifecycle
         run: |
