@@ -96,6 +96,10 @@ typedef enum {
  * reference and must never attach the same raw node pointer a second time. */
 fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights,
                      fd_alloc_status_t* status);
+/* Kernel-internal only: copy a descriptor to a live recipient task. Requested
+ * rights must be a nonzero subset of the sender's rights. */
+fd_handle_t fd_duplicate_to(fd_handle_t source, u32 recipient_pid,
+                            u32 requested_rights);
 bool fd_close(fd_handle_t handle);
 /* Close non-standard descriptors owned by a task and restore standard streams. */
 void fd_table_close_all(fd_entry_t* table);
