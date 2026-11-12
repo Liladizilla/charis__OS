@@ -437,17 +437,21 @@ cannot attach the same node pointer to two descriptors, and failed descriptor
 allocation leaves cleanup ownership with the caller. Cross-task sharing is not
 implemented by copying node pointers; it requires a separately owned,
 reference-counted open-file object with per-recipient attenuated rights. Descriptor tables are task-local and are rebuilt when a
-task slot is reused. Non-standard descriptor values are opaque 64-bit handles
-bound to the owning task PID and a per-slot generation. Task PIDs are
-allocated with atomic compare/exchange, remain monotonic, and fail closed
-rather than wrapping, so identities are unique even when task creation races
-across CPUs and are never recycled. A closed handle cannot resolve after its slot is reused, and a handle
-copied into another task cannot resolve there even when the same slot is
-occupied. The generation counter is preserved across task-slot reuse and
-fails closed rather than wrapping.
-Standard input/output/error retain the stable handles 0, 1 and 2. Numeric
-handles are not transferable capabilities; any future cross-task delegation
-must use an explicit, rights-attenuating transfer operation.
+task slot is reused. Non-standard descriptor values are 64-bit task-scoped
+identifiers whose ABI encoding callers must treat as opaque. The current
+encoding is deterministic: it contains the owning task PID, a per-slot
+generation and the descriptor slot. It is not random, secret, MAC-protected or
+unforgeable, and it is not a security credential or an intra-task isolation
+boundary. Its guarantees are narrower and explicit: a closed handle cannot
+resolve after slot reuse, and a handle copied into another task cannot resolve
+there even when the same slot is occupied. Task PIDs are allocated with atomic
+compare/exchange, remain monotonic, and fail closed rather than wrapping, so
+identities are unique even when task creation races across CPUs and are never
+recycled. The generation counter is preserved across task-slot reuse and also
+fails closed rather than wrapping. Standard input/output/error retain the
+stable handles 0, 1 and 2. Numeric handles are not transferable capabilities;
+future cross-task delegation requires a separate, rights-attenuating
+resource-transfer mechanism.
 
 Before a ring-3 `sys_read` touches its input source, the kernel validates the
 entire writable destination range across page boundaries, using effective

@@ -18,9 +18,11 @@
 #define FD_RIGHT_MASK  (FD_RIGHT_READ | FD_RIGHT_WRITE)
 
 /*
- * Non-standard descriptors are opaque task-bound handles:
+ * Non-standard descriptors are ABI-opaque, task-scoped identifiers:
  *   [ owner PID: 32 bits ][ generation: 26 bits ][ slot: 6 bits ]
- * Standard streams retain the stable values 0, 1 and 2.
+ * The encoding is deterministic, not secret or unforgeable. It prevents stale
+ * slot reuse and accidental cross-task resolution; it is not an authorization
+ * token or an intra-task isolation boundary. Standard streams retain 0, 1, 2.
  */
 typedef u64 fd_handle_t;
 #define FD_HANDLE_SLOT_BITS       6U
