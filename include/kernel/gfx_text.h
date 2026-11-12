@@ -15,6 +15,6 @@ void gfx_draw_string_scaled(u32 x, u32 y, const char* s, u32 fg, u32 bg, u32 sca
 void gfx_draw_monospace_string_scaled(u32 x, u32 y, const char* s, u32 fg, u32 bg, u32 scale);
 void gfx_draw_string_centered(u32 y, const char* s, u32 fg, u32 bg);
 void gfx_text_size(const char* s, u32* out_w, u32* out_h);
-void gfx_text_monospace_size(const char* s, u32* out_w, u32* out_h);
+void gfx_text_monospace_size(const char* s, u32* out_w, u32* out_h, u32 scale);
 
 #endif
