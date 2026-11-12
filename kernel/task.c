@@ -1,4 +1,5 @@
 #include <kernel/task.h>
+#include <kernel/task_wait.h>
 #include <kernel/task_id.h>
 #include <kernel/memory.h>
 #include <kernel/vga.h>
@@ -19,6 +20,9 @@ static void task_release_user_stack_pages(task_t* task, pml4_t* pml4);
 static void task_release_user_code_pages(task_t* task, pml4_t* pml4);
 static bool task_stack_allocate(task_t* task);
 static bool task_stack_release(task_t* task);
+static bool task_recycle_zombie(task_t* task);
+static void task_reparent_children(task_t* parent);
+static void task_wake_child_waiter(task_t* child);
 
 static u64 task_irq_save(void) {
     u64 flags;
@@ -242,9 +246,13 @@ void task_defer_release(task_t* t) {
         serial_puts("FATAL: more than one deferred task stack\n");
         for (;;) asm volatile("cli; hlt" : : : "memory");
     }
-    if (t->kernel_stack_pages[0] || t->kernel_stack_pages[1])
+    if (t->kernel_stack_pages[0] || t->kernel_stack_pages[1]) {
         g_pending_task = t;
-    t->state = TASK_STATE_ZOMBIE;
+        /* Remain EXITING until another stack has reclaimed these frames. */
+        t->state = TASK_STATE_EXITING;
+    } else {
+        t->state = TASK_STATE_ZOMBIE;
+    }
     t->runtime_ticks = 0;
 }
 
@@ -258,8 +266,12 @@ bool task_release_pending(void) {
         return false;
     }
     g_pending_task = NULL;
-    /* The task_t remains as an unreaped zombie record for future waitpid(). */
+    /* Reaping is forbidden until this stack is no longer active. */
     task->state = TASK_STATE_ZOMBIE;
+    if (task->parent_pid == 0) {
+        /* Parentless kernel tasks and orphaned descendants are auto-reaped. */
+        (void)task_recycle_zombie(task);
+    }
     return true;
 }
 
@@ -283,6 +295,8 @@ void task_exit_with_status(u32 status) {
          * descriptor duplication racing teardown must never publish into a
          * task after its close-all pass has completed. */
         current->state = TASK_STATE_EXITING;
+        /* Parent exit transfers live descendants to the kernel adopter. */
+        task_reparent_children(current);
         /* Release per-task descriptor state before the task becomes a zombie.
          * The table slot remains available for waitpid(), but open descriptors
          * must not remain live for the lifetime of the zombie record. */
@@ -312,6 +326,9 @@ void task_exit_with_status(u32 status) {
         /* Exited tasks are never scheduled again. Unlink the zombie before
          * parking its stack so the scheduler list only contains live tasks. */
         scheduler_remove_task(current);
+        /* Wake a parent before switching. The child remains EXITING until the
+         * scheduler has detached its stack on the destination task's stack. */
+        task_wake_child_waiter(current);
     }
     task_defer_release(current);
     scheduler_yield();
@@ -350,6 +367,145 @@ static void task_mark_runnable(task_t* task) {
     task->state = (task == scheduler_current())
                 ? TASK_STATE_RUNNING : TASK_STATE_READY;
 }
+
+/* A task slot becomes reusable only after its resources and stack are detached. */
+static bool task_recycle_zombie(task_t* task) {
+    if (!task) return false;
+    u64 flags = task_irq_save();
+    if (task->state != TASK_STATE_ZOMBIE || task->scheduler_queued ||
+        task->stack_base || task->kernel_stack_pages[0] ||
+        task->kernel_stack_pages[1] || task->address_space ||
+        task->mm.pml4 || task->mm.vmas) {
+        task_irq_restore(flags);
+        return false;
+    }
+    for (u32 i = 3; i < MAX_FDS; i++) {
+        if (task->fd_table[i].file) {
+            task_irq_restore(flags);
+            return false;
+        }
+    }
+    signal_reset_task(task);
+    task->rsp = 0;
+    task->stack_base = 0;
+    task->pid = 0;
+    task->exit_code = 0;
+    task->parent_pid = 0;
+    task->priority = 0;
+    task->name[0] = '\0';
+    task->next = NULL;
+    task->prev = NULL;
+    task->runtime_ticks = 0;
+    task->remaining_quantum = TASK_DEFAULT_QUANTUM;
+    task->capabilities = 0;
+    task->guard_page_addr = 0;
+    task->stack_canary_addr = 0;
+    task->kernel_stack_pages[0] = 0;
+    task->kernel_stack_pages[1] = 0;
+    task->event_data = 0;
+    task->waiting_event = 0;
+    task->is_user = false;
+    task->started = false;
+    task->scheduler_queued = false;
+    task->user_stack_base = 0;
+    task->user_rsp = 0;
+    task->user_stack_pages[0] = 0;
+    task->user_stack_pages[1] = 0;
+    for (u32 page = 0; page < TASK_USER_CODE_MAX_PAGES; page++)
+        task->user_code_pages[page] = 0;
+    task->user_code_page_count = 0;
+    task->mm.pml4 = NULL;
+    task->mm.heap_start = 0;
+    task->mm.heap_end = 0;
+    task->mm.stack_top = 0;
+    task->mm.vmas = NULL;
+    task->address_space = NULL;
+    task->ipc_wait_next = NULL;
+    /* Publish the slot after the old identity and resources have been erased. */
+    task->state = TASK_STATE_UNUSED;
+    task_irq_restore(flags);
+    return true;
+}
+
+static void task_wake_child_waiter(task_t* child) {
+    if (!child || !child->parent_pid) return;
+    task_t* parent = task_find_by_pid(child->parent_pid);
+    if (!parent || parent->state != TASK_STATE_BLOCKED ||
+        parent->waiting_event != TASK_WAITING_CHILD) return;
+    u64 wanted_pid = parent->event_data;
+    if (wanted_pid && wanted_pid != (u64)child->pid) return;
+    parent->waiting_event = 0;
+    parent->event_data = 0;
+    task_mark_runnable(parent);
+}
+
+static void task_reparent_children(task_t* parent) {
+    if (!parent || !parent->pid) return;
+    for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
+        task_t* child = &task_pool[i];
+        if (child == parent || child->state == TASK_STATE_UNUSED ||
+            child->parent_pid != parent->pid) continue;
+        child->parent_pid = 0;
+        if (child->state == TASK_STATE_ZOMBIE)
+            (void)task_recycle_zombie(child);
+    }
+}
+
+/* A child is reapable only after deferred kernel-stack release has completed. */
+s64 task_waitpid(s64 selector, u32* exit_status, bool nohang) {
+    if (!task_wait_selector_valid(selector)) return -1;
+    u64 saved_flags = task_irq_save();
+    task_t* parent = scheduler_current();
+    if (!parent || !parent->pid || parent->state == TASK_STATE_UNUSED ||
+        parent->state == TASK_STATE_EXITING ||
+        parent->state == TASK_STATE_ZOMBIE) {
+        task_irq_restore(saved_flags);
+        return -1;
+    }
+    for (;;) {
+        bool has_child = false;
+        task_t* zombie = NULL;
+        for (u32 i = 0; i < TASK_MAX_TASKS; i++) {
+            task_t* child = &task_pool[i];
+            if (!task_wait_child_matches(parent->pid, child->parent_pid,
+                                         child->pid, selector)) continue;
+            has_child = true;
+            if (child->state == TASK_STATE_ZOMBIE) {
+                zombie = child;
+                break;
+            }
+        }
+        if (zombie) {
+            u32 child_pid = zombie->pid;
+            u32 child_status = zombie->exit_code;
+            if (!task_recycle_zombie(zombie)) {
+                task_irq_restore(saved_flags);
+                return -1;
+            }
+            if (exit_status) *exit_status = child_status;
+            task_irq_restore(saved_flags);
+            return (s64)child_pid;
+        }
+        if (!has_child) {
+            task_irq_restore(saved_flags);
+            return -1;
+        }
+        if (task_wait_nohang_should_return(nohang, has_child, false)) {
+            task_irq_restore(saved_flags);
+            return 0;
+        }
+        /* IF stays clear across child scan and wait registration. */
+        parent->waiting_event = TASK_WAITING_CHILD;
+        parent->event_data = selector == -1 ? 0 : (u64)selector;
+        parent->state = TASK_STATE_BLOCKED;
+        scheduler_yield();
+        while (parent->state == TASK_STATE_BLOCKED &&
+               parent->waiting_event == TASK_WAITING_CHILD) {
+            asm volatile("sti; hlt; cli" : : : "memory");
+        }
+    }
+}
+
 
 void task_unblock(task_t* task) {
     if (task && task->state == TASK_STATE_BLOCKED) {
