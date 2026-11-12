@@ -47,7 +47,7 @@
 - [x] Serialize shared file offsets and VFS callbacks with a per-open-file I/O lock
 - [x] Keep descriptor publication/revocation atomic with reference acquisition; run destructors outside the descriptor-table lock
 - [x] Preserve permanent shared standard-stream descriptions across task creation and cleanup
-- [x] Add host regressions for pins surviving descriptor close, final close exactly once, and independent open offsets
+- [x] Add host regressions for pins surviving descriptor close, final close exactly once, independent open offsets, allocation rollback and concurrent final release
 - [ ] Add kernel-internal descriptor duplication with explicit recipient identity and rights attenuation
 
 ## Phase 4: ELF Loader (IN PROGRESS)
