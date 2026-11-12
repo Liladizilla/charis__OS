@@ -2,6 +2,7 @@
 
 # Tools
 UNAME := $(shell uname -s 2>/dev/null || echo Windows)
+HOST_CC ?= gcc
 
 # Prefer the freestanding x86_64-elf toolchain when installed. A blank prefix
 # preserves compatibility with CI images that have only the native compiler;
@@ -176,7 +177,7 @@ test: $(BUILD_DIR)/vmm_test.o
 # Host-only IPC endpoint tests. IPC_HOST_TEST replaces privileged IRQ control.
 ipc-test:
 	mkdir -p $(BUILD_DIR)
-	$(GCC) -std=gnu11 -Wall -Wextra -Werror -DIPC_HOST_TEST -I$(INCLUDE_DIR) tests/ipc_endpoint_test.c $(KERNEL_DIR)/ipc.c -o $(BUILD_DIR)/ipc_endpoint_test
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -DIPC_HOST_TEST -I$(INCLUDE_DIR) tests/ipc_endpoint_test.c $(KERNEL_DIR)/ipc.c -o $(BUILD_DIR)/ipc_endpoint_test
 	$(BUILD_DIR)/ipc_endpoint_test
 
 	@echo "VMM test object built successfully with RUN_VMM_TESTS defined"
