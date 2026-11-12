@@ -5,6 +5,7 @@
  * and echo until process isolation and a full userspace shell are ready.
  */
 #include <kernel/terminal_ui.h>
+#include <kernel/terminal_ascii.h>
 #include <kernel/fb.h>
 #include <kernel/gfx_text.h>
 #include <kernel/font.h>
@@ -33,12 +34,12 @@ static u32 term_bounds_x, term_bounds_y, term_bounds_w, term_bounds_h;
 static u32 term_px(u32 logical) { return gfx_ui_scale(logical); }
 static u32 term_text_h(void) { return font_cell_h * gfx_text_get_scale() * TERM_TEXT_SCALE; }
 static void term_draw(u32 x, u32 y, const char* s, u32 fg, u32 bg) {
-    gfx_draw_string_scaled(x, y, s, fg, bg, TERM_TEXT_SCALE);
+    gfx_draw_monospace_string_scaled(x, y, s, fg, bg, TERM_TEXT_SCALE);
 }
 
 static u32 term_measure(const char* s) {
     u32 width = 0;
-    gfx_text_size(s, &width, NULL);
+    gfx_text_monospace_size(s, &width, NULL);
     return width * TERM_TEXT_SCALE;
 }
 
@@ -180,18 +181,12 @@ void terminal_open(void) {
     char discard;
     while (keyboard_get_key(&discard)) { }
     if (!term_line_count) {
-        /* Fixed-width wordmark: 42 columns, five rows. Keep each row inside
-         * TERM_LINE_MAX and render it with the terminal accent, not a bitmap
-         * logo, so it remains crisp at every framebuffer resolution. */
-        term_add_line("   ____ _               _     ___  ____");
-        term_add_line("  / ___| |__   __ _ _ __(_)___/ _ \\/ ___|");
-        term_add_line(" | |   | '_ \\ / _` | '__| / __| | | \\___ \\");
-        term_add_line(" | |___| | | | (_| | |  | \\__ \\ |_| |___) |");
-        term_add_line("  \\____|_| |_|\\__,_|_|  |_|___/\\___/|____/");
-        term_add_line("SECURITY BY ARCHITECTURE  /  INTELLIGENCE BY DESIGN");
-        term_add_line("CHARISOS  x86_64  |  NATIVE KERNEL CONSOLE");
-        term_add_line("");
-        term_add_line("Type help to list available commands.");
+        for (u32 i = 0; i < CHARISOS_ASCII_ROWS; i++)
+            term_add_line(CHARISOS_ASCII_MARK[i]);
+        term_add_line("CHARISOS  /  x86_64");
+        term_add_line("SECURITY BY ARCHITECTURE");
+        term_add_line("INTELLIGENCE BY DESIGN");
+        term_add_line("OWNERSHIP BY DEFAULT");
     }
     term_visible = true;
     serial_puts("TERMINAL_OPEN");
@@ -269,15 +264,24 @@ bool terminal_handle_mouse(int mx, int my) {
     return true;
 }
 
+static bool terminal_ascii_mark_row(const char* line) {
+    bool has_hash = false;
+    if (!line) return false;
+    for (u32 i = 0; line[i]; i++) {
+        if (line[i] == '#') has_hash = true;
+        else if (line[i] != ' ') return false;
+    }
+    return has_hash;
+}
+
 static u32 terminal_line_color(const char* line) {
     if (!line) return CHARIS_UI_TEXT;
     if (kstrncmp(line, "charisos> ", 10) == 0) return CHARIS_UI_SUCCESS;
     if (kstrncmp(line, "Command not found", 17) == 0) return CHARIS_UI_WARNING;
-    if (kstrncmp(line, "   ____", 7) == 0 ||
-        kstrncmp(line, "  / ___", 7) == 0 ||
-        kstrncmp(line, " | |", 4) == 0 ||
-        kstrncmp(line, "  \\____", 7) == 0 ||
+    if (terminal_ascii_mark_row(line) ||
         kstrncmp(line, "SECURITY BY", 11) == 0 ||
+        kstrncmp(line, "INTELLIGENCE BY", 15) == 0 ||
+        kstrncmp(line, "OWNERSHIP BY", 12) == 0 ||
         kstrncmp(line, "CHARISOS", 8) == 0 ||
         kstrncmp(line, "CharisOS", 8) == 0) return CHARIS_UI_ACCENT;
     if (kstrncmp(line, "Managed RAM", 11) == 0 ||
@@ -404,7 +408,7 @@ void terminal_render(void) {
     term_draw(x + term_px(24), prompt_y + (prompt_h - text_h) / 2,
                     "charisos", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
     u32 prefix_w = 0;
-    gfx_text_size("charisos", &prefix_w, NULL);
+    gfx_text_monospace_size("charisos", &prefix_w, NULL);
     prefix_w *= TERM_TEXT_SCALE;
     term_draw(x + term_px(24) + prefix_w, prompt_y + (prompt_h - text_h) / 2,
                     ">", CHARIS_UI_ACCENT, FB_TRANSPARENT);
