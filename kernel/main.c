@@ -227,9 +227,15 @@ void kernel_main(u32 magic, u64 info_ptr) {
     extern void user_main(void);
     pml4_t* user_pml4 = vmm_create_address_space();
     if (user_pml4 && vmm_copy_kernel_mappings(user_pml4, NULL)) {
+        /* The normal image deliberately denies exec. A separate CI-only
+         * image grants it to prove the authorized ELF handoff end to end. */
+        u32 user_capabilities = CAP_SPAWN | CAP_FS_READ;
+#ifdef TEST_ELF_EXEC_SUCCESS
+        user_capabilities |= CAP_ALLOW_EXEC;
+#endif
         task_t* user_task = task_create_with_pml4(
             "user", (task_func_t)user_main, NULL,
-            CAP_SPAWN | CAP_FS_READ, true, user_pml4);
+            user_capabilities, true, user_pml4);
         if (user_task && task_prepare_user_space(user_task, (void*)user_main)) {
             scheduler_add_task(user_task);
         } else {

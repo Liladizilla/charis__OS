@@ -153,6 +153,13 @@ jobs:
           ./tools/verify-boot.sh build/charisos-vm.iso \
             --elf-test-disk build/elf-smoke-disk.img
 
+      - name: Authorized ELF exec boots in a fresh address space
+        run: |
+          set -e
+          make images-elf-exec-test
+          ./tools/verify-boot.sh build/elf-exec-test/charisos-vm.iso \
+            --elf-test-disk build/elf-smoke-disk.img --expect-elf-exec
+
           # UEFI checks are firmware-dependent and remain advisory on CI.
           # OVMF ships in two shapes and lives in different places across
           # Fedora, Debian and Ubuntu. Prefer the classic 2MB CODE image, which
