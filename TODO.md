@@ -48,7 +48,10 @@
 - [x] Keep descriptor publication/revocation atomic with reference acquisition; run destructors outside the descriptor-table lock
 - [x] Preserve permanent shared standard-stream descriptions across task creation and cleanup
 - [x] Add host regressions for pins surviving descriptor close, final close exactly once, independent open offsets, allocation rollback and concurrent final release
-- [ ] Add kernel-internal descriptor duplication with explicit recipient identity and rights attenuation
+- [x] Add kernel-internal `fd_duplicate_to()` with kernel task-table recipient resolution and strict rights attenuation
+- [x] Reject descriptor duplication into full, allocating, exiting or zombie recipient tasks
+- [x] Verify shared open-file identity/offset, recipient cleanup and sender-close lifetime
+- [ ] Design an authenticated IPC transfer protocol before exposing descriptor delegation to ring 3
 
 ## Phase 4: ELF Loader (IN PROGRESS)
 - [x] Validate static ELF64 x86-64 `ET_EXEC` headers and program-header bounds
