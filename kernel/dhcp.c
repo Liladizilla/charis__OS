@@ -190,7 +190,7 @@ static bool decode_options(const u8* packet, usize length,
         offset += option_length;
     }
 
-    if (!have_end || !have_type) return false;
+    if (!have_end || !have_type || !have_server) return false;
     if (reply->message_type != DHCP_OFFER &&
         reply->message_type != DHCP_ACK &&
         reply->message_type != DHCP_NAK)
@@ -277,7 +277,8 @@ static void append_end(usize* offset) {
 }
 
 static usize build_message(u8 message_type, bool include_requested_ip,
-                           bool include_server_id, bool use_ciaddr) {
+                           bool include_server_id, bool use_ciaddr,
+                           bool broadcast_response) {
     net_interface_t* iface = net_get_interface();
     if (!iface || !iface->initialized) return 0;
     kmemset(dhcp_packet, 0, sizeof(dhcp_packet));
@@ -289,7 +290,8 @@ static usize build_message(u8 message_type, bool include_requested_ip,
     u64 elapsed = timer_get_ms() - state_started_ms;
     write_be16(dhcp_packet + 8u, elapsed / 1000u > 0xFFFFu
                                   ? 0xFFFFu : (u16)(elapsed / 1000u));
-    write_be16(dhcp_packet + 10u, DHCP_FLAG_BROADCAST);
+    write_be16(dhcp_packet + 10u,
+               broadcast_response ? DHCP_FLAG_BROADCAST : 0u);
     if (use_ciaddr) kmemcpy(dhcp_packet + 12u, leased_ip, 4);
     kmemcpy(dhcp_packet + 28u, iface->mac_addr, 6);
     dhcp_packet[236] = DHCP_MAGIC_0;
@@ -323,21 +325,21 @@ static usize build_message(u8 message_type, bool include_requested_ip,
 static bool send_discover(void) {
     const u8 zero_ip[4] = {0, 0, 0, 0};
     kmemcpy(leased_ip, zero_ip, 4);
-    usize length = build_message(DHCP_DISCOVER, false, false, false);
+    usize length = build_message(DHCP_DISCOVER, false, false, false, true);
     return length && net_udp_send_broadcast(DHCP_CLIENT_PORT,
                                              DHCP_SERVER_PORT,
                                              dhcp_packet, length) >= 0;
 }
 
 static bool send_initial_request(void) {
-    usize length = build_message(DHCP_REQUEST, true, true, false);
+    usize length = build_message(DHCP_REQUEST, true, true, false, true);
     return length && net_udp_send_broadcast(DHCP_CLIENT_PORT,
                                              DHCP_SERVER_PORT,
                                              dhcp_packet, length) >= 0;
 }
 
 static bool send_renew_request(bool broadcast) {
-    usize length = build_message(DHCP_REQUEST, false, false, true);
+    usize length = build_message(DHCP_REQUEST, false, false, true, broadcast);
     if (!length) return false;
     if (broadcast)
         return net_udp_send_broadcast(DHCP_CLIENT_PORT, DHCP_SERVER_PORT,
@@ -421,6 +423,7 @@ static void handle_dhcp_reply(u16 source_port, const u8 source_ip[4],
         kmemcpy(leased_ip, reply.address, 4);
         kmemcpy(server_ip, reply.server, 4);
         dhcp_state = DHCP_STATE_REQUESTING;
+        state_started_ms = timer_get_ms();
         retries = 0;
         (void)send_initial_request();
         next_retry_ms = timer_get_ms() + 4000u;
@@ -429,6 +432,7 @@ static void handle_dhcp_reply(u16 source_port, const u8 source_ip[4],
     }
 
     if (dhcp_state == DHCP_STATE_REQUESTING) {
+        if (!bytes_equal(reply.server, server_ip, 4)) return;
         if (reply.message_type == DHCP_NAK) {
             net_stack_clear_ipv4();
             start_discovery();
@@ -450,8 +454,10 @@ static void handle_dhcp_reply(u16 source_port, const u8 source_ip[4],
     }
 
     if (dhcp_state == DHCP_STATE_RENEWING ||
-        dhcp_state == DHCP_STATE_REBINDING ||
-        dhcp_state == DHCP_STATE_BOUND) {
+        dhcp_state == DHCP_STATE_REBINDING) {
+        if (dhcp_state == DHCP_STATE_RENEWING &&
+            !bytes_equal(reply.server, server_ip, 4))
+            return;
         if (reply.message_type == DHCP_NAK) {
             net_stack_clear_ipv4();
             start_discovery();
@@ -521,6 +527,7 @@ void dhcp_poll(void) {
         } else if (now - lease_started_ms >= renewal_at_ms) {
             dhcp_state = DHCP_STATE_RENEWING;
             advance_transaction_id();
+            state_started_ms = now;
             retries = 0;
             bool sent = send_renew_request(false);
             u64 until_t2 = rebinding_at_ms -
@@ -541,6 +548,7 @@ void dhcp_poll(void) {
         if (now - lease_started_ms >= rebinding_at_ms) {
             dhcp_state = DHCP_STATE_REBINDING;
             advance_transaction_id();
+            state_started_ms = now;
             bool sent = send_renew_request(true);
             u64 remaining = lease_duration_ms - (now - lease_started_ms);
             u64 delay = remaining / 2u;
