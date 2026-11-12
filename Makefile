@@ -177,7 +177,7 @@ test: $(BUILD_DIR)/vmm_test.o
 # Host-only IPC endpoint tests. IPC_HOST_TEST replaces privileged IRQ control.
 ipc-test:
 	mkdir -p $(BUILD_DIR)
-	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -DIPC_HOST_TEST -I$(INCLUDE_DIR) tests/ipc_endpoint_test.c $(KERNEL_DIR)/ipc.c -o $(BUILD_DIR)/ipc_endpoint_test
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -DIPC_HOST_TEST -I$(INCLUDE_DIR) tests/ipc_endpoint_test.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/string.c -o $(BUILD_DIR)/ipc_endpoint_test
 	$(BUILD_DIR)/ipc_endpoint_test
 
 	@echo "VMM test object built successfully with RUN_VMM_TESTS defined"
