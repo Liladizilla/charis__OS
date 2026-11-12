@@ -48,15 +48,19 @@ static void test_directional_rights(void) {
     assert(ipc_recv(send_c, NULL, 0, NULL) == IPC_STATUS_ERROR);
     assert(ipc_send(send_c, "y", 1) == IPC_STATUS_OK);
 
+    active_task = &task_c;
+    assert(ipc_close(send_c) == IPC_STATUS_OK);
+
     active_task = &task_a;
     char received = 0;
     u32 sender = 0;
     assert(ipc_recv(receive_a, &received, sizeof(received), &sender) == 1);
     assert(received == 'y' && sender == task_c.pid);
-
+    /* A receive-only endpoint can distinguish an empty queue from EOF after
+     * the peer closes, even when the peer delivered a final queued message. */
+    assert(ipc_recv(receive_a, &received, sizeof(received), &sender) ==
+           IPC_STATUS_PEER_CLOSED);
     assert(ipc_close(receive_a) == IPC_STATUS_OK);
-    active_task = &task_c;
-    assert(ipc_close(send_c) == IPC_STATUS_OK);
 }
 
 static void test_rights_queue_and_close(void) {
