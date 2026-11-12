@@ -22,9 +22,7 @@
 #define SYS_SHM_ALLOC           96
 #define SYS_SHM_GET             97
 #define SYS_SHM_FREE            94
-#define SYS_IPC_CREATE          93
-#define SYS_IPC_SEND            92
-#define SYS_IPC_RECV            91
+/* 91-93 are reserved; legacy global integer-channel IPC was removed. */
 #define SYS_SOCKET              90
 #define SYS_CONNECT             89
 #define SYS_BIND                88
