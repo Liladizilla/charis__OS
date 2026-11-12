@@ -34,15 +34,16 @@ The project is under active development. It is not currently a general-purpose o
 | Window manager | Bounded ownership, back-to-front composition, focus-only input, move, lower-right resize grip, maximize/restore, minimize, taskbar switching and Alt+Tab; snap/tiling and QEMU pointer-resize validation remain unfinished |
 | Settings | Font family, text size and interface scale; CI verifies saved values survive a reboot on a writable FAT32 test disk |
 | Security | Selected capability checks and input validation; page faults use a dedicated TSS.IST1 stack with QEMU guard-fault verification; overall enforcement and isolation remain incomplete |
-| Networking | RTL8139 transmit path only; receive and TCP/IP stack are not implemented |
-| USB and peripherals | USB and gamepad support are stubs; audio support is incomplete |
+| Networking | RTL8139 polling Ethernet TX/RX; ARP, IPv4, ICMP, UDP, static routing, DNS, a constrained TCP client and plain-HTTP browser requests are implemented. DHCP, IPv6, TLS/HTTPS and robust multi-connection TCP are not. No Wi-Fi driver is present |
+| Platform services | PIT-backed uptime exists; wall-clock RTC, battery/ACPI telemetry and a complete power-management service are not implemented |
+| Audio and peripherals | PC-speaker beep path and incomplete HDA work exist; general PCM playback is not supported. USB and gamepad support remain incomplete |
 | Userspace | No complete libc, package manager, installer or general-purpose userspace environment |
 
 For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). A subsystem is not considered complete merely because it compiles.
 
 ## Desktop screenshots
 
-The latest checked-in PNG remains the 1024×768 capture from commit `1f0414c` (CI run #724). The latest full [QEMU desktop and boot artifact set](https://github.com/Liladizilla/charis__OS/actions/runs/43223435468) is CI run #806 on the descriptor-lifetime branch; it includes the desktop, app and multi-window captures, Settings persistence after reboot, ELF execution checks, and the kernel-stack guard/IST fault-injection logs. The checked-in PNG is a historical snapshot, not a screenshot of the latest build.
+The checked-in PNG below is a real QEMU framebuffer capture, not a design mockup. The latest integrated `main` build is commit `6749f0a` and passed [CI run #807](https://github.com/Liladizilla/charis__OS/actions/runs/43235569439). Its downloadable [desktop preview artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43235569439) contains fresh desktop, Browser, Files, multi-window, Settings, scaling and Terminal captures plus serial/QEMU logs. The checked-in PNG remains the earlier run #724 snapshot; do not mistake it for a screenshot of the latest build.
 
 ![CharisOS QEMU desktop workspace, CI run 724](docs/screenshots/charisos-desktop-run-724.png)
 
@@ -50,7 +51,7 @@ The [run #722 capture](docs/screenshots/charisos-desktop-run-722.png) and older 
 
 ## Latest desktop validation
 
-[CI run #806](https://github.com/Liladizilla/charis__OS/actions/runs/43223435468) passed on commit `689a0bd`. It completed dependency installation, the freestanding kernel build, x86-64 baseline audit, descriptor lifecycle/duplication and other host regressions, BIOS/ring-3 checks, VMM huge-page/permission regressions, the dedicated kernel-stack guard/IST1 fault-injection test, QEMU desktop captures and Settings persistence checks.
+[CI run #807](https://github.com/Liladizilla/charis__OS/actions/runs/43235569439) passed on integrated `main` commit `6749f0a`. It completed dependency installation, the freestanding kernel build, x86-64 baseline audit, descriptor lifecycle/duplication and other host regressions, BIOS/ring-3 checks, VMM huge-page/permission regressions, the dedicated kernel-stack guard/IST1 fault-injection test, QEMU desktop captures and Settings persistence checks.
 
 The refreshed 1024×768 QEMU capture shows four direct application cards, System Overview, System Status and Kernel Activity. Kernel Activity displays context-switch, interrupt and syscall counters through an O(1) snapshot API; desktop repaint does not traverse the scheduler task list. It is suppressed when text scale or available geometry leaves insufficient room. At 200% text and 120% UI scale it is intentionally absent. CI run #732 also boots a dedicated fault-injection image: a kernel task writes to its own unmapped stack guard, the CPU enters through TSS.IST1, the dispatcher verifies the exception frame is on that stack, emits containment markers and halts with a diagnostic panic rather than triple-faulting. This proves safe exception reporting, not recovery of a corrupted kernel task. Unused desktop space, richer user-facing workspace content and the complete font/UI/framebuffer matrix remain open. This is engineering evidence, not a release-quality claim.
 
@@ -84,8 +85,9 @@ CharisOS is still an early-stage kernel and shell. In particular:
 - Capability enforcement covers only selected operations. It is not a complete security boundary.
 - The current entropy source is hardware-feature-dependent. If RDRAND is unavailable, cryptographic token generation is disabled; no weak fallback is presented as cryptographic randomness.
 - Storage support is limited to legacy primary-channel ATA PIO and FAT32. AHCI and NVMe are not implemented.
-- Networking is limited to an RTL8139 transmit path. TCP/IP and receive support are not implemented.
-- USB support is not implemented, and audio/peripheral support remains partial.
+- Networking has a polling RTL8139 Ethernet path with receive, ARP/IPv4/ICMP/UDP, static routes, DNS, a constrained TCP client and plain HTTP. It is not yet a general Internet-ready stack: there is no DHCP, IPv6, TLS/HTTPS, robust TCP retransmission/concurrency or Wi-Fi driver. Real-LAN interoperability remains unverified.
+- There is no RTC-backed wall clock, ACPI battery telemetry or completed sleep/hibernate path. The displayed uptime is not a substitute for date/time.
+- Audio currently has a PC-speaker beep path and incomplete HDA work; general PCM playback is not supported. USB and gamepad support remain incomplete.
 - The graphics path uses the currently supported framebuffer mode; broad hardware and resolution coverage remains future work.
 
 Do not use this project to store sensitive data or as the only operating system on a machine.
