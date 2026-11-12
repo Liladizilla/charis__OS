@@ -47,7 +47,9 @@ int main(void) {
     assert(!invalid.valid);
     assert(!rtc_decode_registers(0,0,0,0x29,0x02,0x23,0x20,0x02,&invalid));
     assert(!rtc_decode_registers(0x6A,0,0,1,1,0x26,0x20,0x02,&invalid));
-    assert(!rtc_decode_registers(0,0,0,1,1,0x26,0x18,0x02,&invalid));
+    /* A malformed optional century byte falls back to the documented pivot. */
+    expect_time(0,0,0,1,1,0x26,0x18,0x02,
+                2026,1,1,0,0,0);
 
     assert(!rtc_epoch_to_datetime(13569465600ULL, &invalid));
     puts("rtc_decode_test: PASS");
