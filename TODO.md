@@ -10,7 +10,7 @@
 
 ## Phase 2: Syscall Interface & User Space (PARTIAL)
 - [x] SYSCALL/SYSRET assembly entry and MSR setup (user bootstrap wrappers currently use DPL3 `int 0x80`)
-- [x] sys_exit(), sys_getpid(), sys_yield(), sys_sleep()
+- [x] sys_exit(), sys_getpid(), sys_yield(), sys_sleep(), sys_waitpid()
 - [x] sys_read()/sys_write() with fd-based I/O
 - [x] sys_print() - debug output
 - [ ] sys_fork() - create and validate child register context, address-space ownership and resources
@@ -116,7 +116,9 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Distinguish unused task slots from exited zombies; exited tasks are no longer silently reused
 - [x] Preserve the `SYS_EXIT` status in zombie metadata for future `waitpid()` collection
 - [x] Track each task's creator PID and provide task-table PID lookup for child collection
-- [ ] wait()/waitpid() syscall and safe resource reaping still missing
+- [x] `SYS_WAITPID` supports exact-child and any-child selection, `WNOHANG`, validated status copy-out, blocking wakeup, and zombie-slot reclamation after kernel-stack release
+- [x] Reparent descendants when a parent exits; auto-reap orphaned descendants only after their kernel stacks are detached
+- [x] QEMU regression covers exact PID, any child, exit status, WNOHANG, invalid/non-child selectors, slot reclamation and orphan auto-reaping
 
 ## Phase 8: Network Stack (PARTIAL - ENABLED BUT INCOMPLETE)
 - [x] Socket API (AF_INET, SOCK_STREAM/SOCK_DGRAM) - socket.c
