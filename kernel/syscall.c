@@ -43,63 +43,103 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     usize count = (usize)a3;
     task_t* task = scheduler_current();
 
-    fd_entry_t* f = fd_get(fd);
-    if (!f || !f->node || !(f->rights & FD_RIGHT_READ) ||
-        count > SYSCALL_IO_MAX) return (u64)-1;
+    vfs_open_file_t* file = fd_acquire(fd, FD_RIGHT_READ);
+    if (!file || !file->node || count > SYSCALL_IO_MAX) {
+        if (file) fd_release(file);
+        return (u64)-1;
+    }
+
+    u64 result_value = (u64)-1;
+    u8* bounce = NULL;
 
     /* Standard input has its own device authority. Other reads must continue
      * to satisfy the process capability as well as the descriptor grant. */
     if (fd != FD_STDIN &&
-        (!task || !security_check_capability(task, CAP_FS_READ))) return (u64)-1;
-    if (count == 0) return 0;
-    /* Reject wrapping ranges before a device or VFS callback observes them. */
-    if (fd != FD_STDIN && (u64)count > (~(u64)0 - f->offset))
-        return (u64)-1;
+        (!task || !security_check_capability(task, CAP_FS_READ))) goto done;
+    if (count == 0) {
+        result_value = 0;
+        goto done;
+    }
 
     if (task && task->is_user) {
         /* Validate before touching an input source. stdin returns at most one
          * byte; file/device nodes may return up to the requested count. */
         usize writable_span = fd == FD_STDIN ? 1 : count;
         if (!syscall_validate_user_range(task, user_buf, writable_span, true))
-            return (u64)-1;
+            goto done;
 
-        u8* bounce = (u8*)kmalloc(count);
-        if (!bounce) return -1;
+        usize bounce_size = fd == FD_STDIN ? 1 : count;
+        bounce = (u8*)kmalloc(bounce_size);
+        if (!bounce) goto done;
+
+        /* The per-description lock keeps a shared offset stable through the
+         * callback and copyout. VFS callbacks are bounded and non-blocking. */
+        u64 irq_flags = fd_file_io_lock(file);
+        if (fd != FD_STDIN && (u64)count > (~(u64)0 - file->offset)) {
+            fd_file_io_unlock(file, irq_flags);
+            goto done;
+        }
+
         usize bytes = 0;
         if (fd == FD_STDIN) {
             char ch;
-            if (keyboard_get_key(&ch)) { bounce[0] = (u8)ch; bytes = 1; }
-        } else if (f->node->read) {
-            s64 result = f->node->read(f->node, f->offset, count, bounce);
-            if (result < 0 || (u64)result > count) {
-                kfree(bounce);
-                return (u64)-1;
+            if (keyboard_get_key(&ch)) {
+                bounce[0] = (u8)ch;
+                bytes = 1;
             }
-            if (result > 0) bytes = (usize)result;
+        } else if (file->node->read) {
+            s64 read_result = file->node->read(
+                file->node, file->offset, count, bounce);
+            if (read_result < 0 || (u64)read_result > count) {
+                fd_file_io_unlock(file, irq_flags);
+                goto done;
+            }
+            if (read_result > 0) bytes = (usize)read_result;
         } else {
-            kfree(bounce);
-            return (u64)-1;
+            fd_file_io_unlock(file, irq_flags);
+            goto done;
         }
-        bool copied = !bytes || syscall_copy_to_user_data(task, user_buf, bounce, bytes);
-        kfree(bounce);
-        if (!copied) return (u64)-1;
-        if (fd != FD_STDIN && bytes > 0) f->offset += bytes;
-        return bytes;
+
+        bool copied = !bytes ||
+            syscall_copy_to_user_data(task, user_buf, bounce, bytes);
+        if (copied && fd != FD_STDIN && bytes > 0)
+            file->offset += bytes;
+        fd_file_io_unlock(file, irq_flags);
+        if (copied) result_value = bytes;
+        goto done;
     }
 
-    void* buf = (void*)user_buf;
-    if (fd == FD_STDIN) {
-        char ch;
-        if (keyboard_get_key(&ch)) { *(char*)buf = ch; return 1; }
-        return 0;
+    {
+        u64 irq_flags = fd_file_io_lock(file);
+        if (fd != FD_STDIN && (u64)count > (~(u64)0 - file->offset)) {
+            fd_file_io_unlock(file, irq_flags);
+            goto done;
+        }
+
+        if (fd == FD_STDIN) {
+            char ch;
+            if (keyboard_get_key(&ch)) {
+                *(char*)user_buf = ch;
+                result_value = 1;
+            } else {
+                result_value = 0;
+            }
+        } else if (file->node->read) {
+            s64 read_result = file->node->read(
+                file->node, file->offset, count, (u8*)user_buf);
+            if (read_result >= 0 && (u64)read_result <= count) {
+                result_value = (u64)read_result;
+                if (read_result > 0)
+                    file->offset += (u64)read_result;
+            }
+        }
+        fd_file_io_unlock(file, irq_flags);
     }
-    if (f->node->read) {
-        s64 result = f->node->read(f->node, f->offset, count, (u8*)buf);
-        if (result < 0 || (u64)result > count) return (u64)-1;
-        if (result > 0) f->offset += (u64)result;
-        return (u64)result;
-    }
-    return (u64)-1;
+
+done:
+    if (bounce) kfree(bounce);
+    fd_release(file);
+    return result_value;
 }
 
 static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
@@ -109,51 +149,61 @@ static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6)
     usize count = (usize)a3;
     task_t* task = scheduler_current();
 
-    fd_entry_t* f = fd_get(fd);
-    if (!f || !f->node || !(f->rights & FD_RIGHT_WRITE) ||
-        count > SYSCALL_IO_MAX) return (u64)-1;
-    if (count == 0) return 0;
-    if (fd != FD_STDOUT && fd != FD_STDERR &&
-        (u64)count > (~(u64)0 - f->offset)) return (u64)-1;
-
-    u8* bounce = NULL;
-    const u8* buf = (const u8*)user_buf;
-    if (task && task->is_user) {
-        bounce = (u8*)kmalloc(count);
-        if (!bounce) return (u64)-1;
-        if (!syscall_copy_user_data(task, user_buf, bounce, count)) {
-            kfree(bounce);
-            return (u64)-1;
-        }
-        buf = bounce;
+    vfs_open_file_t* file = fd_acquire(fd, FD_RIGHT_WRITE);
+    if (!file || !file->node || count > SYSCALL_IO_MAX) {
+        if (file) fd_release(file);
+        return (u64)-1;
     }
 
     u64 result = (u64)-1;
-    if (fd == FD_STDOUT || fd == FD_STDERR) {
-        for (usize i = 0; i < count; i++) {
-            if (buf[i] == 0) break;
-            vga_putchar((char)buf[i]);
-        }
-        result = count;
-    } else if (f->node->write) {
-        /*
-         * Standard output/error are console devices, not filesystem writes.
-         * Every other writable node must require the explicit write capability;
-         * otherwise a task with CAP_FS_READ can modify files through SYS_WRITE.
-         */
-        if (!task || !security_check_capability(task, CAP_FS_WRITE)) {
-            if (bounce) kfree(bounce);
-            return (u64)-1;
-        }
-        s64 written = f->node->write(f->node, f->offset, count, buf);
-        if (written < 0 || (u64)written > count) {
-            result = (u64)-1;
-        } else {
-            result = (u64)written;
-            if (written > 0) f->offset += (u64)written;
-        }
+    u8* bounce = NULL;
+    const u8* buffer = (const u8*)user_buf;
+
+    if (count == 0) {
+        result = 0;
+        goto done;
     }
+
+    if (fd != FD_STDOUT && fd != FD_STDERR &&
+        (!task || !security_check_capability(task, CAP_FS_WRITE)))
+        goto done;
+
+    if (task && task->is_user) {
+        bounce = (u8*)kmalloc(count);
+        if (!bounce) goto done;
+        if (!syscall_copy_user_data(task, user_buf, bounce, count))
+            goto done;
+        buffer = bounce;
+    }
+
+    {
+        u64 irq_flags = fd_file_io_lock(file);
+        if (fd != FD_STDOUT && fd != FD_STDERR &&
+            (u64)count > (~(u64)0 - file->offset)) {
+            fd_file_io_unlock(file, irq_flags);
+            goto done;
+        }
+
+        if (fd == FD_STDOUT || fd == FD_STDERR) {
+            for (usize i = 0; i < count; i++) {
+                if (buffer[i] == 0) break;
+                vga_putchar((char)buffer[i]);
+            }
+            result = count;
+        } else if (file->node->write) {
+            s64 written = file->node->write(
+                file->node, file->offset, count, buffer);
+            if (written >= 0 && (u64)written <= count) {
+                result = (u64)written;
+                if (written > 0) file->offset += (u64)written;
+            }
+        }
+        fd_file_io_unlock(file, irq_flags);
+    }
+
+done:
     if (bounce) kfree(bounce);
+    fd_release(file);
     return result;
 }
 
