@@ -240,6 +240,14 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
 
     vfs_node_t* node = vfs_resolve(path);
     if (!node) return (u64)-1;
+
+    /* Reject an aliased owned node before calling open: its existing
+     * descriptor must retain sole responsibility for the close callback. */
+    if (node->close) {
+        for (u32 i = 3; i < MAX_FDS; i++)
+            if (task->fd_table[i].node == node) return (u64)-1;
+    }
+
     if (((rights & FD_RIGHT_READ) && !node->read) ||
         ((rights & FD_RIGHT_WRITE) && !node->write)) {
         if (node->close) node->close(node);

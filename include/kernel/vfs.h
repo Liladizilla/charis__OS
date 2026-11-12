@@ -58,6 +58,9 @@ vfs_node_t* vfs_resolve(const char* path);
 int vfs_mount(const char* path, vfs_node_t* fs_root);
 
 int fd_table_init(void);
+/* On success, a closeable per-open node transfers cleanup ownership to this
+ * descriptor. Failed allocations leave ownership with the caller. A single
+ * task may attach a closeable node to at most one non-standard descriptor. */
 fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights);
 bool fd_close(fd_handle_t handle);
 /* Close non-standard descriptors owned by a task and restore standard streams. */

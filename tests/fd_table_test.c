@@ -7,6 +7,7 @@ static task_t* active_task;
 static int close_count;
 static int observed_revoked_handle;
 static fd_handle_t observed_fd = FD_HANDLE_INVALID;
+static vfs_node_t capacity_nodes[MAX_FDS];
 
 extern vfs_node_t dev_kbd;
 extern vfs_node_t dev_vga;
@@ -125,14 +126,39 @@ static void test_handles_are_bound_to_the_owner_task(void) {
     fd_table_close_all(second.fd_table);
 }
 
+static void test_closeable_node_has_one_descriptor_owner(void) {
+    task_t task;
+    reset_task(&task, 59);
+    active_task = &task;
+    close_count = 0;
+    observed_fd = FD_HANDLE_INVALID;
+
+    fd_handle_t first = fd_alloc(&read_write_node, 0, FD_RIGHT_READ);
+    assert(first != FD_HANDLE_INVALID);
+    assert(fd_get(first) != NULL);
+
+    /* Reattaching a closeable node would double-run its release callback. */
+    assert(fd_alloc(&read_write_node, 0, FD_RIGHT_READ) == FD_HANDLE_INVALID);
+    assert(fd_get(first) != NULL);
+    assert(fd_close(first));
+    assert(close_count == 1);
+}
+
 static void test_capacity_and_cleanup(void) {
     task_t task;
     reset_task(&task, 61);
     active_task = &task;
     close_count = 0;
+    observed_fd = FD_HANDLE_INVALID;
 
     for (u32 i = 3; i < MAX_FDS; i++) {
-        fd_handle_t handle = fd_alloc(&read_write_node, 0, FD_RIGHT_READ);
+        capacity_nodes[i] = (vfs_node_t){
+            .flags = VFS_FILE,
+            .read = test_read,
+            .write = test_write,
+            .close = test_close
+        };
+        fd_handle_t handle = fd_alloc(&capacity_nodes[i], 0, FD_RIGHT_READ);
         assert(handle != FD_HANDLE_INVALID);
         assert(FD_HANDLE_SLOT(handle) == i);
     }
@@ -168,6 +194,7 @@ static void test_generation_exhaustion_fails_closed(void) {
 int main(void) {
     test_rights_and_stale_handle_rejection();
     test_handles_are_bound_to_the_owner_task();
+    test_closeable_node_has_one_descriptor_owner();
     test_capacity_and_cleanup();
     test_generation_exhaustion_fails_closed();
     puts("PASS: task-bound descriptor handles, stale-reference rejection, rights and lifecycle");

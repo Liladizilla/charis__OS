@@ -432,7 +432,11 @@ operation. The descriptor stores only the granted rights; later reads and writes
 must pass both the descriptor check and the underlying operation check.
 Standard input receives read authority, while standard output/error receive
 write authority. Closing a descriptor revokes its rights before the filesystem
-close callback runs. Descriptor tables are task-local and are rebuilt when a
+close callback runs. A closeable VFS node is a per-open owned object: a task
+cannot attach the same node pointer to two descriptors, and failed descriptor
+allocation leaves cleanup ownership with the caller. Cross-task sharing is not
+implemented by copying node pointers; it requires a separately owned,
+reference-counted open-file object with per-recipient attenuated rights. Descriptor tables are task-local and are rebuilt when a
 task slot is reused. Non-standard descriptor values are opaque 64-bit handles
 bound to the owning task PID and a per-slot generation. Task PIDs are
 allocated with atomic compare/exchange, remain monotonic, and fail closed

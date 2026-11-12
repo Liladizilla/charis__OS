@@ -187,6 +187,14 @@ fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights) {
     task_t* task = scheduler_current();
     if (!task || !task->pid || !node || !rights ||
         (rights & ~FD_RIGHT_MASK)) return FD_HANDLE_INVALID;
+
+    /* A closeable node is an exclusively owned per-open object. Never let
+     * two descriptors in one task release the same object independently. */
+    if (node->close) {
+        for (u32 i = 3; i < MAX_FDS; i++)
+            if (task->fd_table[i].node == node) return FD_HANDLE_INVALID;
+    }
+
     if ((rights & FD_RIGHT_READ) && !node->read) return FD_HANDLE_INVALID;
     if ((rights & FD_RIGHT_WRITE) && !node->write) return FD_HANDLE_INVALID;
 
