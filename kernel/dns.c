@@ -171,6 +171,16 @@ static void handle_dns_response(u16 source_port, const u8 source_ip[4],
     finish_query(false, zero);
 }
 
+bool net_dns_set_server(const u8 server[4]) {
+    if (!server || !(server[0] || server[1] || server[2] || server[3]) ||
+        (server[0] >= 224u && server[0] <= 239u) ||
+        (server[0] == 255u && server[1] == 255u &&
+         server[2] == 255u && server[3] == 255u))
+        return false;
+    kmemcpy(dns_server, server, 4);
+    return true;
+}
+
 bool net_dns_init(void) {
     if (ready) return true;
     if (!parse_ipv4(config_get_string("net_dns", "1.1.1.1"), dns_server))
