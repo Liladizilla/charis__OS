@@ -9,6 +9,7 @@ static __thread task_t* active_task;
 static int close_count;
 static int observed_revoked_handle;
 static bool fail_next_kmalloc;
+static pthread_barrier_t owner_start_barrier;
 static fd_handle_t observed_fd = FD_HANDLE_INVALID;
 static vfs_node_t capacity_nodes[MAX_FDS];
 
@@ -415,8 +416,6 @@ typedef struct {
     fd_handle_t handle;
     fd_alloc_status_t status;
 } concurrent_owner_args_t;
-
-static pthread_barrier_t owner_start_barrier;
 
 static void* concurrent_owner_alloc(void* opaque) {
     concurrent_owner_args_t* args = (concurrent_owner_args_t*)opaque;
