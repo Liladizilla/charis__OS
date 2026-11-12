@@ -21,6 +21,7 @@
 #include <kernel/wm.h>
 #include <kernel/input.h>
 #include <kernel/ipc.h>
+#include <kernel/ipc.h>
 #include <kernel/desktop.h>
 #include <kernel/apps.h>
 #include <kernel/audio.h>
