@@ -176,21 +176,11 @@ void task_init(void) {
 
         // Initialize fd table
         for (int j = 0; j < MAX_FDS; j++) {
-            task_pool[i].fd_table[j].node = NULL;
-            task_pool[i].fd_table[j].offset = 0;
-            task_pool[i].fd_table[j].flags = 0;
+            task_pool[i].fd_table[j].file = NULL;
             task_pool[i].fd_table[j].rights = 0;
             task_pool[i].fd_table[j].generation = 0;
         }
-        // stdin, stdout, stderr point to keyboard and vga devices
-        extern vfs_node_t dev_kbd;
-        extern vfs_node_t dev_vga;
-        task_pool[i].fd_table[FD_STDIN].node = &dev_kbd;
-        task_pool[i].fd_table[FD_STDIN].rights = FD_RIGHT_READ;
-        task_pool[i].fd_table[FD_STDOUT].node = &dev_vga;
-        task_pool[i].fd_table[FD_STDOUT].rights = FD_RIGHT_WRITE;
-        task_pool[i].fd_table[FD_STDERR].node = &dev_vga;
-        task_pool[i].fd_table[FD_STDERR].rights = FD_RIGHT_WRITE;
+        fd_table_init(task_pool[i].fd_table);
     }
     task_list = NULL;
 }
@@ -396,24 +386,9 @@ static bool task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->waiting_event = 0;
     task->ipc_wait_next = NULL;
 
-    /* Task slots are reused after an unstarted task is discarded. Rebuild
-     * their descriptor table here so no stale handles survive and the
-     * standard streams are present for every new task. */
-    extern vfs_node_t dev_kbd;
-    extern vfs_node_t dev_vga;
-    for (int i = 0; i < MAX_FDS; i++) {
-        task->fd_table[i].node = NULL;
-        task->fd_table[i].offset = 0;
-        task->fd_table[i].flags = 0;
-        task->fd_table[i].rights = 0;
-        /* Keep generations: a reused task slot must not revive old handles. */
-    }
-    task->fd_table[FD_STDIN].node = &dev_kbd;
-    task->fd_table[FD_STDIN].rights = FD_RIGHT_READ;
-    task->fd_table[FD_STDOUT].node = &dev_vga;
-    task->fd_table[FD_STDOUT].rights = FD_RIGHT_WRITE;
-    task->fd_table[FD_STDERR].node = &dev_vga;
-    task->fd_table[FD_STDERR].rights = FD_RIGHT_WRITE;
+    /* Drop any residual descriptors before this task slot receives a new
+     * identity. Generations survive so stale tokens cannot become valid. */
+    fd_table_close_all(task->fd_table);
 
     for (u32 i = 0; i < TASK_NAME_MAX - 1 && name && name[i]; i++) {
         task->name[i] = name[i];
@@ -770,13 +745,7 @@ void task_discard_unstarted(task_t* task) {
     task->prev = NULL;
     task->ipc_wait_next = NULL;
     task->name[0] = '\0';
-    for (u32 i = 0; i < MAX_FDS; i++) {
-        task->fd_table[i].node = NULL;
-        task->fd_table[i].offset = 0;
-        task->fd_table[i].flags = 0;
-        task->fd_table[i].rights = 0;
-        /* Preserve generations across discarded task-slot reuse. */
-    }
+    fd_table_close_all(task->fd_table);
 }
 
 void task_sleep_ms(u32 ms) {
