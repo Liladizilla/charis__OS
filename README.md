@@ -192,7 +192,9 @@ types.h ─┬─ vga.c      serial.c     string.c
 
 Numbering follows Linux where the two overlap (`READ`=0, `WRITE`=1, `OPEN`=2,
 `CLOSE`=3, `GETPID`=39, `FORK`=57, `EXEC`=59, `EXIT`=60, `WAITPID`=61) and uses a
-CharisOS-specific band above 70 for sockets, IPC, diagnostics and the game SDK.
+CharisOS-specific band above 70 for sockets, diagnostics and the game SDK.
+IPC syscall slots 91-93 are reserved and unregistered; authenticated ring-3
+endpoint operations are not part of the current syscall ABI.
 `WAITPID(pid, status, options)` accepts an exact child PID or `-1` for any child;
 `WNOHANG` is the only supported option. The status destination is validated
 before the kernel blocks or consumes a zombie.
@@ -481,16 +483,18 @@ rights while sharing the same open-file offset. Task exit publishes
 from appearing after cleanup. Host regressions cover rights escalation,
 full-table rollback, sender close, recipient cleanup and rejected teardown
 states. No ring-3 syscall exposes this primitive; userspace descriptor transfer
-still requires a separately designed, authenticated IPC protocol. The
+still requires a separately designed, authenticated IPC protocol.
+
 The global integer-channel IPC API has been removed. The kernel now creates
 explicit endpoint pairs and installs generation-protected handles in each
 owner task's local endpoint table. Handles resolve only for the current task;
 SEND and RECEIVE rights are checked independently, and the peer PID/pointer is
 established by the kernel rather than supplied by a message. Each direction has
 a bounded 16-message queue with a 512-byte message limit. Send is nonblocking;
-queue-full, empty and undersized-buffer outcomes are explicit, and messages are
-never silently truncated. Closing an endpoint revokes its handle, discards its
-own inbox and releases one channel reference. Task exit closes all endpoints
+queue-full, empty, undersized-buffer and peer-closed outcomes are explicit, and
+messages are never silently truncated. A receiver drains already queued
+messages and then receives PEER_CLOSED when its peer closes. Closing an endpoint
+revokes its handle, discards its own inbox and releases one channel reference. Task exit closes all endpoints
 immediately after publishing EXITING.
 
 This is a kernel-only first stage: endpoint-pair creation rejects ring-3 tasks,
@@ -558,9 +562,9 @@ claim that a weak fallback provides cryptographic entropy.
 **Known gaps:** per-open rights are not yet transferable or inherited, and the
 broader resource model is incomplete. Capability bits are still assigned by
 kernel task constructors; there is no user-controlled delegation, attenuation
-API or per-resource capability object yet. Global IPC, socket, networking,
-diagnostics and shared-memory interfaces remain kernel-only rather than being
-exposed to ring 3. Process isolation, safe reaping and broader capability
+API or per-resource capability object yet. Task-owned IPC endpoints, sockets,
+networking, diagnostics and shared-memory interfaces remain kernel-only rather
+than being exposed to ring 3. Full process isolation and broader capability
 enforcement remain unfinished.
 
 See [`SECURITY.md`](./SECURITY.md) for reporting guidance.
