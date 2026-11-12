@@ -33,6 +33,8 @@ void* vmm_phys_to_virt(u64 physical);
 void vmm_run_tests(void);
 
 pml4_t* vmm_create_address_space(void);
+/* Clone supervisor kernel mappings into dst. A NULL source always
+ * selects the canonical kernel CR3, never the currently active process CR3. */
 bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src);
 /* Destroy an inactive process address space, freeing owned USER frames and
  * its private lower-half page-table hierarchy. Shared kernel high-half tables

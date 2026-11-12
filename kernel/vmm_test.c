@@ -569,6 +569,55 @@ static bool test_kernel_mapping_clone_rejects_user_leaves(void) {
     return high_rejected && low_rejected && pmm_free_pages() == free_before;
 }
 
+static bool test_null_kernel_root_is_stable_from_user_cr3(void) {
+    u32 free_before = pmm_free_pages();
+    pml4_t* user_root = vmm_create_address_space();
+    pml4_t* destination = vmm_create_address_space();
+    u64 user_frame = pmm_alloc_page();
+    if (!user_root || !destination || !user_frame) {
+        if (user_frame) pmm_free_page(user_frame);
+        if (destination) vmm_destroy_address_space(destination);
+        if (user_root) vmm_destroy_address_space(user_root);
+        return false;
+    }
+
+    if (!vmm_copy_kernel_mappings(user_root, NULL)) {
+        vmm_destroy_address_space(destination);
+        vmm_destroy_address_space(user_root);
+        pmm_free_page(user_frame);
+        return false;
+    }
+
+    /* Put a USER leaf in PML4[0], beyond the kernel's low identity-map PDPT
+     * entries. A wrong active-CR3 source must reject it during the clone. */
+    const u64 user_va = 0x0000001900004000ULL;
+    if (!vmm_map_page_pml4(user_root, user_va, user_frame,
+            VMM_FLAG_PRESENT | VMM_FLAG_USER | VMM_FLAG_WRITABLE)) {
+        vmm_destroy_address_space(destination);
+        vmm_destroy_address_space(user_root);
+        pmm_free_page(user_frame);
+        return false;
+    }
+
+    vmm_switch(user_root);
+    bool copied_kernel = vmm_copy_kernel_mappings(destination, NULL);
+    vmm_switch(NULL);
+
+    u64 user_physical = 0, user_flags = 0;
+    bool original_user_mapping = vmm_translate(user_root, user_va,
+                                                &user_physical, &user_flags) &&
+        (user_physical & ~0xFFFULL) == user_frame &&
+        (user_flags & VMM_FLAG_USER);
+    u64 leaked_physical = 0, leaked_flags = 0;
+    bool destination_excludes_user = !vmm_translate(destination, user_va,
+                                      &leaked_physical, &leaked_flags);
+
+    vmm_destroy_address_space(destination);
+    vmm_destroy_address_space(user_root);
+    return copied_kernel && original_user_mapping &&
+           destination_excludes_user && pmm_free_pages() == free_before;
+}
+
 void vmm_run_tests(void) {
     report("map_existing", test_map_existing());
     report("map_missing", test_map_missing_page());
@@ -587,5 +636,6 @@ void vmm_run_tests(void) {
     report("mapping_validation_matrix", test_mapping_validation_matrix());
     report("destroy_address_space", test_destroy_address_space_reclaims_owned_pages());
     report("kernel_clone_rejects_user", test_kernel_mapping_clone_rejects_user_leaves());
+    report("null_clone_uses_kernel_root", test_null_kernel_root_is_stable_from_user_cr3());
 }
 
