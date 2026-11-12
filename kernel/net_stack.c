@@ -151,6 +151,15 @@ static bool ip_is_zero(const u8 ip[4]) {
     return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0;
 }
 
+static bool ip_is_unicast(const u8 ip[4]) {
+    if (!ip || ip_is_zero(ip) || ip[0] == 127u ||
+        (ip[0] >= 224u && ip[0] <= 239u) ||
+        (ip[0] == 255u && ip[1] == 255u &&
+         ip[2] == 255u && ip[3] == 255u))
+        return false;
+    return true;
+}
+
 bool net_stack_has_ipv4_config(void) {
     if (!stack_ready) net_stack_init();
     return ip_is_configured();
@@ -158,7 +167,7 @@ bool net_stack_has_ipv4_config(void) {
 
 bool net_stack_configure_ipv4(const u8 address[4], const u8 mask[4],
                               const u8 gateway[4]) {
-    if (!address || !mask || !gateway || !ipv4_unicast(address) ||
+    if (!address || !mask || !gateway || !ip_is_unicast(address) ||
         !valid_netmask(mask))
         return false;
     if (!ip_is_zero(gateway)) {
