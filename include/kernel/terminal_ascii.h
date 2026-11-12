@@ -3,22 +3,16 @@
 
 #include <kernel/types.h>
 
-#define CHARISOS_ASCII_COLUMNS 19u
-#define CHARISOS_ASCII_ROWS 12u
+#define CHARISOS_ASCII_COLUMNS 13u
+#define CHARISOS_ASCII_ROWS 6u
 
-/* Every row is exactly 19 monospaced cells. The compact C mark remains
- * within the terminal's safe width at 300% text scale on the default window. */
+/* Every row is exactly 13 cells. Drawn at an explicit 2x glyph scale,
+ * the mark remains prominent without consuming the terminal transcript. */
 static const char* const CHARISOS_ASCII_MARK[CHARISOS_ASCII_ROWS] = {
-    "     ##########    ",
-    "   ################",
-    "  #####            ",
-    " ####              ",
-    "####               ",
-    "####               ",
-    "####               ",
-    "####               ",
-    " ####              ",
-    "  #####            ",
-    "   ################",
-    "     ##########    "
+    "   ##########",
+    " ########### ",
+    "####         ",
+    "####         ",
+    " ########### ",
+    "   ##########"
 };
