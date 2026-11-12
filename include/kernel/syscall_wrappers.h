@@ -23,11 +23,8 @@
 #define sys_exec(path) syscall_invoke(SYS_EXEC, (u64)(path), 0, 0, 0, 0, 0)
 #define sys_execve(path, argv, envp) syscall_invoke(SYS_EXEC, (u64)(path), (u64)(argv), (u64)(envp), 0, 0, 0)
 
-// IPC
-#define sys_ipc_create(name) syscall_invoke(SYS_IPC_CREATE, (u64)(name), 0, 0, 0, 0, 0)
-#define sys_ipc_send(ch, data, sz) syscall_invoke(SYS_IPC_SEND, (ch), (u64)(data), (sz), 0, 0, 0)
-#define sys_ipc_recv(ch, buf, max) syscall_invoke(SYS_IPC_RECV, (ch), (u64)(buf), (max), 0, 0, 0)
-
+/* IPC syscall slots 91-93 are reserved until authenticated user endpoints,
+ * user-memory preflight and transactional transfer are implemented. */
 // Shared memory
 #define sys_shm_alloc() syscall_invoke(SYS_SHM_ALLOC, 0, 0, 0, 0, 0, 0)
 #define sys_shm_get(id) (void*)syscall_invoke(SYS_SHM_GET, (id), 0, 0, 0, 0, 0)

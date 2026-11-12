@@ -1,4 +1,5 @@
 #include <kernel/task.h>
+#include <kernel/ipc.h>
 #include <kernel/task_wait.h>
 #include <kernel/task_id.h>
 #include <kernel/memory.h>
@@ -165,6 +166,10 @@ void task_init(void) {
         task_pool[i].kernel_stack_pages[1] = 0;
         task_pool[i].event_data = 0;
         task_pool[i].waiting_event = 0;
+        for (u32 endpoint = 0; endpoint < IPC_MAX_ENDPOINTS; endpoint++) {
+            task_pool[i].ipc_endpoints[endpoint] = NULL;
+            task_pool[i].ipc_endpoint_generations[endpoint] = 1;
+        }
         task_pool[i].mm.pml4 = NULL;
         task_pool[i].mm.heap_start = 0;
         task_pool[i].mm.heap_end = 0;
@@ -295,6 +300,8 @@ void task_exit_with_status(u32 status) {
          * descriptor duplication racing teardown must never publish into a
          * task after its close-all pass has completed. */
         current->state = TASK_STATE_EXITING;
+        /* Revoke endpoint handles before any other task resources are released. */
+        ipc_task_close_all(current);
         /* Parent exit transfers live descendants to the kernel adopter. */
         task_reparent_children(current);
         /* Release per-task descriptor state before the task becomes a zombie.
@@ -428,7 +435,12 @@ static bool task_recycle_zombie(task_t* task) {
     task->mm.stack_top = 0;
     task->mm.vmas = NULL;
     task->address_space = NULL;
-    task->ipc_wait_next = NULL;
+    for (u32 endpoint = 0; endpoint < IPC_MAX_ENDPOINTS; endpoint++) {
+        if (task->ipc_endpoints[endpoint]) {
+            task_irq_restore(flags);
+            return false;
+        }
+    }
     /* Publish the slot after the old identity and resources have been erased. */
     task->state = TASK_STATE_UNUSED;
     task_irq_restore(flags);
@@ -563,7 +575,13 @@ static bool task_init_common(task_t* task, const char* name, u32 capabilities, b
         task->user_code_pages[page] = 0;
     task->event_data = 0;
     task->waiting_event = 0;
-    task->ipc_wait_next = NULL;
+    /* Generations are preserved across task-slot reuse. */
+    for (u32 endpoint = 0; endpoint < IPC_MAX_ENDPOINTS; endpoint++) {
+        if (task->ipc_endpoints[endpoint]) return false;
+        if (!task->ipc_endpoint_generations[endpoint] ||
+            task->ipc_endpoint_generations[endpoint] > IPC_HANDLE_GENERATION_MAX)
+            return false;
+    }
 
     /* Drop any residual descriptors before this task slot receives a new
      * identity. Generations survive so stale tokens cannot become valid. */
@@ -920,9 +938,9 @@ void task_discard_unstarted(task_t* task) {
     task->mm.vmas = NULL;
     task->event_data = 0;
     task->waiting_event = 0;
+    ipc_task_close_all(task);
     task->next = NULL;
     task->prev = NULL;
-    task->ipc_wait_next = NULL;
     task->name[0] = '\0';
     fd_table_close_all(task->fd_table);
 }

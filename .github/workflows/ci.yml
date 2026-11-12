@@ -111,6 +111,10 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/task_wait_policy_test.c -o /tmp/task_wait_policy_test
           /tmp/task_wait_policy_test
 
+      - name: Test task-owned IPC endpoints, rights, bounded queues and teardown
+        run: |
+          make ipc-test
+
       - name: Test concurrent task PID uniqueness
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -pthread -Iinclude tests/task_pid_concurrency_test.c -o /tmp/task_pid_concurrency_test

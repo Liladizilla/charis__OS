@@ -52,8 +52,11 @@
 - [x] Reject descriptor duplication into full, allocating, exiting or zombie recipient tasks
 - [x] Verify shared open-file identity/offset, recipient cleanup and sender-close lifetime
 - [x] Specify authenticated IPC endpoint, rendezvous, rights and transactional resource-transfer requirements
-- [ ] Replace global integer IPC channels with task-local endpoint handles and kernel-established peer identities
-- [ ] Add cancellation-safe message reservations and bounded per-endpoint queues
+- [x] Replace global integer channel IDs with task-local owner-PID/generation/slot endpoint handles
+- [x] Add kernel-owned endpoint pairs with independent SEND/RECEIVE rights and authenticated peer identity
+- [x] Add bounded full-duplex queues with nonblocking send/receive, explicit FULL/EMPTY/BUFFER_SMALL outcomes and no silent truncation
+- [x] Revoke task-owned endpoints and release channel references during EXITING teardown
+- [ ] Add cancellation-safe blocking receive and message reservations (current receive is nonblocking by design)
 - [ ] Add transactional descriptor attachments with queue-owned references and receiver rollback
 - [ ] Keep ring-3 IPC and descriptor transfer denied until endpoint tests and user-memory preflight pass
 - [ ] Replace global shared-memory IDs/raw kernel-pointer access with task-owned objects and explicit user mappings
@@ -111,7 +114,17 @@ The shell still owns the framebuffer and application renderers, while the WM own
 ## Phase 7: IPC & Signals (PARTIAL)
 - [x] Signals (SIGINT, SIGSEGV, SIGCHLD) - signal.c exists
 - [x] Pipes - pipe.c implemented
-- [x] Shared memory (shm.c)
+- [x] Kernel-only fixed shared-memory block allocator exists; global IDs/raw pointers are not exposed to ring 3
+- [ ] Replace global shared-memory IDs with task-owned objects, explicit user mappings and revocation
+- [x] Remove global integer IPC channel IDs and legacy syscall wrappers/handlers
+- [x] Add task-local generation-protected endpoint handles, kernel-established peer identity and independent SEND/RECEIVE rights
+- [x] Add bounded full-duplex queues (16 messages per direction, 512 bytes per message), explicit FULL/EMPTY/BUFFER_SMALL/PEER_CLOSED results and non-truncating receive
+- [x] Revoke endpoint handles during TASK_STATE_EXITING and preserve peer lifetime until its own endpoint closes
+- [x] Host regression covers wrong-owner handles, directional rights, stale generations, generation exhaustion, aliased outputs, queue capacity, peer close, task teardown and endpoint-table limits
+- [ ] Add cancellation-safe blocking receive and endpoint wait queues
+- [ ] Add a kernel-owned service namespace with explicit listener registration and accept/reject rendezvous
+- [ ] Add transactional descriptor attachments, reference pinning, recipient-slot reservation and rollback
+- [ ] Only design ring-3 IPC syscalls after user-memory preflight, service authorization and QEMU lifecycle tests exist
 - [ ] Unix domain sockets (socket.c is INET-only)
 - [x] Distinguish unused task slots from exited zombies; exited tasks are no longer silently reused
 - [x] Preserve the `SYS_EXIT` status in zombie metadata for future `waitpid()` collection

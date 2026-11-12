@@ -2,6 +2,7 @@
 
 # Tools
 UNAME := $(shell uname -s 2>/dev/null || echo Windows)
+HOST_CC ?= gcc
 
 # Prefer the freestanding x86_64-elf toolchain when installed. A blank prefix
 # preserves compatibility with CI images that have only the native compiler;
@@ -173,6 +174,12 @@ run-debug: $(BUILD_DIR)/charisos.iso
 	$(QEMU) -cdrom $< -m 256M -serial stdio
 
 test: $(BUILD_DIR)/vmm_test.o
+# Host-only IPC endpoint tests. IPC_HOST_TEST replaces privileged IRQ control.
+ipc-test:
+	mkdir -p $(BUILD_DIR)
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -DIPC_HOST_TEST -I$(INCLUDE_DIR) tests/ipc_endpoint_test.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/string.c -o $(BUILD_DIR)/ipc_endpoint_test
+	$(BUILD_DIR)/ipc_endpoint_test
+
 	@echo "VMM test object built successfully with RUN_VMM_TESTS defined"
 
 # Fail early and legibly when the toolchain is incomplete, rather than part
@@ -250,4 +257,4 @@ clean:
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-waitpid-test images-elf-exec-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
+.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-waitpid-test images-elf-exec-test ipc-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
