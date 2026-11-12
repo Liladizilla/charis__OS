@@ -135,12 +135,12 @@ bool rtc_decode_registers(u8 second_raw, u8 minute_raw, u8 hour_raw,
     }
 
     u16 full_year;
-    if (century_raw) {
-        if (!decode_value(century_raw, binary, &century) ||
-            century < 19u || century > 23u)
-            return false;
+    if (century_raw && decode_value(century_raw, binary, &century) &&
+        century >= 19u && century <= 23u) {
         full_year = (u16)((u16)century * 100u + year);
     } else {
+        /* Some firmware leaves the unused century byte at 0xFF or arbitrary
+         * CMOS contents. Fall back to the documented two-digit pivot. */
         full_year = (u16)(year >= 70u ? 1900u + year : 2000u + year);
     }
 
@@ -186,6 +186,16 @@ static void epoch_to_calendar(u64 epoch, rtc_datetime_t* out) {
     out->valid = true;
 }
 
+bool rtc_epoch_to_datetime(u64 epoch, rtc_datetime_t* out) {
+    if (!out) return false;
+    epoch_to_calendar(epoch, out);
+    if (out->year < 1970u || out->year > 2399u) {
+        out->valid = false;
+        return false;
+    }
+    return true;
+}
+
 bool rtc_init(void) {
     wall_clock_valid = false;
     rtc_sample_t previous, current;
@@ -224,6 +234,5 @@ bool rtc_get_datetime(rtc_datetime_t* out) {
     u64 monotonic_now = timer_get_ms();
     if (monotonic_now < wall_clock_monotonic_ms) return false;
     u64 elapsed_seconds = (monotonic_now - wall_clock_monotonic_ms) / 1000u;
-    epoch_to_calendar(wall_clock_epoch + elapsed_seconds, out);
-    return true;
+    return rtc_epoch_to_datetime(wall_clock_epoch + elapsed_seconds, out);
 }
