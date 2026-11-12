@@ -425,7 +425,14 @@ must pass both the descriptor check and the underlying operation check.
 Standard input receives read authority, while standard output/error receive
 write authority. Closing a descriptor revokes its rights before the filesystem
 close callback runs. Descriptor tables are task-local and are rebuilt when a
-task slot is reused.
+task slot is reused. Non-standard descriptor values are opaque 64-bit handles
+bound to the owning task PID and a per-slot generation. A closed handle cannot
+resolve after its slot is reused, and a handle copied into another task cannot
+resolve there even when the same slot is occupied. The generation counter is
+preserved across task-slot reuse and fails closed rather than wrapping.
+Standard input/output/error retain the stable handles 0, 1 and 2. Numeric
+handles are not transferable capabilities; any future cross-task delegation
+must use an explicit, rights-attenuating transfer operation.
 
 `security_verify_path()` rejects parent-directory traversal and alternate
 separators. When RDRAND is available, it can seed the stack guard. If RDRAND is

@@ -22,6 +22,8 @@
 - [x] Device nodes: /dev/null, /dev/zero, /dev/kbd, /dev/vga
 - [x] Per-task fd table with fd_alloc(), fd_get(), fd_close()
 - [x] Explicit per-descriptor read/write rights, checked independently of process capabilities
+- [x] Task-bound opaque descriptor handles with owner-PID binding and per-slot generations
+- [x] Reject stale handles after close/reopen, cross-task handle reuse and generation wrap
 - [x] Reject zero, unknown and unavailable rights; standard streams cannot be closed through sys_close
 - [x] Revoke rights on close and reset descriptor metadata on task exit and task-slot reuse
 - [x] Host regression tests for rights, table capacity, task isolation and close ordering

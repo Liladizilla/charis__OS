@@ -154,34 +154,66 @@ int fd_table_init(void) {
     return 0;
 }
 
-int fd_alloc(vfs_node_t* node, u32 flags, u32 rights) {
+/*
+ * Resolve a descriptor handle in the current task. The owner PID prevents a
+ * numeric handle copied from another task from resolving to an unrelated
+ * object that happens to occupy the same table slot. The per-slot generation
+ * prevents a closed handle from naming a later object after slot reuse.
+ */
+static bool fd_resolve(task_t* task, fd_handle_t handle, u32* slot_out) {
+    if (!task || !slot_out) return false;
+
+    if (handle <= FD_STDERR) {
+        u32 slot = (u32)handle;
+        if (!task->fd_table[slot].node) return false;
+        *slot_out = slot;
+        return true;
+    }
+
+    u32 owner_pid = (u32)(handle >> 32);
+    u32 slot = FD_HANDLE_SLOT(handle);
+    u32 generation = (u32)((handle >> FD_HANDLE_SLOT_BITS) &
+                           FD_HANDLE_GENERATION_MAX);
+    if (!task->pid || owner_pid != task->pid || slot < 3 ||
+        slot >= MAX_FDS || !generation) return false;
+
+    fd_entry_t* entry = &task->fd_table[slot];
+    if (!entry->node || entry->generation != generation) return false;
+    *slot_out = slot;
+    return true;
+}
+
+fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights) {
     task_t* task = scheduler_current();
-    if (!task || !node || !rights || (rights & ~FD_RIGHT_MASK)) return -1;
+    if (!task || !task->pid || !node || !rights ||
+        (rights & ~FD_RIGHT_MASK)) return FD_HANDLE_INVALID;
+    if ((rights & FD_RIGHT_READ) && !node->read) return FD_HANDLE_INVALID;
+    if ((rights & FD_RIGHT_WRITE) && !node->write) return FD_HANDLE_INVALID;
 
-    /* Never mint a handle for an operation the underlying object lacks. */
-    if ((rights & FD_RIGHT_READ) && !node->read) return -1;
-    if ((rights & FD_RIGHT_WRITE) && !node->write) return -1;
-
-    for (int i = 3; i < MAX_FDS; i++) {
+    for (u32 i = 3; i < MAX_FDS; i++) {
         fd_entry_t* entry = &task->fd_table[i];
         if (entry->node) continue;
+        /* Do not wrap: an ancient descriptor token must never be resurrected. */
+        if (entry->generation >= FD_HANDLE_GENERATION_MAX) continue;
+
+        u32 generation = ++entry->generation;
         entry->node = node;
         entry->offset = 0;
         entry->flags = flags;
         entry->rights = rights;
-        return i;
+        return ((u64)task->pid << 32) |
+               ((u64)generation << FD_HANDLE_SLOT_BITS) | (u64)i;
     }
-    return -1;
+    return FD_HANDLE_INVALID;
 }
 
-bool fd_close(int fd) {
+bool fd_close(fd_handle_t handle) {
     task_t* task = scheduler_current();
-    if (!task || fd < 3 || fd >= MAX_FDS) return false;
+    u32 slot = 0;
+    if (!fd_resolve(task, handle, &slot) || slot < 3) return false;
 
-    fd_entry_t* entry = &task->fd_table[fd];
+    fd_entry_t* entry = &task->fd_table[slot];
     vfs_node_t* node = entry->node;
-    if (!node) return false;
-
     /* Revoke the handle before running filesystem-owned close code. */
     entry->node = NULL;
     entry->offset = 0;
@@ -193,9 +225,7 @@ bool fd_close(int fd) {
 
 void fd_table_close_all(fd_entry_t* table) {
     if (!table) return;
-
-    /* Standard streams point at global device nodes. Keep them out of the
-     * close loop, then restore them in case this task-table slot is reused. */
+    /* Keep generation counters intact so reused task slots cannot revive tokens. */
     for (int i = 3; i < MAX_FDS; i++) {
         vfs_node_t* node = table[i].node;
         table[i].node = NULL;
@@ -221,15 +251,15 @@ void fd_table_close_all(fd_entry_t* table) {
     table[FD_STDERR].rights = FD_RIGHT_WRITE;
 }
 
-fd_entry_t* fd_get(int fd) {
+fd_entry_t* fd_get(fd_handle_t handle) {
     task_t* task = scheduler_current();
-    if (!task || fd < 0 || fd >= MAX_FDS) return NULL;
-    fd_entry_t* entry = &task->fd_table[fd];
-    return entry->node ? entry : NULL;
+    u32 slot = 0;
+    if (!fd_resolve(task, handle, &slot)) return NULL;
+    return &task->fd_table[slot];
 }
 
-bool fd_has_rights(int fd, u32 rights) {
+bool fd_has_rights(fd_handle_t handle, u32 rights) {
     if (!rights || (rights & ~FD_RIGHT_MASK)) return false;
-    fd_entry_t* entry = fd_get(fd);
+    fd_entry_t* entry = fd_get(handle);
     return entry && (entry->rights & rights) == rights;
 }

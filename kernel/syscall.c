@@ -37,7 +37,7 @@ static bool syscall_kernel_only(void) {
 
 static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a4; (void)a5; (void)a6;
-    int fd = (int)a1;
+    fd_handle_t fd = (fd_handle_t)a1;
     u64 user_buf = a2;
     usize count = (usize)a3;
     task_t* task = scheduler_current();
@@ -89,7 +89,7 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
 
 static u64 syscall_write_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a4; (void)a5; (void)a6;
-    int fd = (int)a1;
+    fd_handle_t fd = (fd_handle_t)a1;
     u64 user_buf = a2;
     usize count = (usize)a3;
     task_t* task = scheduler_current();
@@ -238,15 +238,14 @@ static u64 syscall_open_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
         return (u64)-1;
     }
 
-    int fd = fd_alloc(node, 0, rights);
-    if (fd < 0 && node->close) node->close(node);
-    return fd < 0 ? (u64)-1 : (u64)fd;
+    fd_handle_t fd = fd_alloc(node, 0, rights);
+    if (fd == FD_HANDLE_INVALID && node->close) node->close(node);
+    return fd;
 }
 
 static u64 syscall_close_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {
     (void)a2; (void)a3; (void)a4; (void)a5; (void)a6;
-    if (a1 < 3 || a1 >= MAX_FDS) return (u64)-1;
-    return fd_close((int)a1) ? 0 : (u64)-1;
+    return fd_close((fd_handle_t)a1) ? 0 : (u64)-1;
 }
 
 static u64 syscall_shm_alloc_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) {

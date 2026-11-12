@@ -17,6 +17,18 @@
 #define FD_RIGHT_WRITE (1U << 1)
 #define FD_RIGHT_MASK  (FD_RIGHT_READ | FD_RIGHT_WRITE)
 
+/*
+ * Non-standard descriptors are opaque task-bound handles:
+ *   [ owner PID: 32 bits ][ generation: 26 bits ][ slot: 6 bits ]
+ * Standard streams retain the stable values 0, 1 and 2.
+ */
+typedef u64 fd_handle_t;
+#define FD_HANDLE_SLOT_BITS       6U
+#define FD_HANDLE_SLOT_MASK       ((1ULL << FD_HANDLE_SLOT_BITS) - 1ULL)
+#define FD_HANDLE_GENERATION_MAX ((1U << 26) - 1U)
+#define FD_HANDLE_INVALID         (~(fd_handle_t)0)
+#define FD_HANDLE_SLOT(handle)    ((u32)((handle) & FD_HANDLE_SLOT_MASK))
+
 typedef struct vfs_node {
     char name[256];
     u32 flags;
@@ -37,6 +49,8 @@ typedef struct fd_entry {
     u64 offset;
     u32 flags;
     u32 rights;
+    /* Preserved across close and task-slot reuse; never silently wraps. */
+    u32 generation;
 } fd_entry_t;
 
 void vfs_init(void);
@@ -44,9 +58,9 @@ vfs_node_t* vfs_resolve(const char* path);
 int vfs_mount(const char* path, vfs_node_t* fs_root);
 
 int fd_table_init(void);
-int fd_alloc(vfs_node_t* node, u32 flags, u32 rights);
-bool fd_close(int fd);
+fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights);
+bool fd_close(fd_handle_t handle);
 /* Close non-standard descriptors owned by a task and restore standard streams. */
 void fd_table_close_all(fd_entry_t* table);
-fd_entry_t* fd_get(int fd); // Returns only a live descriptor in the current task.
-bool fd_has_rights(int fd, u32 rights);
+fd_entry_t* fd_get(fd_handle_t handle); // Resolves only in the owning current task.
+bool fd_has_rights(fd_handle_t handle, u32 rights);

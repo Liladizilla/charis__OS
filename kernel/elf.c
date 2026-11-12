@@ -31,7 +31,7 @@ static bool elf_write_user(pml4_t* pml4, u64 address, const void* source, usize 
     return true;
 }
 
-static int fd_read_all(int fd, u64 offset, void* buf, usize count) {
+static int fd_read_all(fd_handle_t fd, u64 offset, void* buf, usize count) {
     fd_entry_t* f = fd_get(fd);
     if (!f || !(f->rights & FD_RIGHT_READ) || !f->node->read) return -1;
     usize total = 0;
@@ -44,7 +44,7 @@ static int fd_read_all(int fd, u64 offset, void* buf, usize count) {
     return (int)total;
 }
 
-static bool elf_load_segment(pml4_t* pml4, int fd, const elf64_phdr_t* phdr) {
+static bool elf_load_segment(pml4_t* pml4, fd_handle_t fd, const elf64_phdr_t* phdr) {
     if (!phdr->p_memsz) return phdr->p_filesz == 0;
     if (phdr->p_memsz > ELF_MAX_SEGMENT_BYTES || phdr->p_vaddr < PAGE_SIZE ||
         phdr->p_filesz > phdr->p_memsz ||
@@ -193,8 +193,8 @@ static int elf_load_internal(const char* path, process_mm_t* mm, u64* entry_poin
     vfs_node_t* node = vfs_resolve(path);
     if (!node || !(node->flags & VFS_FILE) || !node->read) return -1;
 
-    int fd = fd_alloc(node, 0, FD_RIGHT_READ);
-    if (fd < 0) {
+    fd_handle_t fd = fd_alloc(node, 0, FD_RIGHT_READ);
+    if (fd == FD_HANDLE_INVALID) {
         if (node->close) node->close(node);
         return -1;
     }

@@ -179,6 +179,7 @@ void task_init(void) {
             task_pool[i].fd_table[j].offset = 0;
             task_pool[i].fd_table[j].flags = 0;
             task_pool[i].fd_table[j].rights = 0;
+            task_pool[i].fd_table[j].generation = 0;
         }
         // stdin, stdout, stderr point to keyboard and vga devices
         extern vfs_node_t dev_kbd;
@@ -400,6 +401,7 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
         task->fd_table[i].offset = 0;
         task->fd_table[i].flags = 0;
         task->fd_table[i].rights = 0;
+        /* Keep generations: a reused task slot must not revive old handles. */
     }
     task->fd_table[FD_STDIN].node = &dev_kbd;
     task->fd_table[FD_STDIN].rights = FD_RIGHT_READ;
@@ -754,7 +756,13 @@ void task_discard_unstarted(task_t* task) {
     task->prev = NULL;
     task->ipc_wait_next = NULL;
     task->name[0] = '\0';
-    kmemset(task->fd_table, 0, sizeof(task->fd_table));
+    for (u32 i = 0; i < MAX_FDS; i++) {
+        task->fd_table[i].node = NULL;
+        task->fd_table[i].offset = 0;
+        task->fd_table[i].flags = 0;
+        task->fd_table[i].rights = 0;
+        /* Preserve generations across discarded task-slot reuse. */
+    }
 }
 
 void task_sleep_ms(u32 ms) {
