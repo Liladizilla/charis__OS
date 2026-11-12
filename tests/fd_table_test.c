@@ -8,6 +8,7 @@
 static __thread task_t* active_task;
 static int close_count;
 static int observed_revoked_handle;
+static bool fail_next_kmalloc;
 static fd_handle_t observed_fd = FD_HANDLE_INVALID;
 static vfs_node_t capacity_nodes[MAX_FDS];
 
@@ -17,6 +18,10 @@ extern vfs_node_t dev_vga;
 task_t* scheduler_current(void) { return active_task; }
 
 void* kmalloc(usize size) {
+    if (fail_next_kmalloc) {
+        fail_next_kmalloc = false;
+        return NULL;
+    }
     return malloc(size);
 }
 
@@ -175,6 +180,28 @@ static void test_closeable_node_has_one_descriptor_owner(void) {
     assert(second != FD_HANDLE_INVALID);
     assert(fd_close(second));
     assert(close_count == 2);
+}
+
+static void test_open_file_allocation_failure_preserves_node_ownership(void) {
+    task_t task;
+    vfs_node_t node = {
+        .flags = VFS_FILE, .read = test_read, .close = test_close
+    };
+    reset_task(&task, 66);
+    active_task = &task;
+    close_count = 0;
+    fail_next_kmalloc = true;
+
+    fd_alloc_status_t status = FD_ALLOC_OK;
+    assert(fd_alloc(&node, 0, FD_RIGHT_READ, &status) == FD_HANDLE_INVALID);
+    assert(status == FD_ALLOC_FAILED);
+    assert(close_count == 0);
+
+    /* Allocation failure did not claim or destroy the resolved VFS node. */
+    fd_handle_t retry = alloc_fd(&node, 0, FD_RIGHT_READ);
+    assert(retry != FD_HANDLE_INVALID);
+    assert(fd_close(retry));
+    assert(close_count == 1);
 }
 
 static void test_open_file_pins_outlive_descriptor_revocation(void) {
@@ -439,6 +466,7 @@ int main(void) {
     test_handles_are_bound_to_the_owner_task();
     test_closeable_node_has_one_descriptor_owner();
     test_concurrent_closeable_node_claim_is_unique();
+    test_open_file_allocation_failure_preserves_node_ownership();
     test_open_file_pins_outlive_descriptor_revocation();
     test_independent_opens_have_independent_offsets();
     test_table_cleanup_drops_only_its_reference();
