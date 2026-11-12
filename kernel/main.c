@@ -5,6 +5,7 @@
 #include <kernel/idt.h>
 #include <kernel/irq.h>
 #include <kernel/timer.h>
+#include <kernel/rtc.h>
 #include <kernel/keyboard.h>
 #include <kernel/task.h>
 #include <kernel/scheduler.h>
@@ -137,6 +138,7 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('Q');
     timer_init(1000);
     BOOT_MARK('T');
+    (void)rtc_init();
     keyboard_init();
     BOOT_MARK('K');
     ata_init();
