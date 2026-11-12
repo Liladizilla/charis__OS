@@ -25,6 +25,7 @@
 - [x] Task-bound opaque descriptor handles with owner-PID binding and per-slot generations
 - [x] Reject stale handles after close/reopen, cross-task handle reuse and generation wrap
 - [x] Make task PID allocation atomic and monotonic; fail closed at exhaustion without identity reuse
+- [x] Audit built-in task grants; remove unused filesystem/process syscall capabilities from kernel workers
 - [x] Host concurrency regression verifies unique PIDs across parallel allocators
 - [x] Recheck `CAP_FS_READ` on non-console descriptor reads
 - [x] Reject zero, unknown and unavailable rights; standard streams cannot be closed through sys_close

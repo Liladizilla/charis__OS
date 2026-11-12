@@ -209,8 +209,10 @@ void kernel_main(u32 magic, u64 info_ptr) {
         BOOT_MARK('N');
         net_init();
         if (net_get_interface()->initialized) {
+            /* The network worker uses only trusted in-kernel networking APIs.
+             * It has no capability-gated filesystem or process syscall need. */
             task_t* net_task = task_create("network", net_poll_task, NULL,
-                                           CAP_FS_READ, false);
+                                           0, false);
             if (net_task) scheduler_add_task(net_task);
             else vga_puts_error("Network: failed to create polling task");
         }
@@ -254,8 +256,10 @@ void kernel_main(u32 magic, u64 info_ptr) {
     // kprintf writes to the serial port independently of the task running.
     task_t* shell_task = 0;
     if (!g_framebuffer.initialized) {
+        /* The ring-0 shell uses in-kernel commands and SYS_PRINT only. Keep
+         * filesystem and process syscall authority out of its task grant. */
         shell_task = task_create("shell", (task_func_t)shell_main, NULL,
-                                 CAP_SPAWN | CAP_FS_READ | CAP_FS_WRITE, false);
+                                 0, false);
         if (shell_task == NULL) {
             vga_puts_error("ERROR: Failed to create shell task!");
             while (1) asm volatile("hlt");
@@ -267,8 +271,10 @@ void kernel_main(u32 magic, u64 info_ptr) {
     // firmware hands over the 80x25 text buffer instead and fb_init() declines,
     // so there is nothing to draw on and the text shell is the whole interface.
     if (g_framebuffer.initialized) {
+        /* The ring-0 desktop uses kernel-owned UI and filesystem routines.
+         * Its current call graph does not need capability-gated syscalls. */
         task_t* ui_task = task_create("desktop", (task_func_t)shell_ui_main, NULL,
-                                      CAP_SPAWN | CAP_FS_READ | CAP_FS_WRITE, false);
+                                      0, false);
         if (ui_task) {
             scheduler_add_task(ui_task);
         } else {

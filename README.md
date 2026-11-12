@@ -417,6 +417,14 @@ failure; child capability inheritance is therefore not claimed.
 | `CAP_SPAWN` + `CAP_ALLOW_EXEC` | `sys_exec` authorization |
 | `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | Reserved |
 
+The built-in network worker, text shell and graphical desktop worker are
+kernel-mode tasks. Their current call paths use trusted in-kernel APIs and do
+not invoke capability-gated filesystem or process syscalls, so they receive an
+empty process capability mask. This is least privilege at the syscall boundary,
+not a claim that ring-0 code is sandboxed from kernel internals. The bootstrap
+ring-3 task retains `CAP_FS_READ | CAP_SPAWN` for read-policy and execution-denial
+regression coverage, but intentionally does not receive `CAP_ALLOW_EXEC`.
+
 `sys_open(path)` remains read-only by default. `sys_open_rights(path, rights)`
 can request an explicit read/write combination, but the process must hold the
 matching filesystem capabilities and the VFS node must implement each requested
