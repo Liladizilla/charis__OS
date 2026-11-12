@@ -48,7 +48,7 @@ static void ipc_irq_restore(u64 flags) {
 #endif
 
 static bool ipc_task_live_kernel(const task_t* task) {
-    return task && task->pid && !task->is_user &&
+    return task && task->pid && !task->is_user && task->scheduler_queued &&
            task->state != TASK_STATE_UNUSED &&
            task->state != TASK_STATE_ALLOCATING &&
            task->state != TASK_STATE_EXITING &&
@@ -146,16 +146,29 @@ bool ipc_endpoint_pair_create(task_t* a, task_t* b, u32 rights_a,
     kmemset(ch, 0, sizeof(*ch));
     ch->in_use = true;
     ch->endpoint_refs = 2;
-    ch->endpoints[0] = (struct ipc_endpoint){
-        .channel=ch, .owner=a, .peer=b, .owner_pid=a->pid, .peer_pid=b->pid,
-        .rights=rights_a, .generation=gen_a, .slot=(u8)slot_a,
-        .side=0, .open=true
-    };
-    ch->endpoints[1] = (struct ipc_endpoint){
-        .channel=ch, .owner=b, .peer=a, .owner_pid=b->pid, .peer_pid=a->pid,
-        .rights=rights_b, .generation=gen_b, .slot=(u8)slot_b,
-        .side=1, .open=true
-    };
+    kmemset(&ch->endpoints[0], 0, sizeof(ch->endpoints[0]));
+    ch->endpoints[0].channel = ch;
+    ch->endpoints[0].owner = a;
+    ch->endpoints[0].peer = b;
+    ch->endpoints[0].owner_pid = a->pid;
+    ch->endpoints[0].peer_pid = b->pid;
+    ch->endpoints[0].rights = rights_a;
+    ch->endpoints[0].generation = gen_a;
+    ch->endpoints[0].slot = (u8)slot_a;
+    ch->endpoints[0].side = 0;
+    ch->endpoints[0].open = true;
+
+    kmemset(&ch->endpoints[1], 0, sizeof(ch->endpoints[1]));
+    ch->endpoints[1].channel = ch;
+    ch->endpoints[1].owner = b;
+    ch->endpoints[1].peer = a;
+    ch->endpoints[1].owner_pid = b->pid;
+    ch->endpoints[1].peer_pid = a->pid;
+    ch->endpoints[1].rights = rights_b;
+    ch->endpoints[1].generation = gen_b;
+    ch->endpoints[1].slot = (u8)slot_b;
+    ch->endpoints[1].side = 1;
+    ch->endpoints[1].open = true;
     a->ipc_endpoints[slot_a] = &ch->endpoints[0];
     b->ipc_endpoints[slot_b] = &ch->endpoints[1];
     *handle_a = ipc_make_handle(a->pid, gen_a, (u32)slot_a);
