@@ -28,10 +28,37 @@ static void test_pair_validation(void) {
     assert(a == IPC_HANDLE_INVALID && b == IPC_HANDLE_INVALID);
     assert(!ipc_endpoint_pair_create(&task_a, &task_a, IPC_RIGHT_SEND, IPC_RIGHT_RECEIVE, &a, &b));
     assert(!ipc_endpoint_pair_create(&task_a, &task_b, IPC_RIGHT_SEND | 0x80U, IPC_RIGHT_RECEIVE, &a, &b));
+    ipc_handle_t aliased = 0;
+    assert(!ipc_endpoint_pair_create(&task_a, &task_b, IPC_RIGHT_SEND,
+                                     IPC_RIGHT_RECEIVE, &aliased, &aliased));
     task_c.is_user = true;
     assert(!ipc_endpoint_pair_create(&task_a, &task_c, IPC_RIGHT_SEND, IPC_RIGHT_RECEIVE, &a, &b));
     task_c.is_user = false;
 }
+static void test_directional_rights(void) {
+    ipc_handle_t receive_a, send_c;
+    assert(ipc_endpoint_pair_create(&task_a, &task_c,
+        IPC_RIGHT_RECEIVE, IPC_RIGHT_SEND, &receive_a, &send_c));
+
+    active_task = &task_a;
+    assert(ipc_send(receive_a, "x", 1) == IPC_STATUS_ERROR);
+    assert(ipc_recv(receive_a, NULL, 0, NULL) == IPC_STATUS_EMPTY);
+
+    active_task = &task_c;
+    assert(ipc_recv(send_c, NULL, 0, NULL) == IPC_STATUS_ERROR);
+    assert(ipc_send(send_c, "y", 1) == IPC_STATUS_OK);
+
+    active_task = &task_a;
+    char received = 0;
+    u32 sender = 0;
+    assert(ipc_recv(receive_a, &received, sizeof(received), &sender) == 1);
+    assert(received == 'y' && sender == task_c.pid);
+
+    assert(ipc_close(receive_a) == IPC_STATUS_OK);
+    active_task = &task_c;
+    assert(ipc_close(send_c) == IPC_STATUS_OK);
+}
+
 static void test_rights_queue_and_close(void) {
     ipc_handle_t send_a, receive_b;
     assert(ipc_endpoint_pair_create(&task_a, &task_b, IPC_RIGHT_SEND, IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE, &send_a, &receive_b));
@@ -120,6 +147,7 @@ int main(void) {
     reset_task(&task_a, 101); reset_task(&task_b, 202); reset_task(&task_c, 303);
     ipc_init();
     test_pair_validation();
+    test_directional_rights();
     test_rights_queue_and_close();
     test_stale_handle_and_teardown();
     test_generation_exhaustion();
