@@ -180,7 +180,17 @@ void terminal_open(void) {
     char discard;
     while (keyboard_get_key(&discard)) { }
     if (!term_line_count) {
-        term_add_line("CharisOS native terminal");
+        /* Fixed-width wordmark: 42 columns, five rows. Keep each row inside
+         * TERM_LINE_MAX and render it with the terminal accent, not a bitmap
+         * logo, so it remains crisp at every framebuffer resolution. */
+        term_add_line("   ____ _               _     ___  ____");
+        term_add_line("  / ___| |__   __ _ _ __(_)___/ _ \\/ ___|");
+        term_add_line(" | |   | '_ \\ / _` | '__| / __| | | \\___ \\");
+        term_add_line(" | |___| | | | (_| | |  | \\__ \\ |_| |___) |");
+        term_add_line("  \\____|_| |_|\\__,_|_|  |_|___/\\___/|____/");
+        term_add_line("SECURITY BY ARCHITECTURE  /  INTELLIGENCE BY DESIGN");
+        term_add_line("CHARISOS  x86_64  |  NATIVE KERNEL CONSOLE");
+        term_add_line("");
         term_add_line("Type help to list available commands.");
     }
     term_visible = true;
@@ -263,7 +273,13 @@ static u32 terminal_line_color(const char* line) {
     if (!line) return CHARIS_UI_TEXT;
     if (kstrncmp(line, "charisos> ", 10) == 0) return CHARIS_UI_SUCCESS;
     if (kstrncmp(line, "Command not found", 17) == 0) return CHARIS_UI_WARNING;
-    if (kstrncmp(line, "CharisOS", 8) == 0) return CHARIS_UI_ACCENT;
+    if (kstrncmp(line, "   ____", 7) == 0 ||
+        kstrncmp(line, "  / ___", 7) == 0 ||
+        kstrncmp(line, " | |", 4) == 0 ||
+        kstrncmp(line, "  \\____", 7) == 0 ||
+        kstrncmp(line, "SECURITY BY", 11) == 0 ||
+        kstrncmp(line, "CHARISOS", 8) == 0 ||
+        kstrncmp(line, "CharisOS", 8) == 0) return CHARIS_UI_ACCENT;
     if (kstrncmp(line, "Managed RAM", 11) == 0 ||
         kstrncmp(line, "Tasks ", 6) == 0 ||
         kstrncmp(line, "Context switches", 16) == 0 ||
@@ -297,9 +313,9 @@ void terminal_render(void) {
 
     /* Window frame and application chrome. */
     fb_fill_rect(x + term_px(5), y + term_px(6), w, h, CHARIS_UI_SHADOW);
-    fb_fill_rect(x, y, w, h, CHARIS_UI_PANEL);
-    fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER_STRONG);
-    fb_fill_rect(x, y, w, title_h, CHARIS_UI_PANEL_RAISED);
+    fb_fill_rect(x, y, w, h, 0xFF080B10u);
+    fb_draw_rect(x, y, w, h, 0xFF27313Du);
+    fb_fill_rect(x, y, w, title_h, 0xFF10151Cu);
     fb_fill_rect(x, y + title_h, w, term_px(1), CHARIS_UI_BORDER);
 
     /* Three restrained window controls and a real session title. */
@@ -337,16 +353,14 @@ void terminal_render(void) {
     term_draw(platform_x, strip_y + (term_px(32) - text_h) / 2,
               platform_label, CHARIS_UI_MUTED, FB_TRANSPARENT);
 
-    /* Console canvas with a line-number gutter. */
+    /* A clean terminal canvas: no editor-style line-number gutter, cards or
+     * decorative rail. The wordmark and shell output own the console space. */
     u32 canvas_y = content_top - term_px(6);
     u32 canvas_h = content_bottom > canvas_y ? content_bottom - canvas_y : term_px(40);
     fb_fill_rect(x + term_px(10), canvas_y, w - term_px(20), canvas_h,
-                 0xFF0B1016u);
-    fb_fill_rect(x + term_px(54), canvas_y + term_px(8), term_px(1),
-                 canvas_h > term_px(16) ? canvas_h - term_px(16) : canvas_h,
-                 0xFF27313Du);
+                 0xFF080B10u);
 
-    u32 text_x = x + term_px(68);
+    u32 text_x = x + term_px(24);
     u32 text_right = x + w - term_px(24);
     u32 text_width = text_right > text_x ? text_right - text_x : 1;
     u32 total_rows = 0;
@@ -365,12 +379,6 @@ void terminal_render(void) {
                 skip_rows--;
             } else if (drawn_rows < rows) {
                 u32 line_y = content_top + drawn_rows * line_h;
-                if (pos == 0) {
-                    char line_no[8];
-                    term_number(line_no, i + 1);
-                    term_draw(x + term_px(20), line_y, line_no,
-                              0xFF667383u, FB_TRANSPARENT);
-                }
                 char segment[TERM_LINE_MAX];
                 u32 count = end - pos;
                 if (count >= sizeof(segment)) count = sizeof(segment) - 1;
