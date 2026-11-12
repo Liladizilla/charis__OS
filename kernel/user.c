@@ -131,11 +131,12 @@ void user_main(void) {
         syscall_pointers_ok = false;
     }
 
-    /* IPC and networking remain unavailable to ring 3 until their global
-     * tables have per-process ownership and capability-backed handles. */
-    if (sys_ipc_create((const char*)bad_low) != (u64)-1 ||
-        sys_ipc_create("user-channel") != (u64)-1 ||
-        sys_ipc_send(0, (const void*)bad_low, 1) != (u64)-1) {
+    /* Legacy IPC ABI slots 91-93 are deliberately unregistered. Exercise
+     * the reserved numbers directly rather than retaining unsafe wrappers. */
+    if (syscall_invoke(93, bad_low, 0, 0, 0, 0, 0) != (u64)-1 ||
+        syscall_invoke(93, 0, 0, 0, 0, 0, 0) != (u64)-1 ||
+        syscall_invoke(92, 0, bad_low, 1, 0, 0, 0) != (u64)-1 ||
+        syscall_invoke(91, 0, bad_low, 1, 0, 0, 0) != (u64)-1) {
         syscall_pointers_ok = false;
     }
 
