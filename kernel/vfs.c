@@ -244,9 +244,8 @@ void vfs_init(void) {
     // Mount devfs
     vfs_mount("/dev", &dev_null); // /dev points to dev_null for simplicity
     
-    // Initialize file descriptor table
-    fd_table_init();
-    
+    /* Task descriptor tables are initialized by task_init() and bind to the
+     * permanent standard-stream open-file descriptions above. */
     vga_puts("VFS initialized\n");
 }
 
