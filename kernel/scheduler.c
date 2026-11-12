@@ -221,13 +221,8 @@ void scheduler_schedule(void) {
         context_switch(NULL, current_task->rsp, use_iret);
     }
 
-    /*
-     * Only the task that was switched *to* returns here, and it does so on its
-     * own stack. That makes this the first point where a previous task's pages
-     * are known to be dead to us, so anything it parked on the way out can be
-     * released without freeing memory under our own feet.
-     */
-    task_release_pending();
+    /* context_switch() reclaimed any deferred outgoing stack on the
+     * destination stack, including first-run trampoline and iretq entries. */
     scheduler_irq_restore(flags);
 }
 

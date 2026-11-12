@@ -49,6 +49,7 @@ LOG=""
 ELF_TEST_DISK=""
 EXPECT_ELF_SUCCESS=0
 REQUIRE_VMM_TESTS=0
+REQUIRE_WAITPID=0
 
 usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
@@ -60,6 +61,7 @@ while [ $# -gt 0 ]; do
         --elf-test-disk) ELF_TEST_DISK="$2"; shift 2 ;;
         --expect-elf-exec) EXPECT_ELF_SUCCESS=1; shift ;;
         --require-vmm-tests) REQUIRE_VMM_TESTS=1; shift ;;
+        --require-waitpid) REQUIRE_WAITPID=1; shift ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         -h|--help) usage ;;
         -*) echo "unknown option: $1" >&2; exit 2 ;;
@@ -350,6 +352,16 @@ if [ "$REQUIRE_VMM_TESTS" = "1" ]; then
         grep -Fq "[VMM] $test_name: OK" "$LOG" \
             || fail "VMM regression test failed or did not execute: $test_name"
     done
+fi
+
+if [ "$REQUIRE_WAITPID" = "1" ]; then
+    grep -q 'WAITPID_TEST_OK' "$LOG" \
+        || fail "waitpid child-selection/status/reaping regression did not pass"
+    grep -q 'WAITPID_ORPHAN_REAP_OK' "$LOG" \
+        || fail "orphaned child was not reclaimed after exit"
+    if grep -q -e 'WAITPID_TEST_FAIL' -e 'WAITPID_ORPHAN_REAP_FAIL' "$LOG"; then
+        fail "waitpid regression emitted a failure marker"
+    fi
 fi
 
 grep -q 'Invalid Multiboot2 magic' "$LOG" \

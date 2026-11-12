@@ -106,6 +106,11 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/task_pid_test.c -o /tmp/task_pid_test
           /tmp/task_pid_test
 
+      - name: Test waitpid selector and child ownership policy
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/task_wait_policy_test.c -o /tmp/task_wait_policy_test
+          /tmp/task_wait_policy_test
+
       - name: Test concurrent task PID uniqueness
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -pthread -Iinclude tests/task_pid_concurrency_test.c -o /tmp/task_pid_concurrency_test
@@ -223,6 +228,12 @@ jobs:
           set -e
           make images-vmm-test
           BUILD_DIR=build/vmm-test ./tools/verify-boot.sh build/vmm-test/charisos-vm.iso --require-vmm-tests
+
+      - name: Verify waitpid status, child ownership and orphan reaping
+        run: |
+          set -e
+          make images-waitpid-test
+          BUILD_DIR=build/waitpid-test ./tools/verify-boot.sh build/waitpid-test/charisos-vm.iso --require-waitpid
 
       - name: Boot kernel-stack guard IST containment test
         run: |

@@ -11,6 +11,8 @@
 #define SYS_OPEN                2
 #define SYS_CLOSE               3
 #define SYS_EXIT                60
+#define SYS_WAITPID              61
+#define WAITPID_WNOHANG           1U
 #define SYS_YIELD               98
 #define SYS_PRINT               99
 #define SYS_GETPID              39

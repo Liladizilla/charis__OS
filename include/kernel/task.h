@@ -24,6 +24,7 @@
 #define TASK_DEFAULT_QUANTUM    10
 #define TASK_WAITING_SLEEP       0x534C4550U /* 'SLEP': blocked until event_data deadline */
 #define TASK_WAITING_KEYBOARD    0x4B455942U /* 'KEYB': waiting for keyboard input */
+#define TASK_WAITING_CHILD       0x43484C44U /* 'CHLD': waiting for a child exit */
 
 /* VMA - Virtual Memory Area */
 typedef struct vma {
@@ -103,6 +104,8 @@ task_t* task_allocate(void);
 u32 task_next_pid(void);
 void task_exit(void);
 void task_exit_with_status(u32 status);
+/* Wait for an owned child; selector is a PID or -1 for any child. */
+s64 task_waitpid(s64 selector, u32* exit_status, bool nohang);
 
 /* Park a task's stack for the scheduler to reclaim once it has switched away
  * from it. A task must not kfree() the stack it is running on. */
