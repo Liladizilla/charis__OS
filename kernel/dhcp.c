@@ -350,6 +350,10 @@ static bool send_renew_request(bool broadcast) {
                         dhcp_packet, length) >= 0;
 }
 
+static void advance_transaction_id(void) {
+    advance_transaction_id();
+}
+
 static u64 retry_delay_ms(u32 attempt) {
     u32 shift = attempt > 5u ? 5u : attempt;
     u64 delay = 2000ULL << shift;
@@ -519,13 +523,14 @@ void dhcp_poll(void) {
             start_discovery();
         } else if (now - lease_started_ms >= renewal_at_ms) {
             dhcp_state = DHCP_STATE_RENEWING;
+            advance_transaction_id();
             retries = 0;
-            (void)send_renew_request(false);
+            bool sent = send_renew_request(false);
             u64 until_t2 = rebinding_at_ms -
                            (now - lease_started_ms);
             u64 delay = until_t2 / 2u;
             if (delay < 60000u) delay = 60000u;
-            next_retry_ms = now + delay;
+            next_retry_ms = now + (sent ? delay : 1000u);
         }
         return;
     }
@@ -538,18 +543,19 @@ void dhcp_poll(void) {
         }
         if (now - lease_started_ms >= rebinding_at_ms) {
             dhcp_state = DHCP_STATE_REBINDING;
-            (void)send_renew_request(true);
+            advance_transaction_id();
+            bool sent = send_renew_request(true);
             u64 remaining = lease_duration_ms - (now - lease_started_ms);
             u64 delay = remaining / 2u;
             if (delay < 60000u) delay = 60000u;
-            next_retry_ms = now + delay;
+            next_retry_ms = now + (sent ? delay : 1000u);
         } else if (now >= next_retry_ms) {
-            (void)send_renew_request(false);
+            bool sent = send_renew_request(false);
             u64 until_t2 = rebinding_at_ms -
                            (now - lease_started_ms);
             u64 delay = until_t2 / 2u;
             if (delay < 60000u) delay = 60000u;
-            next_retry_ms = now + delay;
+            next_retry_ms = now + (sent ? delay : 1000u);
         }
         return;
     }
@@ -561,11 +567,11 @@ void dhcp_poll(void) {
             return;
         }
         if (now >= next_retry_ms) {
-            (void)send_renew_request(true);
+            bool sent = send_renew_request(true);
             u64 remaining = lease_duration_ms - (now - lease_started_ms);
             u64 delay = remaining / 2u;
             if (delay < 60000u) delay = 60000u;
-            next_retry_ms = now + delay;
+            next_retry_ms = now + (sent ? delay : 1000u);
         }
     }
 }
