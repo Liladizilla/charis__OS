@@ -84,7 +84,7 @@ images-vmm-test:
 images-stack-guard-test:
 	rm -rf $(BUILD_DIR)/stack-guard-test
 	$(MAKE) BUILD_DIR=$(BUILD_DIR)/stack-guard-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DTEST_KERNEL_STACK_GUARD" images
- 
+
 # Dedicated image for process wait, exit status and orphan-reap regressions.
 images-waitpid-test:
 	rm -rf $(BUILD_DIR)/waitpid-test
