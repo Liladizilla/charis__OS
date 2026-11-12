@@ -52,8 +52,11 @@
 - [x] Reject descriptor duplication into full, allocating, exiting or zombie recipient tasks
 - [x] Verify shared open-file identity/offset, recipient cleanup and sender-close lifetime
 - [x] Specify authenticated IPC endpoint, rendezvous, rights and transactional resource-transfer requirements
-- [ ] Replace global integer IPC channels with task-local endpoint handles and kernel-established peer identities
-- [ ] Add cancellation-safe message reservations and bounded per-endpoint queues
+- [x] Replace global integer channel IDs with task-local owner-PID/generation/slot endpoint handles
+- [x] Add kernel-owned endpoint pairs with independent SEND/RECEIVE rights and authenticated peer identity
+- [x] Add bounded full-duplex queues with nonblocking send/receive, explicit FULL/EMPTY/BUFFER_SMALL outcomes and no silent truncation
+- [x] Revoke task-owned endpoints and release channel references during EXITING teardown
+- [ ] Add cancellation-safe blocking receive and message reservations (current receive is nonblocking by design)
 - [ ] Add transactional descriptor attachments with queue-owned references and receiver rollback
 - [ ] Keep ring-3 IPC and descriptor transfer denied until endpoint tests and user-memory preflight pass
 - [ ] Replace global shared-memory IDs/raw kernel-pointer access with task-owned objects and explicit user mappings
