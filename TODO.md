@@ -343,7 +343,9 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 - [ ] Wi-Fi device discovery and a driver architecture; support a documented first adapter family before claiming wireless support
 - [ ] DHCP client, DNS configuration and route installation integrated with the network service
 - [ ] Real Internet path verification: DHCP/static config, DNS, HTTP, TLS, timeouts, packet loss and reconnect behavior
-- [ ] Wallpaper asset pipeline with verified CC0/public-domain source manifests, image dimension limits and memory-safe decoding
+- [x] Shortlist and record high-resolution CC0 wallpaper sources with source pages, author and original dimensions; see assets/wallpapers/README.md
+- [ ] Download and vendor the source files, record checksums and re-verify files after download
+- [ ] Wallpaper asset pipeline with image dimension limits, safe decoding and aspect-ratio-aware scaling
 - [ ] High-quality bundled wallpaper set with no embedded logos, watermarks or UI overlays; user-selectable wallpaper and fallback procedural themes
 - [ ] Desktop capture pipeline publishes the actual QEMU framebuffer capture and keeps README screenshots synchronized with the tested commit
 - [ ] Native terminal visual pass: near-black console canvas, compact chrome, dedicated monospace font metrics, carefully measured CharisOS ASCII banner and stable prompt/output layout
