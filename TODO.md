@@ -33,6 +33,7 @@
 - [x] Revoke rights on close and reset descriptor metadata on task exit and task-slot reuse
 - [x] Host regression tests for rights, table capacity, task isolation and close ordering
 - [x] Enforce exclusive ownership for closeable VFS nodes; reject duplicate raw-node attachment before a second close can be registered
+- [x] Close per-open VFS nodes in IL loader and Browser local-file paths; validate IL file size, instruction alignment and complete reads
 - [x] FAT32 integration with VFS (read-only listing; mutation support remains incomplete)
 - [x] sys_open() defaults to read-only; sys_open_rights() requests capability-backed rights
 - [x] sys_close() rejects invalid, closed and standard descriptors
