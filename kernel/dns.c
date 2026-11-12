@@ -178,6 +178,10 @@ bool net_dns_set_server(const u8 server[4]) {
          server[2] == 255u && server[3] == 255u))
         return false;
     kmemcpy(dns_server, server, 4);
+    if (!ready) {
+        if (!net_udp_bind(DNS_PORT, handle_dns_response)) return false;
+        ready = true;
+    }
     return true;
 }
 
