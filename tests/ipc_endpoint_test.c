@@ -83,6 +83,17 @@ static void test_stale_handle_and_teardown(void) {
     active_task = &task_c;
     assert(ipc_close(peer) == IPC_STATUS_OK);
 }
+static void test_generation_exhaustion(void) {
+    task_t retired, peer;
+    reset_task(&retired, 950);
+    reset_task(&peer, 951);
+    for (u32 i = 0; i < IPC_MAX_ENDPOINTS; i++)
+        retired.ipc_endpoint_generations[i] = IPC_HANDLE_GENERATION_MAX;
+    ipc_handle_t a, b;
+    assert(!ipc_endpoint_pair_create(&retired, &peer,
+        IPC_RIGHT_SEND, IPC_RIGHT_RECEIVE, &a, &b));
+}
+
 static void test_table_limit(void) {
     task_t owner, peers[IPC_MAX_ENDPOINTS], extra;
     ipc_handle_t own[IPC_MAX_ENDPOINTS], peer[IPC_MAX_ENDPOINTS];
@@ -103,6 +114,7 @@ int main(void) {
     test_pair_validation();
     test_rights_queue_and_close();
     test_stale_handle_and_teardown();
+    test_generation_exhaustion();
     test_table_limit();
     puts("PASS: task-owned IPC handles, rights, bounded queues and teardown");
     return 0;
