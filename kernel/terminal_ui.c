@@ -409,7 +409,6 @@ void terminal_render(void) {
                     "charisos", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
     u32 prefix_w = 0;
     gfx_text_monospace_size("charisos", &prefix_w, NULL, TERM_FONT_SCALE);
-    prefix_w *= TERM_TEXT_SCALE;
     term_draw(x + term_px(24) + prefix_w, prompt_y + (prompt_h - text_h) / 2,
                     ">", CHARIS_UI_ACCENT, FB_TRANSPARENT);
     u32 prompt_x = x + term_px(24) + prefix_w + term_px(14);
