@@ -42,7 +42,7 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The latest checked-in PNG remains the 1024×768 capture from commit `1f0414c` (CI run #724). The latest full [QEMU desktop artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43087769709) is run #732 on commit `d8c21dc`; it contains the refreshed workspace, app and multi-window captures, Settings persistence after reboot, and the kernel-stack guard/IST fault-injection boot logs.
+The latest checked-in PNG remains the 1024×768 capture from commit `1f0414c` (CI run #724). The latest full [QEMU desktop and boot artifact set](https://github.com/Liladizilla/charis__OS/actions/runs/43223435468) is CI run #806 on the descriptor-lifetime branch; it includes the desktop, app and multi-window captures, Settings persistence after reboot, ELF execution checks, and the kernel-stack guard/IST fault-injection logs. The checked-in PNG is a historical snapshot, not a screenshot of the latest build.
 
 ![CharisOS QEMU desktop workspace, CI run 724](docs/screenshots/charisos-desktop-run-724.png)
 
@@ -50,11 +50,11 @@ The [run #722 capture](docs/screenshots/charisos-desktop-run-722.png) and older 
 
 ## Latest desktop validation
 
-[CI run #732](https://github.com/Liladizilla/charis__OS/actions/runs/43087769709) passed on commit `d8c21dc`. It completed dependency installation, the freestanding kernel build, x86-64 baseline audit, browser and window-manager host tests, BIOS/ring-3 checks, VMM huge-page/permission regressions, the dedicated kernel-stack guard/IST1 fault-injection test, QEMU desktop captures and Settings persistence checks.
+[CI run #806](https://github.com/Liladizilla/charis__OS/actions/runs/43223435468) passed on commit `689a0bd`. It completed dependency installation, the freestanding kernel build, x86-64 baseline audit, descriptor lifecycle/duplication and other host regressions, BIOS/ring-3 checks, VMM huge-page/permission regressions, the dedicated kernel-stack guard/IST1 fault-injection test, QEMU desktop captures and Settings persistence checks.
 
 The refreshed 1024×768 QEMU capture shows four direct application cards, System Overview, System Status and Kernel Activity. Kernel Activity displays context-switch, interrupt and syscall counters through an O(1) snapshot API; desktop repaint does not traverse the scheduler task list. It is suppressed when text scale or available geometry leaves insufficient room. At 200% text and 120% UI scale it is intentionally absent. CI run #732 also boots a dedicated fault-injection image: a kernel task writes to its own unmapped stack guard, the CPU enters through TSS.IST1, the dispatcher verifies the exception frame is on that stack, emits containment markers and halts with a diagnostic panic rather than triple-faulting. This proves safe exception reporting, not recovery of a corrupted kernel task. Unused desktop space, richer user-facing workspace content and the complete font/UI/framebuffer matrix remain open. This is engineering evidence, not a release-quality claim.
 
-The default ELF disk test continues to verify that the normal bootstrap task is denied by `CAP_ALLOW_EXEC`. A separate `images-elf-exec-test` build grants that capability only to the CI smoke task, runs against a FAT32 `TEST.ELF`, and requires the kernel to emit `ELF_EXEC_OK` after the task enters the loaded image. CI #775 is the first run of this authorized-entry gate; its result is tracked separately from the default denial test.
+The default ELF disk test verifies that the normal bootstrap task is denied by `CAP_ALLOW_EXEC`. A separate `images-elf-exec-test` build grants that capability only to the CI smoke task, runs against a FAT32 `TEST.ELF`, and requires the kernel to emit `ELF_EXEC_OK` after the task enters the loaded image. CI #806 passed both the default denial and authorized-entry paths.
 
 
 ## What is implemented
