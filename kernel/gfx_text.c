@@ -207,6 +207,47 @@ void gfx_text_monospace_size(const char* s, u32* out_w, u32* out_h) {
     if (out_h) *out_h = lines * (u32)font_cell_h * text_scale;
 }
 
+/* Explicit pixel scale variant for fixed-size terminal identity artwork.
+ * Unlike the preference-aware path above, this does not multiply by the
+ * desktop's global font scale. */
+void gfx_draw_monospace_string_at_scale(u32 x, u32 y, const char* s,
+                                        u32 fg, u32 bg, u32 glyph_scale) {
+    if (!g_framebuffer.initialized || !s || !glyph_scale || glyph_scale > 8u)
+        return;
+    u32 origin_x = x;
+    for (; *s; s++) {
+        if (*s == '\n') {
+            y += (u32)font_cell_h * glyph_scale;
+            x = origin_x;
+            continue;
+        }
+        draw_glyph_with_style(x, y, *s, fg, bg, glyph_scale, 1u);
+        x += glyph_advance_with_style(*s, glyph_scale, 1u);
+    }
+}
+
+void gfx_text_monospace_size_at_scale(const char* s, u32 glyph_scale,
+                                      u32* out_w, u32* out_h) {
+    if (!s || !glyph_scale || glyph_scale > 8u) {
+        if (out_w) *out_w = 0;
+        if (out_h) *out_h = 0;
+        return;
+    }
+    u32 lines = 1, longest = 0, current = 0;
+    for (const char* p = s; *p; p++) {
+        if (*p == '\n') {
+            if (current > longest) longest = current;
+            current = 0;
+            lines++;
+        } else {
+            current += glyph_advance_with_style(*p, glyph_scale, 1u);
+        }
+    }
+    if (current > longest) longest = current;
+    if (out_w) *out_w = longest;
+    if (out_h) *out_h = lines * (u32)font_cell_h * glyph_scale;
+}
+
 void gfx_draw_string_centered(u32 y, const char* s, u32 fg, u32 bg) {
     if (!g_framebuffer.initialized || !s) return;
     u32 width = 0;
