@@ -246,6 +246,78 @@ static void test_descriptor_duplication_shares_file_and_attenuates_rights(void) 
     assert(close_count == 1);
 }
 
+typedef struct {
+    task_t* sender;
+    task_t* recipient;
+    fd_handle_t source;
+    fd_handle_t duplicate;
+    bool close_result;
+} duplicate_close_race_t;
+
+static pthread_barrier_t duplicate_close_barrier;
+
+static void* duplicate_close_race_duplicate(void* opaque) {
+    duplicate_close_race_t* args = (duplicate_close_race_t*)opaque;
+    active_task = args->sender;
+    (void)pthread_barrier_wait(&duplicate_close_barrier);
+    args->duplicate = fd_duplicate_to(args->source, args->recipient->pid,
+                                      FD_RIGHT_READ);
+    return NULL;
+}
+
+static void* duplicate_close_race_close(void* opaque) {
+    duplicate_close_race_t* args = (duplicate_close_race_t*)opaque;
+    active_task = args->sender;
+    (void)pthread_barrier_wait(&duplicate_close_barrier);
+    args->close_result = fd_close(args->source);
+    return NULL;
+}
+
+static void test_sender_close_races_descriptor_duplication(void) {
+    task_t sender, recipient;
+    reset_task(&sender, 97);
+    reset_task(&recipient, 98);
+    active_task = &sender;
+    close_count = 0;
+
+    fd_handle_t source = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
+    assert(source != FD_HANDLE_INVALID);
+
+    duplicate_close_race_t args = {
+        .sender = &sender,
+        .recipient = &recipient,
+        .source = source,
+        .duplicate = FD_HANDLE_INVALID,
+        .close_result = false
+    };
+    pthread_t duplicate_thread, close_thread;
+    assert(pthread_barrier_init(&duplicate_close_barrier, NULL, 3) == 0);
+    assert(pthread_create(&duplicate_thread, NULL,
+                          duplicate_close_race_duplicate, &args) == 0);
+    assert(pthread_create(&close_thread, NULL,
+                          duplicate_close_race_close, &args) == 0);
+    (void)pthread_barrier_wait(&duplicate_close_barrier);
+    assert(pthread_join(duplicate_thread, NULL) == 0);
+    assert(pthread_join(close_thread, NULL) == 0);
+    assert(pthread_barrier_destroy(&duplicate_close_barrier) == 0);
+
+    assert(args.close_result);
+    assert(!fd_has_rights(source, FD_RIGHT_READ));
+
+    if (args.duplicate != FD_HANDLE_INVALID) {
+        /* Duplication linearized first: the recipient owns the surviving ref. */
+        active_task = &recipient;
+        assert(fd_has_rights(args.duplicate, FD_RIGHT_READ));
+        assert(fd_close(args.duplicate));
+    } else {
+        /* Close linearized first: duplication never resurrected the object. */
+        active_task = &recipient;
+        assert(!fd_has_rights(args.duplicate, FD_RIGHT_READ));
+    }
+
+    assert(close_count == 1);
+}
+
 static void test_recipient_exit_releases_only_its_duplicate_reference(void) {
     task_t sender, recipient;
     reset_task(&sender, 93);
@@ -653,6 +725,7 @@ int main(void) {
     test_handles_are_bound_to_the_owner_task();
     test_closeable_node_has_one_descriptor_owner();
     test_descriptor_duplication_shares_file_and_attenuates_rights();
+    test_sender_close_races_descriptor_duplication();
     test_recipient_exit_releases_only_its_duplicate_reference();
     test_duplicate_rejects_full_and_exiting_recipients();
     test_concurrent_closeable_node_claim_is_unique();
