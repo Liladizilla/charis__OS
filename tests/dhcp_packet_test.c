@@ -3,7 +3,6 @@
 #include <string.h>
 #include <kernel/dhcp.h>
 
-static void put16(u8* p, u16 v) { p[0] = (u8)(v >> 8); p[1] = (u8)v; }
 static void put32(u8* p, u32 v) {
     p[0]=(u8)(v>>24); p[1]=(u8)(v>>16); p[2]=(u8)(v>>8); p[3]=(u8)v;
 }
