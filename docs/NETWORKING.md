@@ -32,11 +32,12 @@ Kernel code can queue one lookup with `net_dns_query(hostname, callback, context
 
 The resolver uses UDP port 53 and the configured `net_dns` address. Network configuration, gateway reachability and ARP resolution must be correct for it to succeed.
 
-## Not implemented yet
+## Current limits
 
-- DHCP, IPv6 and IP fragment reassembly.
-- Full TCP socket support, congestion control, robust retransmission timers, multiple concurrent connections and TLS.
-- HTTPS/TLS, redirects, chunked transfer decoding, full HTML/CSS layout, JavaScript and standards-compliant document rendering.
-- End-to-end hardware tests against a real LAN.
+- DHCP, IPv6 and IP fragment reassembly are not implemented. Static IPv4 configuration is required.
+- TCP is a constrained single-connection client, not a complete socket implementation. Congestion control, robust retransmission, multiple concurrent connections and broad interoperability are missing.
+- TLS/HTTPS, certificate validation, redirects, chunked transfer decoding, full HTML/CSS layout, JavaScript and standards-compliant document rendering are not implemented.
+- No Wi-Fi driver exists. Current physical networking is the RTL8139 wired Ethernet path only.
+- End-to-end hardware tests against a real LAN and public Internet are still required.
 
-The current browser is still a local shell until the missing transport, security, HTTP and rendering layers are implemented and tested. Do not treat successful kernel CI as proof of Internet connectivity.
+The kernel has a meaningful wired-networking foundation, but it is not yet a dependable general-purpose Internet stack. Do not treat successful kernel CI as proof of Internet connectivity.
