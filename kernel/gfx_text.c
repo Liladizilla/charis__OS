@@ -59,28 +59,33 @@ static const u8* glyph_data(char ch, u32* left, u32* right) {
     return rows;
 }
 
-static u32 glyph_advance(char ch, u32 scale) {
-    if (ch == ' ') return (u32)(font_cell_w / 2 + (text_style == 2 ? 1 : 0)) * scale;
+static u32 glyph_advance_with_style(char ch, u32 scale, u32 style) {
+    if (style == 1) return (u32)font_cell_w * scale + scale;
+    if (ch == ' ') return (u32)(font_cell_w / 2 + (style == 2 ? 1 : 0)) * scale;
     u32 left = 0, right = (u32)font_cell_w - 1U;
     (void)glyph_data(ch, &left, &right);
-    if (text_style != 1) {
+    if (style != 1) {
         u32 width = right >= left ? right - left + 1 : 1;
-        return (width + (text_style == 2 ? 2 : 1)) * scale;
+        return (width + (style == 2 ? 2 : 1)) * scale;
     }
     return (u32)font_cell_w * scale + scale;
 }
 
-static void draw_glyph(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale) {
+static u32 glyph_advance(char ch, u32 scale) {
+    return glyph_advance_with_style(ch, scale, text_style);
+}
+
+static void draw_glyph_with_style(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale, u32 style) {
     if (!g_framebuffer.initialized || !scale || scale > 8) return;
 
     u32 left = 0, right = font_cell_w - 1;
     const u8* rows = glyph_data(ch, &left, &right);
     if (!rows) return;
 
-    bool proportional = (text_style != 1);
+    bool proportional = (style != 1);
     u32 source_left = proportional ? left : 0;
     u32 source_right = proportional ? right : ((u32)font_cell_w - 1U);
-    u32 advance_width = glyph_advance(ch, scale);
+    u32 advance_width = glyph_advance_with_style(ch, scale, style);
     if (bg != FB_TRANSPARENT)
         fb_fill_rect(x, y, advance_width, (u32)font_cell_h * scale, bg);
 
@@ -96,7 +101,7 @@ static void draw_glyph(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale) {
     /* Bitmap-serif treatment. Add short cap/baseline terminals only where
      * the outer glyph columns form a real vertical stem. The advance leaves
      * two spare pixels so the new terminals do not collide with the next glyph. */
-    if (text_style == 2) {
+    if (style == 2) {
         u32 glyph_width = source_right >= source_left ?
                           source_right - source_left + 1 : 1;
         for (u32 side = 0; side < 2; side++) {
@@ -123,6 +128,10 @@ static void draw_glyph(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale) {
                          bar_width * scale, scale, fg);
         }
     }
+}
+
+static void draw_glyph(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 scale) {
+    draw_glyph_with_style(x, y, ch, fg, bg, scale, text_style);
 }
 
 void gfx_draw_char(u32 x, u32 y, char ch, u32 fg, u32 bg) {
@@ -157,6 +166,45 @@ void gfx_draw_string_scaled(u32 x, u32 y, const char* s, u32 fg, u32 bg, u32 sca
         draw_glyph(x, y, *s, fg, bg, effective);
         x += glyph_advance(*s, effective);
     }
+}
+
+
+void gfx_draw_monospace_string_scaled(u32 x, u32 y, const char* s,
+                                      u32 fg, u32 bg, u32 scale) {
+    if (!g_framebuffer.initialized || !s || !scale) return;
+    u32 effective = scale * text_scale;
+    if (effective > 8) effective = 8;
+    u32 origin_x = x;
+    for (; *s; s++) {
+        if (*s == '\n') {
+            y += (u32)font_cell_h * effective;
+            x = origin_x;
+            continue;
+        }
+        draw_glyph_with_style(x, y, *s, fg, bg, effective, 1u);
+        x += glyph_advance_with_style(*s, effective, 1u);
+    }
+}
+
+void gfx_text_monospace_size(const char* s, u32* out_w, u32* out_h) {
+    if (!s) {
+        if (out_w) *out_w = 0;
+        if (out_h) *out_h = 0;
+        return;
+    }
+    u32 lines = 1, longest = 0, current = 0;
+    for (const char* p = s; *p; p++) {
+        if (*p == '\n') {
+            if (current > longest) longest = current;
+            current = 0;
+            lines++;
+        } else {
+            current += glyph_advance_with_style(*p, text_scale, 1u);
+        }
+    }
+    if (current > longest) longest = current;
+    if (out_w) *out_w = longest;
+    if (out_h) *out_h = lines * (u32)font_cell_h * text_scale;
 }
 
 void gfx_draw_string_centered(u32 y, const char* s, u32 fg, u32 bg) {
