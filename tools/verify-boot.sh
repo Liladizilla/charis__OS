@@ -17,7 +17,7 @@
 # own output on a runner with no TTY.
 #
 # Usage:
-#   verify-boot.sh <image> [--disk] [--uefi] [--elf-test-disk PATH] [--timeout SECONDS]
+#   verify-boot.sh <image> [--disk] [--uefi] [--elf-test-disk PATH] [--expect-elf-exec] [--timeout SECONDS]
 #
 #   --disk     attach the image as a raw hard disk (a flashed USB stick)
 #              instead of a CD-ROM
@@ -47,6 +47,7 @@ NEEDS_DISPLAY=0
 TIMEOUT=60
 LOG=""
 ELF_TEST_DISK=""
+EXPECT_ELF_SUCCESS=0
 REQUIRE_VMM_TESTS=0
 
 usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -57,6 +58,7 @@ while [ $# -gt 0 ]; do
         --uefi)   FIRMWARE="${OVMF:-/usr/share/edk2/ovmf/OVMF_CODE.fd}"; shift ;;
         --kvm)    USE_KVM=1; shift ;;
         --elf-test-disk) ELF_TEST_DISK="$2"; shift 2 ;;
+        --expect-elf-exec) EXPECT_ELF_SUCCESS=1; shift ;;
         --require-vmm-tests) REQUIRE_VMM_TESTS=1; shift ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         -h|--help) usage ;;
@@ -70,6 +72,10 @@ done
 if [ -n "$ELF_TEST_DISK" ]; then
     [ -f "$ELF_TEST_DISK" ] || { echo "verify-boot.sh: ELF test disk not found: $ELF_TEST_DISK" >&2; exit 2; }
     [ "$ATTACH" = "cd" ] || { echo "verify-boot.sh: --elf-test-disk requires CD boot mode" >&2; exit 2; }
+fi
+if [ "$EXPECT_ELF_SUCCESS" = "1" ] && [ -z "$ELF_TEST_DISK" ]; then
+    echo "verify-boot.sh: --expect-elf-exec requires --elf-test-disk" >&2
+    exit 2
 fi
 
 BUILD_DIR="${BUILD_DIR:-build}"
@@ -302,7 +308,16 @@ grep -q 'TASK_STACK_GUARD_OK' "$LOG" \
     || fail "kernel task stack is missing its unmapped page-table guard"
 
 if [ -n "$ELF_TEST_DISK" ]; then
-    if grep -q 'ELF_EXEC_OK' "$LOG"; then
+    if [ "$EXPECT_ELF_SUCCESS" = "1" ]; then
+        grep -q 'RING3_SLEEP_OK' "$LOG" \
+            || fail "ring-3 task did not return from sleep before the authorized exec"
+        grep -q 'ELF_EXEC_OK' "$LOG" \
+            || fail "authorized sys_exec did not enter the static ELF smoke program"
+        if grep -q 'ELF_EXEC_DENIED_CAPABILITY' "$LOG"; then
+            fail "authorized exec was unexpectedly denied by capability policy"
+        fi
+        ELF_RESULT="authorized ELF entered"
+    elif grep -q 'ELF_EXEC_OK' "$LOG"; then
         ELF_RESULT="executed"
     elif grep -q 'ELF_EXEC_DENIED_CAPABILITY' "$LOG"; then
         ELF_RESULT="denied by capability policy"

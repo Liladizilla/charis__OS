@@ -465,17 +465,17 @@ static bool load_local_file(const char* url) {
         return false;
 
     vfs_node_t* node = vfs_resolve(path);
-    if (!node || node->flags != VFS_FILE || !node->read) {
-        if (node && node->flags == VFS_FILE) kfree(node);
+    if (!node) return false;
+    if (node->flags != VFS_FILE || !node->read) {
+        if (node->close) node->close(node);
         return false;
     }
     usize limit = node->size < sizeof(file_preview) - 1u
         ? (usize)node->size : sizeof(file_preview) - 1u;
     int bytes = node->read(node, 0, limit, (u8*)file_preview);
-    kfree(node);
-    if (bytes < 0) return false;
+    if (node->close) node->close(node);
+    if (bytes < 0 || (usize)bytes > limit) return false;
     usize count = (usize)bytes;
-    if (count > limit) count = limit;
     usize output = 0;
     for (usize i = 0; i < count; i++) {
         u8 ch = (u8)file_preview[i];

@@ -86,11 +86,45 @@ jobs:
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/security_caps_test.c kernel/security.c -Wl,--gc-sections -o /tmp/security_caps_test
           /tmp/security_caps_test
+      - name: Test monotonic task PID allocation
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/task_pid_test.c -o /tmp/task_pid_test
+          /tmp/task_pid_test
+
+      - name: Test concurrent task PID uniqueness
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -pthread -Iinclude tests/task_pid_concurrency_test.c -o /tmp/task_pid_concurrency_test
+          /tmp/task_pid_concurrency_test
 
       - name: Test VFS descriptor rights and lifecycle
         run: |
-          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/fd_table_test.c kernel/vfs.c -Wl,--gc-sections -o /tmp/fd_table_test
+          gcc -std=gnu11 -Wall -Wextra -Werror -pthread -ffunction-sections -fdata-sections -Iinclude tests/fd_table_test.c kernel/vfs.c -Wl,--gc-sections -o /tmp/fd_table_test
           /tmp/fd_table_test
+
+      - name: Test syscall read destination preflight
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/syscall_read_preflight_test.c -Wl,--gc-sections -o /tmp/syscall_read_preflight_test
+          /tmp/syscall_read_preflight_test
+
+      - name: Test IL loader VFS ownership and bounds
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/il_loader_test.c -Wl,--gc-sections -o /tmp/il_loader_test
+          /tmp/il_loader_test
+
+      - name: Test ELF exact-read bounds
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/elf_fd_read_test.c -Wl,--gc-sections -o /tmp/elf_fd_read_test
+          /tmp/elf_fd_read_test
+
+      - name: Test FAT32 VFS offset narrowing
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/vfs_fat32_offset_test.c -Wl,--gc-sections -o /tmp/vfs_fat32_offset_test
+          /tmp/vfs_fat32_offset_test
+
+      - name: Test exec address-space replacement transaction
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/syscall_exec_transaction_test.c -Wl,--gc-sections -o /tmp/syscall_exec_transaction_test
+          /tmp/syscall_exec_transaction_test
 
       - name: Build ELF smoke-test disk
         run: make elf-test
@@ -118,6 +152,13 @@ jobs:
           ./tools/verify-boot.sh build/charisos-usb.img --disk
           ./tools/verify-boot.sh build/charisos-vm.iso \
             --elf-test-disk build/elf-smoke-disk.img
+
+      - name: Authorized ELF exec boots in a fresh address space
+        run: |
+          set -e
+          make images-elf-exec-test
+          ./tools/verify-boot.sh build/elf-exec-test/charisos-vm.iso \
+            --elf-test-disk build/elf-smoke-disk.img --expect-elf-exec
 
           # UEFI checks are firmware-dependent and remain advisory on CI.
           # OVMF ships in two shapes and lives in different places across

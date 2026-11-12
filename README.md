@@ -28,7 +28,7 @@ The project is under active development. It is not currently a general-purpose o
 | UEFI boot | UEFI paths exist; CI coverage is advisory and firmware-dependent |
 | CPU and memory | x86_64 long-mode entry, PMM, VMM, heap and page-permission regression tests |
 | Interrupts and scheduling | IDT/PIC/PIT, PS/2 input and kernel-task scheduling; ring-3 yield/resume exercised in QEMU |
-| User mode | DPL3 `int 0x80` bootstrap path exercised; static ELF64 loader exists, but CI currently verifies execution denial without `CAP_ALLOW_EXEC`, not successful ELF entry |
+| User mode | DPL3 `int 0x80` bootstrap path exercised; static ELF64 `ET_EXEC` loader uses transactional address-space replacement; a separate CI-only build now exercises authorized ELF entry |
 | Storage | Primary ATA PIO and FAT32 support; current Files interface is read-only and limited to the root directory and 8.3 names |
 | Graphical shell | Framebuffer workspace with independent Terminal, Files, Browser, Settings and About windows; workspace and application coverage remain limited |
 | Window manager | Bounded ownership, back-to-front composition, focus-only input, move, lower-right resize grip, maximize/restore, minimize, taskbar switching and Alt+Tab; snap/tiling and QEMU pointer-resize validation remain unfinished |
@@ -42,7 +42,7 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop screenshots
 
-The latest checked-in PNG remains the 1024×768 capture from commit `1f0414c` (CI run #724). The latest full [QEMU desktop artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43087769709) is run #732 on commit `d8c21dc`; it contains the refreshed workspace, app and multi-window captures, Settings persistence after reboot, and the kernel-stack guard/IST fault-injection boot logs.
+The latest checked-in PNG remains the 1024×768 capture from commit `1f0414c` (CI run #724). The latest full [QEMU desktop and boot artifact set](https://github.com/Liladizilla/charis__OS/actions/runs/43223435468) is CI run #806 on the descriptor-lifetime branch; it includes the desktop, app and multi-window captures, Settings persistence after reboot, ELF execution checks, and the kernel-stack guard/IST fault-injection logs. The checked-in PNG is a historical snapshot, not a screenshot of the latest build.
 
 ![CharisOS QEMU desktop workspace, CI run 724](docs/screenshots/charisos-desktop-run-724.png)
 
@@ -50,11 +50,11 @@ The [run #722 capture](docs/screenshots/charisos-desktop-run-722.png) and older 
 
 ## Latest desktop validation
 
-[CI run #732](https://github.com/Liladizilla/charis__OS/actions/runs/43087769709) passed on commit `d8c21dc`. It completed dependency installation, the freestanding kernel build, x86-64 baseline audit, browser and window-manager host tests, BIOS/ring-3 checks, VMM huge-page/permission regressions, the dedicated kernel-stack guard/IST1 fault-injection test, QEMU desktop captures and Settings persistence checks.
+[CI run #806](https://github.com/Liladizilla/charis__OS/actions/runs/43223435468) passed on commit `689a0bd`. It completed dependency installation, the freestanding kernel build, x86-64 baseline audit, descriptor lifecycle/duplication and other host regressions, BIOS/ring-3 checks, VMM huge-page/permission regressions, the dedicated kernel-stack guard/IST1 fault-injection test, QEMU desktop captures and Settings persistence checks.
 
 The refreshed 1024×768 QEMU capture shows four direct application cards, System Overview, System Status and Kernel Activity. Kernel Activity displays context-switch, interrupt and syscall counters through an O(1) snapshot API; desktop repaint does not traverse the scheduler task list. It is suppressed when text scale or available geometry leaves insufficient room. At 200% text and 120% UI scale it is intentionally absent. CI run #732 also boots a dedicated fault-injection image: a kernel task writes to its own unmapped stack guard, the CPU enters through TSS.IST1, the dispatcher verifies the exception frame is on that stack, emits containment markers and halts with a diagnostic panic rather than triple-faulting. This proves safe exception reporting, not recovery of a corrupted kernel task. Unused desktop space, richer user-facing workspace content and the complete font/UI/framebuffer matrix remain open. This is engineering evidence, not a release-quality claim.
 
-The current ELF disk test accepts an explicit `ELF_EXEC_DENIED_CAPABILITY` result because the bootstrap task does not receive `CAP_ALLOW_EXEC`; it does not prove that an ELF executable was entered. Successful authorized ELF execution remains an explicit validation gap.
+The default ELF disk test verifies that the normal bootstrap task is denied by `CAP_ALLOW_EXEC`. A separate `images-elf-exec-test` build grants that capability only to the CI smoke task, runs against a FAT32 `TEST.ELF`, and requires the kernel to emit `ELF_EXEC_OK` after the task enters the loaded image. CI #806 passed both the default denial and authorized-entry paths.
 
 
 ## What is implemented
@@ -63,7 +63,7 @@ The current ELF disk test accepts an explicit `ELF_EXEC_DENIED_CAPABILITY` resul
 - Physical memory bitmap allocator, virtual memory management and kernel heap.
 - IDT, PIC, PIT, PS/2 keyboard/mouse and diagnostic output.
 - Kernel-task scheduling and a tested ring-3 bootstrap path.
-- DPL3 `int 0x80` syscall dispatch and an implementation of a bounded static ELF64 `ET_EXEC` loader; successful authorized ring-3 execution remains unverified.
+- DPL3 `int 0x80` syscall dispatch and a bounded static ELF64 `ET_EXEC` loader. The loader builds a fresh process address space, loads segments and the initial stack there, switches CR3 only after success, then reclaims the previous image. A separate CI-only image now exercises successful authorized ELF entry; see the current CI gate for its result.
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
 - Framebuffer drawing and PSF2 bitmap-font rendering.
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
@@ -79,7 +79,7 @@ CharisOS is still an early-stage kernel and shell. In particular:
 - The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, keyboard resize, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
 - The workspace exposes direct shortcuts for Files, Terminal, Settings and Browser; the separate multi-window capture demonstrates Files and Terminal open together. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
 - Files does not yet support writable files, nested directory navigation or long filenames.
-- The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking, repeated-exec cleanup and a complete process lifecycle are unfinished. The configured CI smoke task is denied by capability policy, so successful entry into a loaded ELF remains an explicit validation gap.
+- The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking, relocations, a complete process lifecycle and a successful end-to-end authorized ELF boot on the full firmware matrix remain unfinished. Successful exec builds a new address space transactionally, preserves the old image on any failure, switches CR3 only after segment and stack construction succeed, and reclaims the old image after the switch. The default image still denies `CAP_ALLOW_EXEC`; a dedicated CI-only image now tests the authorized path.
 - The `SYSCALL/SYSRET` user-mode path is configured but not yet validated as the normal syscall entry.
 - Capability enforcement covers only selected operations. It is not a complete security boundary.
 - The current entropy source is hardware-feature-dependent. If RDRAND is unavailable, cryptographic token generation is disabled; no weak fallback is presented as cryptographic randomness.
@@ -410,12 +410,20 @@ failure; child capability inheritance is therefore not claimed.
 
 | Authority | Enforcement |
 |---|---|
-| `CAP_FS_READ` | Required to request a read-capable file descriptor |
+| `CAP_FS_READ` | Required to request and rechecked for non-console reads |
 | `CAP_FS_WRITE` | Required to request a write-capable descriptor and rechecked for non-console writes |
 | `FD_RIGHT_READ` | Per-descriptor grant checked by `sys_read` and the ELF loader |
 | `FD_RIGHT_WRITE` | Per-descriptor grant checked by `sys_write` |
 | `CAP_SPAWN` + `CAP_ALLOW_EXEC` | `sys_exec` authorization |
 | `CAP_NET_RAW`, `CAP_SYS_ADMIN`, `CAP_RAW_MEM`, `CAP_SHUTDOWN` | Reserved |
+
+The built-in network worker, text shell and graphical desktop worker are
+kernel-mode tasks. Their current call paths use trusted in-kernel APIs and do
+not invoke capability-gated filesystem or process syscalls, so they receive an
+empty process capability mask. This is least privilege at the syscall boundary,
+not a claim that ring-0 code is sandboxed from kernel internals. The bootstrap
+ring-3 task retains `CAP_FS_READ | CAP_SPAWN` for read-policy and execution-denial
+regression coverage, but intentionally does not receive `CAP_ALLOW_EXEC`.
 
 `sys_open(path)` remains read-only by default. `sys_open_rights(path, rights)`
 can request an explicit read/write combination, but the process must hold the
@@ -423,9 +431,96 @@ matching filesystem capabilities and the VFS node must implement each requested
 operation. The descriptor stores only the granted rights; later reads and writes
 must pass both the descriptor check and the underlying operation check.
 Standard input receives read authority, while standard output/error receive
-write authority. Closing a descriptor revokes its rights before the filesystem
-close callback runs. Descriptor tables are task-local and are rebuilt when a
-task slot is reused.
+write authority. Closing a descriptor revokes its table entry before the
+filesystem close callback can run. Each successful open creates a kernel-owned
+`vfs_open_file_t` containing the node, shared offset, open flags, I/O lock and
+packed reference lifecycle. The task-local `fd_entry_t` stores only the open-file
+pointer, granted rights and handle generation. `fd_acquire()` validates the
+current task and required rights while holding the descriptor-table lock, then
+pins the open-file object for the complete operation. `fd_release()` drops that
+pin; the final release atomically enters a permanent closing state before
+calling the node destructor exactly once. A reference cannot be acquired from
+zero or from a closing object.
+
+A global atomic node-ownership registry still ensures that one closeable raw
+node belongs to exactly one open-file description. It prevents two independent
+open descriptions from claiming one node pointer, including simultaneous
+allocations on separate CPUs. A losing opener receives an explicit already-owned
+status and must not run the other description's close callback. During final
+close, the registry marks the pointer as releasing; a new claim for a reused
+address waits until the old callback returns. The registry uses integer pointer
+keys so it never dereferences a node after its callback may have freed it.
+The per-open-file I/O lock serializes VFS callbacks and shared-offset updates.
+Callbacks under that lock must remain bounded and must not block or yield;
+callback execution and object destruction happen outside the descriptor-table
+lock. Standard streams bind to permanent shared kernel open-file objects.
+
+The kernel-internal `fd_duplicate_to()` primitive can publish a descriptor
+for a live recipient PID. It rejects zero/unknown rights and any requested
+right the sender does not hold, checks recipient state and table capacity,
+acquires the shared open-file reference before publication, and returns a
+recipient-bound task-scoped handle. The sender and recipient retain independent
+rights while sharing the same open-file offset. Task exit publishes
+`TASK_STATE_EXITING` before its close-all pass, preventing a new duplicate
+from appearing after cleanup. Host regressions cover rights escalation,
+full-table rollback, sender close, recipient cleanup and rejected teardown
+states. No ring-3 syscall exposes this primitive; userspace descriptor transfer
+still requires a separately designed, authenticated IPC protocol. The
+current IPC implementation still uses global integer channel indexes and has
+no endpoint ownership or peer authorization, so its syscall surface remains
+kernel-only. Shared-memory syscalls also remain kernel-only because the current
+API returns kernel pointers and has no per-task mapping/revocation model. The
+required endpoint, rendezvous, message-attachment and rollback contract is
+specified in
+[Authenticated IPC Endpoints and Resource Transfer](./docs/architecture/authenticated-ipc-endpoints-and-resource-transfer.md).
+These are explicit implementation gaps, not completed security features.
+Descriptor tables are task-local and are rebuilt when a task slot is reused. Non-standard descriptor values are 64-bit task-scoped
+identifiers whose ABI encoding callers must treat as opaque. The current
+encoding is deterministic: it contains the owning task PID, a per-slot
+generation and the descriptor slot. It is not random, secret, MAC-protected or
+unforgeable, and it is not a security credential or an intra-task isolation
+boundary. Its guarantees are narrower and explicit: a closed handle cannot
+resolve after slot reuse, and a handle copied into another task cannot resolve
+there even when the same slot is occupied. Task PIDs are allocated with atomic
+compare/exchange, remain monotonic, and fail closed rather than wrapping, so
+identities are unique even when task creation races across CPUs and are never
+recycled. The generation counter is preserved across task-slot reuse and also
+fails closed rather than wrapping. `FD_HANDLE_INVALID` uses owner PID zero, which the monotonic PID
+allocator never issues. This leaves every nonzero-PID descriptor tuple
+available, including the all-ones 64-bit handle at the maximum PID, generation
+and slot values. Standard input/output/error retain
+the stable handles 0, 1 and 2. `sys_open()` and `sys_open_rights()` return
+`FD_HANDLE_INVALID` (owner PID zero) on failure; callers must not interpret
+zero or an arbitrary negative integer as a failed non-standard handle. Numeric
+handles are not transferable capabilities; future cross-task delegation
+requires a separate, rights-attenuating resource-transfer mechanism.
+
+Kernel-side file consumers use the VFS node's `close` callback rather than
+assuming a particular allocator. The IL bytecode loader validates the path,
+requires a kernel caller, rejects files larger than its fixed instruction
+array or files ending mid-instruction, requires a complete read, and releases
+the per-open node on both success and failure. The Browser's local-file preview
+and ELF loader's pre-descriptor validation path also release resolved nodes
+through their VFS close callback.
+VFS callback return values are bounded by each caller: ELF exact reads reject
+over-reported byte counts and wrapped offsets, configuration loading rejects
+oversized results before placing the string terminator, and Browser previews
+reject lengths larger than their destination buffer. Descriptor read/write and
+ELF read ranges fail closed before 64-bit offset arithmetic can wrap.
+
+The FAT32 VFS adapters also reject offsets above the 32-bit `file_t.pos`
+domain before narrowing a 64-bit VFS offset or entering the filesystem layer.
+A host regression verifies that oversized reads do not invoke `fs_read`, and
+oversized writes do not invoke `fs_open` or `fs_write`.
+
+Before a ring-3 `sys_read` touches its input source, the kernel validates the
+entire writable destination range across page boundaries, using effective
+USER/WRITABLE page-table permissions and checking that each physical frame is
+reachable through the kernel direct map. An unmapped, read-only or overflowing
+range fails before keyboard input or a VFS read callback can consume data.
+Copy-out repeats whole-range validation before modifying userspace. This is a
+specific `SYS_READ` ordering guarantee, not a claim that all syscall pointer
+paths are complete.
 
 `security_verify_path()` rejects parent-directory traversal and alternate
 separators. When RDRAND is available, it can seed the stack guard. If RDRAND is

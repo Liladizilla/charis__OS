@@ -31,20 +31,26 @@ static bool elf_write_user(pml4_t* pml4, u64 address, const void* source, usize 
     return true;
 }
 
-static int fd_read_all(int fd, u64 offset, void* buf, usize count) {
-    fd_entry_t* f = fd_get(fd);
-    if (!f || !(f->rights & FD_RIGHT_READ) || !f->node->read) return -1;
+static int fd_read_all(vfs_open_file_t* file, u64 offset,
+                        void* buf, usize count) {
+    if (!file || !file->node || !file->node->read ||
+        (u64)count > (~(u64)0 - offset) || count > 0x7FFFFFFFULL)
+        return -1;
+
     usize total = 0;
     while (total < count) {
-        int read = f->node->read(f->node, offset + total, count - total,
-                                 (u8*)buf + total);
-        if (read <= 0) return -1;
+        usize remaining = count - total;
+        u64 irq_flags = fd_file_io_lock(file);
+        int read = file->node->read(file->node, offset + total, remaining,
+                                    (u8*)buf + total);
+        fd_file_io_unlock(file, irq_flags);
+        if (read <= 0 || (usize)read > remaining) return -1;
         total += (usize)read;
     }
     return (int)total;
 }
 
-static bool elf_load_segment(pml4_t* pml4, int fd, const elf64_phdr_t* phdr) {
+static bool elf_load_segment(pml4_t* pml4, vfs_open_file_t* file, const elf64_phdr_t* phdr) {
     if (!phdr->p_memsz) return phdr->p_filesz == 0;
     if (phdr->p_memsz > ELF_MAX_SEGMENT_BYTES || phdr->p_vaddr < PAGE_SIZE ||
         phdr->p_filesz > phdr->p_memsz ||
@@ -80,7 +86,7 @@ static bool elf_load_segment(pml4_t* pml4, int fd, const elf64_phdr_t* phdr) {
     while (copied < phdr->p_filesz) {
         usize chunk = (usize)(phdr->p_filesz - copied);
         if (chunk > sizeof(buffer)) chunk = sizeof(buffer);
-        if (fd_read_all(fd, phdr->p_offset + copied, buffer, chunk) != (int)chunk) {
+        if (fd_read_all(file, phdr->p_offset + copied, buffer, chunk) != (int)chunk) {
             return false;
         }
 
@@ -191,11 +197,25 @@ static int elf_load_internal(const char* path, process_mm_t* mm, u64* entry_poin
          !security_check_capability(current, CAP_ALLOW_EXEC))) return -1;
 
     vfs_node_t* node = vfs_resolve(path);
-    if (!node || !(node->flags & VFS_FILE) || !node->read) return -1;
-
-    int fd = fd_alloc(node, 0, FD_RIGHT_READ);
-    if (fd < 0) {
+    if (!node) return -1;
+    if (!(node->flags & VFS_FILE) || !node->read) {
         if (node->close) node->close(node);
+        return -1;
+    }
+
+    fd_alloc_status_t allocation_status;
+    fd_handle_t fd = fd_alloc(node, 0, FD_RIGHT_READ, &allocation_status);
+    if (fd == FD_HANDLE_INVALID) {
+        if (node->close &&
+            allocation_status != FD_ALLOC_NODE_ALREADY_OWNED)
+            node->close(node);
+        return -1;
+    }
+
+    vfs_open_file_t* open_file = fd_acquire(fd, FD_RIGHT_READ);
+    if (!open_file || !open_file->node) {
+        if (open_file) fd_release(open_file);
+        fd_close(fd);
         return -1;
     }
 
@@ -203,7 +223,7 @@ static int elf_load_internal(const char* path, process_mm_t* mm, u64* entry_poin
     bool load_started = false;
     elf64_phdr_t* phdrs = NULL;
     elf64_ehdr_t ehdr;
-    if (fd_read_all(fd, 0, &ehdr, sizeof(ehdr)) != (int)sizeof(ehdr)) goto done;
+    if (fd_read_all(open_file, 0, &ehdr, sizeof(ehdr)) != (int)sizeof(ehdr)) goto done;
 
     if (ehdr.e_ident[0] != 0x7F || ehdr.e_ident[1] != 'E' ||
         ehdr.e_ident[2] != 'L' || ehdr.e_ident[3] != 'F' ||
@@ -214,20 +234,20 @@ static int elf_load_internal(const char* path, process_mm_t* mm, u64* entry_poin
         ehdr.e_phnum > 128 || !ehdr.e_phoff) goto done;
 
     u64 phdr_bytes = (u64)ehdr.e_phnum * sizeof(elf64_phdr_t);
-    if (ehdr.e_phoff > node->size || phdr_bytes > node->size - ehdr.e_phoff) goto done;
+    if (ehdr.e_phoff > open_file->node->size || phdr_bytes > open_file->node->size - ehdr.e_phoff) goto done;
 
     phdrs = (elf64_phdr_t*)kmalloc((usize)phdr_bytes);
-    if (!phdrs || fd_read_all(fd, ehdr.e_phoff, phdrs, (usize)phdr_bytes) !=
+    if (!phdrs || fd_read_all(open_file, ehdr.e_phoff, phdrs, (usize)phdr_bytes) !=
                   (int)phdr_bytes) goto done;
 
-    if (!elf_validate_segments(mm->pml4, phdrs, ehdr.e_phnum, node->size)) goto done;
+    if (!elf_validate_segments(mm->pml4, phdrs, ehdr.e_phnum, open_file->node->size)) goto done;
 
     bool entry_is_executable = false;
     for (u32 i = 0; i < ehdr.e_phnum; i++) {
         elf64_phdr_t* phdr = &phdrs[i];
         if (phdr->p_type != PT_LOAD) continue;
         load_started = true;
-        if (!elf_load_segment(mm->pml4, fd, phdr)) goto done;
+        if (!elf_load_segment(mm->pml4, open_file, phdr)) goto done;
         if ((phdr->p_flags & PF_X) && ehdr.e_entry >= phdr->p_vaddr &&
             ehdr.e_entry - phdr->p_vaddr < phdr->p_memsz) {
             entry_is_executable = true;
@@ -251,6 +271,7 @@ done:
         elf_rollback_segments(mm->pml4, phdrs, ehdr.e_phnum);
     if (phdrs) kfree(phdrs);
     fd_close(fd);
+    fd_release(open_file);
     if (result < 0) vga_puts("ELF: invalid or unreadable executable\n");
     return result;
 }

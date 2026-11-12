@@ -82,8 +82,8 @@ void config_load(const char* path) {
     u8 buf[4096];
     int n = node->read ? node->read(node, 0, sizeof(buf) - 1, buf) : -1;
     if (node->close) node->close(node);
-    if (n <= 0) {
-        vga_puts("Config: Empty or unreadable config file\n");
+    if (n <= 0 || (usize)n >= sizeof(buf)) {
+        vga_puts("Config: Empty, oversized or unreadable config file\n");
         return;
     }
     config_persistent = true;

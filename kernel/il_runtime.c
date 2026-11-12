@@ -3,6 +3,7 @@
 #include <kernel/string.h>
 #include <kernel/task.h>
 #include <kernel/vfs.h>
+#include <kernel/security.h>
 
 il_runtime_t il_runtimes[TASK_MAX_TASKS];
 static usize il_runtime_count = 0;
@@ -206,15 +207,28 @@ int il_compile_source(const char* source, il_instruction_t* out) {
 }
 
 int il_load_bytecode(const char* path, il_instruction_t* out) {
-    if (!path || (u64)path >= 0xFFFF800000000000ULL) return -1;
+    const usize capacity = IL_MAX_INSTRUCTIONS * sizeof(il_instruction_t);
+    task_t* task = scheduler_current();
+    if (!path || !out || (u64)path >= 0xFFFF800000000000ULL ||
+        (task && task->is_user) || !security_verify_path(path, task)) return -1;
 
     vfs_node_t* node = vfs_resolve(path);
     if (!node) return -1;
 
-    usize bytes_read = 0;
-    if (node->read) {
-        bytes_read = node->read(node, 0, IL_MAX_INSTRUCTIONS * sizeof(il_instruction_t), (u8*)out);
+    int result = -1;
+    /* The output array has a fixed capacity in this ABI. Reject oversized or
+     * partial-instruction files before invoking the filesystem read callback. */
+    if (node->flags == VFS_FILE && node->read &&
+        node->size <= capacity &&
+        (node->size % sizeof(il_instruction_t)) == 0) {
+        usize expected = (usize)node->size;
+        int bytes_read = node->read(node, 0, expected, (u8*)out);
+        if (bytes_read >= 0 && (usize)bytes_read == expected)
+            result = bytes_read;
     }
 
-    return (int)bytes_read;
+    /* vfs_resolve may return a heap-owned per-open FAT32 node. Always release
+     * it through its filesystem callback, including validation/read failures. */
+    if (node->close) node->close(node);
+    return result;
 }

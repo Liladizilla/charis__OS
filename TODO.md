@@ -16,29 +16,58 @@
 - [ ] sys_fork() - create and validate child register context, address-space ownership and resources
 - [x] task_create_with_pml4() - create task with custom address space
 - [x] Per-process fd table (stdin/stdout/stderr pre-opened)
+- [x] Preflight the full writable ring-3 `SYS_READ` destination before keyboard/VFS reads; host regression covers unmapped, read-only, cross-page and zero-length cases
 
 ## Phase 3: Filesystem (PARTIAL)
 - [x] VFS layer (vfs.h, vfs.c) - vfs_node_t, mount points
 - [x] Device nodes: /dev/null, /dev/zero, /dev/kbd, /dev/vga
-- [x] Per-task fd table with fd_alloc(), fd_get(), fd_close()
+- [x] Per-task descriptor table with fd_alloc(), fd_acquire()/fd_release() and fd_close()
 - [x] Explicit per-descriptor read/write rights, checked independently of process capabilities
+- [x] Task-bound opaque descriptor handles with owner-PID binding and per-slot generations
+- [x] Reject stale handles after close/reopen, cross-task handle reuse and generation wrap
+- [x] Make task PID allocation atomic and monotonic; fail closed at exhaustion without identity reuse
+- [x] Reserve a descriptor invalid sentinel in the never-issued PID-zero namespace; verify the maximum PID/generation/slot tuple remains valid
+- [x] Audit built-in task grants; remove unused filesystem/process syscall capabilities from kernel workers
+- [x] Host concurrency regression verifies unique PIDs across parallel allocators
+- [x] Recheck `CAP_FS_READ` on non-console descriptor reads
 - [x] Reject zero, unknown and unavailable rights; standard streams cannot be closed through sys_close
 - [x] Revoke rights on close and reset descriptor metadata on task exit and task-slot reuse
 - [x] Host regression tests for rights, table capacity, task isolation and close ordering
+- [x] Enforce global atomic ownership for closeable VFS nodes; reject cross-task and concurrent duplicate attachment, and serialize pointer reuse through close-callback completion
+- [x] Close per-open VFS nodes in IL loader and Browser local-file paths; validate IL file size, instruction alignment and complete reads
+- [x] Release VFS nodes through close callbacks when the ELF loader rejects a resolved node before descriptor allocation
+- [x] Validate VFS callback byte counts in ELF, Browser and config readers; reject over-reported lengths and 64-bit offset overflow before use
+- [x] Reject oversized 64-bit offsets in FAT32 VFS adapters before conversion to 32-bit `file_t.pos`; host regression proves no filesystem callback runs
 - [x] FAT32 integration with VFS (read-only listing; mutation support remains incomplete)
 - [x] sys_open() defaults to read-only; sys_open_rights() requests capability-backed rights
 - [x] sys_close() rejects invalid, closed and standard descriptors
+- [x] Specify the reference-counted open-file-description architecture, lifetime/authority invariants, lock-order requirements and adversarial regression matrix
+- [x] Introduce kernel-owned open-file descriptions with packed no-resurrection reference lifecycle
+- [x] Migrate syscall read/write and ELF loading to pin open-file descriptions for the full I/O operation
+- [x] Serialize shared file offsets and VFS callbacks with a per-open-file I/O lock
+- [x] Keep descriptor publication/revocation atomic with reference acquisition; run destructors outside the descriptor-table lock
+- [x] Preserve permanent shared standard-stream descriptions across task creation and cleanup
+- [x] Add host regressions for pins surviving descriptor close, final close exactly once, independent open offsets, allocation rollback and concurrent final release
+- [x] Add kernel-internal `fd_duplicate_to()` with kernel task-table recipient resolution and strict rights attenuation
+- [x] Reject descriptor duplication into full, allocating, exiting or zombie recipient tasks
+- [x] Verify shared open-file identity/offset, recipient cleanup and sender-close lifetime
+- [x] Specify authenticated IPC endpoint, rendezvous, rights and transactional resource-transfer requirements
+- [ ] Replace global integer IPC channels with task-local endpoint handles and kernel-established peer identities
+- [ ] Add cancellation-safe message reservations and bounded per-endpoint queues
+- [ ] Add transactional descriptor attachments with queue-owned references and receiver rollback
+- [ ] Keep ring-3 IPC and descriptor transfer denied until endpoint tests and user-memory preflight pass
+- [ ] Replace global shared-memory IDs/raw kernel-pointer access with task-owned objects and explicit user mappings
 
 ## Phase 4: ELF Loader (IN PROGRESS)
 - [x] Validate static ELF64 x86-64 `ET_EXEC` headers and program-header bounds
 - [x] Copy `PT_LOAD` file contents, zero pages for BSS, and map user permissions
 - [x] `sys_exec` implementation validates policy, loads segments and prepares a replacement IRET frame
-- [ ] QEMU test authorizes a ring-3 task with `CAP_ALLOW_EXEC`, enters a FAT32 ELF and observes `ELF_EXEC_OK` (current smoke test verifies denial without that capability)
+- [ ] CI #775: dedicated `TEST_ELF_EXEC_SUCCESS` image authorizes only the bootstrap smoke task, boots from the FAT32 test disk, and must enter `TEST.ELF` and emit `ELF_EXEC_OK` (default image still verifies denial)
 - [x] Build bounded `argc`/`argv`/`envp` vectors plus `AT_NULL` on the initial stack
 - [ ] `ET_DYN` and relocations/interpreters
 - [x] Make ELF loading and initial-stack construction one transaction; roll back successfully loaded PT_LOAD pages if stack setup fails
 - [ ] Add a forced stack-setup-failure regression that proves PT_LOAD frames are reclaimed
-- [ ] Tear down/reclaim old image mappings on repeated exec
+- [x] Successful exec replaces the process with a fresh address space and reclaims the prior user image only after switching CR3
 
 ## Phase 5: Graphics & Display (COMPLETE)
 - [x] fb.h/fb.c - framebuffer driver using the Multiboot2 framebuffer handoff
@@ -205,7 +234,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Bootstrap user task enters ring 3 with a private address-space branch and mapped user stack
 - [x] DPL3 syscall, yield to a kernel task, and resume the user interrupt frame (QEMU verified)
 - [x] Static ELF loader and ring-3 frame-replacement implementation exist
-- [ ] QEMU verifies successful authorized ELF entry; current configured bootstrap test is denied by `CAP_ALLOW_EXEC` policy
+- [ ] CI #775 verifies successful authorized ELF entry through the dedicated exec-test image; default build remains denied by `CAP_ALLOW_EXEC`
 - [ ] Complete user ABI/libc and validate SYSRET path
 - [ ] Per-task kernel interrupt stacks and SMP-safe TSS handling
 - [ ] wait()/waitpid() syscall for zombie reaping

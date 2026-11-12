@@ -467,7 +467,10 @@ bool vmm_copy_kernel_mappings(pml4_t* dst, pml4_t* src) {
     if (!dst) return false;
 
     u64* dst_pml4 = phys_to_virt_pt((u64)dst);
-    u64* src_pml4 = phys_to_virt_pt(src ? (u64)src : get_cr3());
+    /* NULL always means the canonical kernel root, not the active CR3.
+     * Callers may execute this while a ring-3 process address space is active. */
+    u64 source_cr3 = src ? (u64)src : (kernel_cr3 ? kernel_cr3 : get_cr3());
+    u64* src_pml4 = phys_to_virt_pt(source_cr3);
     if (!dst_pml4 || !src_pml4) return false;
 
     /* Share only supervisor-only high-half mappings, including the direct

@@ -61,6 +61,8 @@ void scheduler_add_task(task_t* task) {
 
     u64 flags = scheduler_irq_save();
     if (task->state == TASK_STATE_UNUSED ||
+        task->state == TASK_STATE_ALLOCATING ||
+        task->state == TASK_STATE_EXITING ||
         task->state == TASK_STATE_ZOMBIE) {
         scheduler_irq_restore(flags);
         return;

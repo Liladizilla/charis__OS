@@ -1,4 +1,5 @@
 #include <kernel/task.h>
+#include <kernel/task_id.h>
 #include <kernel/memory.h>
 #include <kernel/vga.h>
 #include <kernel/scheduler.h>
@@ -12,7 +13,7 @@
 
 static task_t task_pool[TASK_MAX_TASKS];
 static task_t* task_list = NULL;
-static u32 next_pid = 1;
+static u64 next_pid = 1;
 
 static void task_release_user_stack_pages(task_t* task, pml4_t* pml4);
 static void task_release_user_code_pages(task_t* task, pml4_t* pml4);
@@ -175,20 +176,11 @@ void task_init(void) {
 
         // Initialize fd table
         for (int j = 0; j < MAX_FDS; j++) {
-            task_pool[i].fd_table[j].node = NULL;
-            task_pool[i].fd_table[j].offset = 0;
-            task_pool[i].fd_table[j].flags = 0;
+            task_pool[i].fd_table[j].file = NULL;
             task_pool[i].fd_table[j].rights = 0;
+            task_pool[i].fd_table[j].generation = 0;
         }
-        // stdin, stdout, stderr point to keyboard and vga devices
-        extern vfs_node_t dev_kbd;
-        extern vfs_node_t dev_vga;
-        task_pool[i].fd_table[FD_STDIN].node = &dev_kbd;
-        task_pool[i].fd_table[FD_STDIN].rights = FD_RIGHT_READ;
-        task_pool[i].fd_table[FD_STDOUT].node = &dev_vga;
-        task_pool[i].fd_table[FD_STDOUT].rights = FD_RIGHT_WRITE;
-        task_pool[i].fd_table[FD_STDERR].node = &dev_vga;
-        task_pool[i].fd_table[FD_STDERR].rights = FD_RIGHT_WRITE;
+        fd_table_init(task_pool[i].fd_table);
     }
     task_list = NULL;
 }
@@ -212,7 +204,7 @@ task_t* task_allocate(void) {
 }
 
 u32 task_next_pid(void) {
-    return next_pid++;
+    return task_pid_allocate(&next_pid);
 }
 
 /* Search the fixed task table by PID. Zombie records remain discoverable until
@@ -280,9 +272,17 @@ void task_exit_handler(void) {
 }
 
 void task_exit_with_status(u32 status) {
+    /* Teardown must remain atomic with respect to task scheduling. In
+     * particular, EXITING must not be observed by the scheduler before this
+     * task has finished descriptor/address-space cleanup and unlinked itself. */
+    u64 exit_flags = task_irq_save();
     task_t* current = scheduler_current();
     if (current) {
         current->exit_code = status;
+        /* Publish a terminal state before releasing descriptors. A kernel
+         * descriptor duplication racing teardown must never publish into a
+         * task after its close-all pass has completed. */
+        current->state = TASK_STATE_EXITING;
         /* Release per-task descriptor state before the task becomes a zombie.
          * The table slot remains available for waitpid(), but open descriptors
          * must not remain live for the lifetime of the zombie record. */
@@ -315,6 +315,9 @@ void task_exit_with_status(u32 status) {
     }
     task_defer_release(current);
     scheduler_yield();
+    /* Reached only if no switch occurred (or a scheduler invariant failed).
+     * The normal exiting task never resumes and therefore never restores IF. */
+    task_irq_restore(exit_flags);
 
     /*
      * If no runnable task exists, scheduler_yield() can return without a
@@ -359,11 +362,15 @@ task_t* task_current(void) {
 }
 
 // Common task initialization helper
-static void task_init_common(task_t* task, const char* name, u32 capabilities, bool is_user) {
+static bool task_init_common(task_t* task, const char* name, u32 capabilities, bool is_user) {
+    /* PID exhaustion must never recycle an identity used in an old handle. */
+    u32 pid = task_next_pid();
+    if (!pid) return false;
+
     task->is_user = is_user;
     task->started = false;
     task->scheduler_queued = false;
-    task->pid = next_pid++;
+    task->pid = pid;
     task->exit_code = 0;
     task_t* parent = scheduler_current();
     task->parent_pid = parent ? parent->pid : 0;
@@ -390,23 +397,9 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->waiting_event = 0;
     task->ipc_wait_next = NULL;
 
-    /* Task slots are reused after an unstarted task is discarded. Rebuild
-     * their descriptor table here so no stale handles survive and the
-     * standard streams are present for every new task. */
-    extern vfs_node_t dev_kbd;
-    extern vfs_node_t dev_vga;
-    for (int i = 0; i < MAX_FDS; i++) {
-        task->fd_table[i].node = NULL;
-        task->fd_table[i].offset = 0;
-        task->fd_table[i].flags = 0;
-        task->fd_table[i].rights = 0;
-    }
-    task->fd_table[FD_STDIN].node = &dev_kbd;
-    task->fd_table[FD_STDIN].rights = FD_RIGHT_READ;
-    task->fd_table[FD_STDOUT].node = &dev_vga;
-    task->fd_table[FD_STDOUT].rights = FD_RIGHT_WRITE;
-    task->fd_table[FD_STDERR].node = &dev_vga;
-    task->fd_table[FD_STDERR].rights = FD_RIGHT_WRITE;
+    /* Drop any residual descriptors before this task slot receives a new
+     * identity. Generations survive so stale tokens cannot become valid. */
+    fd_table_close_all(task->fd_table);
 
     for (u32 i = 0; i < TASK_NAME_MAX - 1 && name && name[i]; i++) {
         task->name[i] = name[i];
@@ -417,6 +410,7 @@ static void task_init_common(task_t* task, const char* name, u32 capabilities, b
     task->prev = NULL;
     task->stack_canary_addr = task->stack_base + sizeof(u64);
     *(u64*)task->stack_canary_addr = 0xDEADC0DEDEADC0DEULL;
+    return true;
 }
 
 static void task_release_user_stack_pages(task_t* task, pml4_t* pml4) {
@@ -567,7 +561,11 @@ task_t* task_create(const char* name, task_func_t func, void* arg, u32 capabilit
         return NULL;
     }
 
-    task_init_common(task, name, capabilities, is_user);
+    if (!task_init_common(task, name, capabilities, is_user)) {
+        vga_puts("Task ID space exhausted\n");
+        task_discard_unstarted(task);
+        return NULL;
+    }
 
     // Create per-process address space (BUG-11 fix)
     if (is_user) {
@@ -648,7 +646,11 @@ task_t* task_create_with_pml4(const char* name, task_func_t func, void* arg, u32
         return NULL;
     }
 
-    task_init_common(task, name, capabilities, is_user);
+    if (!task_init_common(task, name, capabilities, is_user)) {
+        vga_puts("Task ID space exhausted\n");
+        task_discard_unstarted(task);
+        return NULL;
+    }
     task->mm.pml4 = pml4;
     task->address_space = pml4; // Use provided PML4
 
@@ -754,7 +756,7 @@ void task_discard_unstarted(task_t* task) {
     task->prev = NULL;
     task->ipc_wait_next = NULL;
     task->name[0] = '\0';
-    kmemset(task->fd_table, 0, sizeof(task->fd_table));
+    fd_table_close_all(task->fd_table);
 }
 
 void task_sleep_ms(u32 ms) {
