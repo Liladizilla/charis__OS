@@ -58,10 +58,6 @@ static u32 retries;
 static bool initialized;
 static u8 dhcp_packet[DHCP_PACKET_CAP];
 
-static u16 read_be16(const u8* p) {
-    return (u16)(((u16)p[0] << 8) | p[1]);
-}
-
 static u32 read_be32(const u8* p) {
     return ((u32)p[0] << 24) | ((u32)p[1] << 16) |
            ((u32)p[2] << 8) | p[3];
@@ -351,7 +347,8 @@ static bool send_renew_request(bool broadcast) {
 }
 
 static void advance_transaction_id(void) {
-    advance_transaction_id();
+    transaction_id += 0x9E3779B9u;
+    if (!transaction_id) transaction_id = 1u;
 }
 
 static u64 retry_delay_ms(u32 attempt) {
