@@ -21,7 +21,7 @@
 ## Phase 3: Filesystem (PARTIAL)
 - [x] VFS layer (vfs.h, vfs.c) - vfs_node_t, mount points
 - [x] Device nodes: /dev/null, /dev/zero, /dev/kbd, /dev/vga
-- [x] Per-task fd table with fd_alloc(), fd_get(), fd_close()
+- [x] Per-task descriptor table with fd_alloc(), fd_acquire()/fd_release() and fd_close()
 - [x] Explicit per-descriptor read/write rights, checked independently of process capabilities
 - [x] Task-bound opaque descriptor handles with owner-PID binding and per-slot generations
 - [x] Reject stale handles after close/reopen, cross-task handle reuse and generation wrap
@@ -41,7 +41,14 @@
 - [x] FAT32 integration with VFS (read-only listing; mutation support remains incomplete)
 - [x] sys_open() defaults to read-only; sys_open_rights() requests capability-backed rights
 - [x] sys_close() rejects invalid, closed and standard descriptors
-- [x] Specify the reference-counted open-file-description architecture, lifetime/authority invariants, lock-order requirements and adversarial regression matrix (implementation remains pending)
+- [x] Specify the reference-counted open-file-description architecture, lifetime/authority invariants, lock-order requirements and adversarial regression matrix
+- [x] Introduce kernel-owned open-file descriptions with packed no-resurrection reference lifecycle
+- [x] Migrate syscall read/write and ELF loading to pin open-file descriptions for the full I/O operation
+- [x] Serialize shared file offsets and VFS callbacks with a per-open-file I/O lock
+- [x] Keep descriptor publication/revocation atomic with reference acquisition; run destructors outside the descriptor-table lock
+- [x] Preserve permanent shared standard-stream descriptions across task creation and cleanup
+- [x] Add host regressions for pins surviving descriptor close, final close exactly once, and independent open offsets
+- [ ] Add kernel-internal descriptor duplication with explicit recipient identity and rights attenuation
 
 ## Phase 4: ELF Loader (IN PROGRESS)
 - [x] Validate static ELF64 x86-64 `ET_EXEC` headers and program-header bounds
