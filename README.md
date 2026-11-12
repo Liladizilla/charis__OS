@@ -427,8 +427,9 @@ write authority. Closing a descriptor revokes its rights before the filesystem
 close callback runs. Descriptor tables are task-local and are rebuilt when a
 task slot is reused. Non-standard descriptor values are opaque 64-bit handles
 bound to the owning task PID and a per-slot generation. Task PIDs are
-monotonic and fail closed rather than wrapping, so an identity is never
-recycled. A closed handle cannot resolve after its slot is reused, and a handle
+allocated with atomic compare/exchange, remain monotonic, and fail closed
+rather than wrapping, so identities are unique even when task creation races
+across CPUs and are never recycled. A closed handle cannot resolve after its slot is reused, and a handle
 copied into another task cannot resolve there even when the same slot is
 occupied. The generation counter is preserved across task-slot reuse and
 fails closed rather than wrapping.
