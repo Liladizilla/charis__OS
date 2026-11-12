@@ -23,8 +23,8 @@ fd_entry_t* fd_get(fd_handle_t handle) {
 
 static int test_read(vfs_node_t* node, u64 offset, u64 size, u8* buffer) {
     (void)node;
-    assert(offset == 0x100);
     read_calls++;
+    assert(offset == 0x100 + ((u64)(read_calls - 1) * 4));
 
     if (read_mode == READ_OVERREPORT) return (int)size + 1;
     if (read_mode == READ_EMPTY) return 0;
