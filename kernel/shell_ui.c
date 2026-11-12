@@ -19,6 +19,7 @@
 #include <kernel/keyboard.h>
 #include <kernel/mouse.h>
 #include <kernel/timer.h>
+#include <kernel/rtc.h>
 #include <kernel/string.h>
 #include <kernel/ui_theme.h>
 #include <kernel/scheduler.h>
@@ -116,6 +117,7 @@ typedef struct {
 } ui_state_t;
 
 static ui_state_t ui = { false, -1, false, 0, 0, true };
+static u64 next_clock_refresh_ms;
 
 /* The shell owns application lifecycle; the WM owns focus, geometry,
  * clipping, z-order and repaint order. Native app renderers paint directly
@@ -540,6 +542,77 @@ static void shell_toggle_app(shell_app_id_t id) {
 
 /* ── Chrome ───────────────────────────────────────────────────────── */
 
+static void clock_append_two(char** cursor, u32 value) {
+    *(*cursor)++ = (char)('0' + ((value / 10u) % 10u));
+    *(*cursor)++ = (char)('0' + (value % 10u));
+}
+
+static void draw_taskbar_clock(u32 y, u32 bar_h, u32 screen_w) {
+    static const char* const months[12] = {
+        "JAN","FEB","MAR","APR","MAY","JUN",
+        "JUL","AUG","SEP","OCT","NOV","DEC"
+    };
+    rtc_datetime_t now;
+    char label[32];
+    char* cursor = label;
+
+    if (!rtc_get_datetime(&now) || !now.valid) {
+        const char unavailable[] = "RTC UNAVAILABLE";
+        u32 width = 0;
+        gfx_text_size(unavailable, &width, NULL);
+        if (screen_w > width + ui_px(18)) {
+            u32 x = screen_w - width - ui_px(18);
+            fb_fill_rect(x - ui_px(8), y + ui_px(13), ui_px(2),
+                         bar_h > ui_px(26) ? bar_h - ui_px(26) : 1,
+                         CHARIS_UI_BORDER);
+            gfx_draw_string(x, y + (bar_h > text_height()
+                             ? (bar_h - text_height()) / 2 : 0),
+                            unavailable, CHARIS_UI_MUTED, FB_TRANSPARENT);
+        }
+        return;
+    }
+
+    clock_append_two(&cursor, now.day);
+    *cursor++ = ' ';
+    const char* month = months[now.month - 1u];
+    for (u32 i = 0; i < 3u; i++) *cursor++ = month[i];
+    *cursor++ = ' ';
+    *cursor++ = (char)('0' + ((now.year / 1000u) % 10u));
+    *cursor++ = (char)('0' + ((now.year / 100u) % 10u));
+    *cursor++ = (char)('0' + ((now.year / 10u) % 10u));
+    *cursor++ = (char)('0' + (now.year % 10u));
+    *cursor++ = ' ';
+    clock_append_two(&cursor, now.hour);
+    *cursor++ = ':';
+    clock_append_two(&cursor, now.minute);
+    *cursor++ = ':';
+    clock_append_two(&cursor, now.second);
+    *cursor = 0;
+
+    u32 width = 0;
+    gfx_text_size(label, &width, NULL);
+    u32 right_pad = ui_px(18);
+    u32 left_limit = ui_px(270);
+    if (screen_w <= width + right_pad + left_limit) {
+        /* Preserve a useful clock on narrow framebuffers; omit the date first. */
+        cursor = label;
+        clock_append_two(&cursor, now.hour);
+        *cursor++ = ':';
+        clock_append_two(&cursor, now.minute);
+        *cursor = 0;
+        gfx_text_size(label, &width, NULL);
+    }
+    if (screen_w <= width + right_pad + left_limit) return;
+
+    u32 x = screen_w - width - right_pad;
+    fb_fill_rect(x - ui_px(8), y + ui_px(13), ui_px(2),
+                 bar_h > ui_px(26) ? bar_h - ui_px(26) : 1,
+                 CHARIS_UI_ACCENT);
+    gfx_draw_string(x, y + (bar_h > text_height()
+                     ? (bar_h - text_height()) / 2 : 0),
+                    label, CHARIS_UI_TEXT, FB_TRANSPARENT);
+}
+
 static void draw_taskbar(void) {
     u32 w = g_framebuffer.width;
     u32 h = g_framebuffer.height;
@@ -582,8 +655,7 @@ static void draw_taskbar(void) {
                      ui_px(20u), ui_px(2u), mark);
     }
 
-    /* Do not label uptime as a clock. A real wall clock will be added with
-     * the RTC/timezone service; the taskbar stays clear until then. */
+    draw_taskbar_clock(y, bar_h, w);
 }
 
 /* Every launcher entry gets a small, high-contrast icon drawn from
@@ -1365,6 +1437,11 @@ void shell_ui_main(void* arg) {
         if (now >= ui.next_blink_ms) {
             ui.cursor_blink = !ui.cursor_blink;
             ui.next_blink_ms = now + CURSOR_BLINK;
+        }
+        if (now >= next_clock_refresh_ms) {
+            next_clock_refresh_ms = now + 1000u;
+            /* A clock tick only repaints the taskbar, not every desktop surface. */
+            if (!ui.needs_redraw) draw_taskbar();
         }
 
         /* Redraw on a change, or when the mode geometry moved underneath us. */
