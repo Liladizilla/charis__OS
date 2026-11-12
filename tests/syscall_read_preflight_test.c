@@ -44,6 +44,10 @@ void kfree(void* pointer) {
     free(pointer);
 }
 
+void vga_putchar(char ch) {
+    (void)ch;
+}
+
 bool keyboard_get_key(char* out) {
     keyboard_reads++;
     if (!out) return false;
