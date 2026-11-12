@@ -160,7 +160,6 @@ bool ipc_endpoint_pair_create(task_t* a, task_t* b, u32 rights_a,
         ipc_queue_clear(&ch->inbound[side]);
         kmemset(&ch->endpoints[side], 0, sizeof(ch->endpoints[side]));
     }
-    kmemset(&ch->endpoints[0], 0, sizeof(ch->endpoints[0]));
     ch->endpoints[0].channel = ch;
     ch->endpoints[0].owner = a;
     ch->endpoints[0].peer = b;
@@ -172,7 +171,6 @@ bool ipc_endpoint_pair_create(task_t* a, task_t* b, u32 rights_a,
     ch->endpoints[0].side = 0;
     ch->endpoints[0].open = true;
 
-    kmemset(&ch->endpoints[1], 0, sizeof(ch->endpoints[1]));
     ch->endpoints[1].channel = ch;
     ch->endpoints[1].owner = b;
     ch->endpoints[1].peer = a;
