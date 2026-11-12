@@ -98,8 +98,7 @@ int main(void) {
     assert(read_calls == 0);
 
     reset_state();
-    test_rights = 0;
-    assert(fd_read_all(&test_file, 0x100, buffer, sizeof(buffer)) == -1);
+    assert(fd_acquire(17, FD_RIGHT_WRITE) == NULL);
     assert(read_calls == 0);
 
     reset_state();
