@@ -602,7 +602,7 @@ static void draw_taskbar_clock(u32 y, u32 bar_h, u32 screen_w) {
         *cursor = 0;
         gfx_text_size(label, &width, NULL);
     }
-    if (screen_w <= width + right_pad + ui_px(80)) return;
+    if (screen_w <= width + right_pad + left_limit) return;
 
     u32 x = screen_w - width - right_pad;
     fb_fill_rect(x - ui_px(8), y + ui_px(13), ui_px(2),
