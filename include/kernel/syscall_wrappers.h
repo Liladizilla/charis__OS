@@ -14,7 +14,8 @@
 #define sys_print(s) syscall_invoke(SYS_PRINT, (u64)(s), 0, 0, 0, 0, 0)
 
 // File operations
-// sys_open* returns fd_handle_t. Never store a non-standard handle in int.
+// sys_open* returns fd_handle_t; failures return FD_HANDLE_INVALID.
+// Never store a non-standard handle in int.
 #define sys_open_rights(path, rights) syscall_invoke(SYS_OPEN, (u64)(path), (rights), 0, 0, 0, 0)
 #define sys_open(path) sys_open_rights((path), FD_RIGHT_READ)
 #define sys_close(fd) syscall_invoke(SYS_CLOSE, (fd), 0, 0, 0, 0, 0)

@@ -457,9 +457,11 @@ fails closed rather than wrapping. `FD_HANDLE_INVALID` uses owner PID zero, whic
 allocator never issues. This leaves every nonzero-PID descriptor tuple
 available, including the all-ones 64-bit handle at the maximum PID, generation
 and slot values. Standard input/output/error retain
-the stable handles 0, 1 and 2. Numeric handles are not transferable capabilities;
-future cross-task delegation requires a separate, rights-attenuating
-resource-transfer mechanism.
+the stable handles 0, 1 and 2. `sys_open()` and `sys_open_rights()` return
+`FD_HANDLE_INVALID` (owner PID zero) on failure; callers must not interpret
+zero or an arbitrary negative integer as a failed non-standard handle. Numeric
+handles are not transferable capabilities; future cross-task delegation
+requires a separate, rights-attenuating resource-transfer mechanism.
 
 Kernel-side file consumers use the VFS node's `close` callback rather than
 assuming a particular allocator. The IL bytecode loader validates the path,
