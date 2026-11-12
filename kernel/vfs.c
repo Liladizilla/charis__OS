@@ -521,6 +521,78 @@ vfs_open_file_t* fd_acquire(fd_handle_t handle, u32 required_rights) {
     return file;
 }
 
+/*
+ * Duplicate a live descriptor into another task without duplicating the raw
+ * VFS node. Both entries reference the same open-file description, so they
+ * intentionally share the file offset while retaining independent rights.
+ *
+ * The caller must be kernel code: no syscall exposes recipient selection.
+ * A PID is resolved through the kernel task table, never through a userspace
+ * pointer. The global descriptor lock prevents task-local close/exit cleanup
+ * from racing publication on this uniprocessor kernel.
+ */
+fd_handle_t fd_duplicate_to(fd_handle_t source, u32 recipient_pid,
+                            u32 requested_rights) {
+    if (!requested_rights || (requested_rights & ~FD_RIGHT_MASK) ||
+        !recipient_pid) return FD_HANDLE_INVALID;
+
+    task_t* sender = scheduler_current();
+    if (!sender) return FD_HANDLE_INVALID;
+
+    u64 irq_flags = fd_table_lock();
+    task_t* recipient = task_find_by_pid(recipient_pid);
+    if (!recipient || recipient->state == TASK_STATE_UNUSED ||
+        recipient->state == TASK_STATE_ALLOCATING ||
+        recipient->state == TASK_STATE_EXITING ||
+        recipient->state == TASK_STATE_ZOMBIE) {
+        fd_table_unlock(irq_flags);
+        return FD_HANDLE_INVALID;
+    }
+
+    u32 source_slot = 0;
+    if (!fd_resolve_locked(sender, source, &source_slot)) {
+        fd_table_unlock(irq_flags);
+        return FD_HANDLE_INVALID;
+    }
+
+    fd_entry_t* source_entry = &sender->fd_table[source_slot];
+    if ((source_entry->rights & requested_rights) != requested_rights) {
+        fd_table_unlock(irq_flags);
+        return FD_HANDLE_INVALID;
+    }
+
+    u32 destination_slot = MAX_FDS;
+    for (u32 i = 3; i < MAX_FDS; i++) {
+        fd_entry_t* entry = &recipient->fd_table[i];
+        if (!entry->file && entry->generation < FD_HANDLE_GENERATION_MAX) {
+            destination_slot = i;
+            break;
+        }
+    }
+    if (destination_slot == MAX_FDS) {
+        fd_table_unlock(irq_flags);
+        return FD_HANDLE_INVALID;
+    }
+
+    vfs_open_file_t* file = source_entry->file;
+    /* Acquire before publishing. No operation below this point can fail. */
+    if (!fd_open_file_get(file)) {
+        fd_table_unlock(irq_flags);
+        return FD_HANDLE_INVALID;
+    }
+
+    u32 generation = recipient->fd_table[destination_slot].generation + 1;
+    fd_handle_t duplicate = ((u64)recipient->pid << 32) |
+                            ((u64)generation << FD_HANDLE_SLOT_BITS) |
+                            (u64)destination_slot;
+    recipient->fd_table[destination_slot].generation = generation;
+    recipient->fd_table[destination_slot].file = file;
+    recipient->fd_table[destination_slot].rights = requested_rights;
+
+    fd_table_unlock(irq_flags);
+    return duplicate;
+}
+
 bool fd_close(fd_handle_t handle) {
     task_t* task = scheduler_current();
     if (!task) return false;
