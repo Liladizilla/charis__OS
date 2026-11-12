@@ -158,6 +158,10 @@ int main(void) {
     assert(file_writes == 0);
     assert(test_entry.offset == ~(u64)0 - 3);
 
+    /* Restore the read fixture after the write-overflow case. */
+    test_entry.rights = FD_RIGHT_READ;
+    test_entry.offset = 45;
+
     /* Reject a range that would cross the lower canonical user boundary. */
     assert(syscall_read_handler(3, 0x00007FFFFFFFFFFFULL, 2, 0, 0, 0) == (u64)-1);
     assert(file_reads == 1);
