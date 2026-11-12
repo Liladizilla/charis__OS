@@ -223,7 +223,6 @@ static bool decode_options(const u8* packet, usize length,
         if (reply->rebinding_seconds >= reply->lease_seconds)
             reply->rebinding_seconds = reply->lease_seconds - 1u;
     }
-    (void)have_server;
     return true;
 }
 
@@ -255,8 +254,7 @@ bool dhcp_decode_reply(const u8* packet, usize length, u32 xid,
     if (reply->message_type == DHCP_ACK && !ipv4_zero(reply->address) &&
         !ipv4_unicast(reply->address))
         return false;
-    if (reply->message_type != DHCP_NAK && !ipv4_zero(reply->server) &&
-        !ipv4_unicast(reply->server))
+    if (!ipv4_unicast(reply->server))
         return false;
     return true;
 }
@@ -418,7 +416,6 @@ static void handle_dhcp_reply(u16 source_port, const u8 source_ip[4],
         return;
 
     if (dhcp_state == DHCP_STATE_SELECTING && reply.message_type == DHCP_OFFER) {
-        if (ipv4_zero(reply.server)) kmemcpy(reply.server, source_ip, 4);
         if (!ipv4_unicast(reply.server) || !ipv4_unicast(reply.address)) return;
         kmemcpy(leased_ip, reply.address, 4);
         kmemcpy(server_ip, reply.server, 4);
