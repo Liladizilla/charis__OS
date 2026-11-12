@@ -465,8 +465,16 @@ rights while sharing the same open-file offset. Task exit publishes
 from appearing after cleanup. Host regressions cover rights escalation,
 full-table rollback, sender close, recipient cleanup and rejected teardown
 states. No ring-3 syscall exposes this primitive; userspace descriptor transfer
-still requires a separately designed, authenticated IPC protocol. Descriptor
-tables are task-local and are rebuilt when a task slot is reused. Non-standard descriptor values are 64-bit task-scoped
+still requires a separately designed, authenticated IPC protocol. The
+current IPC implementation still uses global integer channel indexes and has
+no endpoint ownership or peer authorization, so its syscall surface remains
+kernel-only. Shared-memory syscalls also remain kernel-only because the current
+API returns kernel pointers and has no per-task mapping/revocation model. The
+required endpoint, rendezvous, message-attachment and rollback contract is
+specified in
+[Authenticated IPC Endpoints and Resource Transfer](./docs/architecture/authenticated-ipc-endpoints-and-resource-transfer.md).
+These are explicit implementation gaps, not completed security features.
+Descriptor tables are task-local and are rebuilt when a task slot is reused. Non-standard descriptor values are 64-bit task-scoped
 identifiers whose ABI encoding callers must treat as opaque. The current
 encoding is deterministic: it contains the owning task PID, a per-slot
 generation and the descriptor slot. It is not random, secret, MAC-protected or
