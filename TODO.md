@@ -16,6 +16,7 @@
 - [ ] sys_fork() - create and validate child register context, address-space ownership and resources
 - [x] task_create_with_pml4() - create task with custom address space
 - [x] Per-process fd table (stdin/stdout/stderr pre-opened)
+- [x] Preflight the full writable ring-3 `SYS_READ` destination before keyboard/VFS reads; host regression covers unmapped, read-only, cross-page and zero-length cases
 
 ## Phase 3: Filesystem (PARTIAL)
 - [x] VFS layer (vfs.h, vfs.c) - vfs_node_t, mount points

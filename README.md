@@ -445,6 +445,15 @@ Standard input/output/error retain the stable handles 0, 1 and 2. Numeric
 handles are not transferable capabilities; any future cross-task delegation
 must use an explicit, rights-attenuating transfer operation.
 
+Before a ring-3 `sys_read` touches its input source, the kernel validates the
+entire writable destination range across page boundaries, using effective
+USER/WRITABLE page-table permissions and checking that each physical frame is
+reachable through the kernel direct map. An unmapped, read-only or overflowing
+range fails before keyboard input or a VFS read callback can consume data.
+Copy-out repeats whole-range validation before modifying userspace. This is a
+specific `SYS_READ` ordering guarantee, not a claim that all syscall pointer
+paths are complete.
+
 `security_verify_path()` rejects parent-directory traversal and alternate
 separators. When RDRAND is available, it can seed the stack guard. If RDRAND is
 unavailable, cryptographic token generation is disabled. The kernel does not

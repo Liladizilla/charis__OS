@@ -25,6 +25,7 @@ static syscall_handler_t syscall_table[SYSCALL_MAX];
 
 #define SYSCALL_IO_MAX 4096
 static bool syscall_copy_user_string(task_t* task, u64 user_address, char* destination, usize capacity);
+static bool syscall_validate_user_range(task_t* task, u64 user_address, usize size, bool require_writable);
 static bool syscall_copy_user_data(task_t* task, u64 user_address, void* destination, usize size);
 static bool syscall_copy_to_user_data(task_t* task, u64 user_address, const void* source, usize size);
 /* Global service tables are not safe to expose to ring 3 until they have
@@ -53,6 +54,12 @@ static u64 syscall_read_handler(u64 a1, u64 a2, u64 a3, u64 a4, u64 a5, u64 a6) 
     if (count == 0) return 0;
 
     if (task && task->is_user) {
+        /* Validate before touching an input source. stdin returns at most one
+         * byte; file/device nodes may return up to the requested count. */
+        usize writable_span = fd == FD_STDIN ? 1 : count;
+        if (!syscall_validate_user_range(task, user_buf, writable_span, true))
+            return (u64)-1;
+
         u8* bounce = (u8*)kmalloc(count);
         if (!bounce) return -1;
         usize bytes = 0;
@@ -361,12 +368,39 @@ static bool syscall_copy_user_string(task_t* task, u64 user_address,
     return false;
 }
 
+/* Validate the entire user range before any operation with side effects.
+ * vmm_translate returns effective permissions from every page-table level;
+ * the direct-map check also ensures the kernel can safely reach each frame. */
+static bool syscall_validate_user_range(task_t* task, u64 user_address,
+                                        usize size, bool require_writable) {
+    const u64 user_limit = 0x0000800000000000ULL;
+    if (!task || !task->mm.pml4) return false;
+    if (size == 0) return true;
+    if (!user_address || user_address >= user_limit ||
+        (u64)size > user_limit - user_address) return false;
+
+    usize checked = 0;
+    while (checked < size) {
+        u64 address = user_address + checked;
+        u64 physical = 0, flags = 0;
+        if (!vmm_translate(task->mm.pml4, address, &physical, &flags) ||
+            !(flags & VMM_FLAG_USER) ||
+            (require_writable && !(flags & VMM_FLAG_WRITABLE)) ||
+            !vmm_phys_to_virt(physical)) return false;
+
+        usize chunk = PAGE_SIZE - (usize)(address & (PAGE_SIZE - 1));
+        if (chunk > size - checked) chunk = size - checked;
+        checked += chunk;
+    }
+    return true;
+}
+
 static bool syscall_copy_user_data(task_t* task, u64 user_address,
                                    void* destination, usize size) {
     if (!task || !task->mm.pml4) return false;
     if (size == 0) return true;
-    if (!destination || user_address >= 0x0000800000000000ULL ||
-        size > 0x0000800000000000ULL - user_address) return false;
+    if (!destination ||
+        !syscall_validate_user_range(task, user_address, size, false)) return false;
 
     usize copied = 0;
     while (copied < size) {
@@ -388,8 +422,8 @@ static bool syscall_copy_to_user_data(task_t* task, u64 user_address,
                                        const void* source, usize size) {
     if (!task || !task->mm.pml4) return false;
     if (size == 0) return true;
-    if (!source || user_address >= 0x0000800000000000ULL ||
-        size > 0x0000800000000000ULL - user_address) return false;
+    if (!source ||
+        !syscall_validate_user_range(task, user_address, size, true)) return false;
 
     usize copied = 0;
     while (copied < size) {

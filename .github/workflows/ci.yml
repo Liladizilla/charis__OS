@@ -101,6 +101,11 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/fd_table_test.c kernel/vfs.c -Wl,--gc-sections -o /tmp/fd_table_test
           /tmp/fd_table_test
 
+      - name: Test syscall read destination preflight
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/syscall_read_preflight_test.c -Wl,--gc-sections -o /tmp/syscall_read_preflight_test
+          /tmp/syscall_read_preflight_test
+
       - name: Build ELF smoke-test disk
         run: make elf-test
 
