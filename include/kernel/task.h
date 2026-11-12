@@ -25,6 +25,7 @@
 #define TASK_WAITING_SLEEP       0x534C4550U /* 'SLEP': blocked until event_data deadline */
 #define TASK_WAITING_KEYBOARD    0x4B455942U /* 'KEYB': waiting for keyboard input */
 #define TASK_WAITING_CHILD       0x43484C44U /* 'CHLD': waiting for a child exit */
+#define IPC_MAX_ENDPOINTS        16U
 
 /* VMA - Virtual Memory Area */
 typedef struct vma {
@@ -44,6 +45,8 @@ typedef struct {
 } process_mm_t;
 
 /* Task control block */
+struct ipc_endpoint;
+
 typedef struct task {
     u64 rsp;
     u64 stack_base;
@@ -78,7 +81,8 @@ typedef struct task {
     process_mm_t mm;
     fd_entry_t fd_table[MAX_FDS];
     void* address_space;
-    struct task* ipc_wait_next;
+    struct ipc_endpoint* ipc_endpoints[IPC_MAX_ENDPOINTS];
+    u32 ipc_endpoint_generations[IPC_MAX_ENDPOINTS];
 } task_t;
 
 task_t* task_allocate(void);
