@@ -11,6 +11,7 @@
 #define TASK_STATE_ZOMBIE       3
 #define TASK_STATE_UNUSED       4 /* Free task-table slot; distinct from an exited process. */
 #define TASK_STATE_ALLOCATING   5 /* Reserved atomically while a new task is built. */
+#define TASK_STATE_EXITING      6 /* Reject new descriptor grants during teardown. */
 
 #define TASK_NAME_MAX           32
 #define TASK_STACK_SIZE         8192
