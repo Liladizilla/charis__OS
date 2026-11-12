@@ -65,6 +65,10 @@ int main(void) {
     assert(!dhcp_decode_reply(p,n,xid,mac,&reply));
 
     n=make_reply(p,2,xid,mac,true,true);
+    p[243]=52; /* Replace server identifier with an unknown bounded option. */
+    assert(!dhcp_decode_reply(p,n,xid,mac,&reply));
+
+    n=make_reply(p,2,xid,mac,true,true);
     p[n-1]=0; /* END option is mandatory. */
     assert(!dhcp_decode_reply(p,n,xid,mac,&reply));
 
