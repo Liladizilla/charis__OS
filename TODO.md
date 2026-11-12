@@ -121,12 +121,20 @@ The shell still owns the framebuffer and application renderers, while the WM own
 ## Phase 8: Network Stack (PARTIAL - ENABLED BUT INCOMPLETE)
 - [x] Socket API (AF_INET, SOCK_STREAM/SOCK_DGRAM) - socket.c
 - [x] Socket syscalls (SYS_SOCKET, SYS_CONNECT, SYS_BIND, SYS_LISTEN, SYS_ACCEPT, SYS_SEND, SYS_RECV, SYS_SOCKET_CLOSE)
-- [x] RTL8139 driver (net.c) - finds device via PCI, basic TX implemented
-- [ ] TCP/IP stack foundation (net_handle_tcpip is stub)
-- [ ] ARP/ICMP implementation
-- [ ] DHCP/static IP config via config.c
-- [ ] RX packet handling (net_recv_packet returns 0)
-- [ ] IRQ-driven network processing
+- [x] RTL8139 polling Ethernet TX/RX path and bounded frame validation
+- [x] ARP replies, bounded neighbour cache and next-hop resolution
+- [x] IPv4 header validation, fragment rejection and ICMP echo replies
+- [x] UDP send/receive dispatch with checksum validation
+- [x] Static IPv4 address, subnet mask and optional gateway configuration
+- [x] Bounded asynchronous DNS A-record resolver
+- [x] Minimal single-connection TCP client with basic handshake, ACK/data/FIN handling
+- [x] Plain HTTP GET composition and bounded response-header/body handling for Browser
+- [ ] DHCP client and lease renewal
+- [ ] IPv6, neighbour discovery and ICMPv6
+- [ ] Robust TCP retransmission, congestion control and concurrent connections
+- [ ] TLS/HTTPS and certificate validation
+- [ ] IRQ-driven RX or bounded DMA/ring processing with hardware stress tests
+- [ ] Real-LAN interoperability tests; QEMU success alone is not proof of Internet access
 
 ## Phase 9: Desktop Environment (PARTIAL, ACTIVE)
 - [x] Minimal workspace replaces the dashboard-style home surface; Files desktop shortcut, launcher and taskbar render in QEMU
@@ -325,3 +333,17 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 - `kernel/power.c`: power state management (idle, sleep, shutdown; not yet in TODO)
 
 > PROGRESS.md was removed on 2026-10-05. TODO.md is the single source of truth.
+
+## Phase 10: Hardware Services & Desktop Media (PLANNED)
+- [ ] RTC-backed wall clock with UTC storage, timezone conversion and monotonic-clock separation
+- [ ] ACPI discovery and battery telemetry (charge, state, remaining capacity/time when firmware exposes it)
+- [ ] Complete HDA codec/controller initialization, DMA ring handling, PCM playback, mixer and safe stream lifecycle
+- [ ] Wi-Fi device discovery and a driver architecture; support a documented first adapter family before claiming wireless support
+- [ ] DHCP client, DNS configuration and route installation integrated with the network service
+- [ ] Real Internet path verification: DHCP/static config, DNS, HTTP, TLS, timeouts, packet loss and reconnect behavior
+- [ ] Wallpaper asset pipeline with verified CC0/public-domain source manifests, image dimension limits and memory-safe decoding
+- [ ] High-quality bundled wallpaper set with no embedded logos, watermarks or UI overlays; user-selectable wallpaper and fallback procedural themes
+- [ ] Desktop capture pipeline publishes the actual QEMU framebuffer capture and keeps README screenshots synchronized with the tested commit
+- [ ] Native terminal visual pass: near-black console canvas, compact chrome, dedicated monospace font metrics, carefully measured CharisOS ASCII banner and stable prompt/output layout
+- [ ] Verify ASCII banner width/height against font-cell metrics at all supported text scales and narrow window sizes
+- [ ] Add QEMU/host tests for clock rollover, timezone-independent monotonic uptime, missing battery/RTC devices and audio device absence
