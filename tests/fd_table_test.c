@@ -8,8 +8,8 @@ static int close_count;
 static int observed_revoked_handle;
 static int observed_fd = -1;
 
-vfs_node_t dev_kbd = { .flags = VFS_CHARDEV };
-vfs_node_t dev_vga = { .flags = VFS_CHARDEV };
+extern vfs_node_t dev_kbd;
+extern vfs_node_t dev_vga;
 
 task_t* scheduler_current(void) {
     return active_task;
