@@ -482,14 +482,26 @@ from appearing after cleanup. Host regressions cover rights escalation,
 full-table rollback, sender close, recipient cleanup and rejected teardown
 states. No ring-3 syscall exposes this primitive; userspace descriptor transfer
 still requires a separately designed, authenticated IPC protocol. The
-current IPC implementation still uses global integer channel indexes and has
-no endpoint ownership or peer authorization, so its syscall surface remains
-kernel-only. Shared-memory syscalls also remain kernel-only because the current
-API returns kernel pointers and has no per-task mapping/revocation model. The
-required endpoint, rendezvous, message-attachment and rollback contract is
-specified in
+The global integer-channel IPC API has been removed. The kernel now creates
+explicit endpoint pairs and installs generation-protected handles in each
+owner task's local endpoint table. Handles resolve only for the current task;
+SEND and RECEIVE rights are checked independently, and the peer PID/pointer is
+established by the kernel rather than supplied by a message. Each direction has
+a bounded 16-message queue with a 512-byte message limit. Send is nonblocking;
+queue-full, empty and undersized-buffer outcomes are explicit, and messages are
+never silently truncated. Closing an endpoint revokes its handle, discards its
+own inbox and releases one channel reference. Task exit closes all endpoints
+immediately after publishing EXITING.
+
+This is a kernel-only first stage: endpoint-pair creation rejects ring-3 tasks,
+syscall slots 91-93 are unregistered, and the legacy user wrappers are removed.
+Blocking receive, cancellation-safe waiter reservations, service-name
+rendezvous, descriptor attachments and transactional receive rollback remain
+unimplemented. Shared-memory syscalls also remain kernel-only because the
+current API returns raw kernel pointers and has no per-task mapping/revocation
+model. The endpoint, rendezvous and resource-transfer contract is in
 [Authenticated IPC Endpoints and Resource Transfer](./docs/architecture/authenticated-ipc-endpoints-and-resource-transfer.md).
-These are explicit implementation gaps, not completed security features.
+These are explicit security boundaries, not claims that public IPC is complete.
 Descriptor tables are task-local and are rebuilt when a task slot is reused. Non-standard descriptor values are 64-bit task-scoped
 identifiers whose ABI encoding callers must treat as opaque. The current
 encoding is deterministic: it contains the owning task PID, a per-slot
