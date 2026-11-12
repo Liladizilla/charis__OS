@@ -210,6 +210,51 @@ static void test_generation_exhaustion_fails_closed(void) {
     fd_table_close_all(task.fd_table);
 }
 
+static void test_invalid_sentinel_cannot_be_published_at_maximum_identity(void) {
+    task_t maximum_task, other_task;
+    reset_task(&maximum_task, 0xFFFFFFFFU);
+    active_task = &maximum_task;
+
+    /* Force the sole tuple that would encode UINT64_MAX:
+     * PID=UINT32_MAX, generation=2^26-1, slot=63. */
+    for (u32 i = 3; i < MAX_FDS - 1; i++)
+        maximum_task.fd_table[i].generation = FD_HANDLE_GENERATION_MAX;
+    maximum_task.fd_table[MAX_FDS - 1].generation =
+        FD_HANDLE_GENERATION_MAX - 1;
+
+    fd_handle_t colliding_value =
+        ((u64)maximum_task.pid << 32) |
+        ((u64)FD_HANDLE_GENERATION_MAX << FD_HANDLE_SLOT_BITS) |
+        (u64)FD_HANDLE_SLOT_MASK;
+    assert(colliding_value == FD_HANDLE_INVALID);
+
+    close_count = 0;
+    observed_fd = FD_HANDLE_INVALID;
+    fd_alloc_status_t status = FD_ALLOC_FAILED;
+    assert(fd_alloc(&read_write_node, 0, FD_RIGHT_READ, &status) ==
+           FD_HANDLE_INVALID);
+    assert(status == FD_ALLOC_FAILED);
+    assert(maximum_task.fd_table[MAX_FDS - 1].node == NULL);
+    assert(maximum_task.fd_table[MAX_FDS - 1].generation ==
+           FD_HANDLE_GENERATION_MAX);
+
+    /* Even a corrupted table entry cannot make the reserved sentinel resolve. */
+    maximum_task.fd_table[MAX_FDS - 1].node = &read_write_node;
+    assert(fd_get(FD_HANDLE_INVALID) == NULL);
+    assert(!fd_close(FD_HANDLE_INVALID));
+    maximum_task.fd_table[MAX_FDS - 1].node = NULL;
+
+    /* The failed allocation must not have claimed the node's global owner slot. */
+    reset_task(&other_task, 901);
+    active_task = &other_task;
+    status = FD_ALLOC_FAILED;
+    fd_handle_t recovered = fd_alloc(&read_write_node, 0, FD_RIGHT_READ, &status);
+    assert(recovered != FD_HANDLE_INVALID);
+    assert(status == FD_ALLOC_OK);
+    assert(fd_close(recovered));
+    assert(close_count == 1);
+}
+
 typedef struct {
     task_t* task;
     fd_handle_t handle;
@@ -268,6 +313,7 @@ int main(void) {
     test_concurrent_closeable_node_claim_is_unique();
     test_capacity_and_cleanup();
     test_generation_exhaustion_fails_closed();
+    test_invalid_sentinel_cannot_be_published_at_maximum_identity();
     puts("PASS: task-bound descriptor handles, stale-reference rejection, rights and lifecycle");
     return 0;
 }

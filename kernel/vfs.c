@@ -284,7 +284,9 @@ int fd_table_init(void) {
  * prevents a closed handle from naming a later object after slot reuse.
  */
 static bool fd_resolve(task_t* task, fd_handle_t handle, u32* slot_out) {
-    if (!task || !slot_out) return false;
+    /* The all-ones pattern is reserved for FD_HANDLE_INVALID, even though
+     * its component fields can otherwise encode a maximum-valued descriptor. */
+    if (!task || !slot_out || handle == FD_HANDLE_INVALID) return false;
 
     if (handle <= FD_STDERR) {
         u32 slot = (u32)handle;
@@ -328,6 +330,20 @@ fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights,
     }
     if (slot == MAX_FDS) return FD_HANDLE_INVALID;
 
+    /* Build the identifier before claiming node ownership or publishing
+     * the descriptor. UINT64_MAX is the failure sentinel, so the one tuple
+     * that encodes it must never become a live entry. Retire that generation
+     * and leave cleanup ownership with the caller. */
+    fd_entry_t* entry = &task->fd_table[slot];
+    u32 generation = entry->generation + 1;
+    fd_handle_t handle = ((u64)task->pid << 32) |
+                         ((u64)generation << FD_HANDLE_SLOT_BITS) |
+                         (u64)slot;
+    if (handle == FD_HANDLE_INVALID) {
+        entry->generation = generation;
+        return FD_HANDLE_INVALID;
+    }
+
     bool closeable = node->close != NULL;
     if (closeable && !fd_node_owner_claim(node)) {
         *status = FD_ALLOC_NODE_ALREADY_OWNED;
@@ -336,15 +352,13 @@ fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights,
 
     /* A task context is never scheduled simultaneously on two CPUs, so
      * this previously selected slot remains private until publication. */
-    fd_entry_t* entry = &task->fd_table[slot];
-    u32 generation = ++entry->generation;
+    entry->generation = generation;
     entry->node = node;
     entry->offset = 0;
     entry->flags = flags;
     entry->rights = rights;
     *status = FD_ALLOC_OK;
-    return ((u64)task->pid << 32) |
-           ((u64)generation << FD_HANDLE_SLOT_BITS) | (u64)slot;
+    return handle;
 }
 
 bool fd_close(fd_handle_t handle) {
