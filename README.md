@@ -35,7 +35,7 @@ The project is under active development. It is not currently a general-purpose o
 | Settings | Font family, text size and interface scale; CI verifies saved values survive a reboot on a writable FAT32 test disk |
 | Security | Selected capability checks and input validation; page faults use a dedicated TSS.IST1 stack with QEMU guard-fault verification; overall enforcement and isolation remain incomplete |
 | Networking | RTL8139 polling Ethernet TX/RX; ARP, IPv4, ICMP, UDP, static routing, DNS, a constrained TCP client and plain-HTTP browser requests are implemented. DHCP, IPv6, TLS/HTTPS and robust multi-connection TCP are not. No Wi-Fi driver is present |
-| Platform services | PIT-backed uptime exists; wall-clock RTC, battery/ACPI telemetry and a complete power-management service are not implemented |
+| Platform services | CMOS RTC is sampled at boot and exposed as a wall clock advanced from the monotonic PIT timer; timezone configuration, ACPI battery telemetry and complete sleep/hibernate are not implemented |
 | Audio and peripherals | PC-speaker beep path and incomplete HDA work exist; general PCM playback is not supported. USB and gamepad support remain incomplete |
 | Userspace | No complete libc, package manager, installer or general-purpose userspace environment |
 
@@ -62,7 +62,7 @@ The default ELF disk test verifies that the normal bootstrap task is denied by `
 
 - GRUB2 and Multiboot2 boot path into x86_64 long mode.
 - Physical memory bitmap allocator, virtual memory management and kernel heap.
-- IDT, PIC, PIT, PS/2 keyboard/mouse and diagnostic output.
+- IDT, PIC, PIT, PS/2 keyboard/mouse, CMOS-seeded wall clock and diagnostic output.
 - Kernel-task scheduling and a tested ring-3 bootstrap path.
 - DPL3 `int 0x80` syscall dispatch and a bounded static ELF64 `ET_EXEC` loader. The loader builds a fresh process address space, loads segments and the initial stack there, switches CR3 only after success, then reclaims the previous image. A separate CI-only image now exercises successful authorized ELF entry; see the current CI gate for its result.
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
@@ -86,7 +86,7 @@ CharisOS is still an early-stage kernel and shell. In particular:
 - The current entropy source is hardware-feature-dependent. If RDRAND is unavailable, cryptographic token generation is disabled; no weak fallback is presented as cryptographic randomness.
 - Storage support is limited to legacy primary-channel ATA PIO and FAT32. AHCI and NVMe are not implemented.
 - Networking has a polling RTL8139 Ethernet path with receive, ARP/IPv4/ICMP/UDP, static routes, DNS, a constrained TCP client and plain HTTP. It is not yet a general Internet-ready stack: there is no DHCP, IPv6, TLS/HTTPS, robust TCP retransmission/concurrency or Wi-Fi driver. Real-LAN interoperability remains unverified.
-- There is no RTC-backed wall clock, ACPI battery telemetry or completed sleep/hibernate path. The displayed uptime is not a substitute for date/time.
+- The CMOS RTC seeds the wall clock at boot; the taskbar clock advances from PIT monotonic time without repeated CMOS polling. The service displays firmware-provided time as-is: timezone configuration, UTC conversion, clock discipline/NTP and ACPI battery telemetry are not implemented. Sleep/hibernate remain incomplete.
 - Audio currently has a PC-speaker beep path and incomplete HDA work; general PCM playback is not supported. USB and gamepad support remain incomplete.
 - The graphics path uses the currently supported framebuffer mode; broad hardware and resolution coverage remains future work.
 
