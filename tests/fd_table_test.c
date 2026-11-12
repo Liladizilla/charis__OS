@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <pthread.h>
 #include <kernel/task.h>
 #include <kernel/vfs.h>
@@ -15,6 +16,14 @@ extern vfs_node_t dev_vga;
 
 task_t* scheduler_current(void) { return active_task; }
 
+void* kmalloc(usize size) {
+    return malloc(size);
+}
+
+void kfree(void* pointer) {
+    free(pointer);
+}
+
 static int test_read(vfs_node_t* node, u64 offset, u64 size, u8* buffer) {
     (void)node; (void)offset; (void)size; (void)buffer;
     return 0;
@@ -26,7 +35,8 @@ static int test_write(vfs_node_t* node, u64 offset, u64 size, const u8* buffer) 
 static void test_close(vfs_node_t* node) {
     (void)node;
     close_count++;
-    if (observed_fd != FD_HANDLE_INVALID && !fd_get(observed_fd))
+    if (observed_fd != FD_HANDLE_INVALID &&
+        !fd_has_rights(observed_fd, FD_RIGHT_READ))
         observed_revoked_handle++;
 }
 static vfs_node_t read_write_node = {
@@ -39,6 +49,7 @@ static vfs_node_t write_only_node = {
 static void reset_task(task_t* task, u32 pid) {
     *task = (task_t){0};
     task->pid = pid;
+    fd_table_init(task->fd_table);
 }
 
 static fd_handle_t alloc_fd(vfs_node_t* node, u32 flags, u32 rights) {
@@ -58,12 +69,15 @@ static void test_rights_and_stale_handle_rejection(void) {
 
     fd_handle_t read_fd = alloc_fd(&read_write_node, 7, FD_RIGHT_READ);
     assert(read_fd == (((u64)41 << 32) | (1ULL << FD_HANDLE_SLOT_BITS) | 3ULL));
-    assert(fd_get(read_fd) != NULL);
-    assert(fd_get(3) == NULL);
-    assert(fd_get((fd_handle_t)-1) == NULL);
-    assert(fd_get(FD_HANDLE_INVALID) == NULL);
-    assert(fd_get(MAX_FDS) == NULL);
-    assert(fd_get(read_fd)->flags == 7);
+    vfs_open_file_t* read_file = fd_acquire(read_fd, FD_RIGHT_READ);
+    assert(read_file != NULL);
+    assert(read_file->node == &read_write_node);
+    assert(read_file->open_flags == 7);
+    fd_release(read_file);
+    assert(!fd_has_rights(3, FD_RIGHT_READ));
+    assert(!fd_has_rights((fd_handle_t)-1, FD_RIGHT_READ));
+    assert(!fd_has_rights(FD_HANDLE_INVALID, FD_RIGHT_READ));
+    assert(!fd_has_rights(MAX_FDS, FD_RIGHT_READ));
     assert(fd_has_rights(read_fd, FD_RIGHT_READ));
     assert(!fd_has_rights(read_fd, FD_RIGHT_WRITE));
     assert(!fd_has_rights(read_fd, FD_RIGHT_READ | FD_RIGHT_WRITE));
@@ -78,7 +92,7 @@ static void test_rights_and_stale_handle_rejection(void) {
     observed_fd = read_fd;
     assert(fd_close(read_fd));
     assert(observed_revoked_handle == 1);
-    assert(fd_get(read_fd) == NULL);
+    assert(!fd_has_rights(read_fd, FD_RIGHT_READ));
     assert(!fd_has_rights(read_fd, FD_RIGHT_READ));
     assert(!fd_close(read_fd));
     assert(!fd_close(FD_STDIN));
@@ -86,18 +100,18 @@ static void test_rights_and_stale_handle_rejection(void) {
     fd_handle_t reopened_fd = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
     assert(FD_HANDLE_SLOT(reopened_fd) == 3);
     assert(reopened_fd != read_fd);
-    assert(fd_get(read_fd) == NULL);
-    assert(fd_get(reopened_fd) != NULL);
+    assert(!fd_has_rights(read_fd, FD_RIGHT_READ));
+    assert(fd_has_rights(reopened_fd, FD_RIGHT_READ));
     observed_fd = FD_HANDLE_INVALID;
 
     fd_table_close_all(task.fd_table);
-    assert(fd_get(reopened_fd) == NULL);
+    assert(!fd_has_rights(reopened_fd, FD_RIGHT_READ));
     assert(task.fd_table[3].generation == 2);
-    assert(task.fd_table[FD_STDIN].node == &dev_kbd);
+    assert(task.fd_table[FD_STDIN].file->node == &dev_kbd);
     assert(task.fd_table[FD_STDIN].rights == FD_RIGHT_READ);
-    assert(task.fd_table[FD_STDOUT].node == &dev_vga);
+    assert(task.fd_table[FD_STDOUT].file->node == &dev_vga);
     assert(task.fd_table[FD_STDOUT].rights == FD_RIGHT_WRITE);
-    assert(task.fd_table[FD_STDERR].node == &dev_vga);
+    assert(task.fd_table[FD_STDERR].file->node == &dev_vga);
     assert(task.fd_table[FD_STDERR].rights == FD_RIGHT_WRITE);
     assert(fd_has_rights(FD_STDIN, FD_RIGHT_READ));
     assert(!fd_has_rights(FD_STDIN, FD_RIGHT_WRITE));
@@ -111,10 +125,10 @@ static void test_handles_are_bound_to_the_owner_task(void) {
 
     active_task = &first;
     fd_handle_t first_handle = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
-    assert(first_handle != FD_HANDLE_INVALID && fd_get(first_handle));
+    assert(first_handle != FD_HANDLE_INVALID && fd_has_rights(first_handle, FD_RIGHT_READ));
 
     active_task = &second;
-    assert(fd_get(first_handle) == NULL);
+    assert(!fd_has_rights(first_handle, FD_RIGHT_READ));
     assert(!fd_has_rights(first_handle, FD_RIGHT_READ));
     fd_handle_t second_handle = alloc_fd(&write_only_node, 0, FD_RIGHT_WRITE);
     assert(second_handle != FD_HANDLE_INVALID);
@@ -142,7 +156,7 @@ static void test_closeable_node_has_one_descriptor_owner(void) {
 
     fd_handle_t first = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
     assert(first != FD_HANDLE_INVALID);
-    assert(fd_get(first) != NULL);
+    assert(fd_has_rights(first, FD_RIGHT_READ));
 
     active_task = &second_task;
     fd_alloc_status_t status = FD_ALLOC_FAILED;
@@ -152,7 +166,7 @@ static void test_closeable_node_has_one_descriptor_owner(void) {
     assert(close_count == 0);
 
     active_task = &first_task;
-    assert(fd_get(first) != NULL);
+    assert(fd_has_rights(first, FD_RIGHT_READ));
     assert(fd_close(first));
     assert(close_count == 1);
 
@@ -161,6 +175,80 @@ static void test_closeable_node_has_one_descriptor_owner(void) {
     assert(second != FD_HANDLE_INVALID);
     assert(fd_close(second));
     assert(close_count == 2);
+}
+
+static void test_open_file_pins_outlive_descriptor_revocation(void) {
+    task_t task;
+    reset_task(&task, 62);
+    active_task = &task;
+    close_count = 0;
+
+    fd_handle_t handle = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
+    assert(handle != FD_HANDLE_INVALID);
+
+    vfs_open_file_t* first_pin = fd_acquire(handle, FD_RIGHT_READ);
+    vfs_open_file_t* second_pin = fd_acquire(handle, FD_RIGHT_READ);
+    assert(first_pin != NULL && second_pin == first_pin);
+    assert((first_pin->lifecycle & VFS_OPEN_FILE_REF_MASK) == 3);
+
+    assert(fd_close(handle));
+    assert(!fd_has_rights(handle, FD_RIGHT_READ));
+    assert(close_count == 0);
+    assert(first_pin->node == &read_write_node);
+
+    fd_release(first_pin);
+    assert(close_count == 0);
+    fd_release(second_pin);
+    assert(close_count == 1);
+}
+
+static void test_independent_opens_have_independent_offsets(void) {
+    task_t task;
+    vfs_node_t first_node = {
+        .flags = VFS_FILE, .read = test_read, .write = test_write,
+        .close = test_close
+    };
+    vfs_node_t second_node = {
+        .flags = VFS_FILE, .read = test_read, .write = test_write,
+        .close = test_close
+    };
+    reset_task(&task, 63);
+    active_task = &task;
+    close_count = 0;
+
+    fd_handle_t first = alloc_fd(&first_node, 0, FD_RIGHT_READ);
+    fd_handle_t second = alloc_fd(&second_node, 0, FD_RIGHT_READ);
+    assert(first != FD_HANDLE_INVALID && second != FD_HANDLE_INVALID);
+
+    vfs_open_file_t* first_file = fd_acquire(first, FD_RIGHT_READ);
+    vfs_open_file_t* second_file = fd_acquire(second, FD_RIGHT_READ);
+    assert(first_file && second_file && first_file != second_file);
+    first_file->offset = 19;
+    assert(second_file->offset == 0);
+
+    fd_release(first_file);
+    fd_release(second_file);
+    assert(fd_close(first));
+    assert(fd_close(second));
+    assert(close_count == 2);
+}
+
+static void test_table_cleanup_drops_only_its_reference(void) {
+    task_t task;
+    reset_task(&task, 64);
+    active_task = &task;
+    close_count = 0;
+
+    fd_handle_t handle = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
+    assert(handle != FD_HANDLE_INVALID);
+    vfs_open_file_t* pin = fd_acquire(handle, FD_RIGHT_READ);
+    assert(pin != NULL);
+
+    fd_table_close_all(task.fd_table);
+    assert(!fd_has_rights(handle, FD_RIGHT_READ));
+    assert(close_count == 0);
+    fd_release(pin);
+    assert(close_count == 1);
 }
 
 static void test_capacity_and_cleanup(void) {
@@ -187,7 +275,7 @@ static void test_capacity_and_cleanup(void) {
     for (u32 i = 3; i < MAX_FDS; i++) {
         fd_handle_t stale = ((u64)61 << 32) |
             ((u64)task.fd_table[i].generation << FD_HANDLE_SLOT_BITS) | i;
-        assert(fd_get(stale) == NULL);
+        assert(!fd_has_rights(stale, FD_RIGHT_READ));
         assert(task.fd_table[i].rights == 0);
         assert(task.fd_table[i].generation == 1);
     }
@@ -226,7 +314,7 @@ static void test_maximum_identity_descriptor_is_valid(void) {
         (u64)FD_HANDLE_SLOT_MASK;
     assert(handle == ~(fd_handle_t)0);
     assert(handle != FD_HANDLE_INVALID);
-    assert(fd_get(FD_HANDLE_INVALID) == NULL);
+    assert(!fd_has_rights(FD_HANDLE_INVALID, FD_RIGHT_READ));
 
     close_count = 0;
     observed_fd = FD_HANDLE_INVALID;
@@ -234,7 +322,7 @@ static void test_maximum_identity_descriptor_is_valid(void) {
     fd_handle_t allocated = fd_alloc(&read_write_node, 0, FD_RIGHT_READ, &status);
     assert(allocated == handle);
     assert(status == FD_ALLOC_OK);
-    assert(fd_get(allocated) != NULL);
+    assert(fd_has_rights(allocated, FD_RIGHT_READ));
     assert(fd_has_rights(allocated, FD_RIGHT_READ));
     assert(fd_close(allocated));
     assert(close_count == 1);
@@ -296,6 +384,9 @@ int main(void) {
     test_handles_are_bound_to_the_owner_task();
     test_closeable_node_has_one_descriptor_owner();
     test_concurrent_closeable_node_claim_is_unique();
+    test_open_file_pins_outlive_descriptor_revocation();
+    test_independent_opens_have_independent_offsets();
+    test_table_cleanup_drops_only_its_reference();
     test_capacity_and_cleanup();
     test_generation_exhaustion_fails_closed();
     test_maximum_identity_descriptor_is_valid();
