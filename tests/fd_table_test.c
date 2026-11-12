@@ -251,6 +251,48 @@ static void test_table_cleanup_drops_only_its_reference(void) {
     assert(close_count == 1);
 }
 
+typedef struct {
+    vfs_open_file_t* file;
+} concurrent_release_args_t;
+
+static void* concurrent_release(void* opaque) {
+    concurrent_release_args_t* args = (concurrent_release_args_t*)opaque;
+    (void)pthread_barrier_wait(&owner_start_barrier);
+    fd_release(args->file);
+    return NULL;
+}
+
+static void test_concurrent_final_release_runs_close_once(void) {
+    task_t task;
+    reset_task(&task, 65);
+    active_task = &task;
+    close_count = 0;
+    observed_fd = FD_HANDLE_INVALID;
+
+    fd_handle_t handle = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
+    assert(handle != FD_HANDLE_INVALID);
+    vfs_open_file_t* first = fd_acquire(handle, FD_RIGHT_READ);
+    vfs_open_file_t* second = fd_acquire(handle, FD_RIGHT_READ);
+    assert(first && second && first == second);
+
+    /* Drop the descriptor's ownership first; the two worker pins are now
+     * the only references and race to perform the final release. */
+    assert(fd_close(handle));
+    assert(close_count == 0);
+
+    concurrent_release_args_t a = { .file = first };
+    concurrent_release_args_t b = { .file = second };
+    pthread_t thread_a, thread_b;
+    assert(pthread_barrier_init(&owner_start_barrier, NULL, 3) == 0);
+    assert(pthread_create(&thread_a, NULL, concurrent_release, &a) == 0);
+    assert(pthread_create(&thread_b, NULL, concurrent_release, &b) == 0);
+    (void)pthread_barrier_wait(&owner_start_barrier);
+    assert(pthread_join(thread_a, NULL) == 0);
+    assert(pthread_join(thread_b, NULL) == 0);
+    assert(pthread_barrier_destroy(&owner_start_barrier) == 0);
+    assert(close_count == 1);
+}
+
 static void test_capacity_and_cleanup(void) {
     task_t task;
     reset_task(&task, 61);
@@ -270,8 +312,21 @@ static void test_capacity_and_cleanup(void) {
         assert(FD_HANDLE_SLOT(handle) == i);
     }
     assert(alloc_fd(&read_write_node, 0, FD_RIGHT_READ) == FD_HANDLE_INVALID);
+    u32 close_before_failed_allocation = (u32)close_count;
+    fd_alloc_status_t failed_status = FD_ALLOC_OK;
+    assert(fd_alloc(&read_write_node, 0, FD_RIGHT_READ, &failed_status) ==
+           FD_HANDLE_INVALID);
+    assert(failed_status == FD_ALLOC_FAILED);
+    assert((u32)close_count == close_before_failed_allocation);
+
     fd_table_close_all(task.fd_table);
     assert(close_count == MAX_FDS - 3);
+    /* Slot exhaustion must roll back the node claim without consuming the
+     * caller's node. The same node can be allocated successfully afterward. */
+    fd_handle_t retry = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
+    assert(retry != FD_HANDLE_INVALID);
+    assert(fd_close(retry));
+    assert(close_count == MAX_FDS - 2);
     for (u32 i = 3; i < MAX_FDS; i++) {
         fd_handle_t stale = ((u64)61 << 32) |
             ((u64)task.fd_table[i].generation << FD_HANDLE_SLOT_BITS) | i;
@@ -387,6 +442,7 @@ int main(void) {
     test_open_file_pins_outlive_descriptor_revocation();
     test_independent_opens_have_independent_offsets();
     test_table_cleanup_drops_only_its_reference();
+    test_concurrent_final_release_runs_close_once();
     test_capacity_and_cleanup();
     test_generation_exhaustion_fails_closed();
     test_maximum_identity_descriptor_is_valid();
