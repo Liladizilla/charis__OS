@@ -272,6 +272,10 @@ void task_exit_handler(void) {
 }
 
 void task_exit_with_status(u32 status) {
+    /* Teardown must remain atomic with respect to task scheduling. In
+     * particular, EXITING must not be observed by the scheduler before this
+     * task has finished descriptor/address-space cleanup and unlinked itself. */
+    u64 exit_flags = task_irq_save();
     task_t* current = scheduler_current();
     if (current) {
         current->exit_code = status;
@@ -311,6 +315,9 @@ void task_exit_with_status(u32 status) {
     }
     task_defer_release(current);
     scheduler_yield();
+    /* Reached only if no switch occurred (or a scheduler invariant failed).
+     * The normal exiting task never resumes and therefore never restores IF. */
+    task_irq_restore(exit_flags);
 
     /*
      * If no runnable task exists, scheduler_yield() can return without a
