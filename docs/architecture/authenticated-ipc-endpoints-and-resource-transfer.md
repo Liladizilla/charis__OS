@@ -25,7 +25,8 @@ The first implementation stage is deliberately kernel-only:
   holds at most 16 messages of at most 512 bytes.
 - Send is nonblocking and reports a full queue without modifying it. Receive is
   nonblocking; empty and undersized-buffer outcomes leave queue state unchanged.
-  Messages are never silently truncated.
+  A receiver drains queued messages, then receives PEER_CLOSED when the peer
+  closes, even if the receiver has no SEND right. Messages are never truncated.
 - Closing one endpoint revokes its task-local handle and discards only that
   endpoint's inbound queue. Its peer remains alive until its own close, but
   sending to a closed peer fails.
@@ -139,7 +140,7 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Queue full | Explicit FULL; all existing messages intact |
 | Undersized receive buffer | Explicit BUFFER_SMALL; message remains queued |
 | Message larger than maximum | Reject; never truncate |
-| One endpoint closes | Peer remains; send-to-closed-peer fails |
+| One endpoint closes | Peer remains; queued messages drain, then receive/send report PEER_CLOSED |
 | Task enters EXITING | All local endpoints revoked before other teardown |
 | Ring-3 IPC syscall | Reserved/unregistered and fails closed |
 | Shared-memory pointer exposure | Ring-3 shared-memory calls remain denied |
