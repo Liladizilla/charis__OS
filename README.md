@@ -34,7 +34,7 @@ The project is under active development. It is not currently a general-purpose o
 | Window manager | Bounded ownership, back-to-front composition, focus-only input, move, lower-right resize grip, maximize/restore, minimize, taskbar switching and Alt+Tab; snap/tiling and QEMU pointer-resize validation remain unfinished |
 | Settings | Font family, text size and interface scale; CI verifies saved values survive a reboot on a writable FAT32 test disk |
 | Security | Selected capability checks and input validation; page faults use a dedicated TSS.IST1 stack with QEMU guard-fault verification; overall enforcement and isolation remain incomplete |
-| Networking | RTL8139 polling Ethernet TX/RX; ARP, IPv4, ICMP, UDP, static routing, DNS, a constrained TCP client and plain-HTTP browser requests are implemented. DHCP, IPv6, TLS/HTTPS and robust multi-connection TCP are not. No Wi-Fi driver is present |
+| Networking | RTL8139 polling Ethernet TX/RX; ARP, IPv4, ICMP, UDP, static routing, DNS, a constrained TCP client, plain HTTP and a bounded DHCPv4 client with lease renewal are implemented. Real-LAN interoperability remains unverified; IPv6, TLS/HTTPS, robust multi-connection TCP and Wi-Fi are not implemented |
 | Platform services | CMOS RTC is sampled at boot and exposed as a wall clock advanced from the monotonic PIT timer; timezone configuration, ACPI battery telemetry and complete sleep/hibernate are not implemented |
 | Audio and peripherals | PC-speaker beep path and incomplete HDA work exist; general PCM playback is not supported. USB and gamepad support remain incomplete |
 | Userspace | No complete libc, package manager, installer or general-purpose userspace environment |
@@ -86,7 +86,7 @@ CharisOS is still an early-stage kernel and shell. In particular:
 - Capability enforcement covers only selected operations. It is not a complete security boundary.
 - The current entropy source is hardware-feature-dependent. If RDRAND is unavailable, cryptographic token generation is disabled; no weak fallback is presented as cryptographic randomness.
 - Storage support is limited to legacy primary-channel ATA PIO and FAT32. AHCI and NVMe are not implemented.
-- Networking has a polling RTL8139 Ethernet path with receive, ARP/IPv4/ICMP/UDP, static routes, DNS, a constrained TCP client and plain HTTP. It is not yet a general Internet-ready stack: there is no DHCP, IPv6, TLS/HTTPS, robust TCP retransmission/concurrency or Wi-Fi driver. Real-LAN interoperability remains unverified.
+- Networking has a polling RTL8139 Ethernet path with receive, ARP/IPv4/ICMP/UDP, static routes, DNS, a constrained TCP client, plain HTTP and DHCPv4 discovery, lease acquisition and renewal. It is not yet a general Internet-ready stack: IPv6, TLS/HTTPS, robust TCP retransmission/concurrency and Wi-Fi driver support are not implemented. Real-LAN DHCP interoperability and public Internet access remain unverified.
 - The CMOS RTC seeds the wall clock at boot; the taskbar clock advances from PIT monotonic time without repeated CMOS polling. The service displays firmware-provided time as-is: timezone configuration, UTC conversion, clock discipline/NTP and ACPI battery telemetry are not implemented. Sleep/hibernate remain incomplete.
 - Audio currently has a PC-speaker beep path and incomplete HDA work; general PCM playback is not supported. USB and gamepad support remain incomplete.
 - The graphics path uses the currently supported framebuffer mode; broad hardware and resolution coverage remains future work.
