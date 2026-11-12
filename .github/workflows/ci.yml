@@ -111,11 +111,6 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/task_wait_policy_test.c -o /tmp/task_wait_policy_test
           /tmp/task_wait_policy_test
 
-      - name: Test waitpid selector and ownership policy
-        run: |
-          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/task_wait_policy_test.c -o /tmp/task_wait_policy_test
-          /tmp/task_wait_policy_test
-
       - name: Test concurrent task PID uniqueness
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -pthread -Iinclude tests/task_pid_concurrency_test.c -o /tmp/task_pid_concurrency_test
