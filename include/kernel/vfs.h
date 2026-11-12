@@ -24,6 +24,7 @@
  */
 typedef u64 fd_handle_t;
 #define FD_HANDLE_SLOT_BITS       6U
+#define FD_HANDLE_SLOT_MASK       ((1ULL << FD_HANDLE_SLOT_BITS) - 1ULL)
 #define FD_HANDLE_GENERATION_MAX ((1U << 26) - 1U)
 #define FD_HANDLE_INVALID         (~(fd_handle_t)0)
 #define FD_HANDLE_SLOT(handle)    ((u32)((handle) & FD_HANDLE_SLOT_MASK))
