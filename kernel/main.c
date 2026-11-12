@@ -62,26 +62,28 @@ static void kernel_stack_guard_probe(void* unused) {
 }
 #endif
 
-__attribute__((no_stack_protector))
-void kernel_main#endif
 
 #ifdef TEST_WAITPID
 static volatile u32 waitpid_orphan_pid;
+
 static void waitpid_child_probe(void* requested_status) {
     task_sleep_ms(5);
     task_exit_with_status((u32)(uintptr_t)requested_status);
 }
+
 static void waitpid_orphan_child_probe(void* unused) {
     (void)unused;
     task_sleep_ms(15);
     task_exit_with_status(77);
 }
+
 static void waitpid_test_fail(const char* reason) {
     serial_puts("WAITPID_TEST_FAIL: ");
     serial_puts(reason);
     serial_puts("\n");
     for (;;) asm volatile("cli; hlt" : : : "memory");
 }
+
 static void waitpid_parent_probe(void* unused) {
     (void)unused;
     u32 status = 0xA5A5A5A5U;
@@ -89,10 +91,12 @@ static void waitpid_parent_probe(void* unused) {
                                 (void*)(uintptr_t)42, 0, false);
     if (!child) waitpid_test_fail("cannot create exact-PID child");
     u32 child_pid = child->pid;
+
     s64 result = (s64)syscall_dispatch(SYS_WAITPID, child_pid,
         (u64)(uintptr_t)&status, WAITPID_WNOHANG, 0, 0, 0);
     if (result != 0 || status != 0xA5A5A5A5U)
         waitpid_test_fail("WNOHANG result or status preservation");
+
     scheduler_add_task(child);
     status = 0;
     result = (s64)syscall_dispatch(SYS_WAITPID, child_pid,
@@ -100,10 +104,12 @@ static void waitpid_parent_probe(void* unused) {
     if (result != (s64)child_pid || status != 42 ||
         task_find_by_pid(child_pid) != NULL)
         waitpid_test_fail("exact child wait, exit status or slot reaping");
+
     if ((s64)syscall_dispatch(SYS_WAITPID, 0, 0, 0, 0, 0, 0) != -1 ||
         (s64)syscall_dispatch(SYS_WAITPID, (u64)(s64)-2, 0, 0, 0, 0, 0) != -1 ||
         (s64)syscall_dispatch(SYS_WAITPID, 0xFFFFFFFEU, 0, 0, 0, 0, 0) != -1)
         waitpid_test_fail("invalid selector or non-child accepted");
+
     task_t* any_child = task_create("wait-any-child", waitpid_child_probe,
                                     (void*)(uintptr_t)7, 0, false);
     if (!any_child) waitpid_test_fail("cannot create any-child probe");
@@ -115,6 +121,7 @@ static void waitpid_parent_probe(void* unused) {
     if (result != (s64)any_pid || status != 7 ||
         task_find_by_pid(any_pid) != NULL)
         waitpid_test_fail("wait for any child or status collection");
+
     task_t* orphan = task_create("wait-orphan", waitpid_orphan_child_probe,
                                  NULL, 0, false);
     if (!orphan) waitpid_test_fail("cannot create orphan probe");
@@ -122,6 +129,7 @@ static void waitpid_parent_probe(void* unused) {
     scheduler_add_task(orphan);
     serial_puts("WAITPID_TEST_OK\n");
 }
+
 static void waitpid_orphan_monitor(void* unused) {
     (void)unused;
     for (u32 attempt = 0; attempt < 2000; attempt++) {
@@ -135,7 +143,6 @@ static void waitpid_orphan_monitor(void* unused) {
     serial_puts("WAITPID_ORPHAN_REAP_FAIL\n");
 }
 #endif
-
 
 __attribute__((no_stack_protector))
 void kernel_main(u32 magic, u64 info_ptr) {
@@ -377,15 +384,13 @@ void kernel_main(u32 magic, u64 info_ptr) {
     scheduler_add_task(guard_probe);
 #endif
 
-    vga_puts_success("All systems go. Starting shell.");#endif
-
 #ifdef TEST_WAITPID
     task_t* waitpid_monitor = task_create("waitpid-monitor",
         waitpid_orphan_monitor, NULL, 0, false);
     task_t* waitpid_probe = task_create("waitpid-probe",
         waitpid_parent_probe, NULL, 0, false);
     if (!waitpid_monitor || !waitpid_probe) {
-        serial_puts("WAITPID_TEST_FAIL: cannot create test tasks\\n");
+        serial_puts("WAITPID_TEST_SETUP_FAILED\n");
     } else {
         scheduler_add_task(waitpid_monitor);
         scheduler_add_task(waitpid_probe);
