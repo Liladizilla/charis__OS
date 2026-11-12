@@ -24,7 +24,7 @@ int fs_open(const char* path, file_t* file) {
     open_calls++;
     assert(path != NULL);
     file->cluster = 7;
-    file->size = 100;
+    file->size = 0;
     file->pos = 0;
     file->dir_cluster = 2;
     file->dir_sector = 0;
