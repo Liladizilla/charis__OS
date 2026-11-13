@@ -1,8 +1,7 @@
-/* font.h - Built-in bitmap font
+/* font.h - Built-in antialiased font
  *
- * A fixed-cell 1bpp font compiled into the kernel, so text rendering never
- * depends on a file being present on a disk that may not be mounted yet.
- * tools/genfont.py generates the C glyph table under the build directory.
+ * Inter glyph coverage is compiled into the kernel. Runtime text rendering
+ * requires neither a mounted filesystem nor a font file.
  */
 #ifndef KERNEL_FONT_H
 #define KERNEL_FONT_H
@@ -17,8 +16,8 @@ extern const u16 font_glyph_count;
 /* Codepoint -> glyph index, or -1 when the kernel has no glyph for it. */
 extern const s16 font_index[256];
 
-/* One 16-bit row per glyph scanline, bit 0 is the leftmost pixel. */
-const u16* font_glyph_rows(u16 index);
+/* Row-major 4-bit coverage values, each in the range 0..15. */
+const u8* font_glyph_data(u16 index);
 
 /* Convenience: glyph index for a codepoint, or -1. */
 static inline s16 font_glyph_index(unsigned char c) {
