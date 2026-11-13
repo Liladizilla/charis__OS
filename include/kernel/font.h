@@ -17,8 +17,8 @@ extern const u16 font_glyph_count;
 /* Codepoint -> glyph index, or -1 when the kernel has no glyph for it. */
 extern const s16 font_index[256];
 
-/* One byte per row, bit 0 is the leftmost pixel. */
-const u8* font_glyph_rows(u16 index);
+/* One 16-bit row per glyph scanline, bit 0 is the leftmost pixel. */
+const u16* font_glyph_rows(u16 index);
 
 /* Convenience: glyph index for a codepoint, or -1. */
 static inline s16 font_glyph_index(unsigned char c) {
