@@ -91,6 +91,11 @@ images-waitpid-test:
 	rm -rf $(BUILD_DIR)/waitpid-test
 	$(MAKE) BUILD_DIR=$(BUILD_DIR)/waitpid-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DTEST_WAITPID" images
 
+# Dedicated guest image for real-scheduler IPC waiter wake/close/cancellation tests.
+images-ipc-wait-test:
+	rm -rf $(BUILD_DIR)/ipc-wait-test
+	$(MAKE) BUILD_DIR=$(BUILD_DIR)/ipc-wait-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DTEST_IPC_WAIT" images
+
 # Dedicated image that grants CAP_ALLOW_EXEC only to the bootstrap smoke task.
 # The default and release images continue to deny user-triggered exec.
 images-elf-exec-test:
@@ -257,4 +262,4 @@ clean:
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-waitpid-test images-elf-exec-test ipc-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
+.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-waitpid-test images-ipc-wait-test images-elf-exec-test ipc-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
