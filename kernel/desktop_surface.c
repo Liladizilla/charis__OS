@@ -469,9 +469,14 @@ static void draw_workspace_activity(u32 content_bottom) {
     fb_fill_rect(panel_x + u(20u), divider_y, panel_w - u(40u), u(1u),
                  CHARIS_UI_BORDER);
 
-    const char* labels[3] = {
+    static const char* const compact_labels[3] = {
+        "SWITCHES", "IRQS", "SYSCALLS"
+    };
+    static const char* const full_labels[3] = {
         "CONTEXT SWITCHES", "INTERRUPTS", "SYSCALLS"
     };
+    const char* const* labels = gfx_text_get_scale() >= 2u
+                              ? compact_labels : full_labels;
     const u32 values[3] = { context_switches, interrupts, syscalls };
     for (u32 i = 0; i < 3u; i++) {
         u32 x = panel_x + u(20u) + i * (col_w + gap);
@@ -495,8 +500,13 @@ void desktop_surface_render(void) {
     gfx_text_size("WORKSPACE", &heading_w, &heading_h);
     gfx_draw_string(heading_x, heading_y, "WORKSPACE",
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(heading_x + heading_w + u(24u), heading_y,
-                    "CORE APPLICATIONS", CHARIS_UI_MUTED, FB_TRANSPARENT);
+    u32 secondary_x = heading_x + heading_w + u(24u);
+    u32 secondary_w = 0;
+    gfx_text_size("CORE APPLICATIONS", &secondary_w, NULL);
+    if (secondary_x <= width && width - secondary_x > u(48u) &&
+        secondary_w <= width - secondary_x - u(48u))
+        gfx_draw_string(secondary_x, heading_y, "CORE APPLICATIONS",
+                        CHARIS_UI_MUTED, FB_TRANSPARENT);
     u32 divider_y = heading_y + heading_h + u(16u);
     fb_fill_rect(u(48), divider_y, width > u(96) ? width-u(96) : width,
                  u(1), CHARIS_UI_BORDER);
