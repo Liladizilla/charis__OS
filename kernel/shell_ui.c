@@ -12,6 +12,7 @@
 
 #include <kernel/shell_ui.h>
 #include <kernel/browser.h>
+#include <kernel/calculator_ui.h>
 #include <kernel/fb.h>
 #include <kernel/gfx_text.h>
 #include <kernel/font.h>
@@ -88,6 +89,7 @@ typedef struct {
 static const menu_entry_t MENU_ITEMS[] = {
     { "Terminal" },
     { "Files" },
+    { "Calculator" },
     { "Settings" },
     { "Browser" },
     { "About CharisOS" },
@@ -125,6 +127,7 @@ static u64 next_clock_refresh_ms;
 typedef enum {
     SHELL_APP_TERMINAL = 0,
     SHELL_APP_FILES,
+    SHELL_APP_CALCULATOR,
     SHELL_APP_BROWSER,
     SHELL_APP_SETTINGS,
     SHELL_APP_ABOUT,
@@ -162,6 +165,7 @@ static bool shell_app_is_open(shell_app_id_t id) {
     switch (id) {
         case SHELL_APP_TERMINAL: return terminal_is_open();
         case SHELL_APP_FILES: return files_is_open();
+        case SHELL_APP_CALCULATOR: return calculator_ui_is_open();
         case SHELL_APP_BROWSER: return browser_is_open();
         case SHELL_APP_SETTINGS: return settings_open;
         case SHELL_APP_ABOUT: return notice_open && notice_item == 4;
@@ -173,6 +177,7 @@ static const char* shell_app_title(shell_app_id_t id) {
     switch (id) {
         case SHELL_APP_TERMINAL: return "Terminal";
         case SHELL_APP_FILES: return "Files";
+        case SHELL_APP_CALCULATOR: return "Calculator";
         case SHELL_APP_BROWSER: return "Browser";
         case SHELL_APP_SETTINGS: return "Settings";
         case SHELL_APP_ABOUT: return "About CharisOS";
@@ -184,6 +189,7 @@ static u32 shell_app_titlebar_height(shell_app_id_t id) {
     switch (id) {
         case SHELL_APP_TERMINAL: return terminal_titlebar_height();
         case SHELL_APP_FILES: return files_titlebar_height();
+        case SHELL_APP_CALCULATOR: return calculator_ui_titlebar_height();
         case SHELL_APP_BROWSER: return browser_titlebar_height();
         case SHELL_APP_SETTINGS: return settings_title_height();
         case SHELL_APP_ABOUT: return about_titlebar_height();
@@ -223,6 +229,7 @@ static void shell_window_resize_limits(window_t* win,
     u32 min_w = ui_px(360), min_h = ui_px(220);
     switch ((shell_app_id_t)id) {
         case SHELL_APP_FILES: min_w=ui_px(540); min_h=ui_px(340); break;
+        case SHELL_APP_CALCULATOR: min_w=ui_px(360); min_h=ui_px(280); break;
         case SHELL_APP_TERMINAL: min_w=ui_px(420); min_h=ui_px(280); break;
         case SHELL_APP_BROWSER: min_w=ui_px(560); min_h=ui_px(340); break;
         case SHELL_APP_SETTINGS: min_w=ui_px(520); min_h=ui_px(400); break;
@@ -304,6 +311,11 @@ static void shell_app_paint(window_t* win) {
                              (u32)win->width, full_height);
             files_render();
             break;
+        case SHELL_APP_CALCULATOR:
+            calculator_ui_set_bounds((u32)win->x, (u32)win->y,
+                                     (u32)win->width, full_height);
+            calculator_ui_render();
+            break;
         case SHELL_APP_BROWSER:
             browser_set_bounds((u32)win->x, (u32)win->y,
                                (u32)win->width, full_height);
@@ -332,6 +344,10 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
                 break;
             case SHELL_APP_FILES:
                 shell_pointer_handled = files_handle_mouse(evt->mouse.x, evt->mouse.y);
+                break;
+            case SHELL_APP_CALCULATOR:
+                shell_pointer_handled = calculator_ui_handle_mouse(
+                    evt->mouse.x, evt->mouse.y);
                 break;
             case SHELL_APP_BROWSER:
                 shell_pointer_handled = browser_handle_mouse(evt->mouse.x, evt->mouse.y);
@@ -362,6 +378,9 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
             break;
         case SHELL_APP_FILES:
             (void)files_handle_key((u8)(base | (extended ? 0x80u : 0u)), pressed);
+            break;
+        case SHELL_APP_CALCULATOR:
+            (void)calculator_ui_handle_key(base, pressed);
             break;
         case SHELL_APP_BROWSER:
             (void)browser_handle_key(base, pressed);
@@ -408,6 +427,10 @@ static window_t* shell_create_app_window(shell_app_id_t id) {
             width = ui_px(720);
             height = ui_px(520);
             break;
+        case SHELL_APP_CALCULATOR:
+            width = ui_px(440);
+            height = ui_px(500);
+            break;
         case SHELL_APP_TERMINAL:
             width = ui_px(640);
             height = ui_px(440);
@@ -452,6 +475,10 @@ static window_t* shell_create_app_window(shell_app_id_t id) {
         case SHELL_APP_SETTINGS:
             x -= (s32)ui_px(24);
             y += (s32)ui_px(12);
+            break;
+        case SHELL_APP_CALCULATOR:
+            x -= (s32)ui_px(24);
+            y -= (s32)ui_px(12);
             break;
         case SHELL_APP_ABOUT:
         default:
@@ -510,6 +537,7 @@ static void shell_open_app(shell_app_id_t id) {
     switch (id) {
         case SHELL_APP_TERMINAL: terminal_open(); break;
         case SHELL_APP_FILES: files_open(); break;
+        case SHELL_APP_CALCULATOR: calculator_ui_open(); break;
         case SHELL_APP_BROWSER: browser_open(); break;
         case SHELL_APP_SETTINGS: settings_open = true; break;
         case SHELL_APP_ABOUT:
@@ -661,33 +689,36 @@ static void draw_taskbar(void) {
 /* Every launcher entry gets a small, high-contrast icon drawn from
  * primitives. This avoids a font/icon asset dependency in the kernel. */
 static void draw_app_icon(u32 app, u32 x, u32 y) {
-    u32 ink = app == 0 ? CHARIS_UI_ACCENT :
-              app == 1 ? 0xFF91D7A3u :
-              app == 2 ? 0xFFF0C674u :
-              app == 3 ? 0xFFB7A0F5u :
-              app == 4 ? 0xFF8FC7D8u : CHARIS_UI_TEXT;
+    u32 ink = app == 1u ? 0xFF91D7A3u :
+              app == 2u ? 0xFFF0C674u :
+              app == 3u ? 0xFF7EB6FFu :
+              app == 4u ? 0xFFB7A0F5u :
+              app == 5u ? 0xFF8FC7D8u : CHARIS_UI_TEXT;
     fb_fill_rect(x, y, 20, 20, CHARIS_UI_PANEL_RAISED);
     fb_draw_rect(x, y, 20, 20, CHARIS_UI_BORDER);
-    if (app == 0) {
-        fb_draw_rect(x + 3, y + 3, 14, 14, ink);
-        fb_fill_rect(x + 3, y + 7, 14, 2, ink);
-        fb_fill_rect(x + 9, y + 4, 2, 12, ink);
-    } else if (app == 1) {
+    if (app == 1u) {
         gfx_draw_string(x + 2, y + 4, ">_", ink, FB_TRANSPARENT);
-    } else if (app == 2) {
+    } else if (app == 2u) {
         fb_fill_rect(x + 3, y + 5, 7, 3, ink);
         fb_fill_rect(x + 3, y + 7, 14, 10, ink);
         fb_draw_rect(x + 3, y + 7, 14, 10, CHARIS_UI_BORDER);
-    } else if (app == 3) {
-        fb_fill_rect(x + 4, y + 2, 12, 16, ink);
-        fb_fill_rect(x + 6, y + 6, 8, 1, CHARIS_UI_PANEL);
-        fb_fill_rect(x + 6, y + 10, 8, 1, CHARIS_UI_PANEL);
-        fb_fill_rect(x + 6, y + 14, 6, 1, CHARIS_UI_PANEL);
-    } else if (app == 4) {
+    } else if (app == 3u) {
+        fb_draw_rect(x + 4, y + 2, 12, 16, ink);
+        fb_fill_rect(x + 6, y + 4, 8, 3, CHARIS_UI_PANEL);
+        fb_fill_rect(x + 6, y + 9, 3, 3, ink);
+        fb_fill_rect(x + 11, y + 9, 3, 3, ink);
+        fb_fill_rect(x + 6, y + 14, 3, 2, ink);
+        fb_fill_rect(x + 11, y + 14, 3, 2, ink);
+    } else if (app == 4u) {
         fb_draw_rect(x + 4, y + 4, 12, 12, ink);
         fb_fill_rect(x + 8, y + 1, 4, 18, ink);
         fb_fill_rect(x + 1, y + 8, 18, 4, ink);
         fb_fill_rect(x + 7, y + 7, 6, 6, CHARIS_UI_PANEL_RAISED);
+    } else if (app == 5u) {
+        fb_draw_rect(x + 3, y + 3, 14, 14, ink);
+        fb_fill_rect(x + 4, y + 7, 12, 1, ink);
+        fb_fill_rect(x + 4, y + 12, 12, 1, ink);
+        fb_fill_rect(x + 9, y + 4, 1, 12, ink);
     } else {
         fb_draw_rect(x + 5, y + 2, 10, 16, ink);
         gfx_draw_string(x + 9, y + 4, "i", ink, FB_TRANSPARENT);
@@ -1088,6 +1119,7 @@ static void shell_close_focused_app(void) {
     switch ((shell_app_id_t)id) {
         case SHELL_APP_TERMINAL: terminal_close(); break;
         case SHELL_APP_FILES: files_close(); break;
+        case SHELL_APP_CALCULATOR: calculator_ui_close(); break;
         case SHELL_APP_BROWSER: browser_close(); break;
         case SHELL_APP_SETTINGS: settings_open = false; break;
         case SHELL_APP_ABOUT:
@@ -1147,6 +1179,16 @@ static void handle_event(const input_event_t* e) {
 
         if (pressed && !extended && base == 0x42u && alt_held) {
             shell_keyboard_resize_start();
+            ui.needs_redraw = true;
+            return;
+        }
+
+        /* F8 launches Calculator; Alt+F8 remains the keyboard resize mode. */
+        if (pressed && !extended && base == 0x42u && !alt_held) {
+            ui.menu_open = false;
+            notice_open = false;
+            notice_item = -1;
+            shell_open_app(SHELL_APP_CALCULATOR);
             ui.needs_redraw = true;
             return;
         }
@@ -1379,8 +1421,10 @@ static void handle_event(const input_event_t* e) {
             } else if (menu_hit == 1) {
                 shell_open_app(SHELL_APP_FILES);
             } else if (menu_hit == 2) {
-                shell_open_app(SHELL_APP_SETTINGS);
+                shell_open_app(SHELL_APP_CALCULATOR);
             } else if (menu_hit == 3) {
+                shell_open_app(SHELL_APP_SETTINGS);
+            } else if (menu_hit == 4) {
                 shell_open_app(SHELL_APP_BROWSER);
             } else {
                 shell_open_app(SHELL_APP_ABOUT);
