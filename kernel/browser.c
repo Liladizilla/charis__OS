@@ -34,6 +34,8 @@ static browser_tab_t tabs[BROWSER_MAX_TABS];
 static int tab_count;
 static int active_tab;
 static bool browser_visible;
+static bool browser_bounds_valid;
+static u32 browser_bounds_x, browser_bounds_y, browser_bounds_w, browser_bounds_h;
 static bool browser_shift;
 static bool browser_ctrl;
 static char browser_status[96] = "Ready";
@@ -81,6 +83,43 @@ static const u32 C_MUTED = CHARIS_UI_MUTED;
 static const u32 C_ACCENT = CHARIS_UI_ACCENT;
 static const u32 C_ACCENT_BG = CHARIS_UI_ACCENT_SURFACE;
 static const u32 C_WARNING = CHARIS_UI_WARNING;
+
+static void browser_geometry(u32* x, u32* y, u32* w, u32* h) {
+    if (browser_bounds_valid) {
+        *x = browser_bounds_x;
+        *y = browser_bounds_y;
+        *w = browser_bounds_w;
+        *h = browser_bounds_h;
+        return;
+    }
+    u32 sw = g_framebuffer.width;
+    u32 sh = g_framebuffer.height;
+    *x = 12u;
+    *y = 10u;
+    *w = sw > 24u ? sw - 24u : sw;
+    *h = sh > BROWSER_TASKBAR + 22u
+        ? sh - BROWSER_TASKBAR - 18u : (sh > 18u ? sh - 18u : sh);
+}
+
+u32 browser_titlebar_height(void) {
+    return 42u;
+}
+
+void browser_set_bounds(u32 x, u32 y, u32 width, u32 height) {
+    if (!width || !height) {
+        browser_bounds_valid = false;
+        return;
+    }
+    browser_bounds_x = x;
+    browser_bounds_y = y;
+    browser_bounds_w = width;
+    browser_bounds_h = height;
+    browser_bounds_valid = true;
+}
+
+void browser_reset_bounds(void) {
+    browser_bounds_valid = false;
+}
 
 static browser_tab_t* current_tab(void) {
     if (tab_count <= 0) return NULL;
@@ -852,8 +891,12 @@ void browser_render(void) {
     if (!browser_visible || !g_framebuffer.initialized) return;
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
     if (sw < 320 || sh < 220) return;
-    u32 x = 12, y = 10, w = sw - 24;
-    u32 h = sh > BROWSER_TASKBAR + 22 ? sh - BROWSER_TASKBAR - 18 : sh - 18;
+    u32 x, y, w, h;
+    browser_geometry(&x, &y, &w, &h);
+    if (x >= sw || y >= sh) return;
+    if (w > sw - x) w = sw - x;
+    if (h > sh - y) h = sh - y;
+    if (w < 320u || h < 220u) return;
     browser_tab_t* tab = current_tab();
     if (!tab) return;
 
