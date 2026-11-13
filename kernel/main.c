@@ -238,6 +238,7 @@ static void ipc_cancel_test_coordinator(void* unused) {
 
 #ifdef TEST_IPC_SERVICES
 static volatile u32 ipc_service_test_registered;
+static volatile u32 ipc_service_test_close_request_started;
 static task_t* volatile ipc_service_test_server_task;
 static task_t* volatile ipc_service_test_client_task;
 
@@ -318,8 +319,32 @@ static void ipc_service_test_server(void* unused) {
         ipc_service_test_fail("service request rejection failed");
     serial_puts("IPC_SERVICE_TEST_REJECT_WAKE_OK\n");
 
+    /* A third client request is left pending while the service owner removes
+     * the name. Require the client to be truly BLOCKED in connect_wait before
+     * unregistering, so this covers the wake/cancellation race in QEMU. */
+    ipc_service_test_close_request_started = 0;
+    u32 attempts = 0;
+    while (!ipc_service_test_close_request_started && attempts++ < 5000U)
+        task_sleep_ms(1);
+    if (!ipc_service_test_close_request_started)
+        ipc_service_test_fail("pending-close request was never published");
+
+    task_t* client_task = (task_t*)ipc_service_test_client_task;
+    attempts = 0;
+    while ((!client_task ||
+            client_task->waiting_event != TASK_WAITING_IPC_CONNECT ||
+            client_task->state != TASK_STATE_BLOCKED) &&
+           attempts++ < 5000U) {
+        task_sleep_ms(1);
+    }
+    if (!client_task ||
+        client_task->waiting_event != TASK_WAITING_IPC_CONNECT ||
+        client_task->state != TASK_STATE_BLOCKED)
+        ipc_service_test_fail("client did not block on pending connect");
+
     if (ipc_service_unregister(service) != IPC_STATUS_OK)
         ipc_service_test_fail("service unregister failed");
+    serial_puts("IPC_SERVICE_TEST_UNREGISTER_PENDING_OK\n");
     serial_puts("IPC_SERVICE_TEST_SERVER_TEARDOWN_OK\n");
     task_exit_with_status(0);
 }
@@ -361,6 +386,20 @@ static void ipc_service_test_client(void* unused) {
         endpoint != IPC_HANDLE_INVALID)
         ipc_service_test_fail("rejected client was not woken with rejection");
     serial_puts("IPC_SERVICE_TEST_CLIENT_REJECT_OK\n");
+
+    /* Publish a final request and actually sleep in connect_wait. The service
+     * owner tears down the registration and must wake this blocked client. */
+    request = 0;
+    if (ipc_service_connect_begin("com.charis.qemu", IPC_RIGHT_SEND,
+                                  &request) != IPC_STATUS_OK || !request)
+        ipc_service_test_fail("pending-close client request was not queued");
+    ipc_service_test_close_request_started = 1;
+    endpoint = IPC_HANDLE_INVALID;
+    result = ipc_service_connect_wait(request, &endpoint);
+    if (result != IPC_STATUS_SERVICE_CLOSED ||
+        endpoint != IPC_HANDLE_INVALID)
+        ipc_service_test_fail("unregister did not wake blocked client");
+    serial_puts("IPC_SERVICE_TEST_CLIENT_CLOSED_OK\n");
     task_exit_with_status(0);
 }
 
