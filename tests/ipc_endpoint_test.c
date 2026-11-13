@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <kernel/ipc.h>
+#include <kernel/security.h>
 
 static task_t task_a, task_b, task_c;
 static task_t* active_task;
