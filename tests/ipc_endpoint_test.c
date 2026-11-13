@@ -2,11 +2,17 @@
 #include <stdio.h>
 #include <string.h>
 #include <kernel/ipc.h>
+#include <kernel/security.h>
 
 static task_t task_a, task_b, task_c;
 static task_t* active_task;
 task_t* scheduler_current(void) { return active_task; }
 void scheduler_yield(void) { }
+
+bool security_check_capability(task_t* task, u32 capability) {
+    return task && capability && !(capability & ~((u32)CAP_ALL)) &&
+           (task->capabilities & capability) == capability;
+}
 
 void task_unblock(task_t* task) {
     if (task && task->state == TASK_STATE_BLOCKED)
@@ -220,28 +226,30 @@ static void test_service_registration_and_policy(void) {
     task_a.capabilities = 0;
     assert(ipc_service_register("com.charis.echo", 0,
         IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_ERROR);
+    assert(ipc_service_register("com.charis.unknown-cap", 1U << 31,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_ERROR);
     assert(ipc_service_register("bad name", 1,
         IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_ERROR);
     assert(ipc_service_register("", 1,
         IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_ERROR);
     assert(ipc_service_register("com.charis.echo", 1,
         0, IPC_RIGHT_MASK, &service) == IPC_STATUS_ERROR);
-    assert(ipc_service_register("com.charis.echo", 0x04U,
+    assert(ipc_service_register("com.charis.echo", CAP_FS_CREATE,
         IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_OK);
     assert(service != 0);
     /* Re-entering subsystem init must not reset live service generations. */
     ipc_init();
     ipc_service_handle_t duplicate = 0;
-    assert(ipc_service_register("com.charis.echo", 0x04U,
+    assert(ipc_service_register("com.charis.echo", CAP_FS_CREATE,
         IPC_RIGHT_MASK, IPC_RIGHT_MASK, &duplicate) == IPC_STATUS_ERROR);
 
     active_task = &task_b;
-    task_b.capabilities = 0x02U;
+    task_b.capabilities = CAP_FS_READ;
     ipc_request_handle_t request = 0xFFFFFFFFFFFFFFFFULL;
     assert(ipc_service_connect("com.charis.echo", &request) ==
            IPC_STATUS_DENIED);
     assert(request == 0);
-    task_b.capabilities = 0x04U;
+    task_b.capabilities = CAP_FS_CREATE;
     assert(ipc_service_connect("com.charis.echo", &request) == IPC_STATUS_OK);
     ipc_handle_t client_endpoint = 99;
     assert(ipc_service_result(request, &client_endpoint) == IPC_STATUS_EMPTY);
@@ -293,7 +301,7 @@ static void test_service_registration_and_policy(void) {
     assert(ipc_service_unregister(service) == IPC_STATUS_OK);
     assert(ipc_service_unregister(service) == IPC_STATUS_ERROR);
     ipc_service_handle_t replacement = 0;
-    assert(ipc_service_register("com.charis.echo", 0x04U,
+    assert(ipc_service_register("com.charis.echo", CAP_FS_CREATE,
         IPC_RIGHT_MASK, IPC_RIGHT_MASK, &replacement) == IPC_STATUS_OK);
     assert(replacement != service);
     assert(ipc_service_next(service, &offered, &client_pid) == IPC_STATUS_ERROR);
@@ -304,11 +312,11 @@ static void test_service_rejection_and_unregister_pending(void) {
     active_task = &task_a;
     task_a.capabilities = 0;
     ipc_service_handle_t service = 0;
-    assert(ipc_service_register("com.charis.reject", 0x04U,
+    assert(ipc_service_register("com.charis.reject", CAP_FS_CREATE,
         IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_OK);
 
     active_task = &task_b;
-    task_b.capabilities = 0x04U;
+    task_b.capabilities = CAP_FS_CREATE;
     ipc_request_handle_t request = 0;
     assert(ipc_service_connect("com.charis.reject", &request) == IPC_STATUS_OK);
     active_task = &task_a;
@@ -333,7 +341,7 @@ static void test_service_rejection_and_unregister_pending(void) {
 
     active_task = &task_a;
     ipc_service_handle_t new_service = 0;
-    assert(ipc_service_register("com.charis.reject", 0x04U,
+    assert(ipc_service_register("com.charis.reject", CAP_FS_CREATE,
         IPC_RIGHT_MASK, IPC_RIGHT_MASK, &new_service) == IPC_STATUS_OK);
     assert(new_service != service);
     assert(ipc_service_unregister(new_service) == IPC_STATUS_OK);
@@ -342,11 +350,11 @@ static void test_service_rejection_and_unregister_pending(void) {
 static void test_service_request_lifecycle_on_task_exit(void) {
     active_task = &task_a;
     ipc_service_handle_t service = 0;
-    assert(ipc_service_register("com.charis.exit", 0x04U,
+    assert(ipc_service_register("com.charis.exit", CAP_FS_CREATE,
         IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_OK);
 
     active_task = &task_b;
-    task_b.capabilities = 0x04U;
+    task_b.capabilities = CAP_FS_CREATE;
     ipc_request_handle_t pending = 0;
     assert(ipc_service_connect("com.charis.exit", &pending) == IPC_STATUS_OK);
     /* A client exiting drops its pending request before its TCB can be reused. */
@@ -374,7 +382,7 @@ static void test_service_request_lifecycle_on_task_exit(void) {
 
     /* A server exiting revokes its namespace entries and rejects pending work. */
     active_task = &task_c;
-    task_c.capabilities = 0x04U;
+    task_c.capabilities = CAP_FS_CREATE;
     ipc_request_handle_t pending_for_shutdown = 0;
     assert(ipc_service_connect("com.charis.exit", &pending_for_shutdown) ==
            IPC_STATUS_OK);
@@ -393,19 +401,19 @@ static void test_service_and_request_table_limits(void) {
     for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
         name[1] = (char)('0' + (i / 10U));
         name[2] = (char)('0' + (i % 10U));
-        assert(ipc_service_register(name, 0x04U, IPC_RIGHT_MASK,
+        assert(ipc_service_register(name, CAP_FS_CREATE, IPC_RIGHT_MASK,
             IPC_RIGHT_MASK, &services[i]) == IPC_STATUS_OK);
     }
     ipc_service_handle_t overflow = 0;
-    assert(ipc_service_register("s-overflow", 0x04U, IPC_RIGHT_MASK,
+    assert(ipc_service_register("s-overflow", CAP_FS_CREATE, IPC_RIGHT_MASK,
         IPC_RIGHT_MASK, &overflow) == IPC_STATUS_LIMIT);
     ipc_task_close_all(&task_a);
 
     active_task = &task_c;
-    task_c.capabilities = 0x04U;
+    task_c.capabilities = CAP_FS_CREATE;
     ipc_service_handle_t service = 0;
     active_task = &task_a;
-    assert(ipc_service_register("com.charis.capacity", 0x04U,
+    assert(ipc_service_register("com.charis.capacity", CAP_FS_CREATE,
         IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_OK);
     active_task = &task_c;
     ipc_request_handle_t requests[IPC_MAX_CONNECT_REQUESTS];
