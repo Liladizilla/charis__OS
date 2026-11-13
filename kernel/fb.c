@@ -267,6 +267,25 @@ void fb_put_pixel(u32 x, u32 y, u32 argb) {
     }
 }
 
+u32 fb_get_pixel(u32 x, u32 y) {
+    framebuffer_t* fb = &g_framebuffer;
+    if (!fb->initialized || x >= fb->width || y >= fb->height) return 0;
+
+    u8* base = (u8*)(uintptr_t)(FB_VIRT_BASE + (fb->phys_addr & (PAGE_SIZE - 1)));
+    u8* row = base + (u64)y * fb->pitch;
+    u32 native = 0;
+    if (fb->bpp == 32) {
+        native = ((u32*)row)[x];
+    } else if (fb->bpp == 16) {
+        native = ((u16*)row)[x];
+    } else {
+        u8* pixel = row + (u64)x * 3u;
+        native = (u32)pixel[0] | ((u32)pixel[1] << 8) |
+                 ((u32)pixel[2] << 16);
+    }
+    return fb_unpack(native);
+}
+
 void fb_fill_rect(u32 x, u32 y, u32 w, u32 h, u32 argb) {
     if (!g_framebuffer.initialized || argb == FB_TRANSPARENT) return;
 
