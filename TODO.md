@@ -56,7 +56,8 @@
 - [x] Add kernel-owned endpoint pairs with independent SEND/RECEIVE rights and authenticated peer identity
 - [x] Add bounded full-duplex queues with nonblocking send/receive, explicit FULL/EMPTY/BUFFER_SMALL outcomes and no silent truncation
 - [x] Revoke task-owned endpoints and release channel references during EXITING teardown
-- [ ] Add cancellation-safe blocking receive and message reservations (current receive is nonblocking by design)
+- [x] Add kernel-only blocking receive with atomic waiter registration, message/peer-close wakeups and task-exit cancellation
+- [ ] Add QEMU stress coverage for waiter wake/close/exit interleavings
 - [ ] Add transactional descriptor attachments with queue-owned references and receiver rollback
 - [ ] Keep ring-3 IPC and descriptor transfer denied until endpoint tests and user-memory preflight pass
 - [ ] Replace global shared-memory IDs/raw kernel-pointer access with task-owned objects and explicit user mappings
