@@ -280,7 +280,7 @@ bool dhcp_decode_reply(const u8* packet, usize length, u32 xid,
         if (!ipv4_subnet_host(reply->router, reply->subnet_mask))
             return false;
         if (!ipv4_zero(reply->address) &&
-            (same_bytes(reply->router, reply->address, 4) ||
+            (bytes_equal(reply->router, reply->address, 4) ||
              !ipv4_on_subnet(reply->router, reply->address,
                              reply->subnet_mask)))
             return false;
