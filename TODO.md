@@ -167,6 +167,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Minimal workspace replaces the dashboard-style home surface; Files desktop shortcut, launcher and taskbar render in QEMU
 - [x] Native Files launcher and read-only FAT32 root browser (8.3 names only)
 - [x] Native Terminal surface with bounded built-in commands
+- [x] Native Calculator window integrated with WM lifecycle, z-order, resize, focus and titlebar handling; sequential integer arithmetic, checked signed 32-bit overflow, divide-by-zero handling, mouse keypad and keyboard input are covered by host regression tests
 - [x] Settings controls for font family, text size and global UI scale
 - [x] Settings persist to `/CHARISOS.CFG` on supported primary ATA FAT32 and reload after reboot in CI
 - [x] QEMU capture verifies the desktop after closing Settings at 200% text and 120% interface scale without the previous welcome-card clipping
