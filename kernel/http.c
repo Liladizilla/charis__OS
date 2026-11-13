@@ -226,7 +226,24 @@ static bool valid_trailer_line(const char* line, usize length) {
         u8 ch = (u8)line[i];
         bool alpha = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
         bool digit = ch >= '0' && ch <= '9';
-        bool token = alpha || digit || ch == '!' || ch == '#' || ch == '
+        bool punctuation = ch == 33u || ch == 35u || ch == 36u ||
+            ch == 37u || ch == 38u || ch == 39u || ch == 42u ||
+            ch == 43u || ch == 45u || ch == 46u || ch == 94u ||
+            ch == 95u || ch == 96u || ch == 124u || ch == 126u;
+        if (!alpha && !digit && !punctuation) return false;
+    }
+
+    /* Framing metadata is not permitted to appear in the trailer section. */
+    if (ascii_equal(line, colon, "content-length") ||
+        ascii_equal(line, colon, "transfer-encoding"))
+        return false;
+
+    for (usize i = colon + 1u; i < length; i++) {
+        u8 ch = (u8)line[i];
+        if ((ch < 0x20u && ch != '\t') || ch == 0x7Fu) return false;
+    }
+    return true;
+}
 
 static void consume_chunked(const u8* data, usize length) {
     usize pos = 0;
