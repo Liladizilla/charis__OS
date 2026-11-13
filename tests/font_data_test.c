@@ -14,19 +14,22 @@ static void check_glyph(unsigned char codepoint, int should_have_ink) {
     expect(index >= 0 && index < (s16)font_glyph_count,
            "ASCII codepoint maps to a valid glyph");
 
-    const u16* rows = font_glyph_rows((u16)index);
+    const u8* pixels = font_glyph_data((u16)index);
     int any_ink = 0;
-    for (u32 y = 0; y < font_cell_h; y++) {
-        expect((rows[y] & (u16)~((1u << font_cell_w) - 1u)) == 0,
-               "glyph row has no bits outside its cell width");
-        if (rows[y]) any_ink = 1;
+    int has_partial_coverage = 0;
+    for (u32 pixel = 0; pixel < (u32)font_cell_w * font_cell_h; pixel++) {
+        expect(pixels[pixel] <= 15, "glyph coverage remains in the 4-bit range");
+        if (pixels[pixel]) any_ink = 1;
+        if (pixels[pixel] && pixels[pixel] < 15) has_partial_coverage = 1;
     }
     expect(any_ink == should_have_ink, "glyph ink presence matches expectation");
+    if (codepoint == 'A')
+        expect(has_partial_coverage, "Inter glyph edges contain antialias coverage");
 }
 
 int main(void) {
-    expect(font_cell_w == 12, "UI glyph width is 12 pixels");
-    expect(font_cell_h == 22, "UI glyph height is 22 pixels");
+    expect(font_cell_w == 18, "UI glyph width is 18 pixels");
+    expect(font_cell_h == 24, "UI glyph height is 24 pixels");
     expect(font_glyph_count == 114, "95 ASCII and 19 CP437 glyphs are embedded");
     expect(font_glyph_index(' ') >= 0, "space glyph is present");
     check_glyph(' ', 0);
@@ -38,9 +41,9 @@ int main(void) {
 
     s16 full_block = font_glyph_index(0xDBu);
     expect(full_block >= 0, "CP437 full block is present");
-    const u16* rows = font_glyph_rows((u16)full_block);
-    for (u32 y = 0; y < font_cell_h; y++)
-        expect(rows[y] == 0x0FFFu, "CP437 full block fills the 12-pixel glyph cell");
+    const u8* pixels = font_glyph_data((u16)full_block);
+    for (u32 pixel = 0; pixel < (u32)font_cell_w * font_cell_h; pixel++)
+        expect(pixels[pixel] == 15, "CP437 full block fills the glyph cell");
 
     puts("Inter bitmap font tests: PASS");
     return 0;
