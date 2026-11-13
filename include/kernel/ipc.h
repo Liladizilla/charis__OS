@@ -1,9 +1,12 @@
-/* ipc.h - task-owned, rights-checked IPC endpoints for CharisOS. */
+/* ipc.h - task-owned, rights-checked IPC endpoints and service rendezvous. */
 #pragma once
 #include <kernel/types.h>
 #include <kernel/task.h>
 
 typedef u64 ipc_handle_t;
+typedef u64 ipc_service_handle_t;
+typedef u64 ipc_request_handle_t;
+
 #define IPC_MAX_CHANNELS       32U
 #define IPC_MAX_MSG_SIZE       512U
 #define IPC_MAX_MESSAGES       16U
@@ -11,6 +14,17 @@ typedef u64 ipc_handle_t;
 #define IPC_HANDLE_SLOT_MASK       ((1ULL << IPC_HANDLE_SLOT_BITS) - 1ULL)
 #define IPC_HANDLE_GENERATION_MAX  ((1U << 28) - 1U)
 #define IPC_HANDLE_INVALID        ((ipc_handle_t)0)
+
+#define IPC_MAX_SERVICES            16U
+#define IPC_SERVICE_NAME_MAX        32U
+#define IPC_SERVICE_HANDLE_SLOT_BITS 4U
+#define IPC_SERVICE_HANDLE_SLOT_MASK ((1ULL << IPC_SERVICE_HANDLE_SLOT_BITS) - 1ULL)
+#define IPC_SERVICE_GENERATION_MAX   ((1U << 28) - 1U)
+#define IPC_MAX_CONNECTIONS          32U
+#define IPC_REQUEST_HANDLE_SLOT_BITS 5U
+#define IPC_REQUEST_HANDLE_SLOT_MASK ((1ULL << IPC_REQUEST_HANDLE_SLOT_BITS) - 1ULL)
+#define IPC_REQUEST_GENERATION_MAX   ((1U << 27) - 1U)
+#define IPC_MAX_PENDING_PER_SERVICE  16U
 
 #define IPC_RIGHT_SEND       (1U << 0)
 #define IPC_RIGHT_RECEIVE    (1U << 1)
@@ -23,6 +37,13 @@ typedef u64 ipc_handle_t;
 #define IPC_STATUS_BUFFER_SMALL  -4
 #define IPC_STATUS_PEER_CLOSED   -5
 #define IPC_STATUS_CANCELLED     -6
+#define IPC_STATUS_ACCESS_DENIED -7
+#define IPC_STATUS_SERVICE_NOT_FOUND -8
+#define IPC_STATUS_SERVICE_EXISTS -9
+#define IPC_STATUS_SERVICE_CLOSED -10
+#define IPC_STATUS_REQUEST_REJECTED -11
+#define IPC_STATUS_REQUEST_INVALID -12
+#define IPC_STATUS_SERVICE_FULL -13
 
 #define IPC_WAIT_STATUS_IDLE          0
 #define IPC_WAIT_STATUS_PENDING       1
@@ -38,14 +59,31 @@ bool ipc_endpoint_pair_create(task_t* first_task, task_t* second_task,
                               ipc_handle_t* first_handle,
                               ipc_handle_t* second_handle);
 int ipc_send(ipc_handle_t endpoint, const void* data, u64 size);
-/* Nonblocking receive: EMPTY means the queue is empty but the peer is live. */
 int ipc_recv(ipc_handle_t endpoint, void* buffer, u64 capacity,
              u32* sender_pid);
-/* Kernel-only blocking variant. Returns on message, peer close or cancellation. */
 int ipc_recv_wait(ipc_handle_t endpoint, void* buffer, u64 capacity,
                   u32* sender_pid);
 int ipc_close(ipc_handle_t endpoint);
 void ipc_task_close_all(task_t* task);
+
+/* Authenticated kernel-only service namespace.
+ * Register/unregister require CAP_IPC_SERVICE. Connect identity is derived from
+ * scheduler_current(); no caller-supplied PID or global channel ID is accepted.
+ */
+int ipc_service_register(const char* name, ipc_service_handle_t* service);
+int ipc_service_unregister(ipc_service_handle_t service);
+int ipc_service_connect_begin(const char* name, u32 requested_client_rights,
+                              ipc_request_handle_t* request);
+int ipc_service_connect_wait(ipc_request_handle_t request,
+                             ipc_handle_t* client_endpoint);
+int ipc_service_connect(const char* name, u32 requested_client_rights,
+                        ipc_handle_t* client_endpoint);
+int ipc_service_accept_wait(ipc_service_handle_t service,
+                            ipc_request_handle_t* request, u32* client_pid);
+int ipc_service_accept(ipc_service_handle_t service, ipc_request_handle_t request,
+                       u32 granted_client_rights, u32 server_rights,
+                       ipc_handle_t* server_endpoint);
+int ipc_service_reject(ipc_service_handle_t service, ipc_request_handle_t request);
 
 /* Shared memory remains a separate kernel-only API, not IPC authority. */
 #define SHM_MAX_BLOCKS      16
@@ -55,7 +93,9 @@ void* shm_get(int id);
 void shm_free(int id);
 
 #ifdef IPC_HOST_TEST
-/* Deterministic host-only hooks; the host runner has no real context switch. */
 bool ipc_test_register_waiter(ipc_handle_t endpoint);
 bool ipc_test_wake_waiters(ipc_handle_t endpoint, u32 reason);
+bool ipc_test_service_register_waiter(ipc_service_handle_t service);
+bool ipc_test_service_dequeue(ipc_service_handle_t service,
+                              ipc_request_handle_t* request, u32* client_pid);
 #endif
