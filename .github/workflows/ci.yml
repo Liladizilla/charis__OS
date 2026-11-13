@@ -639,6 +639,7 @@ jobs:
             build/charisos-desktop-scaled-preview.ppm
             build/charisos-calculator-preview.ppm
             build/charisos-settings-reloaded-preview.ppm
+            build/charisos-settings-largest-preview.ppm
             build/charisos-desktop-large-font-preview.ppm
             build/charisos-terminal-preview.ppm
             build/desktop-capture-serial.log
