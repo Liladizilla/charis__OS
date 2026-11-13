@@ -17,7 +17,7 @@
 # own output on a runner with no TTY.
 #
 # Usage:
-#   verify-boot.sh <image> [--disk] [--uefi] [--elf-test-disk PATH] [--expect-elf-exec] [--require-ipc-wait] [--timeout SECONDS]
+#   verify-boot.sh <image> [--disk] [--uefi] [--elf-test-disk PATH] [--expect-elf-exec] [--require-ipc-wait] [--require-ipc-service] [--timeout SECONDS]
 #
 #   --disk     attach the image as a raw hard disk (a flashed USB stick)
 #              instead of a CD-ROM
@@ -51,6 +51,7 @@ EXPECT_ELF_SUCCESS=0
 REQUIRE_VMM_TESTS=0
 REQUIRE_WAITPID=0
 REQUIRE_IPC_WAIT=0
+REQUIRE_IPC_SERVICE=0
 
 usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
@@ -64,6 +65,7 @@ while [ $# -gt 0 ]; do
         --require-vmm-tests) REQUIRE_VMM_TESTS=1; shift ;;
         --require-waitpid) REQUIRE_WAITPID=1; shift ;;
         --require-ipc-wait) REQUIRE_IPC_WAIT=1; shift ;;
+        --require-ipc-service) REQUIRE_IPC_SERVICE=1; shift ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         -h|--help) usage ;;
         -*) echo "unknown option: $1" >&2; exit 2 ;;
@@ -363,6 +365,26 @@ if [ "$REQUIRE_WAITPID" = "1" ]; then
         || fail "orphaned child was not reclaimed after exit"
     if grep -q -e 'WAITPID_TEST_FAIL' -e 'WAITPID_ORPHAN_REAP_FAIL' "$LOG"; then
         fail "waitpid regression emitted a failure marker"
+    fi
+fi
+
+if [ "$REQUIRE_IPC_SERVICE" = "1" ]; then
+    grep -q 'IPC_SERVICE_TEST_ACCEPT_WAKE_OK' "$LOG" \
+        || fail "blocked service accept/connect wake and endpoint transfer did not pass"
+    grep -q 'IPC_SERVICE_TEST_REJECT_WAKE_OK' "$LOG" \
+        || fail "blocked service rejection wakeup did not pass"
+    grep -q 'IPC_SERVICE_TEST_CLIENT_REJECT_OK' "$LOG" \
+        || fail "client did not observe request rejection"
+    grep -q 'IPC_SERVICE_TEST_UNREGISTER_PENDING_OK' "$LOG" \
+        || fail "service unregister did not cancel a pending request"
+    grep -q 'IPC_SERVICE_TEST_CLIENT_CLOSED_OK' "$LOG" \
+        || fail "blocked client did not receive service-closed completion"
+    grep -q 'IPC_SERVICE_TEST_SERVER_TEARDOWN_OK' "$LOG" \
+        || fail "service unregister/owner teardown did not complete"
+    grep -q 'IPC_SERVICE_TEST_OK' "$LOG" \
+        || fail "authenticated IPC service scheduler regression did not complete"
+    if grep -q -e 'IPC_SERVICE_TEST_FAIL' -e 'IPC_SERVICE_TEST_SETUP_FAILED' "$LOG"; then
+        fail "IPC service scheduler regression emitted a failure marker"
     fi
 fi
 

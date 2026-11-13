@@ -1,6 +1,6 @@
 # CharisOS
 
-**An experimental x86_64 operating-system project built from the ground up in freestanding C and NASM.**
+**A native x86_64 operating system built from the ground up in freestanding C and NASM.**
 
 [![CI](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml/badge.svg)](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml)
 ![Architecture](https://img.shields.io/badge/architecture-x86__64-informational)
@@ -14,11 +14,11 @@ Maintained by **Charis Chara** · [Source repository](https://github.com/Liladiz
 
 ## Project overview
 
-CharisOS is a from-scratch operating-system research project targeting x86_64 PCs and virtual machines. The repository contains a freestanding kernel, Multiboot2/GRUB boot path, physical and virtual memory management, interrupt and task infrastructure, a small syscall interface, FAT32-backed storage support, a static ELF executable loader, and a framebuffer-based graphical shell.
+CharisOS is an operating system targeting x86_64 PCs and virtual machines, with a kernel, boot path, memory management, scheduling, storage, networking foundations and a native framebuffer desktop. The repository contains a freestanding kernel, Multiboot2/GRUB boot path, physical and virtual memory management, interrupt and task infrastructure, a small syscall interface, FAT32-backed storage support, a static ELF executable loader, and a framebuffer-based graphical shell.
 
-The project is under active development. It is not currently a general-purpose or production-ready operating system, and it should not be treated as a replacement for Windows or Linux. This README distinguishes implemented and tested behavior from partial subsystems and planned work.
+CharisOS is an operating system under active development. Its kernel boots and runs directly on x86_64 hardware and virtual machines, but the system is not yet a general-purpose or production-ready desktop OS. Several hardware paths, security boundaries, userspace facilities and everyday applications remain incomplete. This README distinguishes implemented and tested behavior from partial subsystems and planned work; compiling a component alone is not evidence that it works end to end.
 
-**Implementation constraints:** kernel and boot implementation use C and NASM. The kernel is built freestanding with GCC and a custom linker script; it does not depend on a host operating-system runtime after boot.
+**Implementation and boot boundary:** the kernel and boot assembly are implemented in C and NASM. The kernel is compiled as a freestanding x86_64 image with GCC and a custom linker script; it does not link against a host operating system's libc or runtime, and it executes directly on the machine after the bootloader transfers control. It is not a self-booting firmware replacement: the current boot path relies on BIOS or UEFI firmware and GRUB2 with Multiboot2 to load the kernel and provide the initial boot information. This is the normal firmware → bootloader → operating-system-kernel boundary. The kernel supplies its own memory management, interrupt handling, scheduler and kernel services after handoff.
 
 ## Current state at a glance
 
@@ -75,12 +75,12 @@ Older [run #724 desktop capture](docs/screenshots/charisos-desktop-run-724.png),
 
 ## Important limitations
 
-CharisOS is still an early-stage kernel and shell. In particular:
+CharisOS is a developing operating system whose kernel, userspace and desktop are still being built out. In particular:
 
 - The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, keyboard resize, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
 - The workspace exposes direct shortcuts for Files, Terminal, Settings and Browser; the separate multi-window capture demonstrates Files and Terminal open together. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
 - Files does not yet support writable files, nested directory navigation or long filenames.
-- The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking, relocations, a complete process lifecycle and a successful end-to-end authorized ELF boot on the full firmware matrix remain unfinished. Successful exec builds a new address space transactionally, preserves the old image on any failure, switches CR3 only after segment and stack construction succeed, and reclaims the old image after the switch. The default image still denies `CAP_ALLOW_EXEC`; a dedicated CI-only image now tests the authorized path.
+- The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking, relocations, process groups/sessions, signal delivery and resource limits remain unfinished. Parent/child lifecycle now includes `waitpid()` with exact-child/any-child selection, `WNOHANG`, validated status copy-out, deferred-stack-safe zombie publication, slot reclamation and orphan adoption, with dedicated QEMU regression coverage. A successful end-to-end authorized ELF boot on the full firmware matrix remains unfinished. Successful exec builds a new address space transactionally, preserves the old image on any failure, switches CR3 only after segment and stack construction succeed, and reclaims the old image after the switch. The default image still denies `CAP_ALLOW_EXEC`; a dedicated CI-only image now tests the authorized path.
 - The `SYSCALL/SYSRET` user-mode path is configured but not yet validated as the normal syscall entry.
 - Capability enforcement covers only selected operations. It is not a complete security boundary.
 - The current entropy source is hardware-feature-dependent. If RDRAND is unavailable, cryptographic token generation is disabled; no weak fallback is presented as cryptographic randomness.
@@ -99,6 +99,7 @@ Do not use this project to store sensitive data or as the only operating system 
 | [TODO.md](./TODO.md) | Current implementation status, milestones and remaining work |
 | [docs/charis-design-language.md](./docs/charis-design-language.md) | Desktop visual principles, scaling goals and current UI limitations |
 | [SECURITY.md](./SECURITY.md) | Security reporting and responsible-disclosure guidance |
+| [docs/RELEASE_INTEGRATION.md](./docs/RELEASE_INTEGRATION.md) | Mainline branch discipline, test evidence and ISO release provenance |
 | [LICENSE](./LICENSE) | MIT license |
 
 ---
@@ -502,9 +503,14 @@ syscall slots 91-93 are unregistered, and the legacy user wrappers are removed.
 Kernel-only blocking receive now uses atomic waiter registration and teardown
 cancellation. QEMU verifies message wake, peer task exit, and revocation of a
 blocked reader's local endpoint, including CANCELLED/PEER_CLOSED results and
-worker reaping. Service-name rendezvous, descriptor attachments and
-transactional receive rollback remain unimplemented. Shared-memory syscalls also remain kernel-only because the
-current API returns raw kernel pointers and has no per-task mapping/revocation
+worker reaping. Kernel-only named service rendezvous supports CAP_IPC_SERVICE
+registration, client-capability policy, blocking connect/accept, explicit
+rejection and bounded pending requests. Scheduler-backed QEMU coverage verifies
+a blocked server accept, blocked client connect, connection wakeup, endpoint
+rights attenuation, request rejection and unregister waking a blocked client.
+Ring-3 service lookup, descriptor attachments and transactional receive rollback
+remain unimplemented. Shared-memory syscalls also remain kernel-only because
+the current API returns raw kernel pointers and has no per-task mapping/revocation
 model. The endpoint, rendezvous and resource-transfer contract is in
 [Authenticated IPC Endpoints and Resource Transfer](./docs/architecture/authenticated-ipc-endpoints-and-resource-transfer.md).
 These are explicit security boundaries, not claims that public IPC is complete.

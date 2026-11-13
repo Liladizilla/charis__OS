@@ -245,6 +245,12 @@ jobs:
           make images-ipc-wait-test
           BUILD_DIR=build/ipc-wait-test ./tools/verify-boot.sh build/ipc-wait-test/charisos-vm.iso --require-ipc-wait
 
+      - name: Verify authenticated IPC service rendezvous in QEMU
+        run: |
+          set -e
+          make images-ipc-service-test
+          BUILD_DIR=build/ipc-service-test ./tools/verify-boot.sh build/ipc-service-test/charisos-vm.iso --require-ipc-service
+
       - name: Boot kernel-stack guard IST containment test
         run: |
           set -e

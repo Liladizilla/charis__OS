@@ -96,6 +96,11 @@ images-ipc-wait-test:
 	rm -rf $(BUILD_DIR)/ipc-wait-test
 	$(MAKE) BUILD_DIR=$(BUILD_DIR)/ipc-wait-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DTEST_IPC_WAITERS" images
 
+# Scheduler-backed QEMU tests for authenticated service connect/accept/reject.
+images-ipc-service-test:
+	rm -rf $(BUILD_DIR)/ipc-service-test
+	$(MAKE) BUILD_DIR=$(BUILD_DIR)/ipc-service-test EXTRA_CFLAGS="$(EXTRA_CFLAGS) -DTEST_IPC_SERVICES" images
+
 # Dedicated image that grants CAP_ALLOW_EXEC only to the bootstrap smoke task.
 # The default and release images continue to deny user-triggered exec.
 images-elf-exec-test:

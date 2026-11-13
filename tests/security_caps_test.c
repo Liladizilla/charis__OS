@@ -35,6 +35,7 @@ static void test_empty_and_unknown_masks_fail_closed(void) {
     task_t task = {0};
     task.capabilities = CAP_ALL;
 
+    assert(security_check_capability(&task, CAP_IPC_SERVICE));
     assert(!security_check_capability(&task, 0));
     assert(!security_check_capability(&task, 1U << 31));
     assert(!security_check_capability(&task, CAP_FS_READ | (1U << 31)));
@@ -42,11 +43,12 @@ static void test_empty_and_unknown_masks_fail_closed(void) {
 
 static void test_unknown_grants_are_removed(void) {
     task_t task = {0};
-    task.capabilities = CAP_FS_READ | CAP_NET_RAW | (1U << 31);
+    task.capabilities = CAP_FS_READ | CAP_NET_RAW | CAP_IPC_SERVICE | (1U << 31);
     security_enforce_capabilities(&task);
 
-    assert(task.capabilities == (CAP_FS_READ | CAP_NET_RAW));
+    assert(task.capabilities == (CAP_FS_READ | CAP_NET_RAW | CAP_IPC_SERVICE));
     assert(security_check_capability(&task, CAP_FS_READ | CAP_NET_RAW));
+    assert(security_check_capability(&task, CAP_IPC_SERVICE));
     assert(!security_check_capability(&task, 1U << 31));
 
     security_enforce_capabilities(NULL);
