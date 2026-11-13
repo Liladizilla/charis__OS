@@ -92,6 +92,11 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/dhcp_packet_test.c kernel/dhcp.c -Wl,--gc-sections -o /tmp/dhcp_packet_test
           /tmp/dhcp_packet_test
 
+      - name: Test DNS response question and answer-owner authentication
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/dns_response_test.c -o /tmp/dns_response_test
+          /tmp/dns_response_test
+
       - name: Test socket table initialization and slot reuse
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/socket_init_test.c kernel/socket.c -Wl,--gc-sections -o /tmp/socket_init_test
