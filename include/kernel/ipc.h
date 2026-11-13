@@ -30,6 +30,8 @@ typedef u64 ipc_handle_t;
 #define IPC_WAIT_STATUS_PEER_CLOSED   3
 #define IPC_WAIT_STATUS_CANCELLED     4
 
+void ipc_init(void);
+
 /* Kernel-only: atomically install one endpoint in each live kernel task. */
 bool ipc_endpoint_pair_create(task_t* first_task, task_t* second_task,
                               u32 first_rights, u32 second_rights,
