@@ -82,6 +82,11 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/http_chunked_test.c -o /tmp/http_chunked_test
           /tmp/http_chunked_test
 
+      - name: Test native calculator window input and arithmetic
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/calculator_ui_test.c -Wl,--gc-sections -o /tmp/calculator_ui_test
+          /tmp/calculator_ui_test
+
       - name: Test terminal ASCII banner geometry
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/terminal_ascii_layout_test.c -o /tmp/terminal_ascii_layout_test
