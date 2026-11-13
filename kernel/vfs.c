@@ -388,10 +388,13 @@ void fd_file_io_unlock(vfs_open_file_t* file, u64 irq_flags) {
 static void fd_table_set_standard_locked(fd_entry_t* table) {
     table[FD_STDIN].file = &std_input_file;
     table[FD_STDIN].rights = FD_RIGHT_READ;
+    table[FD_STDIN].reserved = false;
     table[FD_STDOUT].file = &std_output_file;
     table[FD_STDOUT].rights = FD_RIGHT_WRITE;
+    table[FD_STDOUT].reserved = false;
     table[FD_STDERR].file = &std_output_file;
     table[FD_STDERR].rights = FD_RIGHT_WRITE;
+    table[FD_STDERR].reserved = false;
 }
 
 void fd_table_init(fd_entry_t* table) {
@@ -400,6 +403,7 @@ void fd_table_init(fd_entry_t* table) {
     for (u32 i = 0; i < MAX_FDS; i++) {
         table[i].file = NULL;
         table[i].rights = 0;
+        table[i].reserved = false;
         /* Generation is deliberately preserved for task-slot reuse. */
     }
     fd_table_set_standard_locked(table);
@@ -467,7 +471,8 @@ fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights,
     u32 slot = MAX_FDS;
     for (u32 i = 3; i < MAX_FDS; i++) {
         fd_entry_t* entry = &task->fd_table[i];
-        if (!entry->file && entry->generation < FD_HANDLE_GENERATION_MAX) {
+        if (!entry->file && !entry->reserved &&
+            entry->generation < FD_HANDLE_GENERATION_MAX) {
             slot = i;
             break;
         }
@@ -564,7 +569,8 @@ fd_handle_t fd_duplicate_to(fd_handle_t source, u32 recipient_pid,
     u32 destination_slot = MAX_FDS;
     for (u32 i = 3; i < MAX_FDS; i++) {
         fd_entry_t* entry = &recipient->fd_table[i];
-        if (!entry->file && entry->generation < FD_HANDLE_GENERATION_MAX) {
+        if (!entry->file && !entry->reserved &&
+            entry->generation < FD_HANDLE_GENERATION_MAX) {
             destination_slot = i;
             break;
         }
@@ -591,6 +597,122 @@ fd_handle_t fd_duplicate_to(fd_handle_t source, u32 recipient_pid,
 
     fd_table_unlock(irq_flags);
     return duplicate;
+}
+
+/*
+ * Reserve one recipient descriptor slot without publishing a file reference.
+ * Reservations consume a generation immediately, so cancel/exit cannot make
+ * a stale unpublished handle valid later. No allocation or callback occurs
+ * while the descriptor-table lock is held.
+ */
+bool fd_transfer_reserve(u32 recipient_pid, u32 rights,
+                         fd_transfer_reservation_t* reservation) {
+    if (!reservation || !recipient_pid || !rights ||
+        (rights & ~FD_RIGHT_MASK))
+        return false;
+    *reservation = (fd_transfer_reservation_t){0};
+
+    u64 irq_flags = fd_table_lock();
+    task_t* recipient = task_find_by_pid(recipient_pid);
+    if (!recipient || recipient->pid != recipient_pid ||
+        recipient->state == TASK_STATE_UNUSED ||
+        recipient->state == TASK_STATE_ALLOCATING ||
+        recipient->state == TASK_STATE_EXITING ||
+        recipient->state == TASK_STATE_ZOMBIE) {
+        fd_table_unlock(irq_flags);
+        return false;
+    }
+
+    u32 slot = MAX_FDS;
+    for (u32 i = 3; i < MAX_FDS; i++) {
+        fd_entry_t* entry = &recipient->fd_table[i];
+        if (!entry->file && !entry->reserved &&
+            entry->generation < FD_HANDLE_GENERATION_MAX) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == MAX_FDS) {
+        fd_table_unlock(irq_flags);
+        return false;
+    }
+
+    fd_entry_t* entry = &recipient->fd_table[slot];
+    u32 generation = entry->generation + 1u;
+    entry->generation = generation;
+    entry->reserved = true;
+    entry->rights = 0;
+    reservation->recipient_pid = recipient_pid;
+    reservation->slot = slot;
+    reservation->generation = generation;
+    reservation->rights = rights;
+    fd_table_unlock(irq_flags);
+    return true;
+}
+
+/*
+ * Commit is the only operation that publishes a reserved entry. The caller
+ * passes an already-pinned reference. If validation fails, ownership stays
+ * with the caller; this function never releases it behind the caller's back.
+ */
+fd_handle_t fd_transfer_commit(fd_transfer_reservation_t* reservation,
+                               vfs_open_file_t* file) {
+    if (!reservation || !file || !reservation->recipient_pid ||
+        reservation->slot < 3u || reservation->slot >= MAX_FDS ||
+        !reservation->generation || !reservation->rights ||
+        (reservation->rights & ~FD_RIGHT_MASK))
+        return FD_HANDLE_INVALID;
+
+    u64 irq_flags = fd_table_lock();
+    task_t* recipient = task_find_by_pid(reservation->recipient_pid);
+    if (!recipient || recipient->pid != reservation->recipient_pid ||
+        recipient->state == TASK_STATE_UNUSED ||
+        recipient->state == TASK_STATE_ALLOCATING ||
+        recipient->state == TASK_STATE_EXITING ||
+        recipient->state == TASK_STATE_ZOMBIE) {
+        fd_table_unlock(irq_flags);
+        return FD_HANDLE_INVALID;
+    }
+
+    fd_entry_t* entry = &recipient->fd_table[reservation->slot];
+    if (!entry->reserved || entry->file ||
+        entry->generation != reservation->generation) {
+        fd_table_unlock(irq_flags);
+        return FD_HANDLE_INVALID;
+    }
+
+    fd_handle_t handle = ((u64)recipient->pid << 32) |
+                         ((u64)reservation->generation << FD_HANDLE_SLOT_BITS) |
+                         reservation->slot;
+    entry->file = file;
+    entry->rights = reservation->rights;
+    entry->reserved = false;
+    *reservation = (fd_transfer_reservation_t){0};
+    fd_table_unlock(irq_flags);
+    return handle;
+}
+
+/* Cancellation burns the reserved generation and makes the slot available. */
+void fd_transfer_cancel(fd_transfer_reservation_t* reservation) {
+    if (!reservation || !reservation->recipient_pid ||
+        reservation->slot < 3u || reservation->slot >= MAX_FDS ||
+        !reservation->generation) {
+        if (reservation) *reservation = (fd_transfer_reservation_t){0};
+        return;
+    }
+
+    u64 irq_flags = fd_table_lock();
+    task_t* recipient = task_find_by_pid(reservation->recipient_pid);
+    if (recipient && recipient->pid == reservation->recipient_pid) {
+        fd_entry_t* entry = &recipient->fd_table[reservation->slot];
+        if (entry->reserved && !entry->file &&
+            entry->generation == reservation->generation) {
+            entry->reserved = false;
+            entry->rights = 0;
+        }
+    }
+    *reservation = (fd_transfer_reservation_t){0};
+    fd_table_unlock(irq_flags);
 }
 
 bool fd_close(fd_handle_t handle) {
@@ -625,6 +747,7 @@ void fd_table_close_all(fd_entry_t* table) {
         vfs_open_file_t* file = table[i].file;
         table[i].file = NULL;
         table[i].rights = 0;
+        table[i].reserved = false;
         if (file) release_list[release_count++] = file;
     }
     fd_table_set_standard_locked(table);
