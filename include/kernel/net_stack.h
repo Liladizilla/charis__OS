@@ -4,13 +4,16 @@
 
 void net_stack_init(void);
 bool net_stack_has_ipv4_config(void);
+/* Configure a usable interface host and either zero gateway or a distinct
+ * usable host on the same subnet. Contiguous /31 and /32 masks are supported. */
 bool net_stack_configure_ipv4(const u8 address[4], const u8 subnet_mask[4],
                               const u8 gateway[4]);
 void net_stack_clear_ipv4(void);
 /* Transmit an IPv4 packet. Returns -2 when ARP resolution must complete first. */
 int net_ipv4_send(const u8 destination_ip[4], u8 protocol,
                   const void* payload, usize length);
-/* Resolve an IPv4 next hop; cache misses transmit ARP and return false. */
+/* Resolve only a usable on-link IPv4 neighbour; cache misses transmit ARP
+ * and return false. Off-subnet destinations must be routed via the gateway. */
 bool net_stack_resolve_ipv4(const u8 ip[4], u8 mac_out[6]);
 /* Send UDP over IPv4. Returns bytes sent, -1 on invalid/unavailable route,
  * or -2 when ARP resolution has been started and the caller should retry. */

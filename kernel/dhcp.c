@@ -86,13 +86,7 @@ static bool ipv4_zero(const u8 ip[4]) {
 }
 
 static bool ipv4_unicast(const u8 ip[4]) {
-    if (!ip || ipv4_zero(ip) ||
-        (ip[0] >= 224u && ip[0] <= 239u) ||
-        (ip[0] == 255u && ip[1] == 255u &&
-         ip[2] == 255u && ip[3] == 255u) ||
-        ip[0] == 127u)
-        return false;
-    return true;
+    return ip && ip[0] != 0u && ip[0] != 127u && ip[0] < 224u;
 }
 
 static bool valid_mask(const u8 mask[4]) {
@@ -104,6 +98,30 @@ static bool valid_mask(const u8 mask[4]) {
         else if (zero_seen) return false;
     }
     return true;
+}
+
+static bool ipv4_on_subnet(const u8 address[4], const u8 network_ip[4],
+                           const u8 mask[4]) {
+    if (!address || !network_ip || !mask) return false;
+    for (usize i = 0; i < 4; i++)
+        if ((address[i] & mask[i]) != (network_ip[i] & mask[i]))
+            return false;
+    return true;
+}
+
+/* DHCP leases must identify a usable host address, not the subnet or
+ * directed-broadcast identifier. /31 and /32 have no such exclusions. */
+static bool ipv4_subnet_host(const u8 address[4], const u8 mask[4]) {
+    if (!ipv4_unicast(address) || !valid_mask(mask)) return false;
+    u32 mask_value = ((u32)mask[0] << 24) | ((u32)mask[1] << 16) |
+                     ((u32)mask[2] << 8) | mask[3];
+    u32 host_mask = ~mask_value;
+    if (host_mask <= 1u) return true;
+
+    u32 value = ((u32)address[0] << 24) | ((u32)address[1] << 16) |
+                ((u32)address[2] << 8) | address[3];
+    u32 host_bits = value & host_mask;
+    return host_bits != 0u && host_bits != host_mask;
 }
 
 /* Decode bounded DHCP options. Duplicated singleton options are ignored after
@@ -247,14 +265,27 @@ bool dhcp_decode_reply(const u8* packet, usize length, u32 xid,
     kmemcpy(reply->address, packet + 16u, 4);
     if (!decode_options(packet, length, reply)) return false;
 
+    if (!ipv4_unicast(reply->server)) return false;
+
     if (reply->message_type == DHCP_OFFER &&
-        (!ipv4_unicast(reply->address) || !ipv4_unicast(reply->server)))
+        !ipv4_subnet_host(reply->address, reply->subnet_mask))
+        return false;
+    if (reply->message_type == DHCP_ACK && !ipv4_zero(reply->address) &&
+        !ipv4_subnet_host(reply->address, reply->subnet_mask))
         return false;
 
-    if (reply->message_type == DHCP_ACK && !ipv4_zero(reply->address) &&
-        !ipv4_unicast(reply->address))
-        return false;
-    if (!ipv4_unicast(reply->server))
+    /* A supplied default router must be a different, usable host on the
+     * offered subnet. A DNS server may be remote, but must still be unicast. */
+    if (!ipv4_zero(reply->router)) {
+        if (!ipv4_subnet_host(reply->router, reply->subnet_mask))
+            return false;
+        if (!ipv4_zero(reply->address) &&
+            (bytes_equal(reply->router, reply->address, 4) ||
+             !ipv4_on_subnet(reply->router, reply->address,
+                             reply->subnet_mask)))
+            return false;
+    }
+    if (!ipv4_zero(reply->dns_server) && !ipv4_unicast(reply->dns_server))
         return false;
     return true;
 }

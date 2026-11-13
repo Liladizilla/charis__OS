@@ -104,6 +104,41 @@ static bool valid_netmask(const u8 mask[4]) {
     return true;
 }
 
+static bool ip_is_zero(const u8 ip[4]) {
+    return ip && ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0;
+}
+
+/* Reject unspecified (0/8), loopback (127/8), multicast (224/4) and
+ * reserved high ranges. This accepts unicast addresses without guessing
+ * whether a remote destination is globally routable. */
+static bool ip_is_unicast(const u8 ip[4]) {
+    return ip && ip[0] != 0u && ip[0] != 127u && ip[0] < 224u;
+}
+
+static bool ip_is_on_subnet(const u8 address[4], const u8 network_ip[4],
+                            const u8 mask[4]) {
+    if (!address || !network_ip || !mask) return false;
+    for (usize i = 0; i < 4; i++)
+        if ((address[i] & mask[i]) != (network_ip[i] & mask[i]))
+            return false;
+    return true;
+}
+
+/* A subnet's network and directed-broadcast identifiers are not host
+ * addresses. RFC 3021 /31 links and /32 host routes have no such exclusions. */
+static bool ip_is_subnet_host(const u8 ip[4], const u8 mask[4]) {
+    if (!ip_is_unicast(ip) || !mask || !valid_netmask(mask)) return false;
+    u32 mask_value = ((u32)mask[0] << 24) | ((u32)mask[1] << 16) |
+                     ((u32)mask[2] << 8) | mask[3];
+    u32 host_mask = ~mask_value;
+    if (host_mask <= 1u) return true;
+
+    u32 address = ((u32)ip[0] << 24) | ((u32)ip[1] << 16) |
+                  ((u32)ip[2] << 8) | ip[3];
+    u32 host_bits = address & host_mask;
+    return host_bits != 0u && host_bits != host_mask;
+}
+
 /* Strict dotted-decimal parser; malformed values leave networking unconfigured. */
 static bool parse_ipv4(const char* s, u8 out[4]) {
     if (!s || !s[0]) return false;
@@ -155,25 +190,22 @@ void net_stack_init(void) {
         local_mask[2] = 255;
         local_mask[3] = 0;
     }
-    if (!parse_ipv4(config_get_string("net_gateway", "0.0.0.0"), default_gateway))
+
+    /* A syntactically valid address can still be the subnet/network or
+     * directed-broadcast identifier. Never activate it as a host address. */
+    if (!ip_is_subnet_host(local_ip, local_mask))
+        kmemset(local_ip, 0, sizeof(local_ip));
+
+    if (!parse_ipv4(config_get_string("net_gateway", "0.0.0.0"), default_gateway) ||
+        ip_is_zero(default_gateway) ||
+        !ip_is_subnet_host(default_gateway, local_mask) ||
+        !ip_is_on_subnet(default_gateway, local_ip, local_mask) ||
+        same_bytes(default_gateway, local_ip, sizeof(local_ip)))
         kmemset(default_gateway, 0, sizeof(default_gateway));
 
     net_interface_t* iface = net_get_interface();
     if (iface) kmemcpy(iface->ip_addr, local_ip, sizeof(local_ip));
     stack_ready = true;
-}
-
-static bool ip_is_zero(const u8 ip[4]) {
-    return ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0;
-}
-
-static bool ip_is_unicast(const u8 ip[4]) {
-    if (!ip || ip_is_zero(ip) || ip[0] == 127u ||
-        (ip[0] >= 224u && ip[0] <= 239u) ||
-        (ip[0] == 255u && ip[1] == 255u &&
-         ip[2] == 255u && ip[3] == 255u))
-        return false;
-    return true;
 }
 
 bool net_stack_has_ipv4_config(void) {
@@ -183,14 +215,14 @@ bool net_stack_has_ipv4_config(void) {
 
 bool net_stack_configure_ipv4(const u8 address[4], const u8 mask[4],
                               const u8 gateway[4]) {
-    if (!address || !mask || !gateway || !ip_is_unicast(address) ||
-        !valid_netmask(mask))
+    if (!address || !mask || !gateway ||
+        !valid_netmask(mask) || !ip_is_subnet_host(address, mask))
         return false;
-    if (!ip_is_zero(gateway)) {
-        for (usize i = 0; i < 4; i++)
-            if ((gateway[i] & mask[i]) != (address[i] & mask[i]))
-                return false;
-    }
+    if (!ip_is_zero(gateway) &&
+        (!ip_is_subnet_host(gateway, mask) ||
+         same_bytes(gateway, address, 4) ||
+         !ip_is_on_subnet(gateway, address, mask)))
+        return false;
     net_interface_t* iface = net_get_interface();
     if (!iface || !iface->initialized) return false;
 
@@ -228,28 +260,11 @@ static bool mac_is_valid_unicast(const u8 mac[6]) {
     return mac && !mac_is_zero(mac) && !(mac[0] & 1u);
 }
 
-static bool ip_is_directed_broadcast(const u8 ip[4]) {
-    if (!ip || !ip_is_configured()) return false;
-    u32 host_mask = 0;
-    for (usize i = 0; i < 4; i++)
-        host_mask = (host_mask << 8) | (u8)~local_mask[i];
-    /* /31 and /32 have no directed-broadcast address. */
-    if (host_mask <= 1u) return false;
-
-    bool same_subnet = true;
-    bool all_host_bits = true;
-    for (usize i = 0; i < 4; i++) {
-        if ((ip[i] & local_mask[i]) != (local_ip[i] & local_mask[i]))
-            same_subnet = false;
-        if ((u8)(ip[i] | local_mask[i]) != 0xFFu)
-            all_host_bits = false;
-    }
-    return same_subnet && all_host_bits;
-}
-
 static bool arp_sender_ip_valid(const u8 ip[4]) {
-    return ip_is_unicast(ip) && !same_bytes(ip, local_ip, 4) &&
-           !ip_is_directed_broadcast(ip);
+    /* ARP only resolves neighbours on our directly connected subnet. */
+    return ip_is_subnet_host(ip, local_mask) &&
+           ip_is_on_subnet(ip, local_ip, local_mask) &&
+           !same_bytes(ip, local_ip, 4);
 }
 
 static arp_pending_entry_t* arp_pending_find(const u8 ip[4]) {
@@ -334,8 +349,9 @@ static void arp_send_request(const u8 ip[4], net_interface_t* iface,
  * at a bounded cadence; unanswered neighbours enter a short failure hold-down. */
 bool net_stack_resolve_ipv4(const u8 ip[4], u8 mac_out[6]) {
     if (!stack_ready) net_stack_init();
-    if (!ip || !mac_out || !ip_is_configured() || !ip_is_unicast(ip) ||
-        ip_is_directed_broadcast(ip))
+    if (!ip || !mac_out || !ip_is_configured() ||
+        !ip_is_subnet_host(ip, local_mask) ||
+        !ip_is_on_subnet(ip, local_ip, local_mask))
         return false;
 
     net_interface_t* iface = net_get_interface();
@@ -370,19 +386,22 @@ bool net_stack_resolve_ipv4(const u8 ip[4], u8 mac_out[6]) {
 
 /* Select the destination itself on-link, otherwise the configured gateway. */
 static bool route_ipv4(const u8 destination[4], u8 next_hop[4]) {
-    if (!ip_is_configured() || !destination) return false;
-    bool on_link = true;
-    for (usize i = 0; i < 4; i++) {
-        if ((destination[i] & local_mask[i]) != (local_ip[i] & local_mask[i])) {
-            on_link = false;
-            break;
-        }
-    }
-    if (on_link) {
+    if (!ip_is_configured() || !destination || !ip_is_unicast(destination))
+        return false;
+
+    if (ip_is_on_subnet(destination, local_ip, local_mask)) {
+        if (!ip_is_subnet_host(destination, local_mask)) return false;
         kmemcpy(next_hop, destination, 4);
         return true;
     }
-    if (ip_is_zero(default_gateway)) return false;
+
+    /* The gateway itself must remain a valid, distinct host on the local
+     * subnet. An external destination is never sent to ARP directly. */
+    if (ip_is_zero(default_gateway) ||
+        !ip_is_subnet_host(default_gateway, local_mask) ||
+        !ip_is_on_subnet(default_gateway, local_ip, local_mask) ||
+        same_bytes(default_gateway, local_ip, 4))
+        return false;
     kmemcpy(next_hop, default_gateway, 4);
     return true;
 }

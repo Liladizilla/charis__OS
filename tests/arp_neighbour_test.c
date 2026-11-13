@@ -55,11 +55,21 @@ int kstrncmp(const char* a, const char* b, usize n) { return strncmp(a, b, n); }
 char* kstrncpy(char* dst, const char* src, usize n) {
     return strncpy(dst, src, n);
 }
+static const char* configured_ip_override;
+static const char* configured_mask_override;
+static const char* configured_gateway_override;
+
 bool config_get_bool(const char* key, bool fallback) {
     (void)key; return fallback;
 }
 const char* config_get_string(const char* key, const char* fallback) {
-    (void)key; return fallback;
+    if (strcmp(key, "net_ip") == 0 && configured_ip_override)
+        return configured_ip_override;
+    if (strcmp(key, "net_mask") == 0 && configured_mask_override)
+        return configured_mask_override;
+    if (strcmp(key, "net_gateway") == 0 && configured_gateway_override)
+        return configured_gateway_override;
+    return fallback;
 }
 void net_tcp_input(const u8 source[4], const u8 destination[4],
                    const u8* segment, usize length) {
@@ -85,6 +95,9 @@ static const u8 zero_mac[6] = {0, 0, 0, 0, 0, 0};
 static const u8 broadcast_mac[6] = {255, 255, 255, 255, 255, 255};
 
 static void reset_stack(void) {
+    configured_ip_override = NULL;
+    configured_mask_override = NULL;
+    configured_gateway_override = NULL;
     memset(&test_iface, 0, sizeof(test_iface));
     memcpy(test_iface.mac_addr, local_mac_test, 6);
     test_iface.initialized = true;
@@ -279,12 +292,178 @@ static void test_valid_request_is_replied_to_and_learned(void) {
     assert(transmitted_count == 1u);
 }
 
+static void test_ipv4_interface_and_gateway_boundaries(void) {
+    reset_stack();
+    const u8 network_ip[4] = {192, 168, 1, 0};
+    const u8 directed_broadcast[4] = {192, 168, 1, 255};
+    const u8 zero_ip[4] = {0, 1, 2, 3};
+    const u8 loopback_ip[4] = {127, 0, 0, 1};
+    const u8 multicast_ip[4] = {224, 0, 0, 1};
+    const u8 class_e_ip[4] = {240, 0, 0, 1};
+    const u8 off_subnet_gateway[4] = {10, 0, 0, 1};
+    const u8 self_gateway[4] = {192, 168, 1, 20};
+    const u8 bad_network_gateway[4] = {192, 168, 1, 0};
+    const u8 bad_broadcast_gateway[4] = {192, 168, 1, 255};
+    const u8 no_gateway[4] = {0, 0, 0, 0};
+
+    assert(!net_stack_configure_ipv4(network_ip, mask_test, no_gateway));
+    assert(!net_stack_configure_ipv4(directed_broadcast, mask_test, no_gateway));
+    assert(!net_stack_configure_ipv4(zero_ip, mask_test, no_gateway));
+    assert(!net_stack_configure_ipv4(loopback_ip, mask_test, no_gateway));
+    assert(!net_stack_configure_ipv4(multicast_ip, mask_test, no_gateway));
+    assert(!net_stack_configure_ipv4(class_e_ip, mask_test, no_gateway));
+
+    assert(!net_stack_configure_ipv4(local_ip_test, mask_test,
+                                     bad_network_gateway));
+    assert(!net_stack_configure_ipv4(local_ip_test, mask_test,
+                                     bad_broadcast_gateway));
+    assert(!net_stack_configure_ipv4(local_ip_test, mask_test,
+                                     self_gateway));
+    assert(!net_stack_configure_ipv4(local_ip_test, mask_test,
+                                     off_subnet_gateway));
+
+    assert(net_stack_configure_ipv4(local_ip_test, mask_test, no_gateway));
+    assert(net_stack_has_ipv4_config());
+    assert(memcmp(local_ip, local_ip_test, 4) == 0);
+    assert(ip_is_zero(default_gateway));
+    assert(net_stack_configure_ipv4(local_ip_test, mask_test,
+                                    (const u8[4]){192, 168, 1, 1}));
+}
+
+static void test_point_to_point_and_host_routes(void) {
+    reset_stack();
+    const u8 point_to_point_ip[4] = {10, 20, 30, 0};
+    const u8 point_to_point_peer[4] = {10, 20, 30, 1};
+    const u8 point_to_point_mask[4] = {255, 255, 255, 254};
+    const u8 gateway_mac[6] = {0x02, 0xAB, 0xCD, 0xEF, 0x10, 0x20};
+    u8 resolved[6] = {0};
+
+    /* RFC 3021 /31 has two usable endpoints and no network/broadcast IDs. */
+    assert(net_stack_configure_ipv4(point_to_point_ip, point_to_point_mask,
+                                    point_to_point_peer));
+    assert(!net_stack_resolve_ipv4(point_to_point_peer, resolved));
+    assert(transmitted_count == 1u);
+    assert(memcmp(last_sent_arp()->tpa, point_to_point_peer, 4) == 0);
+    queue_arp(ARP_REPLY, gateway_mac, local_mac_test, gateway_mac,
+              point_to_point_peer, local_mac_test, point_to_point_ip);
+    net_handle_tcpip();
+    assert(net_stack_resolve_ipv4(point_to_point_peer, resolved));
+    assert(memcmp(resolved, gateway_mac, 6) == 0);
+
+    /* A /32 is a valid host route but does not create an on-link peer. */
+    reset_stack();
+    const u8 host_route_ip[4] = {203, 0, 113, 10};
+    const u8 host_route_mask[4] = {255, 255, 255, 255};
+    assert(net_stack_configure_ipv4(host_route_ip, host_route_mask,
+                                    (const u8[4]){0, 0, 0, 0}));
+    assert(net_stack_resolve_ipv4(host_route_ip, resolved));
+    assert(memcmp(resolved, local_mac_test, 6) == 0);
+    assert(transmitted_count == 0u);
+    assert(!net_stack_resolve_ipv4((const u8[4]){203, 0, 113, 11}, resolved));
+    assert(transmitted_count == 0u);
+}
+
+static void test_off_subnet_neighbours_are_never_arped_directly(void) {
+    reset_stack();
+    u8 resolved[6] = {0};
+    const u8 external_ip[4] = {8, 8, 8, 8};
+    assert(!net_stack_resolve_ipv4(external_ip, resolved));
+    assert(transmitted_count == 0u);
+}
+
+static void test_ipv4_send_uses_gateway_mac_but_keeps_remote_ip(void) {
+    reset_stack();
+    const u8 gateway_ip[4] = {192, 168, 1, 1};
+    const u8 gateway_mac[6] = {0x02, 0x60, 0x70, 0x80, 0x90, 0xA0};
+    const u8 external_ip[4] = {8, 8, 8, 8};
+    const u8 payload[] = {0xCA, 0xFE, 0x01};
+    arp_cache_learn(gateway_ip, gateway_mac);
+
+    assert(net_ipv4_send(external_ip, 99u, payload, sizeof(payload)) > 0);
+    assert(transmitted_count == 1u);
+    const ethernet_header_t* eth =
+        (const ethernet_header_t*)transmitted[0];
+    assert(read_be16((const u8*)&eth->type_hi) == ETH_TYPE_IPV4);
+    assert(memcmp(eth->dest, gateway_mac, 6) == 0);
+    const u8* ip = transmitted[0] + ETH_HEADER_LEN;
+    assert(memcmp(ip + 12u, local_ip_test, 4) == 0);
+    assert(memcmp(ip + 16u, external_ip, 4) == 0);
+    assert(memcmp(ip + IPV4_MIN_LEN, payload, sizeof(payload)) == 0);
+
+    reset_stack();
+    arp_cache_learn(gateway_ip, gateway_mac);
+    assert(net_udp_send(external_ip, 53u, 40000u,
+                        payload, sizeof(payload)) > 0);
+    assert(transmitted_count == 1u);
+    eth = (const ethernet_header_t*)transmitted[0];
+    assert(read_be16((const u8*)&eth->type_hi) == ETH_TYPE_IPV4);
+    assert(memcmp(eth->dest, gateway_mac, 6) == 0);
+    ip = transmitted[0] + ETH_HEADER_LEN;
+    assert(memcmp(ip + 16u, external_ip, 4) == 0);
+    assert(read_be16(ip + IPV4_MIN_LEN + 2u) == 53u);
+}
+
+static void test_missing_gateway_and_invalid_destinations_fail_closed(void) {
+    reset_stack();
+    const u8 no_gateway[4] = {0, 0, 0, 0};
+    const u8 external_ip[4] = {8, 8, 8, 8};
+    const u8 network_ip[4] = {192, 168, 1, 0};
+    const u8 broadcast_ip[4] = {192, 168, 1, 255};
+    const u8 multicast_ip[4] = {239, 1, 2, 3};
+    const u8 payload[] = {1, 2, 3};
+
+    assert(net_stack_configure_ipv4(local_ip_test, mask_test, no_gateway));
+    assert(net_ipv4_send(external_ip, 1u, payload, sizeof(payload)) == -1);
+    assert(net_udp_send(external_ip, 53u, 40000u,
+                        payload, sizeof(payload)) == -1);
+    assert(net_ipv4_send(network_ip, 1u, payload, sizeof(payload)) == -1);
+    assert(net_ipv4_send(broadcast_ip, 1u, payload, sizeof(payload)) == -1);
+    assert(net_ipv4_send(multicast_ip, 1u, payload, sizeof(payload)) == -1);
+    assert(transmitted_count == 0u);
+}
+
+static void test_persisted_ipv4_configuration_is_validated(void) {
+    memset(&test_iface, 0, sizeof(test_iface));
+    memcpy(test_iface.mac_addr, local_mac_test, 6);
+    test_iface.initialized = true;
+    configured_ip_override = "192.168.1.0";
+    configured_mask_override = "255.255.255.0";
+    configured_gateway_override = "192.168.1.1";
+    stack_ready = false;
+    net_stack_init();
+    assert(!net_stack_has_ipv4_config());
+    assert(ip_is_zero(default_gateway));
+
+    configured_ip_override = "192.168.1.20";
+    configured_gateway_override = "192.168.1.255";
+    stack_ready = false;
+    net_stack_init();
+    assert(net_stack_has_ipv4_config());
+    assert(memcmp(local_ip, local_ip_test, 4) == 0);
+    assert(ip_is_zero(default_gateway));
+
+    configured_gateway_override = "192.168.1.1";
+    stack_ready = false;
+    net_stack_init();
+    assert(memcmp(default_gateway, (const u8[4]){192, 168, 1, 1}, 4) == 0);
+
+    configured_ip_override = NULL;
+    configured_mask_override = NULL;
+    configured_gateway_override = NULL;
+}
+
 int main(void) {
     test_cache_miss_requests_are_coalesced_and_retried();
     test_only_solicited_matching_arp_reply_is_learned();
     test_unsolicited_and_spoofed_replies_are_ignored();
     test_invalid_sender_identity_and_unrelated_requests_are_ignored();
     test_valid_request_is_replied_to_and_learned();
-    puts("ARP neighbour validation and retry tests passed");
+    test_ipv4_interface_and_gateway_boundaries();
+    test_point_to_point_and_host_routes();
+    test_off_subnet_neighbours_are_never_arped_directly();
+    test_ipv4_send_uses_gateway_mac_but_keeps_remote_ip();
+    test_missing_gateway_and_invalid_destinations_fail_closed();
+    test_persisted_ipv4_configuration_is_validated();
+    puts("ARP neighbour and IPv4 route validation tests passed");
     return 0;
 }
