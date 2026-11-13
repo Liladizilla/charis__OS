@@ -2,9 +2,6 @@
 #include <kernel/cursor.h>
 #include <kernel/fb.h>
 #include <kernel/mouse.h>
-#ifdef CURSOR_TRACE
-#include <kernel/serial.h>
-#endif
 
 #define CURSOR_WIDTH  10u
 #define CURSOR_HEIGHT 16u
@@ -67,18 +64,7 @@ static bool cursor_overlay_intact(void) {
 
             u32 actual = fb_get_pixel((u32)cursor_saved_x + x,
                                       (u32)cursor_saved_y + y);
-            if (!cursor_color_matches(actual, expected)) {
-#ifdef CURSOR_TRACE
-                static u32 cursor_mismatch_logs = 0;
-                if (cursor_mismatch_logs < 24u) {
-                    cursor_mismatch_logs++;
-                    serial_printf("CURSOR_TRACE mismatch at=%d,%d offset=%u,%u actual=%08x expected=%08x bpp=%u\n",
-                                  cursor_saved_x, cursor_saved_y, x, y,
-                                  actual, expected, g_framebuffer.bpp);
-                }
-#endif
-                return false;
-            }
+            if (!cursor_color_matches(actual, expected)) return false;
         }
     }
     return true;
@@ -111,6 +97,32 @@ static void cursor_remove_stale_pixels(void) {
                 fb_put_pixel(px, py, cursor_under[y][x]);
         }
     }
+}
+
+bool cursor_intersects_rect(u32 x, u32 y, u32 width, u32 height) {
+    if (!g_framebuffer.initialized || !width || !height ||
+        x >= g_framebuffer.width || y >= g_framebuffer.height)
+        return false;
+
+    if (width > g_framebuffer.width - x) width = g_framebuffer.width - x;
+    if (height > g_framebuffer.height - y) height = g_framebuffer.height - y;
+
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    if (mouse.x < 0 || mouse.y < 0 ||
+        (u32)mouse.x >= g_framebuffer.width ||
+        (u32)mouse.y >= g_framebuffer.height)
+        return false;
+
+    u32 cursor_x = (u32)mouse.x;
+    u32 cursor_y = (u32)mouse.y;
+    u32 cursor_width = g_framebuffer.width - cursor_x;
+    u32 cursor_height = g_framebuffer.height - cursor_y;
+    if (cursor_width > CURSOR_WIDTH) cursor_width = CURSOR_WIDTH;
+    if (cursor_height > CURSOR_HEIGHT) cursor_height = CURSOR_HEIGHT;
+
+    return cursor_x < x + width && x < cursor_x + cursor_width &&
+           cursor_y < y + height && y < cursor_y + cursor_height;
 }
 
 void cursor_erase(void) {
@@ -172,11 +184,6 @@ void cursor_draw(void) {
         cursor_saved_valid = false;
     }
 
-#ifdef CURSOR_TRACE
-    serial_printf("CURSOR_TRACE draw x=%d y=%d old=%d,%d valid=%u\n",
-                  mouse.x, mouse.y, cursor_saved_x, cursor_saved_y,
-                  cursor_saved_valid ? 1u : 0u);
-#endif
     cursor_erase();
     fb_reset_clip();
 
