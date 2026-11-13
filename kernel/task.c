@@ -173,6 +173,12 @@ void task_init(void) {
         task_pool[i].ipc_wait_endpoint = NULL;
         task_pool[i].ipc_wait_next = NULL;
         task_pool[i].ipc_wait_status = 0;
+        task_pool[i].ipc_service_wait = NULL;
+        task_pool[i].ipc_connect_request = NULL;
+        task_pool[i].ipc_connect_request_id = 0;
+        task_pool[i].ipc_connect_result = 0;
+        task_pool[i].ipc_connect_status = 0;
+        task_pool[i].ipc_service_wait_status = 0;
         task_pool[i].mm.pml4 = NULL;
         task_pool[i].mm.heap_start = 0;
         task_pool[i].mm.heap_end = 0;
@@ -386,6 +392,8 @@ static bool task_recycle_zombie(task_t* task) {
         task->stack_base || task->kernel_stack_pages[0] ||
         task->kernel_stack_pages[1] || task->address_space ||
         task->ipc_wait_endpoint || task->ipc_wait_next ||
+        task->ipc_service_wait || task->ipc_connect_request ||
+        task->ipc_connect_request_id ||
         task->user_stack_base || task->user_rsp ||
         task->user_stack_pages[0] || task->user_stack_pages[1] ||
         task->user_code_page_count || task->mm.pml4 || task->mm.vmas) {
@@ -426,6 +434,12 @@ static bool task_recycle_zombie(task_t* task) {
     task->ipc_wait_endpoint = NULL;
     task->ipc_wait_next = NULL;
     task->ipc_wait_status = 0;
+    task->ipc_service_wait = NULL;
+    task->ipc_connect_request = NULL;
+    task->ipc_connect_request_id = 0;
+    task->ipc_connect_result = 0;
+    task->ipc_connect_status = 0;
+    task->ipc_service_wait_status = 0;
     task->is_user = false;
     task->started = false;
     task->scheduler_queued = false;
@@ -582,8 +596,13 @@ static bool task_init_common(task_t* task, const char* name, u32 capabilities, b
         task->user_code_pages[page] = 0;
     task->event_data = 0;
     task->waiting_event = 0;
-    if (task->ipc_wait_endpoint || task->ipc_wait_next) return false;
+    if (task->ipc_wait_endpoint || task->ipc_wait_next ||
+        task->ipc_service_wait || task->ipc_connect_request ||
+        task->ipc_connect_request_id) return false;
     task->ipc_wait_status = 0;
+    task->ipc_connect_result = 0;
+    task->ipc_connect_status = 0;
+    task->ipc_service_wait_status = 0;
     /* Generations are preserved across task-slot reuse. */
     for (u32 endpoint = 0; endpoint < IPC_MAX_ENDPOINTS; endpoint++) {
         if (task->ipc_endpoints[endpoint]) return false;
