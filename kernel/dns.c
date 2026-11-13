@@ -83,27 +83,72 @@ static bool encode_hostname(const char* host, u8* out, usize cap,
     return true;
 }
 
-/* Skip an encoded DNS name, including compressed names, without following
- * pointers. This is sufficient for locating the next fixed-size field. */
-static bool skip_name(const u8* packet, usize length, usize* offset) {
+/* Parse a DNS name and compare it with the outstanding query name.
+ * Compression pointers must point backward into this packet. A strict step
+ * bound rejects cycles and pathological pointer chains. */
+static bool parse_response_name(const u8* packet, usize length,
+                                usize* offset, bool* matches_query) {
+    if (!packet || !offset || !matches_query || *offset >= length) return false;
+
     usize pos = *offset;
+    usize consumed = 0;
+    usize host_pos = 0;
+    usize host_length = kstrlen(pending_host);
+    bool jumped = false;
+    bool matches = true;
+
     for (usize steps = 0; steps < 128u; steps++) {
         if (pos >= length) return false;
         u8 label = packet[pos++];
+
         if ((label & 0xC0u) == 0xC0u) {
             if (pos >= length) return false;
-            pos++;
-            *offset = pos;
-            return true;
+            usize pointer = ((usize)(label & 0x3Fu) << 8) | packet[pos++];
+            /* RFC compression offsets are 14-bit and point to prior data. */
+            if (pointer >= length || pointer >= pos - 2u) return false;
+            if (!jumped) consumed = pos;
+            jumped = true;
+            pos = pointer;
+            continue;
         }
+
         if (label & 0xC0u) return false;
         if (label == 0) {
-            *offset = pos;
+            if (host_pos != host_length) matches = false;
+            *offset = jumped ? consumed : pos;
+            *matches_query = matches;
             return true;
         }
-        if ((usize)label > length - pos) return false;
-        pos += label;
+        if (label > 63u || (usize)label > length - pos) return false;
+
+        for (u8 i = 0; i < label; i++) {
+            char actual = (char)packet[pos++];
+            if (host_pos >= host_length) {
+                matches = false;
+            } else {
+                char expected = pending_host[host_pos];
+                if (expected >= 'A' && expected <= 'Z')
+                    expected = (char)(expected - 'A' + 'a');
+                if (actual >= 'A' && actual <= 'Z')
+                    actual = (char)(actual - 'A' + 'a');
+                if (actual != expected) matches = false;
+            }
+            host_pos++;
+        }
+
+        if (host_pos < host_length) {
+            if (pending_host[host_pos] == '.') {
+                host_pos++;
+            } else {
+                matches = false;
+            }
+        } else if (host_pos == host_length) {
+            /* The next label must be the root terminator. */
+        } else {
+            matches = false;
+        }
     }
+
     return false;
 }
 
@@ -118,36 +163,46 @@ static void finish_query(bool success, const u8 ip[4]) {
 
 static void handle_dns_response(u16 source_port, const u8 source_ip[4],
                                 const u8* payload, usize length) {
-    if (!active || source_port != DNS_PORT || !ip_equal(source_ip, dns_server) ||
-        !payload || length < 12u || read_be16(payload) != pending_id)
+    if (!active || source_port != DNS_PORT || !source_ip ||
+        !ip_equal(source_ip, dns_server) || !payload || length < 12u ||
+        read_be16(payload) != pending_id)
         return;
 
-    u16 flags = read_be16(payload + 2);
-    u16 questions = read_be16(payload + 4);
-    u16 answers = read_be16(payload + 6);
-    if (!(flags & 0x8000u) || (flags & 0x0200u) || (flags & 0x000Fu) != 0 ||
-        questions == 0) {
+    u16 flags = read_be16(payload + 2u);
+    u16 questions = read_be16(payload + 4u);
+    u16 answers = read_be16(payload + 6u);
+
+    /* This resolver issues one standard A/IN question. Do not accept a
+     * response with a different opcode, question count, or truncated body. */
+    if (!(flags & 0x8000u) || (flags & 0x7800u) != 0 ||
+        (flags & 0x0200u) || (flags & 0x000Fu) != 0 ||
+        questions != 1u) {
         const u8 zero[4] = {0, 0, 0, 0};
         finish_query(false, zero);
         return;
     }
 
     usize offset = 12u;
-    for (u16 i = 0; i < questions; i++) {
-        if (!skip_name(payload, length, &offset) || offset + 4u > length) {
-            const u8 zero[4] = {0, 0, 0, 0};
-            finish_query(false, zero);
-            return;
-        }
-        offset += 4u;
+    bool question_matches = false;
+    if (!parse_response_name(payload, length, &offset, &question_matches) ||
+        !question_matches || offset > length || length - offset < 4u ||
+        read_be16(payload + offset) != 1u ||
+        read_be16(payload + offset + 2u) != 1u) {
+        const u8 zero[4] = {0, 0, 0, 0};
+        finish_query(false, zero);
+        return;
     }
+    offset += 4u;
 
     for (u16 i = 0; i < answers; i++) {
-        if (!skip_name(payload, length, &offset) || offset + 10u > length) {
+        bool owner_matches = false;
+        if (!parse_response_name(payload, length, &offset, &owner_matches) ||
+            offset > length || length - offset < 10u) {
             const u8 zero[4] = {0, 0, 0, 0};
             finish_query(false, zero);
             return;
         }
+
         u16 type = read_be16(payload + offset);
         u16 klass = read_be16(payload + offset + 2u);
         u16 rdlength = read_be16(payload + offset + 8u);
@@ -157,9 +212,12 @@ static void handle_dns_response(u16 source_port, const u8 source_ip[4],
             finish_query(false, zero);
             return;
         }
-        if (type == 1u && klass == 1u && rdlength == 4u) {
+
+        /* An unrelated A record in the answer section must never satisfy
+         * this query. CNAME chasing remains an explicit future feature. */
+        if (owner_matches && type == 1u && klass == 1u && rdlength == 4u) {
             u8 ip[4];
-            kmemcpy(ip, payload + offset, 4);
+            kmemcpy(ip, payload + offset, sizeof(ip));
             if (ip[0] || ip[1] || ip[2] || ip[3]) {
                 finish_query(true, ip);
                 return;
@@ -167,6 +225,7 @@ static void handle_dns_response(u16 source_port, const u8 source_ip[4],
         }
         offset += rdlength;
     }
+
     const u8 zero[4] = {0, 0, 0, 0};
     finish_query(false, zero);
 }
