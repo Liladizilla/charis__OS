@@ -92,6 +92,9 @@ static bool ipv4_unicast(const u8 ip[4]) {
 static bool valid_mask(const u8 mask[4]) {
     u32 value = ((u32)mask[0] << 24) | ((u32)mask[1] << 16) |
                 ((u32)mask[2] << 8) | mask[3];
+    /* A zero-length prefix makes every IPv4 destination appear on-link,
+     * which breaks next-hop routing. /1 through /32 remain supported. */
+    if (!value) return false;
     bool zero_seen = false;
     for (u32 bit = 0x80000000u; bit; bit >>= 1) {
         if (!(value & bit)) zero_seen = true;

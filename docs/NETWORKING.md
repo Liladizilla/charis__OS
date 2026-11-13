@@ -6,7 +6,7 @@
 - ARP replies for the configured local address, a bounded neighbour cache, sender identity checks and bounded neighbour resolution retries.
 - IPv4 header validation, fragment rejection, ICMP echo replies and UDP receive dispatch.
 - Static IPv4 next-hop selection using a subnet mask and optional gateway.
-- IPv4 interface addresses and default gateways are validated as usable hosts for the configured subnet; network and directed-broadcast IDs are rejected. `/31` point-to-point endpoints and `/32` host routes are supported.
+- IPv4 interface addresses and default gateways are validated as usable hosts for the configured subnet; network and directed-broadcast IDs are rejected. `/31` point-to-point endpoints and `/32` host routes are supported. Subnet masks must be contiguous and nonzero (`/1` through `/32`); `/0` is rejected because it would make every IPv4 destination appear on-link.
 - ARP neighbour resolution is restricted to on-link hosts. Off-subnet traffic resolves only the configured, distinct on-link gateway MAC while retaining the remote IP destination; without a valid gateway, off-subnet sends fail closed.
 - Outbound UDP/IPv4 frames with IPv4 and UDP checksums.
 - A bounded asynchronous DNS A-record resolver that validates the echoed single QNAME, A/IN question and matching A-record owner, including bounded backward compression-pointer traversal.

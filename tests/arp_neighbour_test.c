@@ -305,7 +305,9 @@ static void test_ipv4_interface_and_gateway_boundaries(void) {
     const u8 bad_network_gateway[4] = {192, 168, 1, 0};
     const u8 bad_broadcast_gateway[4] = {192, 168, 1, 255};
     const u8 no_gateway[4] = {0, 0, 0, 0};
+    const u8 zero_mask[4] = {0, 0, 0, 0};
 
+    assert(!net_stack_configure_ipv4(local_ip_test, zero_mask, no_gateway));
     assert(!net_stack_configure_ipv4(network_ip, mask_test, no_gateway));
     assert(!net_stack_configure_ipv4(directed_broadcast, mask_test, no_gateway));
     assert(!net_stack_configure_ipv4(zero_ip, mask_test, no_gateway));
@@ -434,7 +436,15 @@ static void test_persisted_ipv4_configuration_is_validated(void) {
     assert(!net_stack_has_ipv4_config());
     assert(ip_is_zero(default_gateway));
 
+    /* An invalid persisted /0 mask must not silently become a /24 lease. */
     configured_ip_override = "192.168.1.20";
+    configured_mask_override = "0.0.0.0";
+    stack_ready = false;
+    net_stack_init();
+    assert(!net_stack_has_ipv4_config());
+    assert(ip_is_zero(default_gateway));
+
+    configured_mask_override = "255.255.255.0";
     configured_gateway_override = "192.168.1.255";
     stack_ready = false;
     net_stack_init();

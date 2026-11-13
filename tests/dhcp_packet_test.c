@@ -120,6 +120,11 @@ int main(void) {
     p[254]=255;
     assert(dhcp_decode_reply(p,n,xid,mac,&reply));
 
+    /* A /0 lease mask would make every remote host appear on-link. */
+    n=make_reply(p,2,xid,mac,false,true);
+    p[251]=0; p[252]=0; p[253]=0; p[254]=0;
+    assert(!dhcp_decode_reply(p,n,xid,mac,&reply));
+
     /* A DNS server must be a unicast address; it may be off-subnet. */
     n=make_reply(p,2,xid,mac,true,true);
     p[263]=224;
