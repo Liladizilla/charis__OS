@@ -15,13 +15,18 @@ framebuffer_t g_framebuffer = {
 };
 
 static u32 pixels[WIDTH * HEIGHT];
+static bool clip_enabled;
+static u32 clip_x, clip_y, clip_w, clip_h;
 static mouse_state_t test_mouse;
 
 void mouse_get_snapshot(mouse_state_t* out) {
     if (out) *out = test_mouse;
 }
 
-void fb_reset_clip(void) { }
+void fb_reset_clip(void) {
+    clip_enabled = false;
+    clip_x = clip_y = clip_w = clip_h = 0;
+}
 
 u32 fb_get_pixel(u32 x, u32 y) {
     if (x >= WIDTH || y >= HEIGHT) return 0;
@@ -30,6 +35,8 @@ u32 fb_get_pixel(u32 x, u32 y) {
 
 void fb_put_pixel(u32 x, u32 y, u32 color) {
     if (x >= WIDTH || y >= HEIGHT) return;
+    if (clip_enabled && (x < clip_x || y < clip_y ||
+        x - clip_x >= clip_w || y - clip_y >= clip_h)) return;
     pixels[(usize)y * WIDTH + x] = color;
 }
 
@@ -70,6 +77,21 @@ int main(void) {
     cursor_erase();
     expect(rect_matches(before, 20, 24, 10, 16),
            "erase restores every underlying pixel exactly");
+
+    /* Simulate a window renderer leaving a restrictive clip active. Cursor
+     * compositing must reset that clip for both drawing and save-under restore. */
+    clip_enabled = true;
+    clip_x = 300; clip_y = 300; clip_w = 20; clip_h = 20;
+    test_mouse.x = 40;
+    test_mouse.y = 50;
+    cursor_draw();
+    expect(pixels[50u * WIDTH + 40u] != before[50u * WIDTH + 40u],
+           "cursor drawing clears an inherited framebuffer clip");
+    clip_enabled = true;
+    clip_x = 300; clip_y = 300; clip_w = 20; clip_h = 20;
+    cursor_erase();
+    expect(rect_matches(before, 40, 50, 10, 16),
+           "cursor restoration clears an inherited framebuffer clip");
 
     fill_pattern();
     memcpy(before, pixels, sizeof(pixels));
