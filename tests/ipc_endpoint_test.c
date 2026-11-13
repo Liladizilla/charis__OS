@@ -8,6 +8,21 @@ static task_t task_a, task_b, task_c;
 static task_t* active_task;
 task_t* scheduler_current(void) { return active_task; }
 void scheduler_yield(void) { }
+
+/* This legacy endpoint-only harness does not exercise descriptor transfer.
+ * The dedicated IPC/VFS integration test links the real implementations. */
+vfs_open_file_t* fd_acquire_from(task_t* owner, fd_handle_t handle,
+                                 u32 required_rights) {
+    (void)owner; (void)handle; (void)required_rights;
+    return NULL;
+}
+fd_handle_t fd_import_file_to(task_t* recipient, vfs_open_file_t* file,
+                              u32 rights) {
+    (void)recipient; (void)file; (void)rights;
+    return FD_HANDLE_INVALID;
+}
+void fd_release(vfs_open_file_t* file) { (void)file; }
+
 bool security_check_capability(task_t* task, u32 capability) {
     return task && capability != 0 &&
            (task->capabilities & capability) == capability;
