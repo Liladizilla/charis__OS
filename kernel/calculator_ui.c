@@ -436,9 +436,6 @@ void calculator_ui_render(void) {
     gfx_draw_string(body->x + calc_px(18),
                     body->y + (title_h - calc_px(16)) / 2u,
                     "Calculator", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(body->x + calc_px(126),
-                    body->y + (title_h - calc_px(16)) / 2u,
-                    "INTEGER", CHARIS_UI_MUTED, FB_TRANSPARENT);
 
     fb_fill_rect(layout.close.x, layout.close.y,
                  layout.close.w, layout.close.h, CHARIS_UI_SURFACE);
@@ -454,7 +451,7 @@ void calculator_ui_render(void) {
                  layout.display.w, layout.display.h, CHARIS_UI_BORDER);
     gfx_draw_string(layout.display.x + calc_px(12),
                     layout.display.y + calc_px(7),
-                    "RESULT", CHARIS_UI_MUTED, FB_TRANSPARENT);
+                    "SIGNED INTEGER", CHARIS_UI_MUTED, FB_TRANSPARENT);
     u32 value_w = 0, value_h = 0;
     gfx_text_size(calculator_display, &value_w, &value_h);
     u32 value_x = layout.display.x + layout.display.w -
