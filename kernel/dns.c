@@ -83,14 +83,30 @@ static bool encode_hostname(const char* host, u8* out, usize cap,
     return true;
 }
 
+#define DNS_NAME_OFFSET_BYTES ((DNS_PACKET_MAX + 7u) / 8u)
+
+static bool dns_name_offset_seen(const u8* offsets, usize position) {
+    return offsets && position < DNS_PACKET_MAX &&
+           (offsets[position >> 3] & (u8)(1u << (position & 7u))) != 0;
+}
+
+static void dns_name_offset_mark(u8* offsets, usize position) {
+    if (offsets && position < DNS_PACKET_MAX)
+        offsets[position >> 3] |= (u8)(1u << (position & 7u));
+}
+
 /* Parse a DNS name and compare it with the outstanding query name.
- * Compression pointers must point backward into this packet. A strict step
- * bound rejects cycles and pathological pointer chains. */
+ * Compression pointers must reference a previously parsed label boundary,
+ * never arbitrary packet bytes. A strict step bound rejects pointer cycles. */
 static bool parse_response_name(const u8* packet, usize length,
-                                usize* offset, bool* matches_query) {
-    if (!packet || !offset || !matches_query || *offset >= length) return false;
+                                usize* offset, u8* known_name_offsets,
+                                bool* matches_query) {
+    if (!packet || !offset || !known_name_offsets || !matches_query ||
+        *offset >= length || length > DNS_PACKET_MAX)
+        return false;
 
     usize pos = *offset;
+    const usize name_start = *offset;
     usize consumed = 0;
     usize host_pos = 0;
     usize host_length = kstrlen(pending_host);
@@ -99,20 +115,26 @@ static bool parse_response_name(const u8* packet, usize length,
 
     for (usize steps = 0; steps < 128u; steps++) {
         if (pos >= length) return false;
+        usize label_position = pos;
         u8 label = packet[pos++];
 
         if ((label & 0xC0u) == 0xC0u) {
             if (pos >= length) return false;
             usize pointer = ((usize)(label & 0x3Fu) << 8) | packet[pos++];
-            /* RFC compression offsets are 14-bit and point to prior data. */
-            if (pointer >= length || pointer >= pos - 2u) return false;
+            /* RFC compression offsets refer to an earlier, known name label. */
+            if (pointer < 12u || pointer >= name_start ||
+                pointer >= length ||
+                !dns_name_offset_seen(known_name_offsets, pointer))
+                return false;
             if (!jumped) consumed = pos;
             jumped = true;
+            dns_name_offset_mark(known_name_offsets, label_position);
             pos = pointer;
             continue;
         }
 
         if (label & 0xC0u) return false;
+        dns_name_offset_mark(known_name_offsets, label_position);
         if (label == 0) {
             if (host_pos != host_length) matches = false;
             *offset = jumped ? consumed : pos;
@@ -137,14 +159,9 @@ static bool parse_response_name(const u8* packet, usize length,
         }
 
         if (host_pos < host_length) {
-            if (pending_host[host_pos] == '.') {
-                host_pos++;
-            } else {
-                matches = false;
-            }
-        } else if (host_pos == host_length) {
-            /* The next label must be the root terminator. */
-        } else {
+            if (pending_host[host_pos] == '.') host_pos++;
+            else matches = false;
+        } else if (host_pos > host_length) {
             matches = false;
         }
     }
@@ -183,8 +200,10 @@ static void handle_dns_response(u16 source_port, const u8 source_ip[4],
     }
 
     usize offset = 12u;
+    u8 known_name_offsets[DNS_NAME_OFFSET_BYTES] = {0};
     bool question_matches = false;
-    if (!parse_response_name(payload, length, &offset, &question_matches) ||
+    if (!parse_response_name(payload, length, &offset, known_name_offsets,
+                             &question_matches) ||
         !question_matches || offset > length || length - offset < 4u ||
         read_be16(payload + offset) != 1u ||
         read_be16(payload + offset + 2u) != 1u) {
@@ -196,7 +215,8 @@ static void handle_dns_response(u16 source_port, const u8 source_ip[4],
 
     for (u16 i = 0; i < answers; i++) {
         bool owner_matches = false;
-        if (!parse_response_name(payload, length, &offset, &owner_matches) ||
+        if (!parse_response_name(payload, length, &offset, known_name_offsets,
+                                  &owner_matches) ||
             offset > length || length - offset < 10u) {
             const u8 zero[4] = {0, 0, 0, 0};
             finish_query(false, zero);
