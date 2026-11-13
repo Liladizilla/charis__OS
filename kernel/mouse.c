@@ -205,9 +205,6 @@ void mouse_init(void) {
     kprintf("Mouse: PS/2 enabled, config=0x%02x ACK(F6,F4)=yes\n", config);
 }
 
-#define PS2_STATUS_OUTPUT     0x01
-#define PS2_STATUS_AUX        0x20
-
 static u8 mouse_packet[3];
 static u8 mouse_packet_index;
 static bool mouse_overflow_seen;
@@ -258,6 +255,12 @@ static void mouse_process_byte(u8 status, u8 byte) {
     g_mouse.x = (s32)next_x;
     g_mouse.y = (s32)next_y;
 }
+
+#ifdef MOUSE_HOST_TEST
+void mouse_test_process_byte(u8 status, u8 byte) {
+    mouse_process_byte(status, byte);
+}
+#endif
 
 void mouse_handler(void) {
     u8 status = inb(PS2_STATUS_PORT);
