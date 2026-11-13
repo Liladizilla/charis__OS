@@ -155,6 +155,10 @@ jobs:
         run: |
           make ipc-test
 
+      - name: Test transactional IPC descriptor transfer and rollback
+        run: |
+          make ipc-fd-test
+
       - name: Test concurrent task PID uniqueness
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -pthread -Iinclude tests/task_pid_concurrency_test.c -o /tmp/task_pid_concurrency_test
