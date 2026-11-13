@@ -1,6 +1,6 @@
 # CharisOS
 
-**An experimental x86_64 operating-system project built from the ground up in freestanding C and NASM.**
+**A native x86_64 operating system built from the ground up in freestanding C and NASM.**
 
 [![CI](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml/badge.svg)](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml)
 ![Architecture](https://img.shields.io/badge/architecture-x86__64-informational)
@@ -14,11 +14,11 @@ Maintained by **Charis Chara** · [Source repository](https://github.com/Liladiz
 
 ## Project overview
 
-CharisOS is a from-scratch operating-system research project targeting x86_64 PCs and virtual machines. The repository contains a freestanding kernel, Multiboot2/GRUB boot path, physical and virtual memory management, interrupt and task infrastructure, a small syscall interface, FAT32-backed storage support, a static ELF executable loader, and a framebuffer-based graphical shell.
+CharisOS is an operating system targeting x86_64 PCs and virtual machines, with a kernel, boot path, memory management, scheduling, storage, networking foundations and a native framebuffer desktop. The repository contains a freestanding kernel, Multiboot2/GRUB boot path, physical and virtual memory management, interrupt and task infrastructure, a small syscall interface, FAT32-backed storage support, a static ELF executable loader, and a framebuffer-based graphical shell.
 
-The project is under active development. It is not currently a general-purpose or production-ready operating system, and it should not be treated as a replacement for Windows or Linux. This README distinguishes implemented and tested behavior from partial subsystems and planned work.
+CharisOS is an operating system under active development. Its kernel boots and runs directly on x86_64 hardware and virtual machines, but the system is not yet a general-purpose or production-ready desktop OS. Several hardware paths, security boundaries, userspace facilities and everyday applications remain incomplete. This README distinguishes implemented and tested behavior from partial subsystems and planned work; compiling a component alone is not evidence that it works end to end.
 
-**Implementation constraints:** kernel and boot implementation use C and NASM. The kernel is built freestanding with GCC and a custom linker script; it does not depend on a host operating-system runtime after boot.
+**Implementation and boot boundary:** the kernel and boot assembly are implemented in C and NASM. The kernel is compiled as a freestanding x86_64 image with GCC and a custom linker script; it does not link against a host operating system's libc or runtime, and it executes directly on the machine after the bootloader transfers control. It is not a self-booting firmware replacement: the current boot path relies on BIOS or UEFI firmware and GRUB2 with Multiboot2 to load the kernel and provide the initial boot information. This is the normal firmware → bootloader → operating-system-kernel boundary. The kernel supplies its own memory management, interrupt handling, scheduler and kernel services after handoff.
 
 ## Current state at a glance
 
