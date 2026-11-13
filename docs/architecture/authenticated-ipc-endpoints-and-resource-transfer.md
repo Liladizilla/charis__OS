@@ -3,9 +3,11 @@
 ## Status
 
 The kernel-only endpoint and service-rendezvous stages are implemented and
-host-tested. QEMU verifies endpoint message wake, peer-task exit and local
-endpoint cancellation. Public ring-3 IPC, public service lookup and descriptor
-attachments remain deliberately unavailable.
+host-tested. QEMU verifies endpoint message wake, peer-task exit, local endpoint
+cancellation, blocked service accept/connect wakeup, rights-limited endpoint
+messaging, request rejection and unregister waking a blocked client. Public
+ring-3 IPC, public service lookup and descriptor attachments remain deliberately
+unavailable.
 
 ## Current boundary
 
@@ -180,9 +182,14 @@ cleanup path. A second pair verifies local endpoint revocation while the reader
 is BLOCKED: the reader returns CANCELLED, the peer's still-open handle returns
 PEER_CLOSED, and the coordinator reaps both workers with waitpid. The verifier
 requires the message-wake, peer-close, cancellation and final-success markers.
-Further adversarial stress must cover service authorization, listener-close
-races, attachment rollback, recipient table exhaustion and concurrent multi-core
-operation before enabling those features.
+Dedicated QEMU coverage now verifies a real server blocked in accept, a
+real client blocked in connect, successful wake and endpoint delivery, the
+granted SEND/RECEIVE subset, explicit rejection, and service unregister while a
+client is demonstrably BLOCKED. The CI verifier requires all corresponding
+serial markers. Further adversarial stress must cover service-owner exit during
+blocked accept, concurrent clients/acceptors, cancellation and timeout policy,
+attachment rollback, recipient table exhaustion and concurrent multi-core
+operation before exposing a public ABI.
 
 ## Implementation sequence
 
