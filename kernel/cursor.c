@@ -74,7 +74,7 @@ void cursor_draw(void) {
 #ifdef CURSOR_TRACE
         static bool trace_first_skip = true;
         if (trace_first_skip) {
-            serial_printf("CURSOR_TRACE skip x=%d y=%d saved=%d,%d valid=%u\\n",
+            serial_printf("CURSOR_TRACE skip x=%d y=%d saved=%d,%d valid=%u\n",
                           mouse.x, mouse.y, cursor_saved_x, cursor_saved_y,
                           cursor_saved_valid ? 1u : 0u);
             trace_first_skip = false;
@@ -84,7 +84,7 @@ void cursor_draw(void) {
     }
 
 #ifdef CURSOR_TRACE
-    serial_printf("CURSOR_TRACE draw x=%d y=%d old=%d,%d valid=%u\\n",
+    serial_printf("CURSOR_TRACE draw x=%d y=%d old=%d,%d valid=%u\n",
                   mouse.x, mouse.y, cursor_saved_x, cursor_saved_y,
                   cursor_saved_valid ? 1u : 0u);
 #endif
