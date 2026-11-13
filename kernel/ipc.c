@@ -637,13 +637,18 @@ int ipc_send_with_fd(ipc_handle_t handle, const void* data, u64 size,
     return result;
 }
 
-int ipc_recv(ipc_handle_t handle, void* buffer, u64 capacity, u32* sender_pid) {
+static int ipc_recv_internal(ipc_handle_t handle, void* buffer,
+                             u64 capacity, u32* sender_pid,
+                             fd_handle_t* received_fd) {
+    if (received_fd) *received_fd = FD_HANDLE_INVALID;
     if (capacity && !buffer) return IPC_STATUS_ERROR;
     task_t* receiver = scheduler_current();
     if (!receiver) return IPC_STATUS_ERROR;
     u64 flags = ipc_irq_save();
-    struct ipc_endpoint* ep = ipc_resolve_locked(receiver, handle, IPC_RIGHT_RECEIVE);
+    struct ipc_endpoint* ep =
+        ipc_resolve_locked(receiver, handle, IPC_RIGHT_RECEIVE);
     if (!ep) { ipc_irq_restore(flags); return IPC_STATUS_ERROR; }
+
     ipc_queue_t* q = &ep->channel->inbound[ep->side];
     if (!q->count) {
         struct ipc_endpoint* peer = &ep->channel->endpoints[1U - ep->side];
@@ -653,18 +658,55 @@ int ipc_recv(ipc_handle_t handle, void* buffer, u64 capacity, u32* sender_pid) {
         ipc_irq_restore(flags);
         return peer_live ? IPC_STATUS_EMPTY : IPC_STATUS_PEER_CLOSED;
     }
+
     ipc_message_t* msg = &q->messages[q->tail];
     if ((u64)msg->size > capacity) {
         ipc_irq_restore(flags);
         return IPC_STATUS_BUFFER_SMALL;
     }
+    if (msg->attachment && !received_fd) {
+        /* Plain receive cannot drop the queued authority or consume its bytes. */
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ATTACHMENT_REQUIRED;
+    }
+
+    vfs_open_file_t* queued_file = msg->attachment;
+    fd_handle_t imported = FD_HANDLE_INVALID;
+    if (queued_file) {
+        /* Import acquires a recipient-owned reference and publishes it
+         * atomically. On failure the message and queue pin remain untouched. */
+        imported = fd_import_file_to(receiver, queued_file,
+                                     msg->attachment_rights);
+        if (imported == FD_HANDLE_INVALID) {
+            ipc_irq_restore(flags);
+            return IPC_STATUS_DESCRIPTOR_FULL;
+        }
+        msg->attachment = NULL;
+        msg->attachment_rights = 0;
+    }
+
     if (sender_pid) *sender_pid = msg->sender_pid;
     for (u32 i = 0; i < msg->size; i++) ((u8*)buffer)[i] = msg->data[i];
     int received = (int)msg->size;
     q->tail = (q->tail + 1U) % IPC_MAX_MESSAGES;
     q->count--;
     ipc_irq_restore(flags);
+
+    /* The recipient descriptor now owns a separate reference. */
+    if (queued_file) fd_release(queued_file);
+    if (received_fd) *received_fd = imported;
     return received;
+}
+
+int ipc_recv(ipc_handle_t handle, void* buffer, u64 capacity,
+             u32* sender_pid) {
+    return ipc_recv_internal(handle, buffer, capacity, sender_pid, NULL);
+}
+
+int ipc_recv_with_fd(ipc_handle_t handle, void* buffer, u64 capacity,
+                     u32* sender_pid, fd_handle_t* received_fd) {
+    if (!received_fd) return IPC_STATUS_ERROR;
+    return ipc_recv_internal(handle, buffer, capacity, sender_pid, received_fd);
 }
 
 /* The empty-queue check, waiter insertion and BLOCKED publication run
