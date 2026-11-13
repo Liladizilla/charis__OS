@@ -154,7 +154,7 @@ jobs:
 
       - name: Test CWP1 wallpaper module validation and RGB565 rendering
         run: |
-          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/wallpaper_module_test.c kernel/wallpaper.c kernel/string.c -Wl,--gc-sections -o /tmp/wallpaper_module_test
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/wallpaper_module_test.c kernel/wallpaper.c -Wl,--gc-sections -o /tmp/wallpaper_module_test
           /tmp/wallpaper_module_test
 
       - name: Test window manager lifecycle and bounds
