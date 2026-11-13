@@ -637,6 +637,7 @@ jobs:
           name: charisos-desktop-preview
           path: |
             build/charisos-desktop-preview.ppm
+            build/charisos-pointer-start-preview.ppm
             build/charisos-pointer-moved-preview.ppm
             build/charisos-pointer-restored-preview.ppm
             build/charisos-browser-preview.ppm
