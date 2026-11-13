@@ -97,6 +97,11 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/dns_response_test.c -o /tmp/dns_response_test
           /tmp/dns_response_test
 
+      - name: Test streaming HTTP chunked response framing
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -Iinclude tests/http_chunked_test.c -o /tmp/http_chunked_test
+          /tmp/http_chunked_test
+
       - name: Test socket table initialization and slot reuse
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/socket_init_test.c kernel/socket.c -Wl,--gc-sections -o /tmp/socket_init_test
