@@ -75,7 +75,7 @@ Older [run #724 desktop capture](docs/screenshots/charisos-desktop-run-724.png),
 
 ## Important limitations
 
-CharisOS is still an early-stage kernel and shell. In particular:
+CharisOS is a developing operating system whose kernel, userspace and desktop are still being built out. In particular:
 
 - The desktop now supports independent Terminal, Files, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, keyboard resize, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
 - The workspace exposes direct shortcuts for Files, Terminal, Settings and Browser; the separate multi-window capture demonstrates Files and Terminal open together. Files is read-only, Settings currently exposes display preferences, and the desktop is not yet at release-quality visual or interaction completeness.
