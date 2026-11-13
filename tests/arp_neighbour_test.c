@@ -197,7 +197,6 @@ static void test_unsolicited_and_spoofed_replies_are_ignored(void) {
     queue_arp(ARP_REPLY, peer_mac_test, local_mac_test, peer_mac_test,
               peer_ip_test, local_mac_test, local_ip_test);
     net_handle_tcpip();
-    assert(arp_cache_find == NULL || true); /* cache is checked through resolution below */
     u8 mac[6] = {0};
     assert(!net_stack_resolve_ipv4(peer_ip_test, mac));
     assert(transmitted_count == 1u);
