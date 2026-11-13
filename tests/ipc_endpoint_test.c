@@ -347,6 +347,58 @@ static void test_service_rejection_and_unregister_pending(void) {
     assert(ipc_service_unregister(new_service) == IPC_STATUS_OK);
 }
 
+static void test_service_request_cancellation(void) {
+    active_task = &task_a;
+    ipc_service_handle_t service = 0;
+    assert(ipc_service_register("com.charis.cancel", CAP_FS_CREATE,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_OK);
+
+    active_task = &task_b;
+    task_b.capabilities = CAP_FS_CREATE;
+    ipc_request_handle_t pending = 0;
+    assert(ipc_service_connect("com.charis.cancel", &pending) == IPC_STATUS_OK);
+    assert(ipc_service_cancel(pending) == IPC_STATUS_OK);
+    assert(ipc_service_result(pending, &(ipc_handle_t){0}) == IPC_STATUS_ERROR);
+
+    ipc_request_handle_t offered_client = 0;
+    assert(ipc_service_connect("com.charis.cancel", &offered_client) ==
+           IPC_STATUS_OK);
+    active_task = &task_a;
+    ipc_request_handle_t offered = 0;
+    u32 client_pid = 0;
+    assert(ipc_service_next(service, &offered, &client_pid) == IPC_STATUS_OK);
+    assert(offered == offered_client);
+    active_task = &task_b;
+    assert(ipc_service_cancel(offered_client) == IPC_STATUS_OK);
+    assert(ipc_service_result(offered_client, &(ipc_handle_t){0}) ==
+           IPC_STATUS_ERROR);
+    active_task = &task_a;
+    ipc_handle_t server_endpoint = 0;
+    assert(ipc_service_accept(service, offered, &server_endpoint) ==
+           IPC_STATUS_ERROR);
+    assert(ipc_service_next(service, &offered, &client_pid) == IPC_STATUS_EMPTY);
+
+    ipc_request_handle_t accepted_client = 0;
+    active_task = &task_b;
+    assert(ipc_service_connect("com.charis.cancel", &accepted_client) ==
+           IPC_STATUS_OK);
+    active_task = &task_a;
+    assert(ipc_service_next(service, &offered, &client_pid) == IPC_STATUS_OK);
+    assert(ipc_service_accept(service, offered, &server_endpoint) ==
+           IPC_STATUS_OK);
+    assert(server_endpoint != IPC_HANDLE_INVALID);
+
+    active_task = &task_b;
+    assert(ipc_service_cancel(accepted_client) == IPC_STATUS_OK);
+    assert(ipc_service_result(accepted_client, &(ipc_handle_t){0}) ==
+           IPC_STATUS_ERROR);
+    active_task = &task_a;
+    assert(ipc_send(server_endpoint, "x", 1) == IPC_STATUS_PEER_CLOSED);
+    assert(ipc_recv(server_endpoint, NULL, 0, NULL) == IPC_STATUS_PEER_CLOSED);
+    assert(ipc_close(server_endpoint) == IPC_STATUS_OK);
+    assert(ipc_service_unregister(service) == IPC_STATUS_OK);
+}
+
 static void test_service_request_generation_reuse(void) {
     active_task = &task_a;
     ipc_service_handle_t service = 0;
@@ -507,6 +559,7 @@ int main(void) {
     test_stale_handle_and_teardown();
     test_service_registration_and_policy();
     test_service_rejection_and_unregister_pending();
+    test_service_request_cancellation();
     test_service_request_generation_reuse();
     test_service_request_lifecycle_on_task_exit();
     test_service_and_request_table_limits();
