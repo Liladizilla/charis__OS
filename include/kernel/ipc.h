@@ -83,6 +83,8 @@ int ipc_service_reject(ipc_service_handle_t service_handle,
                        ipc_request_handle_t request_handle);
 int ipc_service_result(ipc_request_handle_t request_handle,
                        ipc_handle_t* client_endpoint);
+/* Client-owned cancellation; accepted but unclaimed endpoints are closed. */
+int ipc_service_cancel(ipc_request_handle_t request_handle);
 
 void ipc_task_close_all(task_t* task);
 
