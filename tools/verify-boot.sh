@@ -17,7 +17,7 @@
 # own output on a runner with no TTY.
 #
 # Usage:
-#   verify-boot.sh <image> [--disk] [--uefi] [--elf-test-disk PATH] [--expect-elf-exec] [--timeout SECONDS]
+#   verify-boot.sh <image> [--disk] [--uefi] [--elf-test-disk PATH] [--expect-elf-exec] [--require-ipc-wait] [--timeout SECONDS]
 #
 #   --disk     attach the image as a raw hard disk (a flashed USB stick)
 #              instead of a CD-ROM
