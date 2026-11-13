@@ -75,9 +75,11 @@ The first kernel-only service namespace is implemented:
   case-sensitive ASCII identifiers of 1-31 characters from
   `[A-Za-z0-9._-]`.
 - Registration is bound to the current live kernel task. A service must provide
-  a nonzero `required_client_capabilities` mask; a zero-mask catch-all service
-  cannot be registered. A client is authorized only when every required bit
-  exists in the current task's kernel-assigned `capabilities` field.
+  a nonzero `required_client_capabilities` mask containing only bits in
+  `CAP_ALL`; unknown or zero masks fail closed. Client authorization is
+  delegated to the existing `security_check_capability()` policy, which
+  requires every requested bit to be present in the current task's
+  kernel-assigned `capabilities` field.
 - Registration assigns server and client endpoint rights. A client cannot
   request stronger rights or supply a trusted PID.
 - Service handles encode the owner PID, slot generation and slot. Resolution
@@ -183,7 +185,8 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Task enters EXITING | All local endpoints revoked before other teardown |
 | Ring-3 IPC syscall | Reserved/unregistered and fails closed |
 | Shared-memory pointer exposure | Ring-3 shared-memory calls remain denied |
-| Client lacks required service capabilities | Deny before request allocation |
+| Client lacks required service capabilities | Deny through security_check_capability() before request allocation |
+| Service requests undefined capability bits | Reject registration against CAP_ALL |
 | Zero-capability public service registration | Reject |
 | Duplicate service name | Reject without changing existing service |
 | Wrong task uses service handle | Reject |
