@@ -181,6 +181,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [ ] Add a first-login setup wizard with language/keyboard, appearance and network steps; current wizard remains limited to existing setup preferences
 - [ ] Add functional Text Editor and System Monitor applications
 
+- [x] DNS resolver validates the echoed single QNAME, A/IN question, response opcode and matching answer owner; host regression covers compressed names, invalid pointers and mismatched records
+
 ## Phase 10: User Applications (ACTIVE)
 - [x] Native framebuffer Terminal window with keyboard input and shell/Start-menu integration
 - [x] Built-in commands: help, clear, echo, uname, version, uptime, mem, tasks, settings
