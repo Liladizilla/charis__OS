@@ -2,6 +2,7 @@
 #pragma once
 #include <kernel/types.h>
 #include <kernel/task.h>
+#include <kernel/vfs.h>
 
 typedef u64 ipc_handle_t;
 typedef u64 ipc_service_handle_t;
@@ -45,6 +46,8 @@ typedef u64 ipc_request_handle_t;
 #define IPC_STATUS_REQUEST_REJECTED -11
 #define IPC_STATUS_REQUEST_INVALID -12
 #define IPC_STATUS_SERVICE_FULL -13
+#define IPC_STATUS_DESCRIPTOR_FULL -14
+#define IPC_STATUS_ATTACHMENT_REQUIRED -15
 
 #define IPC_WAIT_STATUS_IDLE          0
 #define IPC_WAIT_STATUS_PENDING       1
@@ -60,10 +63,18 @@ bool ipc_endpoint_pair_create(task_t* first_task, task_t* second_task,
                               ipc_handle_t* first_handle,
                               ipc_handle_t* second_handle);
 int ipc_send(ipc_handle_t endpoint, const void* data, u64 size);
+/* Kernel-only transfer of one read/write attenuated descriptor per message.
+ * Plain recv refuses to consume a message carrying an attachment. */
+int ipc_send_with_fd(ipc_handle_t endpoint, const void* data, u64 size,
+                     fd_handle_t descriptor, u32 rights);
 int ipc_recv(ipc_handle_t endpoint, void* buffer, u64 capacity,
              u32* sender_pid);
+int ipc_recv_with_fd(ipc_handle_t endpoint, void* buffer, u64 capacity,
+                     u32* sender_pid, fd_handle_t* received_fd);
 int ipc_recv_wait(ipc_handle_t endpoint, void* buffer, u64 capacity,
                   u32* sender_pid);
+int ipc_recv_with_fd_wait(ipc_handle_t endpoint, void* buffer, u64 capacity,
+                          u32* sender_pid, fd_handle_t* received_fd);
 int ipc_close(ipc_handle_t endpoint);
 void ipc_task_close_all(task_t* task);
 
