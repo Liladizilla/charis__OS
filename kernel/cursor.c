@@ -67,7 +67,18 @@ static bool cursor_overlay_intact(void) {
 
             u32 actual = fb_get_pixel((u32)cursor_saved_x + x,
                                       (u32)cursor_saved_y + y);
-            if (!cursor_color_matches(actual, expected)) return false;
+            if (!cursor_color_matches(actual, expected)) {
+#ifdef CURSOR_TRACE
+                static u32 cursor_mismatch_logs = 0;
+                if (cursor_mismatch_logs < 24u) {
+                    cursor_mismatch_logs++;
+                    serial_printf("CURSOR_TRACE mismatch at=%d,%d offset=%u,%u actual=%08x expected=%08x bpp=%u\\n",
+                                  cursor_saved_x, cursor_saved_y, x, y,
+                                  actual, expected, g_framebuffer.bpp);
+                }
+#endif
+                return false;
+            }
         }
     }
     return true;
