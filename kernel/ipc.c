@@ -1,6 +1,7 @@
 #include <kernel/ipc.h>
 #include <kernel/scheduler.h>
 #include <kernel/string.h>
+#include <kernel/security.h>
 
 typedef struct ipc_channel ipc_channel_t;
 typedef struct {
@@ -28,8 +29,38 @@ struct ipc_channel {
     struct ipc_endpoint endpoints[2];
     ipc_queue_t inbound[2];
 };
+struct ipc_service {
+    bool in_use;
+    u32 generation;
+    task_t* owner;
+    u32 owner_pid;
+    char name[IPC_SERVICE_NAME_MAX];
+    struct ipc_connection_request* pending_head;
+    struct ipc_connection_request* pending_tail;
+    u32 pending_count;
+    task_t* accept_waiters;
+};
+
+struct ipc_connection_request {
+    bool in_use;
+    u32 generation;
+    u32 state;
+    struct ipc_service* service;
+    task_t* client;
+    u32 client_pid;
+    u32 requested_client_rights;
+    task_t* server;
+    u32 server_pid;
+    struct ipc_connection_request* next;
+};
+
+#define IPC_REQUEST_STATE_FREE      0U
+#define IPC_REQUEST_STATE_PENDING   1U
+#define IPC_REQUEST_STATE_DELIVERED 2U
 
 static ipc_channel_t ipc_channels[IPC_MAX_CHANNELS];
+static struct ipc_service ipc_services[IPC_MAX_SERVICES];
+static struct ipc_connection_request ipc_requests[IPC_MAX_CONNECTIONS];
 static u8 shm_blocks[SHM_MAX_BLOCKS][SHM_BLOCK_SIZE];
 static bool shm_used[SHM_MAX_BLOCKS];
 
@@ -47,6 +78,254 @@ static void ipc_irq_restore(u64 flags) {
     asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
 }
 #endif
+
+static u64 ipc_make_service_handle(u32 pid, u32 generation, u32 slot) {
+    return ((u64)pid << 32) |
+           ((u64)generation << IPC_SERVICE_HANDLE_SLOT_BITS) | slot;
+}
+
+static u64 ipc_make_request_handle(u32 pid, u32 generation, u32 slot) {
+    return ((u64)pid << 32) |
+           ((u64)generation << IPC_REQUEST_HANDLE_SLOT_BITS) | slot;
+}
+
+static bool ipc_copy_service_name(const char* input,
+                                 char output[IPC_SERVICE_NAME_MAX]) {
+    if (!input || !output) return false;
+    u32 length = 0;
+    for (; length < IPC_SERVICE_NAME_MAX - 1; length++) {
+        char ch = input[length];
+        if (!ch) break;
+        bool valid = (ch >= 'a' && ch <= 'z') ||
+                     (ch >= '0' && ch <= '9') ||
+                     ch == '.' || ch == '-' || ch == '_';
+        if (!valid) return false;
+        output[length] = ch;
+    }
+    if (!length || length >= IPC_SERVICE_NAME_MAX - 1 && input[length] != '\0')
+        return false;
+    output[length] = '\0';
+    return true;
+}
+
+static int ipc_find_service_slot_locked(void) {
+    for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
+        if (!ipc_services[i].in_use && ipc_services[i].generation &&
+            ipc_services[i].generation < IPC_SERVICE_GENERATION_MAX)
+            return (int)i;
+    }
+    return -1;
+}
+
+static int ipc_find_request_slot_locked(void) {
+    for (u32 i = 0; i < IPC_MAX_CONNECTIONS; i++) {
+        if (!ipc_requests[i].in_use && ipc_requests[i].generation &&
+            ipc_requests[i].generation < IPC_REQUEST_GENERATION_MAX)
+            return (int)i;
+    }
+    return -1;
+}
+
+static struct ipc_service* ipc_resolve_service_locked(task_t* owner,
+                                                       ipc_service_handle_t handle) {
+    if (!owner || !owner->pid || !handle ||
+        (u32)(handle >> 32) != owner->pid) return NULL;
+    u32 slot = (u32)(handle & IPC_SERVICE_HANDLE_SLOT_MASK);
+    u32 generation = (u32)((handle >> IPC_SERVICE_HANDLE_SLOT_BITS) &
+                           IPC_SERVICE_GENERATION_MAX);
+    if (slot >= IPC_MAX_SERVICES) return NULL;
+    struct ipc_service* service = &ipc_services[slot];
+    if (!service->in_use || service->generation != generation ||
+        service->owner != owner || service->owner_pid != owner->pid)
+        return NULL;
+    return service;
+}
+
+static struct ipc_connection_request* ipc_resolve_request_locked(
+    task_t* owner, ipc_request_handle_t handle, bool server_view) {
+    if (!owner || !owner->pid || !handle ||
+        (u32)(handle >> 32) != owner->pid) return NULL;
+    u32 slot = (u32)(handle & IPC_REQUEST_HANDLE_SLOT_MASK);
+    u32 generation = (u32)((handle >> IPC_REQUEST_HANDLE_SLOT_BITS) &
+                           IPC_REQUEST_GENERATION_MAX);
+    if (slot >= IPC_MAX_CONNECTIONS) return NULL;
+    struct ipc_connection_request* request = &ipc_requests[slot];
+    if (!request->in_use || request->generation != generation) return NULL;
+    if (server_view) {
+        if (request->state != IPC_REQUEST_STATE_DELIVERED ||
+            request->server != owner || request->server_pid != owner->pid)
+            return NULL;
+    } else if (request->client != owner || request->client_pid != owner->pid) {
+        return NULL;
+    }
+    return request;
+}
+
+static void ipc_service_wake_one_accept_waiter_locked(
+    struct ipc_service* service) {
+    if (!service || !service->accept_waiters) return;
+    task_t* waiter = service->accept_waiters;
+    service->accept_waiters = waiter->ipc_wait_next;
+    waiter->ipc_wait_next = NULL;
+    waiter->ipc_service_wait = NULL;
+    waiter->ipc_service_wait_status = IPC_STATUS_OK;
+    waiter->waiting_event = 0;
+    waiter->event_data = 0;
+    task_unblock(waiter);
+}
+
+static bool ipc_service_waiter_unlink_locked(task_t* waiter,
+                                             struct ipc_service* service) {
+    if (!waiter || !service) return false;
+    task_t** cursor = &service->accept_waiters;
+    while (*cursor && *cursor != waiter) cursor = &(*cursor)->ipc_wait_next;
+    if (*cursor != waiter) return false;
+    *cursor = waiter->ipc_wait_next;
+    waiter->ipc_wait_next = NULL;
+    waiter->ipc_service_wait = NULL;
+    return true;
+}
+
+static bool ipc_request_unlink_pending_locked(
+    struct ipc_connection_request* request) {
+    if (!request || request->state != IPC_REQUEST_STATE_PENDING ||
+        !request->service) return false;
+    struct ipc_service* service = request->service;
+    struct ipc_connection_request** cursor = &service->pending_head;
+    struct ipc_connection_request* previous = NULL;
+    while (*cursor && *cursor != request) {
+        previous = *cursor;
+        cursor = &(*cursor)->next;
+    }
+    if (*cursor != request) return false;
+    *cursor = request->next;
+    if (service->pending_tail == request) service->pending_tail = previous;
+    request->next = NULL;
+    if (service->pending_count) service->pending_count--;
+    return true;
+}
+
+static void ipc_request_release_locked(struct ipc_connection_request* request) {
+    if (!request || !request->in_use) return;
+    if (request->generation < IPC_REQUEST_GENERATION_MAX)
+        request->generation++;
+    request->in_use = false;
+    request->state = IPC_REQUEST_STATE_FREE;
+    request->service = NULL;
+    request->client = NULL;
+    request->client_pid = 0;
+    request->requested_client_rights = 0;
+    request->server = NULL;
+    request->server_pid = 0;
+    request->next = NULL;
+}
+
+static void ipc_request_complete_client_locked(
+    struct ipc_connection_request* request, int status,
+    ipc_handle_t client_endpoint) {
+    if (!request) return;
+    task_t* client = request->client;
+    if (client && client->pid == request->client_pid &&
+        client->ipc_connect_request == request) {
+        client->ipc_connect_request = NULL;
+        client->ipc_connect_result =
+            status == IPC_STATUS_OK ? client_endpoint : IPC_HANDLE_INVALID;
+        client->ipc_connect_status = status;
+        if (client->waiting_event == TASK_WAITING_IPC_CONNECT) {
+            client->waiting_event = 0;
+            client->event_data = 0;
+            task_unblock(client);
+        }
+    }
+    ipc_request_release_locked(request);
+}
+
+static void ipc_service_close_locked(struct ipc_service* service, int reason) {
+    if (!service || !service->in_use) return;
+    while (service->accept_waiters) {
+        task_t* waiter = service->accept_waiters;
+        service->accept_waiters = waiter->ipc_wait_next;
+        waiter->ipc_wait_next = NULL;
+        waiter->ipc_service_wait = NULL;
+        waiter->ipc_service_wait_status = reason;
+        if (waiter->waiting_event == TASK_WAITING_IPC_SERVICE) {
+            waiter->waiting_event = 0;
+            waiter->event_data = 0;
+            task_unblock(waiter);
+        }
+    }
+    for (u32 i = 0; i < IPC_MAX_CONNECTIONS; i++) {
+        struct ipc_connection_request* request = &ipc_requests[i];
+        if (request->in_use && request->service == service) {
+            (void)ipc_request_unlink_pending_locked(request);
+            ipc_request_complete_client_locked(request, reason,
+                                               IPC_HANDLE_INVALID);
+        }
+    }
+    service->in_use = false;
+    service->owner = NULL;
+    service->owner_pid = 0;
+    service->name[0] = '\0';
+    service->pending_head = NULL;
+    service->pending_tail = NULL;
+    service->pending_count = 0;
+    if (service->generation < IPC_SERVICE_GENERATION_MAX)
+        service->generation++;
+}
+
+static bool ipc_service_pop_request_locked(
+    struct ipc_service* service, task_t* server,
+    ipc_request_handle_t* handle, u32* client_pid) {
+    if (!service || !server || !service->pending_head || !handle) return false;
+    struct ipc_connection_request* request = service->pending_head;
+    service->pending_head = request->next;
+    if (!service->pending_head) service->pending_tail = NULL;
+    request->next = NULL;
+    if (service->pending_count) service->pending_count--;
+    request->state = IPC_REQUEST_STATE_DELIVERED;
+    request->server = server;
+    request->server_pid = server->pid;
+    *handle = ipc_make_request_handle(server->pid, request->generation,
+                                      (u32)(request - ipc_requests));
+    if (client_pid) *client_pid = request->client_pid;
+    return true;
+}
+
+static void ipc_service_cancel_client_request_locked(task_t* client) {
+    if (!client || !client->ipc_connect_request) return;
+    struct ipc_connection_request* request = client->ipc_connect_request;
+    if (request->in_use && request->client == client) {
+        (void)ipc_request_unlink_pending_locked(request);
+        ipc_request_release_locked(request);
+    }
+    client->ipc_connect_request = NULL;
+    client->ipc_connect_request_id = 0;
+    client->ipc_connect_result = IPC_HANDLE_INVALID;
+    client->ipc_connect_status = IPC_STATUS_CANCELLED;
+    if (client->waiting_event == TASK_WAITING_IPC_CONNECT) {
+        client->waiting_event = 0;
+        client->event_data = 0;
+        task_unblock(client);
+    }
+}
+
+static void ipc_service_teardown_task_locked(task_t* task) {
+    if (!task) return;
+    if (task->ipc_service_wait) {
+        (void)ipc_service_waiter_unlink_locked(task, task->ipc_service_wait);
+        task->ipc_service_wait_status = IPC_STATUS_CANCELLED;
+        if (task->waiting_event == TASK_WAITING_IPC_SERVICE) {
+            task->waiting_event = 0;
+            task->event_data = 0;
+            task_unblock(task);
+        }
+    }
+    ipc_service_cancel_client_request_locked(task);
+    for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
+        if (ipc_services[i].in_use && ipc_services[i].owner == task)
+            ipc_service_close_locked(&ipc_services[i], IPC_STATUS_SERVICE_CLOSED);
+    }
+}
 
 static bool ipc_task_live_kernel(const task_t* task) {
     return task && task->pid && !task->is_user && task->scheduler_queued &&
@@ -186,6 +465,22 @@ void ipc_init(void) {
             kmemset(&ch->endpoints[side], 0, sizeof(ch->endpoints[side]));
             ipc_queue_clear(&ch->inbound[side]);
         }
+    }
+    for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
+        kmemset(&ipc_services[i], 0, sizeof(ipc_services[i]));
+        ipc_services[i].generation = 1;
+    }
+    for (u32 i = 0; i < IPC_MAX_CONNECTIONS; i++) {
+        kmemset(&ipc_requests[i], 0, sizeof(ipc_requests[i]));
+        ipc_requests[i].generation = 1;
+    }
+    for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
+        kmemset(&ipc_services[i], 0, sizeof(ipc_services[i]));
+        ipc_services[i].generation = 1;
+    }
+    for (u32 i = 0; i < IPC_MAX_CONNECTIONS; i++) {
+        kmemset(&ipc_requests[i], 0, sizeof(ipc_requests[i]));
+        ipc_requests[i].generation = 1;
     }
     for (u32 i = 0; i < SHM_MAX_BLOCKS; i++) shm_used[i] = false;
 }
