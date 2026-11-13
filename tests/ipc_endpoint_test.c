@@ -284,7 +284,10 @@ static void test_service_registration_and_policy(void) {
     active_task = &task_b;
     assert(ipc_service_result(request, &client_endpoint) == IPC_STATUS_OK);
     assert(client_endpoint != IPC_HANDLE_INVALID);
-    assert(ipc_service_result(request, &client_endpoint) == IPC_STATUS_ERROR);
+    ipc_handle_t stale_client_endpoint = 99;
+    assert(ipc_service_result(request, &stale_client_endpoint) == IPC_STATUS_ERROR);
+    assert(stale_client_endpoint == IPC_HANDLE_INVALID);
+    assert(client_endpoint != IPC_HANDLE_INVALID);
 
     /* Service policy, not the client, assigns endpoint rights. */
     const char payload[] = "service-rendezvous";
