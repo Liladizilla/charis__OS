@@ -16,50 +16,98 @@ static heap_block_t* heap_head = NULL;
 static u64 heap_start = 0;
 static usize heap_size = 0;
 
+/* The kernel heap is a shared single-CPU free list. A timer interrupt can
+ * preempt a task in the middle of a split/merge and schedule another task
+ * that enters the allocator. Keep the complete list mutation atomic against
+ * maskable interrupts. This is not an SMP lock. */
+#ifdef HEAP_HOST_TEST
+extern u64 heap_test_irq_save(void);
+extern void heap_test_irq_restore(u64 flags);
+static inline u64 heap_irq_save(void) {
+    return heap_test_irq_save();
+}
+static inline void heap_irq_restore(u64 flags) {
+    heap_test_irq_restore(flags);
+}
+#else
+static inline u64 heap_irq_save(void) {
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+    return flags;
+}
+static inline void heap_irq_restore(u64 flags) {
+    asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
+}
+#endif
+
 void heap_init(void* start, usize size) {
+    u64 irq_flags = heap_irq_save();
     heap_start = (u64)start;
     heap_size = size;
+
+    if (!start || size <= sizeof(heap_block_t)) {
+        heap_head = NULL;
+        heap_start = 0;
+        heap_size = 0;
+        heap_irq_restore(irq_flags);
+        return;
+    }
 
     heap_head = (heap_block_t*)start;
     heap_head->size = size - sizeof(heap_block_t);
     heap_head->next = NULL;
     heap_head->prev = NULL;
     heap_head->free = true;
+    heap_irq_restore(irq_flags);
 }
 
 void* kmalloc(usize size) {
-    if (!heap_head || size == 0) return 0;
+    if (size == 0 || size > (usize)-1 - 15u - sizeof(heap_block_t))
+        return NULL;
 
-    // Basic alignment to 16 bytes
-    usize aligned = (size + 15) & ~((usize)15);
+    usize aligned = (size + 15u) & ~((usize)15u);
+    if (aligned > (usize)-1 - sizeof(heap_block_t)) return NULL;
+
+    u64 irq_flags = heap_irq_save();
+    if (!heap_head) {
+        heap_irq_restore(irq_flags);
+        return NULL;
+    }
 
     heap_block_t* curr = heap_head;
     while (curr) {
         if (curr->free && curr->size >= aligned + sizeof(heap_block_t)) {
-            heap_block_t* new_block = (heap_block_t*)((u8*)curr + sizeof(heap_block_t) + aligned);
+            heap_block_t* new_block =
+                (heap_block_t*)((u8*)curr + sizeof(heap_block_t) + aligned);
             new_block->size = curr->size - aligned - sizeof(heap_block_t);
             new_block->next = curr->next;
             new_block->prev = curr;
             new_block->free = true;
 
-            if (curr->next) {
-                curr->next->prev = new_block;
-            }
+            if (curr->next) curr->next->prev = new_block;
 
             curr->size = aligned;
             curr->next = new_block;
             curr->free = false;
 
-            return (void*)((u8*)curr + sizeof(heap_block_t));
+            void* result = (void*)((u8*)curr + sizeof(heap_block_t));
+            heap_irq_restore(irq_flags);
+            return result;
         }
         curr = curr->next;
     }
+    heap_irq_restore(irq_flags);
     return NULL;
 }
 
 void kfree(void* ptr) {
     if (!ptr) return;
-    if (!heap_head) return;
+
+    u64 irq_flags = heap_irq_save();
+    if (!heap_head) {
+        heap_irq_restore(irq_flags);
+        return;
+    }
 
     heap_block_t* block = (heap_block_t*)((u8*)ptr - sizeof(heap_block_t));
     block->free = true;
@@ -68,9 +116,7 @@ void kfree(void* ptr) {
     if (block->next && block->next->free) {
         block->size += sizeof(heap_block_t) + block->next->size;
         block->next = block->next->next;
-        if (block->next) {
-            block->next->prev = block;
-        }
+        if (block->next) block->next->prev = block;
     }
 
     // Merge with previous using prev pointer - O(1) instead of O(n)
@@ -78,8 +124,7 @@ void kfree(void* ptr) {
     if (prev && prev->free) {
         prev->size += sizeof(heap_block_t) + block->size;
         prev->next = block->next;
-        if (block->next) {
-            block->next->prev = prev;
-        }
+        if (block->next) block->next->prev = prev;
     }
+    heap_irq_restore(irq_flags);
 }
