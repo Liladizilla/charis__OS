@@ -44,6 +44,7 @@ typedef u64 ipc_request_handle_t;
 #define IPC_STATUS_REQUEST_REJECTED -11
 #define IPC_STATUS_REQUEST_INVALID -12
 #define IPC_STATUS_SERVICE_FULL -13
+#define IPC_STATUS_PENDING 1
 
 #define IPC_WAIT_STATUS_IDLE          0
 #define IPC_WAIT_STATUS_PENDING       1
