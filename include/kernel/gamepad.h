@@ -35,3 +35,6 @@ int gamepad_get_state(gamepad_state_t* state);
 
 /* Check if gamepad is connected */
 bool gamepad_is_connected(void);
+
+/* Called by the USB HID layer after validating a fixed-layout input report. */
+void gamepad_handle_input(const u8* report, usize len);

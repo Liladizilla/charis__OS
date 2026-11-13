@@ -13,6 +13,7 @@
 #include <kernel/shell.h>
 #include <kernel/printf.h>
 #include <kernel/net.h>
+#include <kernel/socket.h>
 #include <kernel/net_stack.h>
 #include <kernel/ata.h>
 #include <kernel/fs.h>
@@ -607,7 +608,8 @@ void kernel_main(u32 magic, u64 info_ptr) {
     fs_init();
     BOOT_MARK('F');  // Filesystem
     vfs_init();
-    BOOT_MARK('v');  // VFS
+    socket_init();
+    BOOT_MARK('v');  // VFS and socket service
 #ifdef TEST_FS
     fs_self_test();
 #endif
