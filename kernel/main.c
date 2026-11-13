@@ -107,7 +107,7 @@ static void ipc_wait_test_receiver(void* unused) {
 
 static void ipc_wait_test_sender(void* unused) {
     (void)unused;
-    task_t* receiver = (task_t*)ipc_wait_test_receiver_task;
+    volatile task_t* receiver = (task_t*)ipc_wait_test_receiver_task;
     if (!receiver) ipc_wait_test_fail("receiver task pointer missing");
 
     /* Do not send until the receiver has really entered its blocked state.
