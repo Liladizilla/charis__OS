@@ -7,7 +7,7 @@
 - IPv4 header validation, fragment rejection, ICMP echo replies and UDP receive dispatch.
 - Static IPv4 next-hop selection using a subnet mask and optional gateway.
 - Outbound UDP/IPv4 frames with IPv4 and UDP checksums.
-- A bounded asynchronous DNS A-record resolver.
+- A bounded asynchronous DNS A-record resolver that validates the echoed single QNAME, A/IN question and matching A-record owner, including bounded backward compression-pointer traversal.
 - A minimal single-connection TCP client with SYN/SYN-ACK handshake, checksummed segments, basic ACK handling, data callbacks and FIN close.
 - A plain HTTP GET client that composes DNS and TCP, parses bounded response headers and streams response body chunks.
 - A bounded DHCPv4 client that performs DISCOVER/OFFER/REQUEST/ACK, installs subnet/router/DNS settings, renews at T1 by unicast and rebinds at T2 by broadcast, and stops using the lease after expiry.
@@ -34,7 +34,7 @@ When a valid `net_ip` is present, static IPv4 configuration is used by default. 
 
 ## DNS API
 
-Kernel code can queue one lookup with `net_dns_query(hostname, callback, context)`. The callback executes in the network polling task. Only one lookup may be active at a time, and only IPv4 A records are returned. CNAME chasing, IPv6 AAAA records, cache persistence and resolver search domains are not implemented.
+Kernel code can queue one lookup with `net_dns_query(hostname, callback, context)`. The callback executes in the network polling task. Only one lookup may be active at a time, and only IPv4 A records are returned. CNAME chasing, IPv6 AAAA records, cache persistence and resolver search domains are not implemented. The resolver rejects mismatched echoed questions, unrelated A-record owners, malformed compression pointers and unsupported query types/classes.
 
 The resolver uses UDP port 53. It starts with `net_dns` and adopts the first DNS server supplied by a validated DHCP lease. Network configuration, gateway reachability and ARP resolution must be correct for it to succeed.
 
