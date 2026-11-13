@@ -988,12 +988,14 @@ static void close_tab(void) {
 bool browser_handle_mouse(int mx, int my) {
     if (!browser_visible || !g_framebuffer.initialized) return false;
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    u32 x = 12, y = 10, w = sw - 24;
-    u32 h = sh > BROWSER_TASKBAR + 22 ? sh - BROWSER_TASKBAR - 18 : sh - 18;
-    if (mx < (int)x || mx >= (int)(x + w) || my < (int)y || my >= (int)(y + h)) {
-        browser_close();
-        return true;
-    }
+    u32 x, y, w, h;
+    browser_geometry(&x, &y, &w, &h);
+    if (x >= sw || y >= sh) return false;
+    if (w > sw - x) w = sw - x;
+    if (h > sh - y) h = sh - y;
+    if (mx < (int)x || mx >= (int)(x + w) ||
+        my < (int)y || my >= (int)(y + h))
+        return false; /* Window-manager hit testing owns clicks outside this surface. */
     browser_tab_t* tab = current_tab();
     if (!tab) return true;
 
