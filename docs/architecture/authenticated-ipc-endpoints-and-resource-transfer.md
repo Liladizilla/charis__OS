@@ -156,9 +156,13 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Ring-3 IPC syscall | Reserved/unregistered and fails closed |
 | Shared-memory pointer exposure | Ring-3 shared-memory calls remain denied |
 
-Future tests must cover service authorization, blocked waiter cancellation,
-listener-close races, attachment rollback, recipient table exhaustion and
-concurrent multi-core operation before enabling those features.
+A dedicated QEMU image exercises real scheduler interleavings for a blocked
+reader receiving a message followed by peer exit, a peer exiting while the
+reader is blocked, and local endpoint revocation cancelling a blocked reader.
+The host suite continues to cover deterministic queue-link and teardown edge
+cases. Future tests must cover service authorization, listener-close races,
+attachment rollback, recipient table exhaustion and concurrent multi-core
+operation before enabling those features.
 
 ## Implementation sequence
 
