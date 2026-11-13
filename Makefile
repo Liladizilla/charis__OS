@@ -222,26 +222,16 @@ font-check:
 # Fail early and legibly when the toolchain is incomplete, rather than part
 # way through a build with a confusing "command not found".
 check-tools:
-	@ok=1; \
-	for pair in "compiler:$(GCC)" "linker:$(LD)" "nasm:$(NASM)" "qemu:$(QEMU)" "grub rescue:$(GRUB)" "curl:$(CURL)" "python:$(PYTHON)"; do \
-		name=$${pair%%:*}; cmd=$${pair#*:}; \
-		if command -v $$cmd >/dev/null 2>&1; then \
-			printf "  ok    %-16s %s\n" "$$name" "$$cmd"; \
-		else \
-			printf "  MISSING %-14s %s\n" "$$name" "$$cmd"; ok=0; \
-		fi; \
-	done; \
-	if ! $(PYTHON) -c 'from PIL import Image, ImageFont' >/dev/null 2>&1; then \
-		echo "  MISSING Python Pillow (required by the wallpaper/font asset tools)"; ok=0; \
-	fi; \
-	if [ "$ok" = "0" ]; then \
-		echo; echo "Install the missing tools, e.g.:"; \
-		echo "  Debian/Ubuntu: install a freestanding x86_64-elf toolchain, nasm, grub-pc-bin, xorriso, qemu-system-x86"; \
-		echo "  Fedora:        install an x86_64-elf cross-toolchain, nasm, grub2-tools, xorriso, qemu-system-x86"; \
-		exit 1; \
-	fi; \
-	if [ "$(CROSS_COMPILE)" = "" ]; then echo "  NOTE: x86_64-elf-gcc not found; using native gcc. Set CROSS_COMPILE=x86_64-elf- to require the cross toolchain."; fi; \
-	echo "  all build tools present"
+	@command -v $(GCC) >/dev/null 2>&1 || { echo "MISSING compiler: $(GCC)"; exit 1; }
+	@command -v $(LD) >/dev/null 2>&1 || { echo "MISSING linker: $(LD)"; exit 1; }
+	@command -v $(NASM) >/dev/null 2>&1 || { echo "MISSING assembler: $(NASM)"; exit 1; }
+	@command -v $(QEMU) >/dev/null 2>&1 || { echo "MISSING QEMU: $(QEMU)"; exit 1; }
+	@command -v $(GRUB) >/dev/null 2>&1 || { echo "MISSING GRUB rescue: $(GRUB)"; exit 1; }
+	@command -v $(CURL) >/dev/null 2>&1 || { echo "MISSING curl: $(CURL)"; exit 1; }
+	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "MISSING Python: $(PYTHON)"; exit 1; }
+	@$(PYTHON) -c 'from PIL import Image, ImageFont' || { echo "MISSING Python Pillow (required by wallpaper/font asset tools)"; exit 1; }
+	@if [ -z "$(CROSS_COMPILE)" ]; then echo "NOTE: x86_64-elf-gcc not found; using native gcc."; fi
+	@echo "all build tools present"
 
 # ── Environment-specific runners ────────────────────────────────────
 
