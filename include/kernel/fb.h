@@ -45,6 +45,8 @@ extern framebuffer_t g_framebuffer;
 int fb_init(void);
 
 void fb_put_pixel(u32 x, u32 y, u32 argb);
+/* Read a pixel as opaque 0xAARRGGBB, independent of framebuffer depth. */
+u32 fb_get_pixel(u32 x, u32 y);
 void fb_fill_rect(u32 x, u32 y, u32 w, u32 h, u32 argb);
 void fb_draw_rect(u32 x, u32 y, u32 w, u32 h, u32 argb);
 void fb_clear(u32 argb);
