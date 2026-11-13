@@ -8,11 +8,28 @@
 #define HTTP_PATH_MAX 512u
 #define HTTP_HEADER_MAX 2048u
 #define HTTP_REQUEST_MAX 1024u
+#define HTTP_CHUNK_LINE_MAX 128u
+#define HTTP_TRAILER_MAX 1024u
+#define HTTP_BODY_MAX (256u * 1024u)
+
+typedef enum {
+    HTTP_CHUNK_SIZE,
+    HTTP_CHUNK_DATA,
+    HTTP_CHUNK_DATA_CR,
+    HTTP_CHUNK_DATA_LF,
+    HTTP_CHUNK_TRAILER,
+    HTTP_CHUNK_DONE
+} http_chunk_state_t;
 
 static bool active;
 static bool headers_done;
 static bool has_content_length;
 static bool chunked_encoding;
+static http_chunk_state_t chunk_state;
+static char chunk_line[HTTP_CHUNK_LINE_MAX];
+static usize chunk_line_length;
+static u32 chunk_remaining;
+static u32 chunk_trailer_bytes;
 static u16 response_status;
 static u32 expected_body;
 static u32 received_body;
@@ -74,6 +91,7 @@ static bool parse_decimal(const char* value, usize length, u32* out) {
 }
 
 static bool parse_headers(void) {
+    bool saw_transfer_encoding = false;
     header_buffer[header_length] = 0;
     char* text = (char*)header_buffer;
     char* line_end = kstrstr(text, "\r\n");
@@ -89,6 +107,7 @@ static bool parse_headers(void) {
     response_status = (u16)((status_digits[1] - '0') * 100 +
                             (status_digits[2] - '0') * 10 +
                             (status_digits[3] - '0'));
+    if (response_status < 100u || response_status > 599u) return false;
 
     char* line = line_end + 2;
     char* headers_end = kstrstr(line, "\r\n\r\n");
@@ -103,18 +122,28 @@ static bool parse_headers(void) {
         while (value < end && (*value == ' ' || *value == '\t')) value++;
         usize name_length = (usize)(colon - line);
         usize value_length = (usize)(end - value);
+        while (value_length && (value[value_length - 1u] == ' ' ||
+                                value[value_length - 1u] == '\t'))
+            value_length--;
         if (ascii_equal(line, name_length, "content-length")) {
             u32 parsed;
-            if (!parse_decimal(value, value_length, &parsed)) return false;
+            if (!parse_decimal(value, value_length, &parsed) ||
+                parsed > HTTP_BODY_MAX)
+                return false;
             if (has_content_length && parsed != expected_body) return false;
             has_content_length = true;
             expected_body = parsed;
         } else if (ascii_equal(line, name_length, "transfer-encoding")) {
-            if (ascii_equal(value, value_length, "chunked")) chunked_encoding = true;
+            if (saw_transfer_encoding ||
+                !ascii_equal(value, value_length, "chunked"))
+                return false;
+            saw_transfer_encoding = true;
+            chunked_encoding = true;
         }
         line = end + 2;
     }
-    if (chunked_encoding) return false;
+    /* RFC framing is ambiguous when both mechanisms are present. */
+    if (has_content_length && chunked_encoding) return false;
     headers_done = true;
     if (headers_callback)
         headers_callback(response_status, has_content_length, expected_body,
@@ -124,15 +153,134 @@ static bool parse_headers(void) {
 
 static void deliver_body(const u8* data, usize length) {
     if (!length || !active) return;
+    if (received_body > HTTP_BODY_MAX ||
+        length > (usize)(HTTP_BODY_MAX - received_body)) {
+        finish_request(false, true);
+        return;
+    }
     if (has_content_length) {
         u32 remaining = expected_body > received_body
             ? expected_body - received_body : 0;
         if (length > remaining) length = remaining;
     }
     if (length && body_callback) body_callback(data, length, request_context);
+    if (!active) return;
     received_body += (u32)length;
     if (has_content_length && received_body >= expected_body)
         finish_request(true, true);
+}
+
+static bool parse_chunk_size(void) {
+    usize n = chunk_line_length;
+    if (n && chunk_line[n - 1u] == '\n') n--;
+    if (n && chunk_line[n - 1u] == '\r') n--;
+    if (!n) return false;
+
+    usize extension = n;
+    for (usize i = 0; i < n; i++) {
+        if (chunk_line[i] == ';') {
+            extension = i;
+            break;
+        }
+    }
+
+    u32 size = 0;
+    if (!extension) return false;
+    for (usize i = 0; i < extension; i++) {
+        char ch = chunk_line[i];
+        u32 value;
+        if (ch >= '0' && ch <= '9') value = (u32)(ch - '0');
+        else if (ch >= 'a' && ch <= 'f') value = (u32)(ch - 'a') + 10u;
+        else if (ch >= 'A' && ch <= 'F') value = (u32)(ch - 'A') + 10u;
+        else return false;
+        if (size > (0xFFFFFFFFu - value) / 16u) return false;
+        size = size * 16u + value;
+    }
+
+    /* We do not interpret chunk extensions, but reject control bytes. */
+    if (extension < n) {
+        if (extension + 1u == n) return false;
+        for (usize i = extension + 1u; i < n; i++) {
+            u8 ch = (u8)chunk_line[i];
+            if (ch < 0x20u || ch > 0x7Eu) return false;
+        }
+    }
+    if (received_body > HTTP_BODY_MAX ||
+        size > HTTP_BODY_MAX - received_body)
+        return false;
+
+    chunk_remaining = size;
+    chunk_line_length = 0;
+    if (size == 0) chunk_state = HTTP_CHUNK_TRAILER;
+    else chunk_state = HTTP_CHUNK_DATA;
+    return true;
+}
+
+static bool valid_trailer_line(const char* line, usize length) {
+    if (!line || !length || line[0] == ' ' || line[0] == '\t') return false;
+    usize colon = 0;
+    while (colon < length && line[colon] != ':') colon++;
+    if (!colon || colon == length) return false;
+
+    for (usize i = 0; i < colon; i++) {
+        u8 ch = (u8)line[i];
+        bool alpha = (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z');
+        bool digit = ch >= '0' && ch <= '9';
+        bool token = alpha || digit || ch == '!' || ch == '#' || ch == '
+
+static void consume_chunked(const u8* data, usize length) {
+    usize pos = 0;
+    while (pos < length && active && chunk_state != HTTP_CHUNK_DONE) {
+        if (chunk_state == HTTP_CHUNK_DATA) {
+            usize take = length - pos;
+            if (take > chunk_remaining) take = chunk_remaining;
+            if (take) deliver_body(data + pos, take);
+            if (!active) return;
+            pos += take;
+            chunk_remaining -= (u32)take;
+            if (chunk_remaining == 0) chunk_state = HTTP_CHUNK_DATA_CR;
+        } else if (chunk_state == HTTP_CHUNK_DATA_CR) {
+            if (data[pos++] != '\r') { finish_request(false, true); return; }
+            chunk_state = HTTP_CHUNK_DATA_LF;
+        } else if (chunk_state == HTTP_CHUNK_DATA_LF) {
+            if (data[pos++] != '\n') { finish_request(false, true); return; }
+            chunk_state = HTTP_CHUNK_SIZE;
+        } else {
+            char ch = (char)data[pos++];
+            if (chunk_state == HTTP_CHUNK_TRAILER) {
+                if (chunk_trailer_bytes >= HTTP_TRAILER_MAX) {
+                    finish_request(false, true);
+                    return;
+                }
+                chunk_trailer_bytes++;
+            }
+            if (chunk_line_length + 1u >= sizeof(chunk_line)) {
+                finish_request(false, true);
+                return;
+            }
+            chunk_line[chunk_line_length++] = ch;
+            if (ch == '\n') {
+                usize n = chunk_line_length;
+                if (n >= 2u && chunk_line[n - 2u] == '\r') n -= 2u;
+                else { finish_request(false, true); return; }
+                if (chunk_state == HTTP_CHUNK_SIZE) {
+                    if (!parse_chunk_size()) { finish_request(false, true); return; }
+                } else {
+                    /* A blank trailer line terminates the chunked message. */
+                    if (n == 0) {
+                        chunk_state = HTTP_CHUNK_DONE;
+                        finish_request(true, true);
+                        return;
+                    }
+                    if (!valid_trailer_line(chunk_line, n)) {
+                        finish_request(false, true);
+                        return;
+                    }
+                    chunk_line_length = 0;
+                }
+            }
+        }
+    }
 }
 
 static void http_on_data(const u8* data, usize length, void* context) {
@@ -157,19 +305,25 @@ static void http_on_data(const u8* data, usize length, void* context) {
                 }
             }
         }
-        if (headers_done && has_content_length && expected_body == 0) {
+        if (headers_done &&
+            ((response_status == 204u || response_status == 304u) ||
+             (has_content_length && expected_body == 0))) {
             finish_request(true, true);
             return;
         }
     }
-    if (headers_done && pos < length) deliver_body(data + pos, length - pos);
+    if (headers_done && pos < length) {
+        if (chunked_encoding) consume_chunked(data + pos, length - pos);
+        else deliver_body(data + pos, length - pos);
+    }
 }
 
 static void http_on_closed(bool clean, void* context) {
     (void)context;
     if (!active) return;
     bool complete = clean && headers_done &&
-        (!has_content_length || received_body >= expected_body);
+        (chunked_encoding ? chunk_state == HTTP_CHUNK_DONE :
+         (!has_content_length || received_body >= expected_body));
     finish_request(complete, false);
 }
 
@@ -233,6 +387,197 @@ bool net_http_get(const char* hostname, const char* path,
     headers_done = false;
     has_content_length = false;
     chunked_encoding = false;
+    chunk_state = HTTP_CHUNK_SIZE;
+    chunk_line_length = 0;
+    chunk_remaining = 0;
+    chunk_trailer_bytes = 0;
+    response_status = 0;
+    expected_body = 0;
+    received_body = 0;
+    request_length = 0;
+    active = true;
+    if (!net_dns_query(request_host, http_on_dns, 0)) {
+        active = false;
+        headers_callback = 0;
+        body_callback = 0;
+        complete_callback = 0;
+        return false;
+    }
+    return true;
+}
+
+void net_http_cancel(void) {
+    if (active) finish_request(false, true);
+}
+ ||
+            ch == '%' || ch == '&' || ch == '\'' || ch == '*' || ch == '+' ||
+            ch == '-' || ch == '.' || ch == '^' || ch == '_' || ch == '`' ||
+            ch == '|' || ch == '~';
+        if (!token) return false;
+    }
+
+    if (ascii_equal(line, colon, "content-length") ||
+        ascii_equal(line, colon, "transfer-encoding"))
+        return false;
+
+    for (usize i = colon + 1u; i < length; i++) {
+        u8 ch = (u8)line[i];
+        if ((ch < 0x20u && ch != '\t') || ch == 0x7Fu) return false;
+    }
+    return true;
+}
+
+static void consume_chunked(const u8* data, usize length) {
+    usize pos = 0;
+    while (pos < length && active && chunk_state != HTTP_CHUNK_DONE) {
+        if (chunk_state == HTTP_CHUNK_DATA) {
+            usize take = length - pos;
+            if (take > chunk_remaining) take = chunk_remaining;
+            if (take) deliver_body(data + pos, take);
+            if (!active) return;
+            pos += take;
+            chunk_remaining -= (u32)take;
+            if (chunk_remaining == 0) chunk_state = HTTP_CHUNK_DATA_CR;
+        } else if (chunk_state == HTTP_CHUNK_DATA_CR) {
+            if (data[pos++] != '\r') { finish_request(false, true); return; }
+            chunk_state = HTTP_CHUNK_DATA_LF;
+        } else if (chunk_state == HTTP_CHUNK_DATA_LF) {
+            if (data[pos++] != '\n') { finish_request(false, true); return; }
+            chunk_state = HTTP_CHUNK_SIZE;
+        } else {
+            char ch = (char)data[pos++];
+            if (chunk_line_length + 1u >= sizeof(chunk_line)) {
+                finish_request(false, true);
+                return;
+            }
+            chunk_line[chunk_line_length++] = ch;
+            if (ch == '\n') {
+                usize n = chunk_line_length;
+                if (n >= 2u && chunk_line[n - 2u] == '\r') n -= 2u;
+                else { finish_request(false, true); return; }
+                if (chunk_state == HTTP_CHUNK_SIZE) {
+                    if (!parse_chunk_size()) { finish_request(false, true); return; }
+                } else {
+                    /* A blank trailer line terminates the chunked message. */
+                    if (n == 0) {
+                        chunk_state = HTTP_CHUNK_DONE;
+                        finish_request(true, true);
+                        return;
+                    }
+                    chunk_line_length = 0;
+                }
+            }
+        }
+    }
+}
+
+static void http_on_data(const u8* data, usize length, void* context) {
+    (void)context;
+    if (!active || !data) return;
+    usize pos = 0;
+    if (!headers_done) {
+        while (pos < length && !headers_done) {
+            if (header_length >= HTTP_HEADER_MAX) {
+                finish_request(false, true);
+                return;
+            }
+            header_buffer[header_length++] = data[pos++];
+            if (header_length >= 4u &&
+                header_buffer[header_length - 4u] == '\r' &&
+                header_buffer[header_length - 3u] == '\n' &&
+                header_buffer[header_length - 2u] == '\r' &&
+                header_buffer[header_length - 1u] == '\n') {
+                if (!parse_headers()) {
+                    finish_request(false, true);
+                    return;
+                }
+            }
+        }
+        if (headers_done &&
+            ((response_status == 204u || response_status == 304u) ||
+             (has_content_length && expected_body == 0))) {
+            finish_request(true, true);
+            return;
+        }
+    }
+    if (headers_done && pos < length) {
+        if (chunked_encoding) consume_chunked(data + pos, length - pos);
+        else deliver_body(data + pos, length - pos);
+    }
+}
+
+static void http_on_closed(bool clean, void* context) {
+    (void)context;
+    if (!active) return;
+    bool complete = clean && headers_done &&
+        (chunked_encoding ? chunk_state == HTTP_CHUNK_DONE :
+         (!has_content_length || received_body >= expected_body));
+    finish_request(complete, false);
+}
+
+static void http_on_connect(bool connected, void* context) {
+    (void)context;
+    if (!active) return;
+    if (!connected) {
+        finish_request(false, false);
+        return;
+    }
+    usize offset = 0;
+    request[0] = 0;
+    if (!append_text(&offset, "GET ") ||
+        !append_text(&offset, request_path) ||
+        !append_text(&offset, " HTTP/1.0\r\nHost: ") ||
+        !append_text(&offset, request_host) ||
+        !append_text(&offset, "\r\nUser-Agent: CharisOS/1.0\r\nAccept: */*\r\nConnection: close\r\n\r\n")) {
+        finish_request(false, true);
+        return;
+    }
+    request_length = offset;
+    int sent = net_tcp_send(request, request_length);
+    if (sent < 0 && sent != -2) finish_request(false, true);
+}
+
+static void http_on_dns(const char* hostname, const u8 ip[4],
+                        bool success, void* context) {
+    (void)hostname;
+    (void)context;
+    if (!active) return;
+    if (!success || !net_tcp_connect(ip, 80u, http_on_connect,
+                                    http_on_data, http_on_closed, 0)) {
+        finish_request(false, false);
+    }
+}
+
+bool net_http_get(const char* hostname, const char* path,
+                  net_http_headers_callback_t on_headers,
+                  net_http_body_callback_t on_body,
+                  net_http_complete_callback_t on_complete,
+                  void* context) {
+    if (active || !hostname || !path || path[0] != '/' || !on_complete)
+        return false;
+    usize host_len = kstrlen(hostname), path_len = kstrlen(path);
+    if (!host_len || host_len > HTTP_HOST_MAX || !path_len ||
+        path_len > HTTP_PATH_MAX)
+        return false;
+    for (usize i = 0; i < path_len; i++) {
+        if ((u8)path[i] < 0x21u || path[i] == '\r' || path[i] == '\n')
+            return false;
+    }
+    kstrncpy(request_host, hostname, sizeof(request_host));
+    request_host[HTTP_HOST_MAX] = 0;
+    kstrncpy(request_path, path, sizeof(request_path));
+    request_path[HTTP_PATH_MAX] = 0;
+    headers_callback = on_headers;
+    body_callback = on_body;
+    complete_callback = on_complete;
+    request_context = context;
+    header_length = 0;
+    headers_done = false;
+    has_content_length = false;
+    chunked_encoding = false;
+    chunk_state = HTTP_CHUNK_SIZE;
+    chunk_line_length = 0;
+    chunk_remaining = 0;
     response_status = 0;
     expected_body = 0;
     received_body = 0;
