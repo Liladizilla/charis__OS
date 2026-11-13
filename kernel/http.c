@@ -358,19 +358,25 @@ static void http_on_data(const u8* data, usize length, void* context) {
                 }
             }
         }
-        if (headers_done && has_content_length && expected_body == 0) {
+        if (headers_done &&
+            ((response_status == 204u || response_status == 304u) ||
+             (!chunked_encoding && has_content_length && expected_body == 0))) {
             finish_request(true, true);
             return;
         }
     }
-    if (headers_done && pos < length) deliver_body(data + pos, length - pos);
+    if (headers_done && pos < length) {
+        if (chunked_encoding) consume_chunked(data + pos, length - pos);
+        else deliver_body(data + pos, length - pos);
+    }
 }
 
 static void http_on_closed(bool clean, void* context) {
     (void)context;
     if (!active) return;
     bool complete = clean && headers_done &&
-        (!has_content_length || received_body >= expected_body);
+        (chunked_encoding ? chunk_state == HTTP_CHUNK_DONE :
+         (!has_content_length || received_body >= expected_body));
     finish_request(complete, false);
 }
 
@@ -434,6 +440,9 @@ bool net_http_get(const char* hostname, const char* path,
     headers_done = false;
     has_content_length = false;
     chunked_encoding = false;
+    chunk_state = HTTP_CHUNK_SIZE;
+    chunk_line_length = 0;
+    chunk_remaining = 0;
     response_status = 0;
     expected_body = 0;
     received_body = 0;
