@@ -873,7 +873,7 @@ static bool settings_reflow_window(window_t* win) {
     if (!shell_resize_app_window(win, (int)width, (int)client_height))
         return false;
 
-    serial_printf("SHELL_SETTINGS_REFLOW %ux%u at %d,%d\\n",
+    serial_printf("SHELL_SETTINGS_REFLOW %ux%u at %d,%d\n",
                   width, client_height, win->x, win->y);
     return true;
 }
@@ -946,9 +946,11 @@ static void draw_settings_window(window_t* win) {
     u32 page_heading_y = y+title_h+ui_px(18);
     gfx_draw_string(content_x, page_heading_y,
                     "Display", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(content_x, page_heading_y+text_height()+ui_px(6),
-                    "Control the way CharisOS looks and reads.",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+    if (gfx_text_get_scale() == 1u) {
+        gfx_draw_string(content_x, page_heading_y+text_height()+ui_px(6),
+                        "Control the way CharisOS looks and reads.",
+                        CHARIS_UI_MUTED, FB_TRANSPARENT);
+    }
 
     int style = config_get_int("font_style", 0);
     int font_scale = config_get_int("font_scale", 1);
