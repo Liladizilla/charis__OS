@@ -171,14 +171,16 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Native Calculator window integrated with WM lifecycle, z-order, resize, focus and titlebar handling; sequential integer arithmetic, checked signed 32-bit overflow, divide-by-zero handling, mouse keypad, keyboard input and F8 launch are covered by host regression tests; QEMU captures the native window at 200% text and 120% UI scale
 - [x] Settings controls for font family, text size and global UI scale
 - [x] Settings persist to `/CHARISOS.CFG` on supported primary ATA FAT32 and reload after reboot in CI
-- [x] QEMU capture verifies the desktop after closing Settings at 200% text and 120% interface scale without the previous welcome-card clipping
+- [x] QEMU verifies live Settings reflow at 200% text/120% UI, plus a readable 300% Settings window after reboot
+- [x] PS/2 pointer movement uses cursor save-under restoration; QEMU moves the cursor away and back and verifies an exact framebuffer restore
+- [x] Bundle the pinned CC0 photographic wallpaper through the bounded CWP1 RGB565 Multiboot2 module; the kernel validates the module and performs no JPEG decoding
 - [x] Add a responsive one-/two-/four-column workspace shortcut grid for Files, Terminal, Settings and Browser with bounded hit testing
 - [x] Add verified live system status indicators (uptime and PMM memory counters) and a labelled workspace hierarchy
 - [x] Add scale-aware workspace geometry and suppress secondary card descriptions at larger font scales
-- [x] Distribute shortcut cards across responsive one-, two- or four-column layouts with bounded card width (fresh QEMU visual verification pending)
-- [ ] Verify card and System Overview typography at 100/125/150/200% text/UI scales; add measured wrapping where clipping remains
+- [x] Distribute shortcut cards across responsive one-, two- or four-column layouts with bounded card width; QEMU captures verify the workspace at 1024×768
+- [x] Verify workspace and System Overview typography at 100%, 200% and 300% text scales at 1024×768; measured large-font labels fall back to shorter text where columns require it
+- [ ] Verify intermediate 125%/150% text scales and 1280×800/1920×1080 framebuffer layouts
 - [ ] Implement shared layout primitives: measure/arrange, horizontal/vertical flow, padding/gaps, wrapping, clipping/ellipsis and scroll containers
-- [ ] Verify layout at 100/125/150/200% text/UI scales and 1024x768, 1280x800 and 1920x1080 framebuffer sizes
 - [x] Standardize native app titlebars, close controls, focus indication and keyboard dispatch for current applications
 - [x] Add independently movable windows, multi-window z-order, taskbar focus/restore and Alt+Tab
 - [x] Add pointer resize handles, maximize/restore and focused-window keyboard shortcuts
@@ -249,9 +251,9 @@ The shell still owns the framebuffer and application renderers, while the WM own
 
 ## Phase 16: Build & Quality (IN PROGRESS)
 - [x] Kernel compiles cleanly (all 7 errors fixed)
-- [x] CI workflow (.github/workflows/ci.yml) - build + QEMU ring-3 yield/resume boot test
+- [x] CI workflow (.github/workflows/ci.yml) - freestanding build, BIOS/USB boot, ring-3 yield/resume and user-fault containment
 - [x] QEMU regression gate covers BIOS ring-3 yield/resume, user-fault containment and ELF capability-denial policy
-- [ ] QEMU regression gate authorizes and successfully enters a static ELF program
+- [x] Dedicated CI image authorizes and successfully enters a static ELF program in a fresh address space; BIOS QEMU verified, UEFI remains advisory and firmware-dependent
 - [x] Repo hygiene: .gitattributes, .gitignore, CRLF→LF fixed
 - [x] Boot debug markers fixed (no collisions, full coverage)
 - [ ] Make the default `make test` target execute the VMM suite; CI currently boots a separate `RUN_VMM_TESTS` image and runs the full regression suite in QEMU
@@ -264,10 +266,11 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] WM list traversal detects duplicate nodes and remains bounded if links form a cycle
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions
-- [x] CI run #732 passed the freestanding build, x86-64 baseline audit, BIOS/ring-3 isolation checks, VMM huge-page/permission regression suite, dedicated kernel-stack guard fault on IST1 and QEMU desktop/settings capture
-- [x] QEMU capture from run #732 verifies Files, Terminal, Browser, multi-window routing, maximize/restore, keyboard resize, System Status and Kernel Activity counters
-- [x] QEMU guard-probe from run #732 verifies the kernel stack-guard #PF arrives on IST1 and produces the expected diagnostic markers
-- [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`); the capture also checks the largest font preset
+- [x] CI run [#1002](https://github.com/Liladizilla/charis__OS/actions/runs/43490328956) passed all 51 workflow steps: freestanding build, x86-64 baseline audit, BIOS/USB and ring-3 boot, authorized ELF execution, VMM permissions, waitpid, blocking/authenticated IPC, stack-guard IST containment, PS/2 cursor save-under restoration, desktop capture and settings persistence
+- [x] QEMU run #1002 verifies Files, Terminal, Browser, Calculator, multi-window routing, maximize/restore, keyboard resize, System Status and Kernel Activity
+- [x] QEMU run #1002 verifies pointer movement changes the framebuffer and returning the pointer restores the original pixels exactly
+- [x] QEMU guard-probe verifies the kernel stack-guard #PF arrives on IST1 and produces the expected diagnostic markers
+- [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`); the same run captures the live 300% font preset after reboot
 - [ ] Expand automated regression coverage to pointer-drag resize, snap/tiling, real hardware and long-session desktop stability
 
 ## Phase 17: Process Management (IN PROGRESS)
@@ -376,11 +379,12 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 - [x] DHCPv4 lease acquisition and renewal integrated with the wired network worker
 - [ ] Physical LAN DHCP, DNS reachability, route installation and reconnect behavior verified on supported hardware
 - [ ] Real Internet path verification: DHCP/static config, DNS, HTTP, TLS, timeouts, packet loss and reconnect behavior
-- [x] Shortlist and record high-resolution CC0 wallpaper sources with source pages, author and original dimensions; see assets/wallpapers/README.md
-- [ ] Download and vendor the source files, record checksums and re-verify files after download
-- [ ] Wallpaper asset pipeline with image dimension limits, safe decoding and aspect-ratio-aware scaling
+- [x] Record a high-resolution CC0 wallpaper source, creator, source page, original dimensions, byte length and SHA-1 in `assets/wallpapers/README.md`
+- [x] Pin the exact external source and fail the image build on byte-length or checksum mismatch; an offline vendored/cache copy remains future work
+- [x] Build-time wallpaper pipeline crops and resizes the pinned photo to 2560×1440 RGB565 CWP1; the kernel validates signature, version, dimensions, stride and payload length without a privileged JPEG decoder
 - [ ] High-quality bundled wallpaper set with no embedded logos, watermarks or UI overlays; user-selectable wallpaper and fallback procedural themes
-- [ ] Desktop capture pipeline publishes the actual QEMU framebuffer capture and keeps README screenshots synchronized with the tested commit
+- [x] QEMU desktop capture pipeline publishes the actual framebuffer, pointer frames, app windows and settings/reboot captures as CI artifacts
+- [x] Refresh the checked-in README desktop screenshots from successful CI run #1002; capture is a real QEMU framebuffer image
 - [ ] Native terminal visual pass: near-black console canvas, compact chrome, dedicated monospace font metrics, carefully measured CharisOS ASCII banner and stable prompt/output layout
 - [ ] Verify ASCII banner width/height against font-cell metrics at all supported text scales and narrow window sizes
 - [x] Add host regressions for RTC BCD/binary modes, 12-hour conversion, invalid dates, leap days and Unix epoch/calendar conversion
