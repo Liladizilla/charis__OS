@@ -125,7 +125,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Add kernel-only cancellable blocking receive, atomic waiter registration, message/peer-close wakeups and task-exit unlinking
 - [x] Add dedicated QEMU scheduler coverage proving receiver BLOCKED before send, message wake, second blocking wait and peer-close wake
 - [x] Add a bounded kernel service namespace with unique exact-name registration, nonzero defined client capabilities checked through security_check_capability(), generation-protected service/request tokens, server next/accept/reject, one-time client result retrieval, and exit/unregister cleanup
-- [x] Host regressions cover unauthorized clients, cross-task tokens, accept/reject, unregister, owner/client exit, dead-client request reclamation, stale generations and service/request table exhaustion
+- [x] Host regressions cover unauthorized clients, cross-task tokens, accept/reject/cancel, unregister, owner/client exit, dead-client request reclamation, stale generations and service/request table exhaustion
 - [ ] Add transactional descriptor attachments, reference pinning, recipient-slot reservation and rollback
 - [ ] Only design ring-3 IPC syscalls after user-memory preflight, service authorization and QEMU lifecycle tests exist
 - [ ] Unix domain sockets (socket.c is INET-only)
