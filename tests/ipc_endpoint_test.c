@@ -205,7 +205,10 @@ static void test_service_registration_policy_and_accept(void) {
     u32 client_pid = 0;
     assert(ipc_service_accept_wait(service, &offered, &client_pid) ==
            IPC_STATUS_OK);
-    assert(offered == request && client_pid == task_b.pid);
+    /* Client and server receive different PID-bound request handles. */
+    assert(offered != request && client_pid == task_b.pid);
+    assert((u32)(request >> 32) == task_b.pid);
+    assert((u32)(offered >> 32) == task_a.pid);
 
     ipc_handle_t server_endpoint = IPC_HANDLE_INVALID;
     assert(ipc_service_accept(service, offered, IPC_RIGHT_SEND,
