@@ -2,6 +2,9 @@
 #include <kernel/cursor.h>
 #include <kernel/fb.h>
 #include <kernel/mouse.h>
+#ifdef CURSOR_TRACE
+#include <kernel/serial.h>
+#endif
 
 #define CURSOR_WIDTH  10u
 #define CURSOR_HEIGHT 16u
@@ -67,9 +70,24 @@ void cursor_draw(void) {
     }
 
     if (cursor_saved_valid && mouse.x == cursor_saved_x &&
-        mouse.y == cursor_saved_y)
+        mouse.y == cursor_saved_y) {
+#ifdef CURSOR_TRACE
+        static bool trace_first_skip = true;
+        if (trace_first_skip) {
+            serial_printf("CURSOR_TRACE skip x=%d y=%d saved=%d,%d valid=%u\\n",
+                          mouse.x, mouse.y, cursor_saved_x, cursor_saved_y,
+                          cursor_saved_valid ? 1u : 0u);
+            trace_first_skip = false;
+        }
+#endif
         return;
+    }
 
+#ifdef CURSOR_TRACE
+    serial_printf("CURSOR_TRACE draw x=%d y=%d old=%d,%d valid=%u\\n",
+                  mouse.x, mouse.y, cursor_saved_x, cursor_saved_y,
+                  cursor_saved_valid ? 1u : 0u);
+#endif
     cursor_erase();
     fb_reset_clip();
 
