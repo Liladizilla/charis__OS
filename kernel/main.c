@@ -236,6 +236,173 @@ static void ipc_cancel_test_coordinator(void* unused) {
 }
 #endif
 
+#ifdef TEST_IPC_SERVICES
+static volatile u32 ipc_service_test_registered;
+static task_t* volatile ipc_service_test_server_task;
+static task_t* volatile ipc_service_test_client_task;
+
+static void ipc_service_test_fail(const char* reason) {
+    serial_puts("IPC_SERVICE_TEST_FAIL: ");
+    serial_puts(reason);
+    serial_puts("\n");
+    for (;;) asm volatile("cli; hlt" : : : "memory");
+}
+
+/* The client may proceed only after the server is actually blocked in the
+ * kernel accept queue. This proves event-driven wakeup, not just queue polling. */
+static void ipc_service_test_wait_for_blocked_accept(void) {
+    task_t* server = (task_t*)ipc_service_test_server_task;
+    if (!server) ipc_service_test_fail("server task pointer missing");
+    u32 attempts = 0;
+    while ((!server->ipc_service_wait ||
+            server->waiting_event != TASK_WAITING_IPC_SERVICE ||
+            server->state != TASK_STATE_BLOCKED) &&
+           attempts++ < 5000U) {
+        task_sleep_ms(1);
+    }
+    if (!server->ipc_service_wait ||
+        server->waiting_event != TASK_WAITING_IPC_SERVICE ||
+        server->state != TASK_STATE_BLOCKED)
+        ipc_service_test_fail("server never blocked in service accept");
+}
+
+static void ipc_service_test_server(void* unused) {
+    (void)unused;
+    static const char expected[] = "charisos-service-rendezvous";
+    ipc_service_handle_t service = 0;
+    if (ipc_service_register("com.charis.qemu", CAP_FS_READ, &service) !=
+        IPC_STATUS_OK || !service)
+        ipc_service_test_fail("authenticated service registration failed");
+
+    ipc_service_test_registered = 1;
+
+    /* First request must be accepted and become a live, rights-limited pair. */
+    ipc_request_handle_t request = 0;
+    u32 client_pid = 0;
+    if (ipc_service_accept_wait(service, &request, &client_pid) !=
+        IPC_STATUS_OK || !request)
+        ipc_service_test_fail("blocked accept did not receive client request");
+
+    task_t* expected_client = (task_t*)ipc_service_test_client_task;
+    if (!expected_client || client_pid != expected_client->pid)
+        ipc_service_test_fail("kernel-derived client identity mismatch");
+
+    ipc_handle_t endpoint = IPC_HANDLE_INVALID;
+    if (ipc_service_accept(service, request, IPC_RIGHT_SEND,
+                           IPC_RIGHT_RECEIVE, &endpoint) != IPC_STATUS_OK ||
+        endpoint == IPC_HANDLE_INVALID)
+        ipc_service_test_fail("atomic endpoint creation failed");
+
+    char buffer[sizeof(expected)];
+    u32 sender_pid = 0;
+    int received = ipc_recv_wait(endpoint, buffer, sizeof(buffer), &sender_pid);
+    if (received != (int)sizeof(expected) || sender_pid != client_pid)
+        ipc_service_test_fail("server did not receive from authenticated client");
+    for (u32 i = 0; i < sizeof(expected); i++) {
+        if (buffer[i] != expected[i])
+            ipc_service_test_fail("service payload mismatch");
+    }
+    if (ipc_send(endpoint, "x", 1) != IPC_STATUS_ERROR)
+        ipc_service_test_fail("server endpoint unexpectedly has SEND rights");
+    if (ipc_close(endpoint) != IPC_STATUS_OK)
+        ipc_service_test_fail("server endpoint close failed");
+    serial_puts("IPC_SERVICE_TEST_ACCEPT_WAKE_OK\n");
+
+    /* The second connection is deliberately rejected. The client blocks in
+     * connect_wait and must be woken with REQUEST_REJECTED. */
+    request = 0;
+    if (ipc_service_accept_wait(service, &request, &client_pid) !=
+        IPC_STATUS_OK || !request)
+        ipc_service_test_fail("second blocked accept did not receive request");
+    if (ipc_service_reject(service, request) != IPC_STATUS_OK)
+        ipc_service_test_fail("service request rejection failed");
+    serial_puts("IPC_SERVICE_TEST_REJECT_WAKE_OK\n");
+
+    if (ipc_service_unregister(service) != IPC_STATUS_OK)
+        ipc_service_test_fail("service unregister failed");
+    serial_puts("IPC_SERVICE_TEST_SERVER_TEARDOWN_OK\n");
+    task_exit_with_status(0);
+}
+
+static void ipc_service_test_client(void* unused) {
+    (void)unused;
+    static const char payload[] = "charisos-service-rendezvous";
+    u32 attempts = 0;
+    while (!ipc_service_test_registered && attempts++ < 5000U)
+        task_sleep_ms(1);
+    if (!ipc_service_test_registered)
+        ipc_service_test_fail("service was not registered");
+
+    ipc_service_test_wait_for_blocked_accept();
+    ipc_request_handle_t request = 0;
+    if (ipc_service_connect_begin("com.charis.qemu", IPC_RIGHT_SEND,
+                                  &request) != IPC_STATUS_OK || !request)
+        ipc_service_test_fail("client connect request was not queued");
+
+    ipc_handle_t endpoint = IPC_HANDLE_INVALID;
+    if (ipc_service_connect_wait(request, &endpoint) != IPC_STATUS_OK ||
+        endpoint == IPC_HANDLE_INVALID)
+        ipc_service_test_fail("blocked client connect did not complete");
+    if (ipc_recv(endpoint, NULL, 0, NULL) != IPC_STATUS_ERROR)
+        ipc_service_test_fail("client endpoint unexpectedly has RECEIVE rights");
+    if (ipc_send(endpoint, payload, sizeof(payload)) != IPC_STATUS_OK)
+        ipc_service_test_fail("client send through accepted endpoint failed");
+    if (ipc_close(endpoint) != IPC_STATUS_OK)
+        ipc_service_test_fail("client endpoint close failed");
+
+    ipc_service_test_wait_for_blocked_accept();
+    request = 0;
+    if (ipc_service_connect_begin("com.charis.qemu", IPC_RIGHT_SEND,
+                                  &request) != IPC_STATUS_OK || !request)
+        ipc_service_test_fail("second client request was not queued");
+    endpoint = IPC_HANDLE_INVALID;
+    int result = ipc_service_connect_wait(request, &endpoint);
+    if (result != IPC_STATUS_REQUEST_REJECTED ||
+        endpoint != IPC_HANDLE_INVALID)
+        ipc_service_test_fail("rejected client was not woken with rejection");
+    serial_puts("IPC_SERVICE_TEST_CLIENT_REJECT_OK\n");
+    task_exit_with_status(0);
+}
+
+static void ipc_service_test_coordinator(void* unused) {
+    (void)unused;
+    ipc_service_test_registered = 0;
+    task_t* server = task_create("ipc-service-server",
+        ipc_service_test_server, NULL, CAP_IPC_SERVICE, false);
+    task_t* client = task_create("ipc-service-client",
+        ipc_service_test_client, NULL, CAP_FS_READ, false);
+    if (!server || !client)
+        ipc_service_test_fail("cannot create service test workers");
+
+    ipc_service_test_server_task = server;
+    ipc_service_test_client_task = client;
+    scheduler_add_task(server);
+    scheduler_add_task(client);
+
+    /* The coordinator has no CAP_FS_READ. A denial here exercises the actual
+     * task capability check against the live current-task control block. */
+    u32 attempts = 0;
+    while (!ipc_service_test_registered && attempts++ < 5000U)
+        task_sleep_ms(1);
+    if (!ipc_service_test_registered)
+        ipc_service_test_fail("service registration did not become visible");
+    ipc_request_handle_t denied_request = 0;
+    if (ipc_service_connect_begin("com.charis.qemu", IPC_RIGHT_SEND,
+                                 &denied_request) != IPC_STATUS_ACCESS_DENIED ||
+        denied_request != 0)
+        ipc_service_test_fail("service capability policy did not deny client");
+
+    for (u32 child = 0; child < 2; child++) {
+        u32 status = 0xFFFFFFFFU;
+        s64 pid = task_waitpid(-1, &status, false);
+        if (pid <= 0 || status != 0)
+            ipc_service_test_fail("service worker exit/reaping failed");
+    }
+    serial_puts("IPC_SERVICE_TEST_OK\n");
+    task_exit_with_status(0);
+}
+#endif
+
 #ifdef TEST_WAITPID
 static volatile u32 waitpid_orphan_pid;
 
@@ -585,6 +752,16 @@ void kernel_main(u32 magic, u64 info_ptr) {
                 scheduler_add_task(cancel_coordinator);
             }
         }
+    }
+#endif
+
+#ifdef TEST_IPC_SERVICES
+    task_t* ipc_service_coordinator = task_create("ipc-service-coordinator",
+        ipc_service_test_coordinator, NULL, 0, false);
+    if (!ipc_service_coordinator) {
+        serial_puts("IPC_SERVICE_TEST_SETUP_FAILED\n");
+    } else {
+        scheduler_add_task(ipc_service_coordinator);
     }
 #endif
 
