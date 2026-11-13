@@ -150,6 +150,7 @@ static bool alt_held;
 static u32 settings_title_height(void);
 static u32 settings_panel_width(void);
 static u32 settings_panel_height(void);
+static bool settings_reflow_window(window_t* win);
 static u32 about_titlebar_height(void);
 static void draw_settings_window(window_t* win);
 static bool settings_handle_window_click(window_t* win, int mx, int my);
@@ -394,12 +395,14 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
                 if (value > 3) value = 3;
                 config_set_int("font_scale", value);
                 gfx_text_apply_preferences();
+                (void)settings_reflow_window(win);
                 config_save(CONFIG_FILE_PATH);
             } else if (pressed && !extended && base == 0x41u) {
                 int value = config_get_int("ui_scale", 100) + 20;
                 if (value > 120) value = 120;
                 config_set_int("ui_scale", value);
                 gfx_text_apply_preferences();
+                (void)settings_reflow_window(win);
                 config_save(CONFIG_FILE_PATH);
             }
             break;
@@ -818,7 +821,10 @@ static u32 settings_row_height(void) {
 }
 static u32 settings_row_height_for(u32 full_height) {
     u32 desired = settings_row_height();
-    u32 fixed = settings_title_height() + ui_px(128) + ui_px(46);
+    /* The first row begins 82 logical pixels below the titlebar and the
+     * footer reserves 58 pixels. Do not shrink rows that already fit in the
+     * dynamically-sized Settings window. */
+    u32 fixed = settings_title_height() + ui_px(82) + ui_px(58);
     if (full_height <= fixed) return ui_px(64);
     u32 available = (full_height - fixed) / 3u;
     return desired < available ? desired : available;
@@ -833,6 +839,43 @@ static u32 settings_panel_width(void) {
 static u32 settings_panel_height(void) {
     return settings_title_height() + ui_px(90) +
            (3 * settings_row_height()) + ui_px(58);
+}
+
+/* Recompute the Settings surface after a live font/UI-scale change. Its
+ * content is measured in the new metrics, so the window must grow with it.
+ * Center it in the usable workspace before resizing; this leaves enough room
+ * on both sides for the bounded window-manager resize path. */
+static bool settings_reflow_window(window_t* win) {
+    if (!win || win->maximized || !g_framebuffer.initialized) return false;
+
+    u32 screen_w = g_framebuffer.width;
+    u32 screen_h = g_framebuffer.height;
+    u32 work_bottom = screen_h > taskbar_height()
+                    ? screen_h - taskbar_height() : screen_h;
+    u32 margin = ui_px(24);
+    u32 width = settings_panel_width();
+    u32 total_height = settings_panel_height();
+    u32 max_width = screen_w > margin ? screen_w - margin : screen_w;
+    u32 max_height = work_bottom > margin ? work_bottom - margin : work_bottom;
+    u32 title_h = settings_title_height();
+
+    if (width > max_width) width = max_width;
+    if (total_height > max_height) total_height = max_height;
+    if (width <= ui_px(160) || total_height <= title_h + ui_px(64))
+        return false;
+
+    u32 client_height = total_height - title_h;
+    s32 x = (s32)((screen_w - width) / 2u);
+    s32 y = (s32)((work_bottom - total_height) / 2u);
+
+    if (!wm_move_window(win, x, y)) return false;
+    if (!wm_set_titlebar_height(win, title_h)) return false;
+    if (!shell_resize_app_window(win, (int)width, (int)client_height))
+        return false;
+
+    serial_printf("SHELL_SETTINGS_REFLOW %ux%u at %d,%d\n",
+                  width, client_height, win->x, win->y);
+    return true;
 }
 
 static void draw_settings_window(window_t* win) {
@@ -903,9 +946,11 @@ static void draw_settings_window(window_t* win) {
     u32 page_heading_y = y+title_h+ui_px(18);
     gfx_draw_string(content_x, page_heading_y,
                     "Display", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(content_x, page_heading_y+text_height()+ui_px(6),
-                    "Control the way CharisOS looks and reads.",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+    if (gfx_text_get_scale() == 1u) {
+        gfx_draw_string(content_x, page_heading_y+text_height()+ui_px(6),
+                        "Control the way CharisOS looks and reads.",
+                        CHARIS_UI_MUTED, FB_TRANSPARENT);
+    }
 
     int style = config_get_int("font_style", 0);
     int font_scale = config_get_int("font_scale", 1);
@@ -1017,6 +1062,7 @@ static bool settings_handle_window_click(window_t* win, int mx, int my) {
         config_set_int("ui_scale",value);
     }
     gfx_text_apply_preferences();
+    (void)settings_reflow_window(win);
     config_save(CONFIG_FILE_PATH);
     return true;
 }
