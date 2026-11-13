@@ -845,10 +845,23 @@ static u32 settings_nav_height(void) {
     return height > readable ? height : readable;
 }
 static u32 settings_rail_width(void) {
-    u32 width = ui_px(164), heading_width = 0;
-    gfx_text_size("PREFERENCES", &heading_width, NULL);
-    if (width < heading_width + ui_px(36))
-        width = heading_width + ui_px(36);
+    int font_scale = config_get_int("font_scale", 1);
+    if (font_scale < 1 || font_scale > 3) font_scale = 1;
+    const char* heading = font_scale >= 3 ? "MENU" : "PREFERENCES";
+    const char* nav[] = {
+        "Display",
+        font_scale >= 3 ? "User" :
+            (font_scale > 1 ? "Personal" : "Personalization"),
+        "System"
+    };
+    u32 width = ui_px(164), measured = 0;
+    gfx_text_size(heading, &measured, NULL);
+    if (measured > width) width = measured;
+    for (u32 i=0; i<3; i++) {
+        gfx_text_size(nav[i], &measured, NULL);
+        if (measured > width) width = measured;
+    }
+    width += ui_px(36);
     u32 maximum = settings_panel_width() / 2u;
     return width > maximum ? maximum : width;
 }
@@ -934,7 +947,25 @@ static void draw_settings_window(window_t* win) {
     u32 button_w = settings_button_width();
     u32 plus_x = x+cw-button_w-ui_px(24);
     u32 control_x = plus_x-button_w-ui_px(8);
-    u32 value_x = content_x + (control_x-content_x)/2u;
+    u32 label_column_w = 0, measured_label_w = 0;
+    int configured_font_scale = config_get_int("font_scale", 1);
+    if (configured_font_scale < 1 || configured_font_scale > 3)
+        configured_font_scale = 1;
+    const char* measured_labels[] = {
+        configured_font_scale >= 3 ? "F" :
+            (configured_font_scale > 1 ? "Font" : "Font family"),
+        configured_font_scale >= 3 ? "T" :
+            (configured_font_scale > 1 ? "Text" : "Text size"),
+        configured_font_scale >= 3 ? "UI" :
+            (configured_font_scale > 1 ? "UI" : "UI scale")
+    };
+    for (u32 i=0; i<3; i++) {
+        gfx_text_size(measured_labels[i], &measured_label_w, NULL);
+        if (measured_label_w > label_column_w)
+            label_column_w = measured_label_w;
+    }
+    u32 value_x = content_x + ui_px(8) + label_column_w + ui_px(16);
+    if (value_x >= control_x) value_x = content_x;
     u32 button_h = settings_button_height();
 
     fb_fill_rect(x+ui_px(7), y+ui_px(8), cw, ch, CHARIS_UI_SHADOW);
@@ -969,11 +1000,15 @@ static void draw_settings_window(window_t* win) {
                  ch>title_h+ui_px(2) ? ch-title_h-ui_px(2) : 1u,
                  CHARIS_UI_PANEL_RAISED);
     u32 preferences_y = y+title_h+ui_px(24);
+    int active_font_scale = config_get_int("font_scale", 1);
+    if (active_font_scale < 1 || active_font_scale > 3) active_font_scale = 1;
     gfx_draw_string(x+ui_px(18), preferences_y,
-                    "PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
+                    active_font_scale >= 3 ? "MENU" : "PREFERENCES",
+                    CHARIS_UI_MUTED, FB_TRANSPARENT);
     const char* nav[] = {
         "Display",
-        text_height() > ui_px(16) ? "Personal" : "Personalization",
+        active_font_scale >= 3 ? "User" :
+            (active_font_scale > 1 ? "Personal" : "Personalization"),
         "System"
     };
     u32 nav_step = settings_nav_step();
@@ -1016,9 +1051,9 @@ static void draw_settings_window(window_t* win) {
         scales[font_scale-1], ui_scales[scale_index]
     };
     const char* labels[3] = {
-        font_scale > 1 ? "Font" : "Font family",
-        font_scale > 1 ? "Text" : "Text size",
-        font_scale > 1 ? "UI" : "UI scale"
+        font_scale >= 3 ? "F" : (font_scale > 1 ? "Font" : "Font family"),
+        font_scale >= 3 ? "T" : (font_scale > 1 ? "Text" : "Text size"),
+        font_scale >= 3 ? "UI" : (font_scale > 1 ? "UI" : "UI scale")
     };
     const char* hints[3] = {
         "Native app typeface",
@@ -1085,8 +1120,10 @@ static void draw_settings_window(window_t* win) {
                  footer_w, ui_px(1), CHARIS_UI_BORDER);
     fb_set_clip(content_x, footer_y, footer_w, text_height());
     gfx_draw_string(content_x, footer_y,
-                    config_is_persistent() ? "All changes saved"
-                                           : "Session only  |  No writable configuration volume",
+                    config_is_persistent()
+                        ? (font_scale >= 2 ? "Saved" : "All changes saved")
+                        : (font_scale >= 2 ? "Session only" :
+                           "Session only  |  No writable configuration volume"),
                     config_is_persistent() ? CHARIS_UI_SUCCESS : CHARIS_UI_WARNING,
                     FB_TRANSPARENT);
     fb_reset_clip();
@@ -1107,8 +1144,8 @@ static bool settings_handle_window_click(window_t* win, int mx, int my) {
         return false; /* unclaimed titlebar space is draggable */
     }
 
-    u32 rail_w=ui_px(164);
-    if (rail_w > cw/3u) rail_w = cw/3u;
+    u32 rail_w=settings_rail_width();
+    if (rail_w > cw/2u) rail_w = cw/2u;
     u32 row_h=settings_row_height_for(ch);
     u32 button_w=settings_button_width();
     u32 plus_x=x+cw-button_w-ui_px(24);
