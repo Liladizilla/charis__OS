@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
-"""Generate CharisOS's embedded Inter bitmap font and CP437 UI glyphs."""
+"""Generate antialiased Inter UI glyphs plus procedural CP437 frame glyphs."""
 from pathlib import Path
 import sys
 from PIL import Image, ImageDraw, ImageFont
 
-CELL_W, CELL_H = 12, 22
+CELL_W, CELL_H = 18, 24
 FIRST, LAST = 32, 126
+COVERAGE_LEVELS = 15
 FONT_CANDIDATES = (
+    "/usr/share/fonts/rsms-inter-fonts/Inter-Regular.otf",
+    "/usr/share/fonts/rsms-inter-fonts/Inter-Regular.ttf",
     "/usr/share/fonts/opentype/inter/Inter-Regular.otf",
     "/usr/share/fonts/truetype/inter/Inter-Regular.ttf",
 )
-
 CP437_NAMES = {
     0xB0: "light", 0xB1: "medium", 0xB2: "dark", 0xB3: "v",
     0xB4: "righttee", 0xB9: "bottomtee", 0xBA: "vdouble",
@@ -24,15 +26,15 @@ def load_font():
     for path in FONT_CANDIDATES:
         if not Path(path).exists():
             continue
-        for size in range(18, 8, -1):
+        for size in range(22, 11, -1):
             font = ImageFont.truetype(path, size)
             max_advance = max(font.getlength(chr(cp))
                              for cp in range(FIRST, LAST + 1))
             ascent, descent = font.getmetrics()
-            if max_advance <= CELL_W and ascent + descent <= CELL_H:
+            if max_advance <= CELL_W - 1 and ascent + descent <= CELL_H:
                 return font, ascent, descent
     raise SystemExit(
-        "Inter is unavailable or does not fit. Install fonts-inter and Pillow."
+        "Inter is unavailable or does not fit. Install fonts-inter/rsms-inter-fonts and Pillow."
     )
 
 
@@ -40,9 +42,9 @@ def blank():
     return [[0 for _ in range(CELL_W)] for _ in range(CELL_H)]
 
 
-def put(glyph, x, y):
+def put(glyph, x, y, coverage=COVERAGE_LEVELS):
     if 0 <= x < CELL_W and 0 <= y < CELL_H:
-        glyph[y][x] = 1
+        glyph[y][x] = coverage
 
 
 def hline(glyph, y, x0=0, x1=CELL_W):
@@ -69,7 +71,7 @@ def make_cp437():
             for y in range(CELL_H):
                 for x in range(CELL_W):
                     if (x * 3 + y * 5) % 8 < density:
-                        put(glyph, x, y)
+                        put(glyph, x, y, max(1, density * COVERAGE_LEVELS // 8))
         elif name in ("h", "hdouble"):
             hline(glyph, middle_y)
             if name == "hdouble":
@@ -111,41 +113,47 @@ def make_cp437():
     return out
 
 
-def generate(destination):
-    font, ascent, descent = load_font()
-    ascii_glyphs = {}
+def raster_ascii(font, ascent, descent):
+    glyphs = {}
     baseline = (CELL_H - (ascent + descent)) // 2 + ascent
     for cp in range(FIRST, LAST + 1):
-        image = Image.new("1", (CELL_W, CELL_H), 0)
-        ImageDraw.Draw(image).text(
-            (0, baseline - ascent), chr(cp), font=font, fill=1
-        )
-        ascii_glyphs[cp] = [
-            [1 if image.getpixel((x, y)) else 0 for x in range(CELL_W)]
+        image = Image.new("L", (CELL_W, CELL_H), 0)
+        draw = ImageDraw.Draw(image)
+        draw.fontmode = "L"
+        draw.text((0, baseline - ascent), chr(cp), font=font, fill=255, stroke_width=0)
+        glyphs[cp] = [
+            [
+                min(COVERAGE_LEVELS,
+                    (image.getpixel((x, y)) * COVERAGE_LEVELS + 127) // 255)
+                for x in range(CELL_W)
+            ]
             for y in range(CELL_H)
         ]
+    return glyphs
 
+
+def generate(destination):
+    font, ascent, descent = load_font()
+    ascii_glyphs = raster_ascii(font, ascent, descent)
     cp437 = make_cp437()
     ordered = list(range(FIRST, LAST + 1)) + sorted(cp437)
     indexes = {codepoint: index for index, codepoint in enumerate(ordered)}
     glyphs = {**ascii_glyphs, **cp437}
 
     lines = [
-        "/* font_data.c - built-in Inter-derived native UI bitmap font.",
+        "/* font_data.c - antialiased Inter-derived native UI glyphs.",
         " *",
-        " * Glyph pixels are rasterised from Inter Regular (Inter Project Authors,",
-        " * 2016-2023; SIL Open Font License 1.1). The glyph bitmap is embedded in",
-        " * this source, so no runtime font file or disk mount is required.",
-        " * CP437 panel and block glyphs are procedural and carry no font dependency.",
+        " * ASCII glyphs are rasterised from Inter Regular (Inter Project Authors,",
+        " * 2016-2023; SIL Open Font License 1.1) into 4-bit grayscale coverage.",
+        " * CP437 frame and block glyphs are procedural, with no external font data.",
+        " * Runtime text rendering alpha-blends the embedded glyphs into any supported",
+        " * framebuffer pixel format. No filesystem or runtime font fetch is needed.",
         " *",
-        f" * Fixed cell: {CELL_W}x{CELL_H}, 1bpp stored as u16 rows; bit 0 is leftmost.",
+        f" * Fixed cell: {CELL_W}x{CELL_H}; coverage values 0..{COVERAGE_LEVELS}.",
         " */",
         "",
         "#include <kernel/types.h>",
         "#include <kernel/font.h>",
-        "",
-        f"#define GLYPH_W {CELL_W}",
-        f"#define GLYPH_H {CELL_H}",
         "",
         f"const u8 font_cell_w = {CELL_W};",
         f"const u8 font_cell_h = {CELL_H};",
@@ -158,20 +166,21 @@ def generate(destination):
         values = [str(indexes.get(cp, -1)) for cp in range(start, start + 16)]
         lines.append("    " + ", ".join(f"{value:>4}" for value in values) + ",")
 
-    lines += ["};", "", "static const u16 font_glyphs[][GLYPH_H] = {"]
+    lines += ["};", "", "static const u8 font_glyphs[][GLYPH_H * GLYPH_W] = {"]
     for cp in ordered:
         label = chr(cp) if FIRST <= cp <= LAST else f"CP437 0x{cp:02X}"
         lines.append(f"    {{ /* {label} */")
-        for row in glyphs[cp]:
-            bits = sum(1 << x for x, pixel in enumerate(row) if pixel)
-            lines.append(f"        0x{bits:03X},")
+        flattened = [value for row in glyphs[cp] for value in row]
+        for start in range(0, len(flattened), CELL_W):
+            values = flattened[start:start + CELL_W]
+            lines.append("        " + ", ".join(str(value) for value in values) + ",")
         lines.append("    },")
 
     count = len(ordered)
     lines += [
         "};",
         "",
-        "const u16* font_glyph_rows(u16 index) {",
+        "const u8* font_glyph_data(u16 index) {",
         "    if (index >= font_glyph_count) return font_glyphs[0];",
         "    return font_glyphs[index];",
         "}",
@@ -181,9 +190,11 @@ def generate(destination):
     ]
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text("\n".join(lines))
+    partial = sum(1 for row in ascii_glyphs[ord("A")] for value in row
+                  if 0 < value < COVERAGE_LEVELS)
     print(
-        f"Wrote {destination}: {len(ascii_glyphs)} ASCII + {len(cp437)} CP437 "
-        f"glyphs; Inter advance W={font.getlength('W'):.2f}px; "
+        f"Wrote {destination}: {len(ascii_glyphs)} ASCII + {len(cp437)} CP437 glyphs; "
+        f"Inter size={font.size}px; partial A coverage pixels={partial}; "
         f"cell={CELL_W}x{CELL_H}"
     )
 
