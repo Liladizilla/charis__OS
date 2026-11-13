@@ -1,9 +1,9 @@
-/* browser.c - Lightweight browser shell and local Charis pages.
+/* browser.c - Lightweight browser shell, local pages and plain-HTTP previews.
  *
  * This provides browser chrome, tabs, address entry, local navigation,
- * history, reload and bookmarks. Remote HTTP/HTTPS rendering is deliberately
- * reported as unavailable until the kernel has a real TCP/IP + DNS + TLS/HTTP
- * stack and a document renderer. A toolbar is not a networking stack.
+ * history, reload and bookmarks. Remote navigation is limited to bounded
+ * plain HTTP with a sanitized text preview. TLS/HTTPS, automatic redirects,
+ * JavaScript execution and full HTML/CSS rendering are not implemented.
  */
 #include <kernel/browser.h>
 #include <kernel/fb.h>
