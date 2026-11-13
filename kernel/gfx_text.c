@@ -36,16 +36,16 @@ u32 gfx_ui_scale(u32 logical_pixels) {
     return scaled > 0xFFFFFFFFULL ? 0xFFFFFFFFU : (u32)scaled;
 }
 
-static const u8* glyph_data(char ch, u32* left, u32* right) {
+static const u16* glyph_data(char ch, u32* left, u32* right) {
     s16 index = font_glyph_index((unsigned char)ch);
     if (index < 0) index = font_glyph_index('?');
     if (index < 0) return NULL;
 
-    const u8* rows = font_glyph_rows((u16)index);
+    const u16* rows = font_glyph_rows((u16)index);
     u32 first = font_cell_w, last = 0;
     bool found = false;
     for (u32 row = 0; row < font_cell_h; row++) {
-        u8 bits = rows[row];
+        u16 bits = rows[row];
         for (u32 col = 0; col < font_cell_w; col++) {
             if (!(bits & (1U << col))) continue;
             if (col < first) first = col;
@@ -90,7 +90,7 @@ static void draw_glyph_with_style(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 sca
         fb_fill_rect(x, y, advance_width, (u32)font_cell_h * scale, bg);
 
     for (u32 row = 0; row < font_cell_h; row++) {
-        u8 bits = rows[row];
+        u16 bits = rows[row];
         for (u32 col = source_left; col <= source_right; col++) {
             if (!(bits & (1U << col))) continue;
             u32 dx = proportional ? col - source_left : col;
