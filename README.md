@@ -501,8 +501,10 @@ Kernel-only blocking receive uses atomic waiter registration and teardown
 cancellation. A bounded kernel service namespace now supports exact-name
 registration, nonzero client capability-mask authorization through
 `security_check_capability()`, request tokens, server-side next/accept/reject,
-and one-time client result retrieval. Undefined capability bits are rejected
-against `CAP_ALL`. The namespace has 16 service entries and 32 pending request entries; names are
+and one-time client result retrieval. Clients can cancel pending/offered
+requests or close an accepted-but-unclaimed endpoint through
+`ipc_service_cancel()`. Undefined capability bits are rejected against
+`CAP_ALL`. The namespace has 16 service entries and 32 pending request entries; names are
 bounded ASCII identifiers, service names are unique, and service/request
 generations never wrap. Accepted endpoint rights are selected by the service
 owner. Service unregister and server exit reject unaccepted requests; client
