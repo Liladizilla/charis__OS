@@ -63,6 +63,15 @@ typedef struct {
     u64 mmap_addr;           /* 0x24 physical address of the memory map      */
 } __attribute__((packed)) multiboot_info_t;
 
+/* Multiboot2 module tag (type 3). start/end are physical byte addresses. */
+typedef struct {
+    u32 type;
+    u32 size;
+    u32 mod_start;
+    u32 mod_end;
+    char cmdline[];
+} __attribute__((packed)) multiboot_tag_module_t;
+
 /* Common tag header: every tag is aligned to 8 bytes and starts this way. */
 typedef struct {
     u32 type;
