@@ -182,6 +182,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [ ] Add functional Text Editor and System Monitor applications
 
 - [x] DNS resolver validates the echoed single QNAME, A/IN question, response opcode and answer owner before accepting an A record; host regression covers compressed names and malformed/mismatched responses
+- [x] Constrained TCP client rejects future/partial ACKs for its one outstanding data segment, avoids double-consuming the SYN sequence number, and only accepts an in-order FIN; host regression covers handshake, ACK and FIN cases
 ## Phase 10: User Applications (ACTIVE)
 - [x] Native framebuffer Terminal window with keyboard input and shell/Start-menu integration
 - [x] Built-in commands: help, clear, echo, uname, version, uptime, mem, tasks, settings
