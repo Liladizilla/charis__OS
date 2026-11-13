@@ -111,6 +111,7 @@ void* shm_get(int id);
 void shm_free(int id);
 
 #ifdef IPC_HOST_TEST
+bool ipc_test_irq_disabled(void);
 bool ipc_test_register_waiter(ipc_handle_t endpoint);
 bool ipc_test_wake_waiters(ipc_handle_t endpoint, u32 reason);
 bool ipc_test_service_register_waiter(ipc_service_handle_t service);
