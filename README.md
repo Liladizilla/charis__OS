@@ -500,7 +500,9 @@ immediately after publishing EXITING.
 This is a kernel-only first stage: endpoint-pair creation rejects ring-3 tasks,
 syscall slots 91-93 are unregistered, and the legacy user wrappers are removed.
 Kernel-only blocking receive now uses atomic waiter registration and teardown
-cancellation. Service-name rendezvous, descriptor attachments and
+cancellation. QEMU verifies message wake, peer task exit, and revocation of a
+blocked reader's local endpoint, including CANCELLED/PEER_CLOSED results and
+worker reaping. Service-name rendezvous, descriptor attachments and
 transactional receive rollback remain unimplemented. Shared-memory syscalls also remain kernel-only because the
 current API returns raw kernel pointers and has no per-task mapping/revocation
 model. The endpoint, rendezvous and resource-transfer contract is in
