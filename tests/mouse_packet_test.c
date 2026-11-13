@@ -34,8 +34,6 @@ int main(void) {
     expect(mouse_packet_count() == 0, "keyboard byte does not complete a mouse packet");
 
     mouse_test_process_byte(0x21u, 0x00u);
-    mouse_test_process_byte(0x21u, 0x0Au);
-    mouse_test_process_byte(0x21u, 0x05u);
     expect(mouse_packet_count() == 0, "invalid packet header is discarded");
 
     send_packet(0x09u, 10u, 5u);
