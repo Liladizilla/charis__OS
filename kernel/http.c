@@ -185,9 +185,12 @@ static bool http_ows(u8 ch) {
 /* Validate chunk extensions while ignoring their semantics. */
 static bool parse_chunk_extensions(const char* line, usize length,
                                    usize position) {
+    bool saw_extension = false;
     while (position < length) {
         while (position < length && http_ows((u8)line[position])) position++;
-        if (position >= length || line[position++] != ';') return false;
+        if (position >= length) return saw_extension;
+        if (line[position++] != ';') return false;
+        saw_extension = true;
         while (position < length && http_ows((u8)line[position])) position++;
 
         usize name_start = position;
