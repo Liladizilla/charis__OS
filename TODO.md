@@ -161,6 +161,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Constrained TCP client rejects partial/future ACKs for its one outstanding data segment, avoids double-consuming the SYN sequence number, and accepts only an in-order FIN; host regression covers handshake, ACK and FIN cases
 - [x] Decode HTTP/1.x chunked transfer bodies with split-boundary handling, strict CRLF framing, extension byte validation, conflicting framing rejection, 256 KiB decoded-body cap and 1 KiB aggregate trailer cap; host regressions cover malformed and truncated streams
 - [x] Browser validates DNS-style hostnames and request targets, strips URL fragments, extracts HTML document titles and scrolls wrapped local/remote text previews; host regressions cover malformed URLs, titles and scroll bounds
+- [x] ARP neighbour learning requires consistent Ethernet/ARP sender identities; replies must match a pending request and the local target. Cache misses are coalesced with a bounded retry cadence and failure hold-down; host packet tests cover spoofing, unrelated requests and retries
 
 ## Phase 9: Desktop Environment (PARTIAL, ACTIVE)
 - [x] Minimal workspace replaces the dashboard-style home surface; Files desktop shortcut, launcher and taskbar render in QEMU

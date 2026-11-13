@@ -3,7 +3,7 @@
 ## Implemented in the current networking change
 
 - RTL8139 polling Ethernet frame transmit and receive.
-- ARP replies for the configured local address and a bounded neighbour cache.
+- ARP replies for the configured local address, a bounded neighbour cache, sender identity checks and bounded neighbour resolution retries.
 - IPv4 header validation, fragment rejection, ICMP echo replies and UDP receive dispatch.
 - Static IPv4 next-hop selection using a subnet mask and optional gateway.
 - Outbound UDP/IPv4 frames with IPv4 and UDP checksums.
@@ -31,6 +31,8 @@ net_dhcp=true
 ```
 
 When a valid `net_ip` is present, static IPv4 configuration is used by default. When no valid static address exists, DHCP is enabled by default; `net_dhcp=true` explicitly enables DHCP and `net_dhcp=false` disables it. DHCP lease addresses, subnet mask, router and DNS options are validated before application. DHCP leases are runtime state and are not written to persistent configuration. If DHCP fails, the interface remains without an IPv4 address rather than inventing one.
+
+ARP replies are learned only when they match an outstanding neighbour request, target the local IPv4/MAC pair, and the ARP sender MAC matches the Ethernet source. Unrelated ARP requests and invalid or multicast sender identities are ignored. Repeated cache misses are coalesced, retransmitted on a one-second cadence for a bounded number of attempts, then held down before a later retry.
 
 ## DNS API
 
