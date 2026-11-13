@@ -497,19 +497,20 @@ fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights,
     return handle;
 }
 
-vfs_open_file_t* fd_acquire(fd_handle_t handle, u32 required_rights) {
-    if (!required_rights || (required_rights & ~FD_RIGHT_MASK)) return NULL;
-    task_t* task = scheduler_current();
-    if (!task) return NULL;
+vfs_open_file_t* fd_acquire_from(task_t* owner, fd_handle_t handle,
+                                 u32 required_rights) {
+    if (!owner || !owner->pid || !required_rights ||
+        (required_rights & ~FD_RIGHT_MASK))
+        return NULL;
 
     u64 irq_flags = fd_table_lock();
     u32 slot = 0;
-    if (!fd_resolve_locked(task, handle, &slot)) {
+    if (!fd_resolve_locked(owner, handle, &slot)) {
         fd_table_unlock(irq_flags);
         return NULL;
     }
 
-    fd_entry_t* entry = &task->fd_table[slot];
+    fd_entry_t* entry = &owner->fd_table[slot];
     vfs_open_file_t* file = entry->file;
     if ((entry->rights & required_rights) != required_rights ||
         !fd_open_file_get(file)) {
@@ -519,6 +520,68 @@ vfs_open_file_t* fd_acquire(fd_handle_t handle, u32 required_rights) {
 
     fd_table_unlock(irq_flags);
     return file;
+}
+
+vfs_open_file_t* fd_acquire(fd_handle_t handle, u32 required_rights) {
+    return fd_acquire_from(scheduler_current(), handle, required_rights);
+}
+
+/* Import a queue-owned reference into a new task-local descriptor. The caller
+ * holds an independent reference throughout this call, so the open-file
+ * object cannot be destroyed while we validate rights and publish the entry.
+ * No recipient-table mutation occurs unless a free slot and a live reference
+ * are both available; after the reference is acquired publication cannot fail.
+ */
+fd_handle_t fd_import_file_to(task_t* recipient, vfs_open_file_t* file,
+                             u32 rights) {
+    if (!recipient || !recipient->pid || recipient->is_user ||
+        !recipient->scheduler_queued ||
+        recipient->state == TASK_STATE_UNUSED ||
+        recipient->state == TASK_STATE_ALLOCATING ||
+        recipient->state == TASK_STATE_EXITING ||
+        recipient->state == TASK_STATE_ZOMBIE ||
+        !file || !file->node || !rights || (rights & ~FD_RIGHT_MASK))
+        return FD_HANDLE_INVALID;
+    if (((rights & FD_RIGHT_READ) && !file->node->read) ||
+        ((rights & FD_RIGHT_WRITE) && !file->node->write))
+        return FD_HANDLE_INVALID;
+
+    u64 irq_flags = fd_table_lock();
+
+    /* Revalidate while task exit and descriptor publication are excluded. */
+    if (!recipient->pid || recipient->is_user ||
+        !recipient->scheduler_queued ||
+        recipient->state == TASK_STATE_UNUSED ||
+        recipient->state == TASK_STATE_ALLOCATING ||
+        recipient->state == TASK_STATE_EXITING ||
+        recipient->state == TASK_STATE_ZOMBIE) {
+        fd_table_unlock(irq_flags);
+        return FD_HANDLE_INVALID;
+    }
+
+    u32 slot = MAX_FDS;
+    for (u32 i = 3; i < MAX_FDS; i++) {
+        fd_entry_t* entry = &recipient->fd_table[i];
+        if (!entry->file && entry->generation < FD_HANDLE_GENERATION_MAX) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot == MAX_FDS || !fd_open_file_get(file)) {
+        fd_table_unlock(irq_flags);
+        return FD_HANDLE_INVALID;
+    }
+
+    u32 generation = recipient->fd_table[slot].generation + 1u;
+    fd_handle_t handle = ((u64)recipient->pid << 32) |
+                         ((u64)generation << FD_HANDLE_SLOT_BITS) |
+                         (u64)slot;
+    recipient->fd_table[slot].generation = generation;
+    recipient->fd_table[slot].file = file;
+    recipient->fd_table[slot].rights = rights;
+
+    fd_table_unlock(irq_flags);
+    return handle;
 }
 
 /*
