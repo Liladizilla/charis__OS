@@ -481,7 +481,11 @@ jobs:
           import re
           from pathlib import Path
           serial = Path("build/desktop-capture-serial.log").read_text(errors="replace")
-          records = re.findall(r"SHELL_SETTINGS_LAYOUT ([^\\r\\n]+)", serial)
+          records = [
+              line.split("SHELL_SETTINGS_LAYOUT ", 1)[1]
+              for line in serial.splitlines()
+              if "SHELL_SETTINGS_LAYOUT " in line
+          ]
           if not records:
               raise SystemExit("missing Settings layout metrics")
           fields = dict(re.findall(r"([a-z_]+)=([0-9]+)", records[-1]))
