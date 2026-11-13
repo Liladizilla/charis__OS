@@ -8,7 +8,7 @@
 - Static IPv4 next-hop selection using a subnet mask and optional gateway.
 - Outbound UDP/IPv4 frames with IPv4 and UDP checksums.
 - A bounded asynchronous DNS A-record resolver that validates the echoed single QNAME, A/IN question and matching A-record owner, including bounded backward compression-pointer traversal.
-- A minimal single-connection TCP client with SYN/SYN-ACK handshake, checksummed segments, basic ACK handling, data callbacks and FIN close.
+- A minimal single-connection TCP client with SYN/SYN-ACK handshake, checksummed segments, validated single-segment ACK completion, ordered payload/FIN handling, data callbacks and FIN close.
 - A plain HTTP GET client that composes DNS and TCP, parses bounded response headers and streams response body chunks.
 - A bounded DHCPv4 client that performs DISCOVER/OFFER/REQUEST/ACK, installs subnet/router/DNS settings, renews at T1 by unicast and rebinds at T2 by broadcast, and stops using the lease after expiry.
 - Browser integration for `http://` URLs, with a bounded HTML-tag-stripped text preview; `https://` remains explicitly unsupported.
