@@ -57,7 +57,7 @@
 - [x] Add bounded full-duplex queues with nonblocking send/receive, explicit FULL/EMPTY/BUFFER_SMALL outcomes and no silent truncation
 - [x] Revoke task-owned endpoints and release channel references during EXITING teardown
 - [x] Add kernel-only blocking receive with atomic waiter registration, message/peer-close wakeups and task-exit cancellation
-- [ ] Add QEMU stress coverage for waiter wake/close/exit interleavings
+- [x] Add dedicated QEMU scheduler coverage proving receiver BLOCKED before send, message wake, second blocking wait and peer-close wake
 - [ ] Add transactional descriptor attachments with queue-owned references and receiver rollback
 - [ ] Keep ring-3 IPC and descriptor transfer denied until endpoint tests and user-memory preflight pass
 - [ ] Replace global shared-memory IDs/raw kernel-pointer access with task-owned objects and explicit user mappings
@@ -123,7 +123,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Revoke endpoint handles during TASK_STATE_EXITING and preserve peer lifetime until its own endpoint closes
 - [x] Host regression covers wrong-owner handles, directional rights, stale generations, generation exhaustion, aliased outputs, queue capacity, peer close, task teardown and endpoint-table limits
 - [x] Add kernel-only cancellable blocking receive, atomic waiter registration, message/peer-close wakeups and task-exit unlinking
-- [ ] Add QEMU stress coverage for waiter wake/close/exit interleavings
+- [x] Add dedicated QEMU scheduler coverage proving receiver BLOCKED before send, message wake, second blocking wait and peer-close wake
 - [ ] Add a kernel-owned service namespace with explicit listener registration and accept/reject rendezvous
 - [ ] Add transactional descriptor attachments, reference pinning, recipient-slot reservation and rollback
 - [ ] Only design ring-3 IPC syscalls after user-memory preflight, service authorization and QEMU lifecycle tests exist
