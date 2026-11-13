@@ -621,6 +621,12 @@ static int ipc_send_internal(ipc_handle_t handle, const void* data,
         ipc_irq_restore(flags);
         return IPC_STATUS_PEER_CLOSED;
     }
+    /* Reject attachments that the receiver endpoint is not authorized to
+     * accept. Otherwise an unreceivable message could occupy queue capacity. */
+    if (attachment && !(peer->rights & IPC_RIGHT_TRANSFER)) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ACCESS_DENIED;
+    }
     ipc_queue_t* q = &ch->inbound[peer_side];
     if (q->count >= IPC_MAX_MESSAGES) {
         ipc_irq_restore(flags);
