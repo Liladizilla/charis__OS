@@ -55,7 +55,7 @@ static const u8* glyph_data(char ch, u32* left, u32* right) {
     if (!found) first = last = 0;
     if (left) *left = first;
     if (right) *right = last;
-    return rows;
+    return pixels;
 }
 
 static u32 glyph_advance_with_style(char ch, u32 scale, u32 style) {
