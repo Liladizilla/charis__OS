@@ -354,7 +354,9 @@ static bool ipc_task_live_kernel(const task_t* task) {
            task->state != TASK_STATE_ZOMBIE;
 }
 static bool ipc_rights_valid(u32 rights) {
-    return rights && !(rights & ~IPC_RIGHT_MASK);
+    const u32 endpoint_actions = IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE;
+    return (rights & endpoint_actions) != 0 &&
+           !(rights & ~IPC_RIGHT_MASK);
 }
 static int ipc_find_task_slot(const task_t* task) {
     for (u32 i = 0; task && i < IPC_MAX_ENDPOINTS; i++) {
