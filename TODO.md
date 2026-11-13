@@ -140,6 +140,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 
 ## Phase 8: Network Stack (PARTIAL - ENABLED BUT INCOMPLETE)
 - [x] Socket API (AF_INET, SOCK_STREAM/SOCK_DGRAM) - socket.c
+- [x] Initialize the fixed kernel socket table before registering socket syscalls; host regression covers initial allocation, capacity and slot reuse
 - [x] Socket syscalls (SYS_SOCKET, SYS_CONNECT, SYS_BIND, SYS_LISTEN, SYS_ACCEPT, SYS_SEND, SYS_RECV, SYS_SOCKET_CLOSE)
 - [x] RTL8139 polling Ethernet TX/RX path and bounded frame validation
 - [x] ARP replies, bounded neighbour cache and next-hop resolution
@@ -208,6 +209,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 
 ## Phase 13: Gaming Support (HEADERS ONLY)
 - [x] Gamepad subsystem (gamepad.c - stub)
+- [x] Reject fixed-layout gamepad input reports shorter than the highest byte consumed; address/undefined sanitizer regression covers the 8-byte boundary
 - [x] Game SDK header (sdk/charis_game.h)
 - [x] SYS_GAME_* syscalls for graphics/audio - registered but minimal impl
 - [ ] Actual game demo
