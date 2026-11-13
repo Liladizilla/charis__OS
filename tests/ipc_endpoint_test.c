@@ -237,6 +237,10 @@ static void test_service_registration_and_policy(void) {
     assert(ipc_service_register("com.charis.echo", CAP_FS_CREATE,
         IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_OK);
     assert(service != 0);
+    ipc_request_handle_t self_request = 99;
+    assert(ipc_service_connect("com.charis.echo", &self_request) ==
+           IPC_STATUS_DENIED);
+    assert(self_request == 0);
     /* Re-entering subsystem init must not reset live service generations. */
     ipc_init();
     ipc_service_handle_t duplicate = 0;
