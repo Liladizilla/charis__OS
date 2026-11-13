@@ -148,7 +148,7 @@ jobs:
 
       - name: Test embedded Inter bitmap font and reproducible generator
         run: |
-          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/font_data_test.c kernel/font_data.c -o /tmp/font_data_test
+          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/font_data_test.c build/font_data.generated.c -o /tmp/font_data_test
           /tmp/font_data_test
           make font-check
 
