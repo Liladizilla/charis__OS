@@ -347,12 +347,10 @@ jobs:
               sleep 1
             done
             sleep 4
-            # Move the initial pointer away from the workspace title before
-            # the clean desktop capture. Then use a relative out-and-back
-            # movement to prove cursor restoration pixel-for-pixel.
-            printf 'mouse_move 450 30\n'
-            sleep 1
-            printf 'screendump build/charisos-desktop-preview.ppm\n'
+            # Capture the starting PS/2 pointer state, then move away and
+            # return by the exact inverse delta. This proves both cursor
+            # movement and save-under restoration pixel-for-pixel.
+            printf 'screendump build/charisos-pointer-start-preview.ppm\n'
             sleep 1
             printf 'mouse_move 300 200\n'
             sleep 1
@@ -361,6 +359,17 @@ jobs:
             printf 'mouse_move -300 -200\n'
             sleep 1
             printf 'screendump build/charisos-pointer-restored-preview.ppm\n'
+            sleep 1
+            # The clean published workspace image should not have the pointer
+            # sitting on its heading. Reposition it through bounded relative
+            # deltas; a single oversized PS/2 motion can set the overflow bits
+            # and is correctly discarded by the guest packet decoder.
+            for step in {1..10}; do
+              printf 'mouse_move 80 60\n'
+              sleep 0.25
+            done
+            sleep 1
+            printf 'screendump build/charisos-desktop-preview.ppm\n'
             sleep 1
             # Verify the Browser desktop shortcut path and capture its native
             # window before exercising the multi-window Files/Terminal path.
@@ -468,10 +477,11 @@ jobs:
             >build/desktop-capture-qemu.log 2>&1 || true
 
           test -s build/charisos-desktop-preview.ppm
+          test -s build/charisos-pointer-start-preview.ppm
           test -s build/charisos-pointer-moved-preview.ppm
           test -s build/charisos-pointer-restored-preview.ppm
           python3 tools/verify-pointer-capture.py \
-            build/charisos-desktop-preview.ppm \
+            build/charisos-pointer-start-preview.ppm \
             build/charisos-pointer-moved-preview.ppm \
             build/charisos-pointer-restored-preview.ppm
           test -s build/charisos-browser-preview.ppm
