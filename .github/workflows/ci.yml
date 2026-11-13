@@ -102,6 +102,11 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/tcp_sequence_test.c -o /tmp/tcp_sequence_test
           /tmp/tcp_sequence_test
 
+      - name: Test heap free-list critical section under concurrent tasks
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -pthread -fsanitize=address,undefined -fno-omit-frame-pointer -Iinclude tests/heap_preemption_test.c -o /tmp/heap_preemption_test
+          /tmp/heap_preemption_test
+
       - name: Test socket table initialization and slot reuse
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/socket_init_test.c kernel/socket.c -Wl,--gc-sections -o /tmp/socket_init_test
