@@ -575,10 +575,14 @@ bool ipc_endpoint_pair_create(task_t* a, task_t* b, u32 rights_a,
     return true;
 }
 
-int ipc_send(ipc_handle_t handle, const void* data, u64 size) {
-    if (size > IPC_MAX_MSG_SIZE || (size && !data)) return IPC_STATUS_ERROR;
-    task_t* sender = scheduler_current();
-    if (!sender) return IPC_STATUS_ERROR;
+static int ipc_send_internal(task_t* sender, ipc_handle_t handle,
+                               const void* data, u64 size,
+                               vfs_open_file_t* attachment,
+                               u32 attachment_rights) {
+    if (!sender || size > IPC_MAX_MSG_SIZE || (size && !data) ||
+        ((attachment == NULL) != (attachment_rights == 0)))
+        return IPC_STATUS_ERROR;
+
     u64 flags = ipc_irq_save();
     struct ipc_endpoint* ep = ipc_resolve_locked(sender, handle, IPC_RIGHT_SEND);
     if (!ep) { ipc_irq_restore(flags); return IPC_STATUS_ERROR; }
@@ -600,6 +604,8 @@ int ipc_send(ipc_handle_t handle, const void* data, u64 size) {
     ipc_message_t* msg = &q->messages[q->head];
     msg->sender_pid = sender->pid;
     msg->size = (u32)size;
+    msg->attachment = attachment;
+    msg->attachment_rights = attachment_rights;
     const u8* src = (const u8*)data;
     for (u32 i = 0; i < (u32)size; i++) msg->data[i] = src[i];
     q->head = (q->head + 1U) % IPC_MAX_MESSAGES;
@@ -607,6 +613,28 @@ int ipc_send(ipc_handle_t handle, const void* data, u64 size) {
     ipc_wake_waiters_locked(&ch->endpoints[peer_side], IPC_WAIT_STATUS_MESSAGE);
     ipc_irq_restore(flags);
     return IPC_STATUS_OK;
+}
+
+int ipc_send(ipc_handle_t handle, const void* data, u64 size) {
+    return ipc_send_internal(scheduler_current(), handle, data, size, NULL, 0);
+}
+
+/* Pin first, then publish the pin as queue ownership. A failed send leaves the
+ * sender descriptor unchanged and releases the temporary reference. */
+int ipc_send_with_fd(ipc_handle_t handle, const void* data, u64 size,
+                     fd_handle_t descriptor, u32 rights) {
+    if (size > IPC_MAX_MSG_SIZE || (size && !data) ||
+        !rights || (rights & ~FD_RIGHT_MASK))
+        return IPC_STATUS_ERROR;
+
+    task_t* sender = scheduler_current();
+    if (!sender) return IPC_STATUS_ERROR;
+    vfs_open_file_t* file = fd_acquire_from(sender, descriptor, rights);
+    if (!file) return IPC_STATUS_ACCESS_DENIED;
+
+    int result = ipc_send_internal(sender, handle, data, size, file, rights);
+    if (result != IPC_STATUS_OK) fd_release(file);
+    return result;
 }
 
 int ipc_recv(ipc_handle_t handle, void* buffer, u64 capacity, u32* sender_pid) {
