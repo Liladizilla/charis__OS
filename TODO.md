@@ -2,6 +2,7 @@
 
 ## Phase 1: Memory/VMM Refactor (COMPLETE)
 - [x] heap.c - separate heap module with kmalloc/kfree
+- [x] Protect heap split/merge operations against timer-driven task preemption on the current single-CPU scheduler; host ASan/UBSan regression stresses concurrent allocation/free and verifies coalescing
 - [x] bootmem.c - multiboot parsing skeleton
 - [x] memory.c - thin orchestrator
 - [x] vmm_walk(), vmm_create_address_space(), vmm_copy_kernel_mappings(), vmm_switch()
