@@ -2,17 +2,29 @@
 #include <kernel/scheduler.h>
 #include <kernel/string.h>
 #include <kernel/security.h>
+#include <kernel/vfs.h>
 
 typedef struct ipc_channel ipc_channel_t;
 typedef struct {
     u32 sender_pid;
     u32 size;
+    vfs_open_file_t* attachment;
+    u32 attachment_rights;
     u8 data[IPC_MAX_MSG_SIZE];
 } ipc_message_t;
 typedef struct {
     ipc_message_t messages[IPC_MAX_MESSAGES];
     u32 head, tail, count;
 } ipc_queue_t;
+
+/* Closing a task can detach at most one inbound queue per endpoint. References
+ * are collected under the IPC lock and released only after IRQ exclusion ends. */
+#define IPC_RELEASE_BATCH_CAP (IPC_MAX_ENDPOINTS * IPC_MAX_MESSAGES)
+typedef struct {
+    vfs_open_file_t** files;
+    u32 count;
+    u32 capacity;
+} ipc_release_batch_t;
 
 struct ipc_endpoint {
     ipc_channel_t* channel;
@@ -67,8 +79,16 @@ static bool shm_used[SHM_MAX_BLOCKS];
 static bool ipc_initialized;
 
 #ifdef IPC_HOST_TEST
-static u64 ipc_irq_save(void) { return 0; }
-static void ipc_irq_restore(u64 flags) { (void)flags; }
+static u32 ipc_host_irq_depth;
+static u64 ipc_irq_save(void) {
+    u64 previous = ipc_host_irq_depth;
+    ipc_host_irq_depth++;
+    return previous;
+}
+static void ipc_irq_restore(u64 flags) {
+    ipc_host_irq_depth = (u32)flags;
+}
+bool ipc_test_irq_disabled(void) { return ipc_host_irq_depth != 0; }
 #else
 /* Local IRQ exclusion only. The current kernel is single-CPU, not SMP-safe. */
 static u64 ipc_irq_save(void) {
@@ -334,7 +354,9 @@ static bool ipc_task_live_kernel(const task_t* task) {
            task->state != TASK_STATE_ZOMBIE;
 }
 static bool ipc_rights_valid(u32 rights) {
-    return rights && !(rights & ~IPC_RIGHT_MASK);
+    const u32 endpoint_actions = IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE;
+    return (rights & endpoint_actions) != 0 &&
+           !(rights & ~IPC_RIGHT_MASK);
 }
 static int ipc_find_task_slot(const task_t* task) {
     for (u32 i = 0; task && i < IPC_MAX_ENDPOINTS; i++) {
@@ -369,7 +391,41 @@ static struct ipc_endpoint* ipc_resolve_locked(task_t* owner,
     return ep;
 }
 static void ipc_queue_clear(ipc_queue_t* q) {
+    if (!q) return;
+    for (u32 i = 0; i < IPC_MAX_MESSAGES; i++) {
+        q->messages[i].attachment = NULL;
+        q->messages[i].attachment_rights = 0;
+    }
     q->head = q->tail = q->count = 0;
+}
+
+/* Detach every queued reference while the endpoint lock is held. The batch is
+ * bounded by IPC_MAX_ENDPOINTS * IPC_MAX_MESSAGES for task-wide teardown. */
+static void ipc_queue_detach_locked(ipc_queue_t* q,
+                                    ipc_release_batch_t* release) {
+    if (!q || !release) return;
+    u32 index = q->tail;
+    for (u32 i = 0; i < q->count && i < IPC_MAX_MESSAGES; i++) {
+        ipc_message_t* message = &q->messages[index];
+        if (message->attachment) {
+            /* Caller sizes the batch for the number of queues being closed. */
+            if (release->count < release->capacity)
+                release->files[release->count++] = message->attachment;
+            message->attachment = NULL;
+            message->attachment_rights = 0;
+        }
+        index = (index + 1u) % IPC_MAX_MESSAGES;
+    }
+    q->head = q->tail = q->count = 0;
+}
+
+/* Open-file destruction can invoke filesystem callbacks and free memory. It
+ * must never run while the IPC lock/local-IRQ exclusion is held. */
+static void ipc_release_batch_flush(ipc_release_batch_t* release) {
+    if (!release) return;
+    for (u32 i = 0; i < release->count; i++)
+        fd_release(release->files[i]);
+    release->count = 0;
 }
 static bool ipc_waiter_unlink_locked(task_t* waiter,
                                          struct ipc_endpoint* endpoint) {
@@ -426,7 +482,8 @@ static bool ipc_waiter_register_locked(struct ipc_endpoint* endpoint,
     return true;
 }
 
-static void ipc_close_slot_locked(task_t* owner, u32 slot) {
+static void ipc_close_slot_locked(task_t* owner, u32 slot,
+                                  ipc_release_batch_t* release) {
     if (!owner || slot >= IPC_MAX_ENDPOINTS) return;
     struct ipc_endpoint* ep = owner->ipc_endpoints[slot];
     if (!ep) return;
@@ -445,7 +502,7 @@ static void ipc_close_slot_locked(task_t* owner, u32 slot) {
     ep->peer = NULL;
     ep->owner_pid = ep->peer_pid = ep->rights = 0;
     if (ch && ch->in_use) {
-        ipc_queue_clear(&ch->inbound[side]);
+        ipc_queue_detach_locked(&ch->inbound[side], release);
         if (ch->endpoint_refs) ch->endpoint_refs--;
         if (!ch->endpoint_refs) {
             /* Payload bytes are unreachable once both queue counts are zero.
@@ -539,12 +596,22 @@ bool ipc_endpoint_pair_create(task_t* a, task_t* b, u32 rights_a,
     return true;
 }
 
-int ipc_send(ipc_handle_t handle, const void* data, u64 size) {
-    if (size > IPC_MAX_MSG_SIZE || (size && !data)) return IPC_STATUS_ERROR;
+static int ipc_send_internal(ipc_handle_t handle, const void* data,
+                               u64 size, vfs_open_file_t* attachment,
+                               u32 attachment_rights) {
+    if (size > IPC_MAX_MSG_SIZE || (size && !data) ||
+        (attachment && (!attachment_rights ||
+                        (attachment_rights & ~FD_RIGHT_MASK))) ||
+        (!attachment && attachment_rights))
+        return IPC_STATUS_ERROR;
     task_t* sender = scheduler_current();
     if (!sender) return IPC_STATUS_ERROR;
+
+    u32 required_rights = IPC_RIGHT_SEND;
+    if (attachment) required_rights |= IPC_RIGHT_TRANSFER;
     u64 flags = ipc_irq_save();
-    struct ipc_endpoint* ep = ipc_resolve_locked(sender, handle, IPC_RIGHT_SEND);
+    struct ipc_endpoint* ep =
+        ipc_resolve_locked(sender, handle, required_rights);
     if (!ep) { ipc_irq_restore(flags); return IPC_STATUS_ERROR; }
 
     ipc_channel_t* ch = ep->channel;
@@ -556,14 +623,23 @@ int ipc_send(ipc_handle_t handle, const void* data, u64 size) {
         ipc_irq_restore(flags);
         return IPC_STATUS_PEER_CLOSED;
     }
+    /* Reject attachments that the receiver endpoint is not authorized to
+     * accept. Otherwise an unreceivable message could occupy queue capacity. */
+    if (attachment && !(peer->rights & IPC_RIGHT_TRANSFER)) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ACCESS_DENIED;
+    }
     ipc_queue_t* q = &ch->inbound[peer_side];
     if (q->count >= IPC_MAX_MESSAGES) {
         ipc_irq_restore(flags);
         return IPC_STATUS_FULL;
     }
+
     ipc_message_t* msg = &q->messages[q->head];
     msg->sender_pid = sender->pid;
     msg->size = (u32)size;
+    msg->attachment = attachment;
+    msg->attachment_rights = attachment ? attachment_rights : 0;
     const u8* src = (const u8*)data;
     for (u32 i = 0; i < (u32)size; i++) msg->data[i] = src[i];
     q->head = (q->head + 1U) % IPC_MAX_MESSAGES;
@@ -573,41 +649,122 @@ int ipc_send(ipc_handle_t handle, const void* data, u64 size) {
     return IPC_STATUS_OK;
 }
 
+int ipc_send(ipc_handle_t handle, const void* data, u64 size) {
+    return ipc_send_internal(handle, data, size, NULL, 0);
+}
+
+int ipc_send_with_fd(ipc_handle_t handle, const void* data, u64 size,
+                     fd_handle_t source_descriptor, u32 requested_rights) {
+    if (size > IPC_MAX_MSG_SIZE || (size && !data) || !requested_rights ||
+        (requested_rights & ~FD_RIGHT_MASK))
+        return IPC_STATUS_ERROR;
+
+    /* The open-file reference is pinned before taking the IPC lock. A failed
+     * send keeps the source descriptor unchanged and releases this temporary
+     * pin after the endpoint/queue lock has been restored. */
+    vfs_open_file_t* file = fd_acquire(source_descriptor, requested_rights);
+    if (!file) return IPC_STATUS_ACCESS_DENIED;
+    int status = ipc_send_internal(handle, data, size, file, requested_rights);
+    if (status != IPC_STATUS_OK) fd_release(file);
+    return status;
+}
+
+/*
+ * Receive the head message while the endpoint lock is held. For an attachment,
+ * reserve recipient descriptor capacity and atomically transfer the queue's
+ * existing file reference before consuming the message. After commit, the
+ * remaining copies and queue-index updates are bounded and cannot fail.
+ */
+static int ipc_receive_one_locked(task_t* receiver, struct ipc_endpoint* ep,
+                                  void* buffer, u64 capacity, u32* sender_pid,
+                                  fd_handle_t* received_descriptor,
+                                  bool accept_attachment) {
+    ipc_queue_t* queue = &ep->channel->inbound[ep->side];
+    if (!queue->count) {
+        struct ipc_endpoint* peer = &ep->channel->endpoints[1U - ep->side];
+        bool peer_live = peer->open && peer->owner == ep->peer &&
+                         peer->owner_pid == ep->peer_pid &&
+                         ipc_task_live_kernel(peer->owner);
+        return peer_live ? IPC_STATUS_EMPTY : IPC_STATUS_PEER_CLOSED;
+    }
+
+    ipc_message_t* message = &queue->messages[queue->tail];
+    if ((u64)message->size > capacity) return IPC_STATUS_BUFFER_SMALL;
+
+    fd_handle_t delivered = FD_HANDLE_INVALID;
+    if (message->attachment) {
+        if (!accept_attachment || !received_descriptor)
+            return IPC_STATUS_ATTACHMENT_PENDING;
+        if (!(ep->rights & IPC_RIGHT_TRANSFER))
+            return IPC_STATUS_ACCESS_DENIED;
+
+        fd_transfer_reservation_t reservation = {0};
+        if (!fd_transfer_reserve(receiver->pid, message->attachment_rights,
+                                 &reservation))
+            return IPC_STATUS_DESCRIPTOR_TABLE_FULL;
+
+        delivered = fd_transfer_commit(&reservation, message->attachment);
+        if (delivered == FD_HANDLE_INVALID) {
+            fd_transfer_cancel(&reservation);
+            return IPC_STATUS_ATTACHMENT_FAILED;
+        }
+        /* The queue-owned reference has moved to the recipient descriptor. */
+        message->attachment = NULL;
+        message->attachment_rights = 0;
+    }
+
+    if (sender_pid) *sender_pid = message->sender_pid;
+    for (u32 i = 0; i < message->size; i++)
+        ((u8*)buffer)[i] = message->data[i];
+    if (received_descriptor) *received_descriptor = delivered;
+
+    int received = (int)message->size;
+    queue->tail = (queue->tail + 1U) % IPC_MAX_MESSAGES;
+    queue->count--;
+    return received;
+}
+
 int ipc_recv(ipc_handle_t handle, void* buffer, u64 capacity, u32* sender_pid) {
     if (capacity && !buffer) return IPC_STATUS_ERROR;
     task_t* receiver = scheduler_current();
     if (!receiver) return IPC_STATUS_ERROR;
     u64 flags = ipc_irq_save();
-    struct ipc_endpoint* ep = ipc_resolve_locked(receiver, handle, IPC_RIGHT_RECEIVE);
+    struct ipc_endpoint* ep =
+        ipc_resolve_locked(receiver, handle, IPC_RIGHT_RECEIVE);
     if (!ep) { ipc_irq_restore(flags); return IPC_STATUS_ERROR; }
-    ipc_queue_t* q = &ep->channel->inbound[ep->side];
-    if (!q->count) {
-        struct ipc_endpoint* peer = &ep->channel->endpoints[1U - ep->side];
-        bool peer_live = peer->open && peer->owner == ep->peer &&
-                         peer->owner_pid == ep->peer_pid &&
-                         ipc_task_live_kernel(peer->owner);
-        ipc_irq_restore(flags);
-        return peer_live ? IPC_STATUS_EMPTY : IPC_STATUS_PEER_CLOSED;
-    }
-    ipc_message_t* msg = &q->messages[q->tail];
-    if ((u64)msg->size > capacity) {
-        ipc_irq_restore(flags);
-        return IPC_STATUS_BUFFER_SMALL;
-    }
-    if (sender_pid) *sender_pid = msg->sender_pid;
-    for (u32 i = 0; i < msg->size; i++) ((u8*)buffer)[i] = msg->data[i];
-    int received = (int)msg->size;
-    q->tail = (q->tail + 1U) % IPC_MAX_MESSAGES;
-    q->count--;
+    int status = ipc_receive_one_locked(receiver, ep, buffer, capacity,
+                                        sender_pid, NULL, false);
     ipc_irq_restore(flags);
-    return received;
+    return status;
+}
+
+int ipc_recv_with_fd(ipc_handle_t handle, void* buffer, u64 capacity,
+                     u32* sender_pid, fd_handle_t* received_descriptor) {
+    if (!received_descriptor || (capacity && !buffer))
+        return IPC_STATUS_ERROR;
+    *received_descriptor = FD_HANDLE_INVALID;
+    task_t* receiver = scheduler_current();
+    if (!receiver) return IPC_STATUS_ERROR;
+    u64 flags = ipc_irq_save();
+    struct ipc_endpoint* ep =
+        ipc_resolve_locked(receiver, handle, IPC_RIGHT_RECEIVE);
+    if (!ep) { ipc_irq_restore(flags); return IPC_STATUS_ERROR; }
+    int status = ipc_receive_one_locked(receiver, ep, buffer, capacity,
+                                        sender_pid, received_descriptor, true);
+    ipc_irq_restore(flags);
+    return status;
 }
 
 /* The empty-queue check, waiter insertion and BLOCKED publication run
  * with local interrupts disabled. A send/close cannot be lost between them. */
-int ipc_recv_wait(ipc_handle_t handle, void* buffer, u64 capacity,
-                  u32* sender_pid) {
-    if (capacity && !buffer) return IPC_STATUS_ERROR;
+static int ipc_recv_wait_internal(ipc_handle_t handle, void* buffer,
+                                  u64 capacity, u32* sender_pid,
+                                  fd_handle_t* received_descriptor,
+                                  bool accept_attachment) {
+    if ((capacity && !buffer) ||
+        (accept_attachment && !received_descriptor))
+        return IPC_STATUS_ERROR;
+    if (received_descriptor) *received_descriptor = FD_HANDLE_INVALID;
     task_t* receiver = scheduler_current();
     if (!receiver) return IPC_STATUS_ERROR;
     u64 flags = ipc_irq_save();
@@ -623,22 +780,13 @@ int ipc_recv_wait(ipc_handle_t handle, void* buffer, u64 capacity,
             return cancelled ? IPC_STATUS_CANCELLED : IPC_STATUS_ERROR;
         }
 
-        ipc_queue_t* queue = &ep->channel->inbound[ep->side];
-        if (queue->count) {
-            ipc_message_t* message = &queue->messages[queue->tail];
-            if ((u64)message->size > capacity) {
-                ipc_irq_restore(flags);
-                return IPC_STATUS_BUFFER_SMALL;
-            }
-            if (sender_pid) *sender_pid = message->sender_pid;
-            for (u32 i = 0; i < message->size; i++)
-                ((u8*)buffer)[i] = message->data[i];
-            int received = (int)message->size;
-            queue->tail = (queue->tail + 1U) % IPC_MAX_MESSAGES;
-            queue->count--;
+        int status = ipc_receive_one_locked(receiver, ep, buffer, capacity,
+                                             sender_pid, received_descriptor,
+                                             accept_attachment);
+        if (status != IPC_STATUS_EMPTY) {
             receiver->ipc_wait_status = IPC_WAIT_STATUS_IDLE;
             ipc_irq_restore(flags);
-            return received;
+            return status;
         }
 
         struct ipc_endpoint* peer = &ep->channel->endpoints[1U - ep->side];
@@ -668,6 +816,19 @@ int ipc_recv_wait(ipc_handle_t handle, void* buffer, u64 capacity,
         }
         /* The resumed context has IF clear. Recheck message and peer state. */
     }
+}
+
+int ipc_recv_wait(ipc_handle_t handle, void* buffer, u64 capacity,
+                  u32* sender_pid) {
+    return ipc_recv_wait_internal(handle, buffer, capacity, sender_pid,
+                                  NULL, false);
+}
+
+int ipc_recv_with_fd_wait(ipc_handle_t handle, void* buffer, u64 capacity,
+                          u32* sender_pid,
+                          fd_handle_t* received_descriptor) {
+    return ipc_recv_wait_internal(handle, buffer, capacity, sender_pid,
+                                  received_descriptor, true);
 }
 
 #ifdef IPC_HOST_TEST
@@ -706,16 +867,29 @@ bool ipc_test_wake_waiters(ipc_handle_t handle, u32 reason) {
 int ipc_close(ipc_handle_t handle) {
     task_t* owner = scheduler_current();
     if (!owner) return IPC_STATUS_ERROR;
+    vfs_open_file_t* release_files[IPC_MAX_MESSAGES];
+    ipc_release_batch_t release = {
+        .files = release_files,
+        .count = 0,
+        .capacity = IPC_MAX_MESSAGES
+    };
     u64 flags = ipc_irq_save();
     struct ipc_endpoint* ep = ipc_resolve_locked(owner, handle, 0);
     if (!ep) { ipc_irq_restore(flags); return IPC_STATUS_ERROR; }
-    ipc_close_slot_locked(owner, ep->slot);
+    ipc_close_slot_locked(owner, ep->slot, &release);
     ipc_irq_restore(flags);
+    ipc_release_batch_flush(&release);
     return IPC_STATUS_OK;
 }
 
 void ipc_task_close_all(task_t* task) {
     if (!task) return;
+    vfs_open_file_t* release_files[IPC_RELEASE_BATCH_CAP];
+    ipc_release_batch_t release = {
+        .files = release_files,
+        .count = 0,
+        .capacity = IPC_RELEASE_BATCH_CAP
+    };
     u64 flags = ipc_irq_save();
     /* Revoke service registration and all pending client/server rendezvous
      * before the TCB or any task-owned endpoint can be recycled. */
@@ -731,8 +905,9 @@ void ipc_task_close_all(task_t* task) {
         task_unblock(task);
     }
     for (u32 i = 0; i < IPC_MAX_ENDPOINTS; i++)
-        ipc_close_slot_locked(task, i);
+        ipc_close_slot_locked(task, i, &release);
     ipc_irq_restore(flags);
+    ipc_release_batch_flush(&release);
 }
 
 int ipc_service_register(const char* name,

@@ -2,12 +2,14 @@
 
 ## Status
 
-The kernel-only endpoint and service-rendezvous stages are implemented and
-host-tested. QEMU verifies endpoint message wake, peer-task exit, local endpoint
-cancellation, blocked service accept/connect wakeup, rights-limited endpoint
-messaging, request rejection and unregister waking a blocked client. Public
-ring-3 IPC, public service lookup and descriptor attachments remain deliberately
-unavailable.
+The kernel-only endpoint, service-rendezvous and one-file descriptor-attachment
+stages are implemented and host-tested. QEMU verifies endpoint message wake,
+peer-task exit, local endpoint cancellation, blocked service accept/connect
+wakeup, rights-limited endpoint messaging, request rejection and unregister
+waking a blocked client. Attachment tests verify queue-owned open-file references,
+rights attenuation, receiver-slot exhaustion, commit rollback, queue preservation
+and teardown release. Public ring-3 IPC and public service lookup remain
+deliberately unavailable.
 
 ## Current boundary
 
@@ -101,22 +103,48 @@ exposed. Do not add wildcard public services, ambient channel lookup or global
 
 ## Transactional resource attachment
 
-Descriptor transfer must be an authenticated endpoint operation. A future
-attachment contains only kernel-owned metadata: a pinned
-`vfs_open_file_t *`, requested recipient rights, attachment type/version and
-an explicit copy-versus-move policy. Copy is the only acceptable first policy.
+The first kernel-only attachment increment is implemented. Each IPC message
+may carry at most one `vfs_open_file_t *` reference plus the requested
+recipient-rights mask. The pointer is kernel-owned metadata and is never
+serialized into a userspace payload. No attachment type/version field exists
+yet because this protocol admits only one open-file description.
 
-The send path must validate endpoint identity and transfer rights, resolve
-source descriptors in the sender's task, attenuate requested rights, pin each
-open-file description, reserve complete queue capacity, then publish bytes and
-references as one commit. Any pre-commit failure releases temporary pins and
-leaves sender descriptors and queues unchanged.
+The sender calls `ipc_send_with_fd()`. It resolves and pins the source
+descriptor in the current task before entering the IPC critical section. The
+sender endpoint must have both `IPC_RIGHT_SEND` and `IPC_RIGHT_TRANSFER`,
+and the peer's receive endpoint must already hold `IPC_RIGHT_TRANSFER`. This is
+checked before queue publication so an unauthorized receiver cannot be left
+with an unreceivable message occupying bounded queue capacity. The requested
+descriptor rights must already be granted by the source entry. The queue takes
+ownership of the temporary reference only when the payload and attachment are
+committed together. Queue full, peer-close, invalid endpoint or source-right
+failure leaves the sender descriptor unchanged and drops the temporary pin
+outside the IPC lock.
 
-The receive path must validate the full writable user destination before
-reserving a message, reserve all destination descriptor slots and references,
-copy through a kernel bounce buffer, and publish payload plus handles as one
-transaction. Failure before commit must leave the original message available
-for retry. No recipient may receive a handle with escalated rights.
+A normal `ipc_recv()` does not silently discard an attached reference. It
+returns `IPC_STATUS_ATTACHMENT_PENDING` and leaves that message at the queue
+head. `ipc_recv_with_fd()` is required to accept it. The receiving endpoint
+must have `IPC_RIGHT_RECEIVE` and `IPC_RIGHT_TRANSFER`. The receiver reserves
+a task-local descriptor slot using `fd_transfer_reserve()`, then publishes
+the queue-owned reference with `fd_transfer_commit()`. Only after a successful
+commit does it copy the bounded payload and dequeue the message. The recipient
+gets exactly the rights carried by the attachment, which were checked against
+the source descriptor. If the destination table is full or commit fails, the
+reservation is cancelled and the original message and its reference remain
+queued for retry.
+
+Closing an endpoint or tearing down a task detaches queued attachment
+references while local IRQ exclusion is held, then calls `fd_release()` only
+after the IPC critical section has been restored. The release batch is bounded
+by the per-task endpoint and per-direction queue limits. No filesystem close
+callback or heap destructor runs while the IPC lock is held.
+
+This increment is deliberately kernel-only. The receive buffer is a kernel
+buffer, and these APIs are not registered as syscalls. It does not yet provide
+user-memory preflight, a ring-3 ABI, arbitrary multi-file bundles, move
+semantics, shared-memory transfer, attachment metadata/version negotiation or
+SMP-safe synchronization. Public IPC must remain unavailable until those
+separate authority and user-copy requirements are implemented and tested.
 
 ## Lifecycle and concurrency invariants
 
@@ -130,9 +158,10 @@ for retry. No recipient may receive a handle with escalated rights.
   destructor may run while a channel lock is held.
 - PID/generation handles are not cryptographic credentials.
 - Current IRQ exclusion is single-CPU only, not an SMP synchronization design.
-- Current endpoint queues are data-only. Blocking message waiters and service
-  connect/accept waiters are implemented; descriptor-attachment reservations
-  and transactional transfer are not.
+- Endpoint queues support one kernel-only open-file attachment per message.
+  Queue-owned references move into reserved recipient descriptor slots on
+  receive and are released outside the IPC critical section on teardown.
+  No ring-3 pointer or syscall is exposed.
 
 ## Bounded resource policy
 
@@ -162,6 +191,14 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Queue full | Explicit FULL; all existing messages intact |
 | Undersized receive buffer | Explicit BUFFER_SMALL; message remains queued |
 | Message larger than maximum | Reject; never truncate |
+| Attachment sent without SEND or TRANSFER right | Reject before queue mutation |
+| Peer receiver endpoint lacks TRANSFER right | Reject before queue mutation; do not strand an unreceivable message |
+| Attachment requests rights absent from source descriptor | Reject; source unchanged |
+| Normal receive encounters an attachment | ATTACHMENT_PENDING; preserve queue head |
+| Receiver descriptor table is full | DESCRIPTOR_TABLE_FULL; preserve message and file reference |
+| Descriptor commit fails | Cancel slot reservation; preserve message for retry |
+| Receiver accepts attachment | Publish only the explicitly requested rights subset |
+| Queued attachment is abandoned on endpoint/task teardown | Release every queue-owned reference exactly once, after IPC unlock |
 | One endpoint closes | Peer remains; queued messages drain, then receive/send report PEER_CLOSED; blocked peer readers wake |
 | Message arrives while receiver waits | Message is committed before blocked receiver becomes runnable |
 | Generic/spurious wake | Receiver rechecks queue and peer state without duplicate waiter links |
@@ -175,7 +212,12 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Ring-3 IPC syscall | Reserved/unregistered and fails closed |
 | Shared-memory pointer exposure | Ring-3 shared-memory calls remain denied |
 
-Host tests cover waiter unlinking on task teardown. The dedicated QEMU test
+Host tests cover waiter unlinking on task teardown and the attachment transaction:
+sender close after enqueue, data-only receive preservation, receiver slot
+exhaustion, commit failure and retry, transfer-right denial, queue-close release,
+task-exit release and multi-message cleanup. They assert that descriptor pin
+acquisition and final release run outside the IPC critical section, while
+reservation and commit run inside it. The dedicated QEMU test
 proves the receiver is actually BLOCKED before send, wakes after message commit,
 blocks again and wakes when its peer task exits through the real task-exit
 cleanup path. A second pair verifies local endpoint revocation while the reader
@@ -202,8 +244,8 @@ operation before exposing a public ABI.
 7. [x] Add kernel-only named service registration, client-capability policy and blocking connect/accept/reject lifecycle.
 8. [x] Add host service tests for registration policy, request rights, rejection, unregister/client exit, table limits and generation exhaustion.
 9. [ ] Add QEMU tests for blocked client connect/server accept wakeups and service teardown races.
-10. [ ] Add message attachment records and queue-owned open-file references.
-11. [ ] Add transactional receive-side descriptor-slot reservation and rollback.
+10. [x] Add one-file kernel-only message attachments with queue-owned open-file references.
+11. [x] Add transactional receive-side descriptor-slot reservation, rights attenuation, retry-safe commit rollback and teardown release.
 12. [ ] Only then design ring-3 syscalls, user-memory preflight, ABI versioning
     and public service policy.
 

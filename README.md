@@ -509,10 +509,14 @@ registration, client-capability policy, blocking connect/accept, explicit
 rejection and bounded pending requests. Scheduler-backed QEMU coverage verifies
 a blocked server accept, blocked client connect, connection wakeup, endpoint
 rights attenuation, request rejection and unregister waking a blocked client.
-Ring-3 service lookup, descriptor attachments and transactional receive rollback
-remain unimplemented. Shared-memory syscalls also remain kernel-only because
-the current API returns raw kernel pointers and has no per-task mapping/revocation
-model. The endpoint, rendezvous and resource-transfer contract is in
+Kernel-only IPC now supports one open-file attachment per message with
+queue-owned references, sender and receiver TRANSFER-right checks,
+recipient-slot reservation, rights attenuation, retry-safe receive commit
+and post-unlock teardown release. These APIs are not
+syscalls and remain unavailable to ring 3; user-memory preflight, a stable public
+IPC ABI and public service lookup remain unimplemented. Shared-memory syscalls
+also remain kernel-only because the current API returns raw kernel pointers and
+has no per-task mapping/revocation model. The endpoint, rendezvous and resource-transfer contract is in
 [Authenticated IPC Endpoints and Resource Transfer](./docs/architecture/authenticated-ipc-endpoints-and-resource-transfer.md).
 These are explicit security boundaries, not claims that public IPC is complete.
 Descriptor tables are task-local and are rebuilt when a task slot is reused. Non-standard descriptor values are 64-bit task-scoped

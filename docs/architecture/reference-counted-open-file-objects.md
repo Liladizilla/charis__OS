@@ -2,11 +2,11 @@
 
 ## Status
 
-Implemented kernel-internal lifetime and duplication primitives on the current security branch. Descriptor entries reference kernel-owned open-file descriptions; syscall and ELF I/O pin them; and `fd_duplicate_to()` publishes a recipient descriptor only after validating recipient liveness, rights attenuation, available capacity, and a new reference. The userspace transfer ABI remains intentionally unimplemented.
+Implemented kernel-internal lifetime, duplication and two-phase transfer primitives on the integration branch. Descriptor entries reference kernel-owned open-file descriptions; syscall and ELF I/O pin them; `fd_duplicate_to()` attenuates rights; and `fd_transfer_reserve()` / `fd_transfer_commit()` / `fd_transfer_cancel()` reserve recipient capacity, publish an already-pinned reference or cancel without reusing the generation. IPC uses these primitives for kernel-only message attachments. The userspace transfer ABI remains intentionally unimplemented.
 
 ## Why the current model must change
 
-The former `fd_entry_t` stored a raw `vfs_node_t *`, offset, flags, rights, and generation. The current entry stores an open-file pointer, rights, and generation. The open-file description owns the node, offset, and open flags. The existing node-owner registry still ensures that one closeable raw node is owned by exactly one open-file description. `fd_duplicate_to()` shares that description rather than reclaiming or reattaching the raw node.
+The former `fd_entry_t` stored a raw `vfs_node_t *`, offset, flags, rights, and generation. The current entry stores an open-file pointer, rights, an unpublished-slot reservation flag and generation. The open-file description owns the node, offset, and open flags. The existing node-owner registry still ensures that one closeable raw node is owned by exactly one open-file description. `fd_duplicate_to()` shares that description rather than reclaiming or reattaching the raw node.
 
 Descriptor handles are deterministic task-scoped identifiers. They are not secrets, unforgeable capabilities, or sufficient authorization by themselves. That property must remain explicit in the ABI and documentation.
 
@@ -32,8 +32,16 @@ typedef struct vfs_open_file {
 typedef struct fd_entry {
     vfs_open_file_t *file;
     u32 rights;
+    bool reserved;
     u32 generation;
 } fd_entry_t;
+
+typedef struct fd_transfer_reservation {
+    u32 recipient_pid;
+    u32 slot;
+    u32 generation;
+    u32 rights;
+} fd_transfer_reservation_t;
 ```
 
 The high bit of `lifecycle` is `VFS_OPEN_FILE_CLOSING`; the low 63 bits are the reference count. A compare/exchange loop increments only a nonzero, non-closing object. Final release atomically changes the one-reference value to the closing state before the destructor can run. The object layout is kernel-internal and is not a userspace ABI. `fd_acquire()` validates the current task's descriptor and rights under the descriptor-table lock, then pins the object. Every caller must pair it with exactly one `fd_release()`.
@@ -44,7 +52,9 @@ The high bit of `lifecycle` is `VFS_OPEN_FILE_CLOSING`; the low 63 bits are the 
 
 - A newly opened node is transferred to exactly one newly created open-file description only after all allocation and validation that can fail have completed.
 - Every live descriptor owns exactly one reference to its open-file description.
+- A reserved descriptor slot owns no file reference and cannot be resolved, opened over or duplicated into.
 - `fd_duplicate_to()` acquires one reference before publishing the recipient descriptor. It rejects recipients in UNUSED, ALLOCATING, EXITING or ZOMBIE state and rejects a requested rights mask that is not a nonzero subset of the sender's grant.
+- `fd_transfer_reserve()` marks one empty recipient slot reserved and burns its next generation without acquiring a reference or exposing a handle. `fd_transfer_commit()` transfers one caller-owned pin into that exact generation; failure leaves pin ownership with the caller. `fd_transfer_cancel()` clears only a matching unpublished reservation, and the burned generation is never reused.
 - Closing a descriptor first revokes that descriptor entry, then drops exactly one reference.
 - The node close callback runs exactly once, only after the final reference is dropped.
 - A reference may not be acquired from a zero-reference or closing object.
@@ -86,7 +96,9 @@ The high bit of `lifecycle` is `VFS_OPEN_FILE_CLOSING`; the low 63 bits are the 
 5. [x] Add host tests for operation pins surviving descriptor revocation, final callback exactly once, and independent open offsets.
 6. [x] Add a kernel-internal descriptor duplication primitive that resolves an explicit recipient PID through the kernel task table and attenuates rights.
 7. [x] Add host tests for rights escalation rejection, recipient capacity exhaustion, sender close, recipient cleanup, shared offset, and rejected exiting/zombie recipients.
-8. Keep any syscall/IPC transfer protocol out of ring 3 until an explicit, authenticated IPC design exists.
+8. [x] Add a kernel-only two-phase descriptor reserve/commit/cancel API for trusted IPC attachment delivery; reserved slots are unavailable to ordinary opens and duplicates.
+9. [x] Add host regression coverage for reservation cancellation, stale reservation tokens, table exhaustion, recipient exit and reference ownership.
+10. Keep any syscall/IPC transfer protocol out of ring 3 until user-memory preflight and a versioned public ABI are separately designed and tested.
 
 ## Required regression matrix
 

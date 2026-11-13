@@ -28,7 +28,9 @@ typedef u64 ipc_request_handle_t;
 
 #define IPC_RIGHT_SEND       (1U << 0)
 #define IPC_RIGHT_RECEIVE    (1U << 1)
-#define IPC_RIGHT_MASK       (IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE)
+/* Required in addition to SEND/RECEIVE for file-descriptor attachments. */
+#define IPC_RIGHT_TRANSFER   (1U << 2)
+#define IPC_RIGHT_MASK       (IPC_RIGHT_SEND | IPC_RIGHT_RECEIVE | IPC_RIGHT_TRANSFER)
 
 #define IPC_STATUS_OK             0
 #define IPC_STATUS_ERROR         -1
@@ -45,6 +47,9 @@ typedef u64 ipc_request_handle_t;
 #define IPC_STATUS_REQUEST_REJECTED -11
 #define IPC_STATUS_REQUEST_INVALID -12
 #define IPC_STATUS_SERVICE_FULL -13
+#define IPC_STATUS_ATTACHMENT_PENDING -14
+#define IPC_STATUS_DESCRIPTOR_TABLE_FULL -15
+#define IPC_STATUS_ATTACHMENT_FAILED -16
 
 #define IPC_WAIT_STATUS_IDLE          0
 #define IPC_WAIT_STATUS_PENDING       1
@@ -60,10 +65,21 @@ bool ipc_endpoint_pair_create(task_t* first_task, task_t* second_task,
                               ipc_handle_t* first_handle,
                               ipc_handle_t* second_handle);
 int ipc_send(ipc_handle_t endpoint, const void* data, u64 size);
+/* Kernel-only copy-transfer of one already-open descriptor. The source must
+ * grant every requested right and the sender endpoint needs SEND|TRANSFER. */
+int ipc_send_with_fd(ipc_handle_t endpoint, const void* data, u64 size,
+                     fd_handle_t source_descriptor, u32 requested_rights);
 int ipc_recv(ipc_handle_t endpoint, void* buffer, u64 capacity,
              u32* sender_pid);
 int ipc_recv_wait(ipc_handle_t endpoint, void* buffer, u64 capacity,
                   u32* sender_pid);
+/* Requires one output slot for the received task-local descriptor. The
+ * receiver endpoint must have RECEIVE|TRANSFER for messages carrying a file. */
+int ipc_recv_with_fd(ipc_handle_t endpoint, void* buffer, u64 capacity,
+                     u32* sender_pid, fd_handle_t* received_descriptor);
+int ipc_recv_with_fd_wait(ipc_handle_t endpoint, void* buffer, u64 capacity,
+                          u32* sender_pid,
+                          fd_handle_t* received_descriptor);
 int ipc_close(ipc_handle_t endpoint);
 void ipc_task_close_all(task_t* task);
 
@@ -95,6 +111,7 @@ void* shm_get(int id);
 void shm_free(int id);
 
 #ifdef IPC_HOST_TEST
+bool ipc_test_irq_disabled(void);
 bool ipc_test_register_waiter(ipc_handle_t endpoint);
 bool ipc_test_wake_waiters(ipc_handle_t endpoint, u32 reason);
 bool ipc_test_service_register_waiter(ipc_service_handle_t service);
