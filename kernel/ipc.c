@@ -421,15 +421,6 @@ void ipc_init(void) {
         ipc_request_generations[i] = 1;
     }
     ipc_request_sequence = 0;
-    for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
-        kmemset(&ipc_services[i], 0, sizeof(ipc_services[i]));
-        ipc_service_generations[i] = 1;
-    }
-    for (u32 i = 0; i < IPC_MAX_CONNECT_REQUESTS; i++) {
-        kmemset(&ipc_connect_requests[i], 0, sizeof(ipc_connect_requests[i]));
-        ipc_request_generations[i] = 1;
-    }
-    ipc_request_sequence = 0;
     for (u32 i = 0; i < SHM_MAX_BLOCKS; i++) shm_used[i] = false;
 }
 
