@@ -111,12 +111,15 @@ yet because this protocol admits only one open-file description.
 
 The sender calls `ipc_send_with_fd()`. It resolves and pins the source
 descriptor in the current task before entering the IPC critical section. The
-sender endpoint must have both `IPC_RIGHT_SEND` and `IPC_RIGHT_TRANSFER`; the
-requested descriptor rights must already be granted by the source entry. The
-queue takes ownership of the temporary reference only when the payload and
-attachment are committed together. Queue full, peer-close, invalid endpoint or
-source-right failure leaves the sender descriptor unchanged and drops the
-temporary pin outside the IPC lock.
+sender endpoint must have both `IPC_RIGHT_SEND` and `IPC_RIGHT_TRANSFER`,
+and the peer's receive endpoint must already hold `IPC_RIGHT_TRANSFER`. This is
+checked before queue publication so an unauthorized receiver cannot be left
+with an unreceivable message occupying bounded queue capacity. The requested
+descriptor rights must already be granted by the source entry. The queue takes
+ownership of the temporary reference only when the payload and attachment are
+committed together. Queue full, peer-close, invalid endpoint or source-right
+failure leaves the sender descriptor unchanged and drops the temporary pin
+outside the IPC lock.
 
 A normal `ipc_recv()` does not silently discard an attached reference. It
 returns `IPC_STATUS_ATTACHMENT_PENDING` and leaves that message at the queue
@@ -189,6 +192,7 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Undersized receive buffer | Explicit BUFFER_SMALL; message remains queued |
 | Message larger than maximum | Reject; never truncate |
 | Attachment sent without SEND or TRANSFER right | Reject before queue mutation |
+| Peer receiver endpoint lacks TRANSFER right | Reject before queue mutation; do not strand an unreceivable message |
 | Attachment requests rights absent from source descriptor | Reject; source unchanged |
 | Normal receive encounters an attachment | ATTACHMENT_PENDING; preserve queue head |
 | Receiver descriptor table is full | DESCRIPTOR_TABLE_FULL; preserve message and file reference |
