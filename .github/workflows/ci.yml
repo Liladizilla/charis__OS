@@ -132,6 +132,16 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -fsanitize=address,undefined -fno-omit-frame-pointer -ffunction-sections -fdata-sections -Iinclude tests/gamepad_bounds_test.c kernel/gamepad.c -Wl,--gc-sections -o /tmp/gamepad_bounds_test
           /tmp/gamepad_bounds_test
 
+      - name: Test PS/2 AUX packet validation, deltas and button transitions
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -DMOUSE_HOST_TEST -Iinclude tests/mouse_packet_test.c kernel/mouse.c -Wl,--gc-sections -o /tmp/mouse_packet_test
+          /tmp/mouse_packet_test
+
+      - name: Test framebuffer cursor save-under restoration
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/cursor_compositor_test.c kernel/cursor.c -Wl,--gc-sections -o /tmp/cursor_compositor_test
+          /tmp/cursor_compositor_test
+
       - name: Test window manager lifecycle and bounds
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/wm_lifecycle_test.c -Wl,--gc-sections -o /tmp/wm_lifecycle_test
