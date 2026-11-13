@@ -48,11 +48,11 @@ The primary image below is a **real 1024×768 QEMU framebuffer capture**, not a 
 
 ![CharisOS desktop workspace, QEMU capture from 12 November 2026](docs/screenshots/charisos-desktop-2026-11-12.png)
 
-The same run's [desktop preview artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43258397426#artifacts) contains the Browser, Files, multi-window, maximized, resized, Settings, persisted-Settings-after-reboot, scaled-desktop, Calculator-at-200%-font/120%-UI and Terminal captures, together with serial and QEMU logs. The artifact is retained by GitHub Actions for a limited period; the desktop image above is checked into this repository.
+The calculator integration's [desktop preview artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43411689911#artifacts) contains the Browser, Files, multi-window, maximized, resized, Settings, persisted-Settings-after-reboot, scaled-desktop, Calculator-at-200%-font/120%-UI and Terminal captures, together with serial and QEMU logs. The artifact is retained by GitHub Actions for a limited period; the desktop image above is checked into this repository.
 
 ### Latest desktop validation
 
-The `Build, Boot & Ring-3 Test` job completed successfully in workflow run [43258397426](https://github.com/Liladizilla/charis__OS/actions/runs/43258397426). The QEMU capture step exercised the desktop, Browser, Files and Terminal launch paths; simultaneous Files/Terminal windows and Alt+Tab routing; maximize/restore and keyboard resize; display preference changes; and persistence of font and UI-scale values across a reboot using a writable FAT32 test disk.
+The `Build, Boot & Ring-3 Test` job completed successfully in workflow run [43411689911](https://github.com/Liladizilla/charis__OS/actions/runs/43411689911). The QEMU capture step exercised the desktop, Browser, Files and Terminal launch paths; simultaneous Files/Terminal windows and Alt+Tab routing; maximize/restore and keyboard resize; F8 Calculator launch and its native window at 200% text and 120% UI scale; display preference changes; and persistence of font and UI-scale values across a reboot using a writable FAT32 test disk.
 
 The screenshot documents the current engineering state, not a finished commercial desktop. The workspace is compact and framebuffer-based; Files remains read-only and limited to the FAT32 root with 8.3 names; Terminal is a bounded kernel command environment; Browser supports plain HTTP only. The visual system, application depth, hardware coverage and end-user workflows remain active work. Successful CI is evidence of these specific tests, not proof of broad hardware compatibility or production readiness.
 
