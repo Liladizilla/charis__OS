@@ -752,6 +752,11 @@ int ipc_service_register(const char* name, ipc_service_handle_t* handle) {
     if (!ipc_copy_service_name(name, canonical)) return IPC_STATUS_ERROR;
 
     u64 flags = ipc_irq_save();
+    if (!ipc_task_live_kernel(owner) ||
+        !security_check_capability(owner, CAP_IPC_SERVICE)) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ACCESS_DENIED;
+    }
     for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
         struct ipc_service* existing = &ipc_services[i];
         if (existing->in_use && kstrcmp(existing->name, canonical) == 0) {
@@ -784,6 +789,11 @@ int ipc_service_unregister(ipc_service_handle_t handle) {
     if (!security_check_capability(owner, CAP_IPC_SERVICE))
         return IPC_STATUS_ACCESS_DENIED;
     u64 flags = ipc_irq_save();
+    if (!ipc_task_live_kernel(owner) ||
+        !security_check_capability(owner, CAP_IPC_SERVICE)) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ACCESS_DENIED;
+    }
     struct ipc_service* service = ipc_resolve_service_locked(owner, handle);
     if (!service) {
         ipc_irq_restore(flags);
@@ -809,6 +819,12 @@ int ipc_service_connect_begin(const char* name, u32 requested_client_rights,
     if (!ipc_copy_service_name(name, canonical)) return IPC_STATUS_ERROR;
 
     u64 flags = ipc_irq_save();
+    if (!ipc_task_live_kernel(client) || client->ipc_connect_request ||
+        client->ipc_connect_request_id || client->ipc_service_wait ||
+        client->ipc_wait_endpoint || client->waiting_event != 0) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ERROR;
+    }
     struct ipc_service* service = NULL;
     for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
         struct ipc_service* candidate = &ipc_services[i];
@@ -825,6 +841,10 @@ int ipc_service_connect_begin(const char* name, u32 requested_client_rights,
         ipc_service_close_locked(service, IPC_STATUS_SERVICE_CLOSED);
         ipc_irq_restore(flags);
         return IPC_STATUS_SERVICE_CLOSED;
+    }
+    if (service->owner == client) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_REQUEST_INVALID;
     }
     if (service->pending_count >= IPC_MAX_PENDING_PER_SERVICE) {
         ipc_irq_restore(flags);
@@ -949,6 +969,11 @@ int ipc_service_accept_wait(ipc_service_handle_t handle,
 
     u64 flags = ipc_irq_save();
     for (;;) {
+        if (!ipc_task_live_kernel(server) ||
+            !security_check_capability(server, CAP_IPC_SERVICE)) {
+            ipc_irq_restore(flags);
+            return IPC_STATUS_ACCESS_DENIED;
+        }
         struct ipc_service* service =
             ipc_resolve_service_locked(server, handle);
         if (!service) {
@@ -1003,6 +1028,11 @@ int ipc_service_accept(ipc_service_handle_t service_handle,
         return IPC_STATUS_ACCESS_DENIED;
 
     u64 flags = ipc_irq_save();
+    if (!ipc_task_live_kernel(server) ||
+        !security_check_capability(server, CAP_IPC_SERVICE)) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ACCESS_DENIED;
+    }
     struct ipc_service* service =
         ipc_resolve_service_locked(server, service_handle);
     struct ipc_connection_request* request =
@@ -1019,7 +1049,9 @@ int ipc_service_accept(ipc_service_handle_t service_handle,
             ipc_make_request_handle(client->pid, request->generation,
                                     (u32)(request - ipc_requests))) {
         (void)ipc_request_unlink_pending_locked(request);
-        ipc_request_release_locked(request);
+        ipc_request_complete_client_locked(request,
+                                           IPC_STATUS_REQUEST_INVALID,
+                                           IPC_HANDLE_INVALID);
         ipc_irq_restore(flags);
         return IPC_STATUS_REQUEST_INVALID;
     }
@@ -1046,6 +1078,11 @@ int ipc_service_reject(ipc_service_handle_t service_handle,
     if (!security_check_capability(server, CAP_IPC_SERVICE))
         return IPC_STATUS_ACCESS_DENIED;
     u64 flags = ipc_irq_save();
+    if (!ipc_task_live_kernel(server) ||
+        !security_check_capability(server, CAP_IPC_SERVICE)) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ACCESS_DENIED;
+    }
     struct ipc_service* service =
         ipc_resolve_service_locked(server, service_handle);
     struct ipc_connection_request* request =
