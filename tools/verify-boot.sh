@@ -17,7 +17,7 @@
 # own output on a runner with no TTY.
 #
 # Usage:
-#   verify-boot.sh <image> [--disk] [--uefi] [--elf-test-disk PATH] [--expect-elf-exec] [--require-ipc-wait] [--timeout SECONDS]
+#   verify-boot.sh <image> [--disk] [--uefi] [--elf-test-disk PATH] [--expect-elf-exec] [--require-ipc-wait] [--require-ipc-service] [--timeout SECONDS]
 #
 #   --disk     attach the image as a raw hard disk (a flashed USB stick)
 #              instead of a CD-ROM
@@ -375,6 +375,10 @@ if [ "$REQUIRE_IPC_SERVICE" = "1" ]; then
         || fail "blocked service rejection wakeup did not pass"
     grep -q 'IPC_SERVICE_TEST_CLIENT_REJECT_OK' "$LOG" \
         || fail "client did not observe request rejection"
+    grep -q 'IPC_SERVICE_TEST_UNREGISTER_PENDING_OK' "$LOG" \
+        || fail "service unregister did not cancel a pending request"
+    grep -q 'IPC_SERVICE_TEST_CLIENT_CLOSED_OK' "$LOG" \
+        || fail "blocked client did not receive service-closed completion"
     grep -q 'IPC_SERVICE_TEST_SERVER_TEARDOWN_OK' "$LOG" \
         || fail "service unregister/owner teardown did not complete"
     grep -q 'IPC_SERVICE_TEST_OK' "$LOG" \
