@@ -50,6 +50,7 @@ ELF_TEST_DISK=""
 EXPECT_ELF_SUCCESS=0
 REQUIRE_VMM_TESTS=0
 REQUIRE_WAITPID=0
+REQUIRE_IPC_WAIT=0
 
 usage() { sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
@@ -62,6 +63,7 @@ while [ $# -gt 0 ]; do
         --expect-elf-exec) EXPECT_ELF_SUCCESS=1; shift ;;
         --require-vmm-tests) REQUIRE_VMM_TESTS=1; shift ;;
         --require-waitpid) REQUIRE_WAITPID=1; shift ;;
+        --require-ipc-wait) REQUIRE_IPC_WAIT=1; shift ;;
         --timeout) TIMEOUT="$2"; shift 2 ;;
         -h|--help) usage ;;
         -*) echo "unknown option: $1" >&2; exit 2 ;;
@@ -361,6 +363,16 @@ if [ "$REQUIRE_WAITPID" = "1" ]; then
         || fail "orphaned child was not reclaimed after exit"
     if grep -q -e 'WAITPID_TEST_FAIL' -e 'WAITPID_ORPHAN_REAP_FAIL' "$LOG"; then
         fail "waitpid regression emitted a failure marker"
+    fi
+fi
+
+if [ "$REQUIRE_IPC_WAIT" = "1" ]; then
+    for marker in IPC_WAIT_MESSAGE_DRAIN_OK IPC_WAIT_PEER_EXIT_WAKE_OK \
+                  IPC_WAIT_CANCEL_WAKE_OK IPC_WAIT_QEMU_TEST_OK; do
+        grep -q "$marker" "$LOG" || fail "IPC waiter regression did not emit $marker"
+    done
+    if grep -q -e 'IPC_WAIT_TEST_FAIL' -e 'IPC_WAIT_TEST_SETUP_FAIL' "$LOG"; then
+        fail "IPC waiter regression emitted a failure marker"
     fi
 fi
 
