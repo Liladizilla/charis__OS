@@ -156,12 +156,16 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Ring-3 IPC syscall | Reserved/unregistered and fails closed |
 | Shared-memory pointer exposure | Ring-3 shared-memory calls remain denied |
 
-Host tests cover waiter unlinking on task teardown. A dedicated QEMU test also
+Host tests cover waiter unlinking on task teardown. The dedicated QEMU test
 proves the receiver is actually BLOCKED before send, wakes after message commit,
-blocks again and wakes on peer close through the real scheduler. Further
-adversarial stress must cover cancellation/exit interleavings, service
-authorization, listener-close races, attachment rollback, recipient table
-exhaustion and concurrent multi-core operation before enabling those features.
+blocks again and wakes when its peer task exits through the real task-exit
+cleanup path. A second pair verifies local endpoint revocation while the reader
+is BLOCKED: the reader returns CANCELLED, the peer's still-open handle returns
+PEER_CLOSED, and the coordinator reaps both workers with waitpid. The verifier
+requires the message-wake, peer-close, cancellation and final-success markers.
+Further adversarial stress must cover service authorization, listener-close
+races, attachment rollback, recipient table exhaustion and concurrent multi-core
+operation before enabling those features.
 
 ## Implementation sequence
 
