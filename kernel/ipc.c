@@ -1,6 +1,7 @@
 #include <kernel/ipc.h>
 #include <kernel/scheduler.h>
 #include <kernel/string.h>
+#include <kernel/security.h>
 
 typedef struct ipc_channel ipc_channel_t;
 typedef struct {
@@ -95,6 +96,16 @@ static bool ipc_task_live_kernel(const task_t* task) {
 }
 static bool ipc_rights_valid(u32 rights) {
     return rights && !(rights & ~IPC_RIGHT_MASK);
+}
+static bool ipc_service_policy_valid(u32 required_capabilities) {
+    return required_capabilities &&
+           !(required_capabilities & ~((u32)CAP_ALL));
+}
+static bool ipc_service_client_authorized(task_t* client,
+                                          const ipc_service_t* service) {
+    return ipc_task_live_kernel(client) && service &&
+           security_check_capability(client,
+                                     service->required_client_capabilities);
 }
 static int ipc_find_task_slot(const task_t* task) {
     for (u32 i = 0; task && i < IPC_MAX_ENDPOINTS; i++) {
@@ -489,7 +500,8 @@ int ipc_service_register(const char* name, u32 required_caps,
     if (!service_handle) return IPC_STATUS_ERROR;
     *service_handle = 0;
     u32 name_length = 0;
-    if (!ipc_service_name_valid(name, &name_length) || !required_caps ||
+    if (!ipc_service_name_valid(name, &name_length) ||
+        !ipc_service_policy_valid(required_caps) ||
         !ipc_rights_valid(server_rights) || !ipc_rights_valid(client_rights))
         return IPC_STATUS_ERROR;
     task_t* owner = scheduler_current();
@@ -568,8 +580,7 @@ int ipc_service_connect(const char* name, ipc_request_handle_t* request_handle) 
         ipc_irq_restore(flags);
         return IPC_STATUS_ERROR;
     }
-    if ((client->capabilities & service->required_client_capabilities) !=
-        service->required_client_capabilities) {
+    if (!ipc_service_client_authorized(client, service)) {
         ipc_irq_restore(flags);
         return IPC_STATUS_DENIED;
     }
@@ -627,9 +638,7 @@ int ipc_service_next(ipc_service_handle_t service_handle,
             ipc_request_release_locked(request);
             continue;
         }
-        if ((request->client->capabilities &
-             service->required_client_capabilities) !=
-             service->required_client_capabilities) {
+        if (!ipc_service_client_authorized(request->client, service)) {
             request->state = IPC_REQUEST_REJECTED;
             request->result = IPC_STATUS_DENIED;
             request->service = NULL;
@@ -673,8 +682,7 @@ int ipc_service_accept(ipc_service_handle_t service_handle,
         ipc_irq_restore(flags);
         return IPC_STATUS_PEER_CLOSED;
     }
-    if ((client->capabilities & service->required_client_capabilities) !=
-        service->required_client_capabilities) {
+    if (!ipc_service_client_authorized(client, service)) {
         request->state = IPC_REQUEST_REJECTED;
         request->result = IPC_STATUS_DENIED;
         request->service = NULL;
