@@ -79,6 +79,16 @@ int main(void) {
 
     test_mouse.x = 20;
     test_mouse.y = 24;
+    expect(!cursor_intersects_rect(0, HEIGHT - 48u, WIDTH, 48u),
+           "taskbar redraw does not intersect a pointer in the workspace");
+    test_mouse.y = HEIGHT - 48u - 16u;
+    expect(!cursor_intersects_rect(0, HEIGHT - 48u, WIDTH, 48u),
+           "cursor edge-touching taskbar is not treated as overlap");
+    test_mouse.y++;
+    expect(cursor_intersects_rect(0, HEIGHT - 48u, WIDTH, 48u),
+           "taskbar redraw detects a pointer overlapping its top edge");
+    test_mouse.x = 20;
+    test_mouse.y = 24;
     cursor_draw();
     expect(pixels[24u * WIDTH + 20u] != before[24u * WIDTH + 20u],
            "cursor pixels are painted");
