@@ -26,7 +26,7 @@ CharisOS is an operating system under active development. Its kernel boots and r
 |---|---|
 | BIOS boot | CI verifies GRUB/Multiboot2 boot from CD image and raw disk image in QEMU |
 | UEFI boot | UEFI paths exist; CI coverage is advisory and firmware-dependent |
-| CPU and memory | x86_64 long-mode entry, PMM, VMM, heap and page-permission regression tests |
+| CPU and memory | x86_64 long-mode entry, PMM, VMM, a single-CPU preemption-safe heap free list, and page-permission regression tests |
 | Interrupts and scheduling | IDT/PIC/PIT, PS/2 input and kernel-task scheduling; ring-3 yield/resume exercised in QEMU |
 | User mode | DPL3 `int 0x80` bootstrap path exercised; static ELF64 `ET_EXEC` loader uses transactional address-space replacement; a separate CI-only build now exercises authorized ELF entry |
 | Storage | Primary ATA PIO and FAT32 support; current Files interface is read-only and limited to the root directory and 8.3 names |
