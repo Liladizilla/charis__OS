@@ -110,7 +110,7 @@ static void test_rights_are_attenuated_and_plain_receive_preserves_message(void)
 
     active_task = &task_a;
     assert(ipc_send_with_fd(send_endpoint, "cap", 4, source,
-                            FD_RIGHT_WRITE | FD_RIGHT_READ) == IPC_STATUS_OK);
+                            FD_RIGHT_READ) == IPC_STATUS_OK);
 
     vfs_open_file_t* pin = fd_acquire_from(&task_a, source, FD_RIGHT_READ);
     assert(pin != NULL);
@@ -241,6 +241,8 @@ static void test_blocking_receive_imports_and_endpoint_teardown_releases_queue(v
     char payload[8] = {0};
     u32 sender = 0;
     fd_handle_t received = FD_HANDLE_INVALID;
+    assert(ipc_recv_wait(receive_endpoint, payload, sizeof(payload), &sender) ==
+           IPC_STATUS_ATTACHMENT_REQUIRED);
     assert(ipc_recv_with_fd_wait(receive_endpoint, payload, sizeof(payload),
                                  &sender, &received) == 5);
     assert(memcmp(payload, "wait", 5) == 0 && sender == task_a.pid);
@@ -256,10 +258,23 @@ static void test_blocking_receive_imports_and_endpoint_teardown_releases_queue(v
     assert(fd_close(queued_source));
     assert(close_counts[5] == 0u);
 
-    /* Teardown revokes the endpoint, detaches the queue reference under the
-     * IPC lock, and runs the final VFS destructor only after IRQ restoration. */
-    ipc_task_close_all(&task_b);
+    /* Closing one endpoint releases its inbound queued reference. */
+    close_endpoint(&task_b, receive_endpoint);
     assert(close_counts[5] == 1u);
+    close_endpoint(&task_a, send_endpoint);
+
+    /* Task exit also detaches and releases attachments on every owned endpoint. */
+    ipc_handle_t second_sender, second_receiver;
+    create_pair(&second_sender, &second_receiver);
+    vfs_node_t exit_node = make_node(6);
+    fd_handle_t exit_source = open_node(&task_a, &exit_node, FD_RIGHT_READ);
+    active_task = &task_a;
+    assert(ipc_send_with_fd(second_sender, "exit", 5, exit_source,
+                            FD_RIGHT_READ) == IPC_STATUS_OK);
+    assert(fd_close(exit_source));
+    assert(close_counts[6] == 0u);
+    ipc_task_close_all(&task_b);
+    assert(close_counts[6] == 1u);
     ipc_task_close_all(&task_a);
 }
 
