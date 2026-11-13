@@ -116,7 +116,7 @@ static void cursor_remove_stale_pixels(void) {
 void cursor_erase(void) {
     if (!cursor_saved_valid) return;
 #ifdef CURSOR_TRACE
-    serial_printf("CURSOR_TRACE erase pos=%d,%d size=%ux%u\\n",
+    serial_printf("CURSOR_TRACE erase pos=%d,%d size=%ux%u\n",
                   cursor_saved_x, cursor_saved_y,
                   cursor_saved_width, cursor_saved_height);
 #endif
@@ -149,7 +149,7 @@ void cursor_draw(void) {
         (u32)mouse.x >= g_framebuffer.width ||
         (u32)mouse.y >= g_framebuffer.height) {
 #ifdef CURSOR_TRACE
-        serial_printf("CURSOR_TRACE outside x=%d y=%d screen=%ux%u\\n",
+        serial_printf("CURSOR_TRACE outside x=%d y=%d screen=%ux%u\n",
                       mouse.x, mouse.y, g_framebuffer.width,
                       g_framebuffer.height);
 #endif
@@ -161,7 +161,7 @@ void cursor_draw(void) {
         mouse.y == cursor_saved_y) {
         if (cursor_overlay_intact()) return;
 #ifdef CURSOR_TRACE
-        serial_printf("CURSOR_TRACE covered x=%d y=%d pixel=%08x\\n",
+        serial_printf("CURSOR_TRACE covered x=%d y=%d pixel=%08x\n",
                       mouse.x, mouse.y,
                       fb_get_pixel((u32)mouse.x, (u32)mouse.y));
 #endif
@@ -217,7 +217,7 @@ void cursor_draw(void) {
         }
     }
 #ifdef CURSOR_TRACE
-    serial_printf("CURSOR_TRACE painted x=%d y=%d pixel=%08x valid=%u\\n",
+    serial_printf("CURSOR_TRACE painted x=%d y=%d pixel=%08x valid=%u\n",
                   mouse.x, mouse.y,
                   fb_get_pixel((u32)mouse.x, (u32)mouse.y),
                   cursor_saved_valid ? 1u : 0u);
