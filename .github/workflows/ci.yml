@@ -344,6 +344,18 @@ jobs:
             sleep 4
             printf 'screendump build/charisos-desktop-preview.ppm\n'
             sleep 2
+            # Exercise the real emulated PS/2 path. Start at the driver's
+            # initial 50,50 pointer position, move to clear workspace, then
+            # return exactly. The pair of screenshots proves both movement
+            # and restoration of the previous framebuffer pixels.
+            printf 'mouse_move 300 200\n'
+            sleep 1
+            printf 'screendump build/charisos-pointer-moved-preview.ppm\n'
+            sleep 1
+            printf 'mouse_move -300 -200\n'
+            sleep 1
+            printf 'screendump build/charisos-pointer-restored-preview.ppm\n'
+            sleep 1
             # Verify the Browser desktop shortcut path and capture its native
             # window before exercising the multi-window Files/Terminal path.
             printf 'sendkey f9\n'
@@ -450,6 +462,12 @@ jobs:
             >build/desktop-capture-qemu.log 2>&1 || true
 
           test -s build/charisos-desktop-preview.ppm
+          test -s build/charisos-pointer-moved-preview.ppm
+          test -s build/charisos-pointer-restored-preview.ppm
+          python3 tools/verify-pointer-capture.py \
+            build/charisos-desktop-preview.ppm \
+            build/charisos-pointer-moved-preview.ppm \
+            build/charisos-pointer-restored-preview.ppm
           test -s build/charisos-browser-preview.ppm
           grep -q 'SHELL_APP_OPEN Browser' build/desktop-capture-serial.log
           grep -q 'SHELL_APP_OPEN Calculator' build/desktop-capture-serial.log
@@ -547,6 +565,8 @@ jobs:
           name: charisos-desktop-preview
           path: |
             build/charisos-desktop-preview.ppm
+            build/charisos-pointer-moved-preview.ppm
+            build/charisos-pointer-restored-preview.ppm
             build/charisos-browser-preview.ppm
             build/charisos-files-preview.ppm
             build/charisos-multiwindow-preview.ppm
