@@ -9,7 +9,7 @@
 - Outbound UDP/IPv4 frames with IPv4 and UDP checksums.
 - A bounded asynchronous DNS A-record resolver that validates the echoed single QNAME, A/IN question and matching A-record owner, including bounded backward compression-pointer traversal.
 - A minimal single-connection TCP client with SYN/SYN-ACK handshake, checksummed segments, validated single-segment ACK completion, ordered payload/FIN handling, data callbacks and FIN close.
-- A plain HTTP GET client that composes DNS and TCP, parses bounded response headers and streams response body chunks.
+- A plain HTTP GET client that composes DNS and TCP, parses bounded response headers, supports strict `Transfer-Encoding: chunked` framing and streams at most 256 KiB of decoded response body.
 - A bounded DHCPv4 client that performs DISCOVER/OFFER/REQUEST/ACK, installs subnet/router/DNS settings, renews at T1 by unicast and rebinds at T2 by broadcast, and stops using the lease after expiry.
 - Browser integration for `http://` URLs, with a bounded HTML-tag-stripped text preview; `https://` remains explicitly unsupported.
 
@@ -45,5 +45,7 @@ The resolver uses UDP port 53. It starts with `net_dns` and adopts the first DNS
 - TLS/HTTPS, certificate validation, redirects, chunked transfer decoding, full HTML/CSS layout, JavaScript and standards-compliant document rendering are not implemented.
 - No Wi-Fi driver exists. Current physical networking is the RTL8139 wired Ethernet path only.
 - End-to-end hardware tests against a real LAN and public Internet are still required.
+
+The HTTP parser bounds headers to 2 KiB, chunk-size/trailer lines to 127 bytes, aggregate trailers to 1 KiB and decoded bodies to 256 KiB. It rejects conflicting Content-Length/Transfer-Encoding framing, unsupported transfer codings, malformed chunk delimiters and framing fields inside trailers. The browser validates DNS-style hostnames and request paths, strips URL fragments, extracts document titles and offers bounded text-preview scrolling. It remains a plain-HTTP text preview, not a general-purpose browser.
 
 The kernel has a meaningful wired-networking foundation, but it is not yet a dependable general-purpose Internet stack. Do not treat successful kernel CI as proof of Internet connectivity.
