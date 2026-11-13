@@ -149,7 +149,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Static IPv4 address, subnet mask and optional gateway configuration
 - [x] Bounded asynchronous DNS A-record resolver
 - [x] Minimal single-connection TCP client with basic handshake, ACK/data/FIN handling
-- [x] Plain HTTP GET composition and bounded response-header/body handling for Browser
+- [x] Plain HTTP GET composition, bounded response-header parsing and incremental chunked-body decoding; conflicting framing, invalid chunk boundaries and malformed trailers fail closed (ASan/UBSan host regression)
 - [x] Bounded DHCPv4 DISCOVER/OFFER/REQUEST/ACK client, server-ID and BOOTP identity validation, router/subnet/DNS options, T1 unicast renewal, T2 broadcast rebinding and expiry cleanup
 - [ ] Physical LAN DHCP interoperability, relay-agent and packet-loss/reconnect stress tests
 - [ ] IPv6, neighbour discovery and ICMPv6
