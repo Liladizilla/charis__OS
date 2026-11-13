@@ -4,6 +4,9 @@
 #include <kernel/irq.h>
 #include <kernel/keyboard.h>
 #include <kernel/vga.h>
+#ifdef CURSOR_TRACE
+#include <kernel/serial.h>
+#endif
 
 mouse_state_t g_mouse = {50, 50, 0, 0, 0};
 static uint32_t mouse_screen_width = 800;
@@ -254,6 +257,10 @@ static void mouse_process_byte(u8 status, u8 byte) {
 
     g_mouse.x = (s32)next_x;
     g_mouse.y = (s32)next_y;
+#ifdef CURSOR_TRACE
+    serial_printf("MOUSE_TRACE packet flags=%02x dx=%d dy=%d x=%d y=%d\\n",
+                  flags, g_mouse.dx, g_mouse.dy, g_mouse.x, g_mouse.y);
+#endif
 }
 
 #ifdef MOUSE_HOST_TEST
