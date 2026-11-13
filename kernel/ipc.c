@@ -20,6 +20,7 @@ struct ipc_endpoint {
     u32 owner_pid, peer_pid, rights, generation;
     u8 slot, side;
     bool open;
+    task_t* waiters;
 };
 struct ipc_channel {
     bool in_use;
@@ -92,16 +93,79 @@ static struct ipc_endpoint* ipc_resolve_locked(task_t* owner,
 static void ipc_queue_clear(ipc_queue_t* q) {
     q->head = q->tail = q->count = 0;
 }
+static bool ipc_waiter_unlink_locked(task_t* waiter,
+                                         struct ipc_endpoint* endpoint) {
+    if (!waiter || !endpoint) return false;
+    task_t** cursor = &endpoint->waiters;
+    while (*cursor && *cursor != waiter) cursor = &(*cursor)->ipc_wait_next;
+    if (*cursor != waiter) return false;
+    *cursor = waiter->ipc_wait_next;
+    waiter->ipc_wait_next = NULL;
+    waiter->ipc_wait_endpoint = NULL;
+    return true;
+}
+
+/* Callers hold local IRQ exclusion. Each wake unlinks before task-slot or
+ * endpoint storage can be reused; the wake path performs no allocation. */
+static void ipc_wake_waiters_locked(struct ipc_endpoint* endpoint, u32 reason) {
+    if (!endpoint) return;
+    while (endpoint->waiters) {
+        task_t* waiter = endpoint->waiters;
+        endpoint->waiters = waiter->ipc_wait_next;
+        waiter->ipc_wait_next = NULL;
+        waiter->ipc_wait_endpoint = NULL;
+        waiter->ipc_wait_status = (s32)reason;
+        if (waiter->waiting_event == TASK_WAITING_IPC) {
+            waiter->waiting_event = 0;
+            waiter->event_data = 0;
+            task_unblock(waiter);
+        }
+    }
+}
+
+static void ipc_cancel_waiter_locked(task_t* waiter, u32 reason) {
+    if (!waiter) return;
+    if (waiter->ipc_wait_endpoint)
+        (void)ipc_waiter_unlink_locked(waiter, waiter->ipc_wait_endpoint);
+    waiter->ipc_wait_next = NULL;
+    waiter->ipc_wait_endpoint = NULL;
+    waiter->ipc_wait_status = (s32)reason;
+    if (waiter->waiting_event == TASK_WAITING_IPC) {
+        waiter->waiting_event = 0;
+        waiter->event_data = 0;
+        task_unblock(waiter);
+    }
+}
+
+static bool ipc_waiter_register_locked(struct ipc_endpoint* endpoint,
+                                       task_t* waiter) {
+    if (!endpoint || !waiter || !endpoint->open ||
+        waiter->ipc_wait_endpoint || waiter->ipc_wait_next ||
+        waiter->waiting_event != 0) return false;
+    waiter->ipc_wait_endpoint = endpoint;
+    waiter->ipc_wait_next = endpoint->waiters;
+    endpoint->waiters = waiter;
+    waiter->ipc_wait_status = IPC_WAIT_STATUS_PENDING;
+    waiter->waiting_event = TASK_WAITING_IPC;
+    waiter->event_data = 0;
+    waiter->state = TASK_STATE_BLOCKED;
+    return true;
+}
+
 static void ipc_close_slot_locked(task_t* owner, u32 slot) {
     if (!owner || slot >= IPC_MAX_ENDPOINTS) return;
     struct ipc_endpoint* ep = owner->ipc_endpoints[slot];
     if (!ep) return;
     ipc_channel_t* ch = ep->channel;
     u32 side = ep->side;
+    struct ipc_endpoint* peer = ch ? &ch->endpoints[1U - side] : NULL;
+    ep->open = false;
+    ipc_wake_waiters_locked(ep, IPC_WAIT_STATUS_CANCELLED);
+    if (peer) ipc_wake_waiters_locked(peer, IPC_WAIT_STATUS_PEER_CLOSED);
+
     owner->ipc_endpoints[slot] = NULL;
     if (owner->ipc_endpoint_generations[slot] < IPC_HANDLE_GENERATION_MAX)
         owner->ipc_endpoint_generations[slot]++;
-    ep->open = false;
     ep->channel = NULL;
     ep->owner = NULL;
     ep->peer = NULL;
@@ -218,6 +282,7 @@ int ipc_send(ipc_handle_t handle, const void* data, u64 size) {
     for (u32 i = 0; i < (u32)size; i++) msg->data[i] = src[i];
     q->head = (q->head + 1U) % IPC_MAX_MESSAGES;
     q->count++;
+    ipc_wake_waiters_locked(&ch->endpoints[peer_side], IPC_WAIT_STATUS_MESSAGE);
     ipc_irq_restore(flags);
     return IPC_STATUS_OK;
 }
@@ -252,6 +317,106 @@ int ipc_recv(ipc_handle_t handle, void* buffer, u64 capacity, u32* sender_pid) {
     return received;
 }
 
+/* The empty-queue check, waiter insertion and BLOCKED publication run
+ * with local interrupts disabled. A send/close cannot be lost between them. */
+int ipc_recv_wait(ipc_handle_t handle, void* buffer, u64 capacity,
+                  u32* sender_pid) {
+    if (capacity && !buffer) return IPC_STATUS_ERROR;
+    task_t* receiver = scheduler_current();
+    if (!receiver) return IPC_STATUS_ERROR;
+    u64 flags = ipc_irq_save();
+
+    for (;;) {
+        struct ipc_endpoint* ep =
+            ipc_resolve_locked(receiver, handle, IPC_RIGHT_RECEIVE);
+        if (!ep) {
+            bool cancelled =
+                receiver->ipc_wait_status == IPC_WAIT_STATUS_CANCELLED;
+            receiver->ipc_wait_status = IPC_WAIT_STATUS_IDLE;
+            ipc_irq_restore(flags);
+            return cancelled ? IPC_STATUS_CANCELLED : IPC_STATUS_ERROR;
+        }
+
+        ipc_queue_t* queue = &ep->channel->inbound[ep->side];
+        if (queue->count) {
+            ipc_message_t* message = &queue->messages[queue->tail];
+            if ((u64)message->size > capacity) {
+                ipc_irq_restore(flags);
+                return IPC_STATUS_BUFFER_SMALL;
+            }
+            if (sender_pid) *sender_pid = message->sender_pid;
+            for (u32 i = 0; i < message->size; i++)
+                ((u8*)buffer)[i] = message->data[i];
+            int received = (int)message->size;
+            queue->tail = (queue->tail + 1U) % IPC_MAX_MESSAGES;
+            queue->count--;
+            receiver->ipc_wait_status = IPC_WAIT_STATUS_IDLE;
+            ipc_irq_restore(flags);
+            return received;
+        }
+
+        struct ipc_endpoint* peer = &ep->channel->endpoints[1U - ep->side];
+        bool peer_live = peer->open && peer->owner == ep->peer &&
+                         peer->owner_pid == ep->peer_pid &&
+                         ipc_task_live_kernel(peer->owner);
+        if (!peer_live) {
+            receiver->ipc_wait_status = IPC_WAIT_STATUS_IDLE;
+            ipc_irq_restore(flags);
+            return IPC_STATUS_PEER_CLOSED;
+        }
+
+        /* Generic/spurious wakeups may leave the registration in place.
+         * Re-block without linking the same task a second time. */
+        if (receiver->ipc_wait_endpoint == ep &&
+            receiver->waiting_event == TASK_WAITING_IPC) {
+            receiver->state = TASK_STATE_BLOCKED;
+        } else if (!ipc_waiter_register_locked(ep, receiver)) {
+            ipc_irq_restore(flags);
+            return IPC_STATUS_ERROR;
+        }
+
+        scheduler_yield();
+        while (receiver->state == TASK_STATE_BLOCKED &&
+               receiver->waiting_event == TASK_WAITING_IPC) {
+            asm volatile("sti; hlt; cli" : : : "memory");
+        }
+        /* The resumed context has IF clear. Recheck message and peer state. */
+    }
+}
+
+#ifdef IPC_HOST_TEST
+bool ipc_test_register_waiter(ipc_handle_t handle) {
+    task_t* waiter = scheduler_current();
+    if (!waiter) return false;
+    u64 flags = ipc_irq_save();
+    struct ipc_endpoint* ep =
+        ipc_resolve_locked(waiter, handle, IPC_RIGHT_RECEIVE);
+    if (!ep || ep->channel->inbound[ep->side].count ||
+        !ep->open || !ipc_task_live_kernel(ep->peer)) {
+        ipc_irq_restore(flags);
+        return false;
+    }
+    bool registered = ipc_waiter_register_locked(ep, waiter);
+    ipc_irq_restore(flags);
+    return registered;
+}
+
+bool ipc_test_wake_waiters(ipc_handle_t handle, u32 reason) {
+    task_t* caller = scheduler_current();
+    if (!caller) return false;
+    u64 flags = ipc_irq_save();
+    struct ipc_endpoint* ep =
+        ipc_resolve_locked(caller, handle, IPC_RIGHT_RECEIVE);
+    if (!ep || !ep->waiters) {
+        ipc_irq_restore(flags);
+        return false;
+    }
+    ipc_wake_waiters_locked(ep, reason);
+    ipc_irq_restore(flags);
+    return true;
+}
+#endif
+
 int ipc_close(ipc_handle_t handle) {
     task_t* owner = scheduler_current();
     if (!owner) return IPC_STATUS_ERROR;
@@ -266,6 +431,14 @@ int ipc_close(ipc_handle_t handle) {
 void ipc_task_close_all(task_t* task) {
     if (!task) return;
     u64 flags = ipc_irq_save();
+    /* Unlink this TCB from a peer's waiter list before task-slot reuse. */
+    if (task->ipc_wait_endpoint || task->ipc_wait_next)
+        ipc_cancel_waiter_locked(task, IPC_WAIT_STATUS_CANCELLED);
+    else if (task->waiting_event == TASK_WAITING_IPC) {
+        task->waiting_event = 0;
+        task->event_data = 0;
+        task->ipc_wait_status = IPC_WAIT_STATUS_CANCELLED;
+    }
     for (u32 i = 0; i < IPC_MAX_ENDPOINTS; i++)
         ipc_close_slot_locked(task, i);
     ipc_irq_restore(flags);
