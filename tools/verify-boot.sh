@@ -371,6 +371,8 @@ if [ "$REQUIRE_IPC_WAIT" = "1" ]; then
         || fail "blocking IPC message wakeup did not pass"
     grep -q 'IPC_WAIT_TEST_PEER_CLOSE_OK' "$LOG" \
         || fail "blocking IPC peer-close wakeup did not pass"
+    grep -q 'IPC_WAIT_TEST_CANCEL_OK' "$LOG" \
+        || fail "blocked-reader endpoint revocation cancellation did not pass"
     grep -q 'IPC_WAIT_TEST_OK' "$LOG" \
         || fail "blocking IPC scheduler regression did not complete"
     if grep -q -e 'IPC_WAIT_TEST_FAIL' -e 'IPC_WAIT_TEST_SETUP_FAILED' "$LOG"; then
