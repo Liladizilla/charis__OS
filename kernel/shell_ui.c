@@ -1183,6 +1183,16 @@ static void handle_event(const input_event_t* e) {
             return;
         }
 
+        /* F8 launches Calculator; Alt+F8 remains the keyboard resize mode. */
+        if (pressed && !extended && base == 0x42u && !alt_held) {
+            ui.menu_open = false;
+            notice_open = false;
+            notice_item = -1;
+            shell_open_app(SHELL_APP_CALCULATOR);
+            ui.needs_redraw = true;
+            return;
+        }
+
         if (pressed && !extended && base == 0x0Fu && alt_held) {
             (void)wm_focus_next();
             ui.needs_redraw = true;
