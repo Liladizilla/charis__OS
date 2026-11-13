@@ -407,6 +407,14 @@ jobs:
             sleep 3
             printf 'screendump build/charisos-desktop-scaled-preview.ppm\n'
             sleep 1
+            # F8 opens the native Calculator. Capture it at the saved 200% font
+            # and 120% UI scale, then verify the application actually launched.
+            printf 'sendkey f8\n'
+            sleep 2
+            printf 'screendump build/charisos-calculator-preview.ppm\n'
+            sleep 1
+            printf 'sendkey esc\n'
+            sleep 1
             printf 'quit\n'
           } | timeout 85s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
@@ -419,6 +427,7 @@ jobs:
           test -s build/charisos-desktop-preview.ppm
           test -s build/charisos-browser-preview.ppm
           grep -q 'SHELL_APP_OPEN Browser' build/desktop-capture-serial.log
+          grep -q 'SHELL_APP_OPEN Calculator' build/desktop-capture-serial.log
           test -s build/charisos-files-preview.ppm
           grep -q 'FILES_OPEN' build/desktop-capture-serial.log
           grep -Eq 'FILES_ROOT_COUNT=[1-9][0-9]*' build/desktop-capture-serial.log
@@ -520,6 +529,7 @@ jobs:
             build/charisos-settings-preview.ppm
             build/charisos-settings-adjusted-preview.ppm
             build/charisos-desktop-scaled-preview.ppm
+            build/charisos-calculator-preview.ppm
             build/charisos-settings-reloaded-preview.ppm
             build/charisos-desktop-large-font-preview.ppm
             build/charisos-terminal-preview.ppm
