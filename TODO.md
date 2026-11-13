@@ -157,6 +157,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [ ] TLS/HTTPS and certificate validation
 - [ ] IRQ-driven RX or bounded DMA/ring processing with hardware stress tests
 - [ ] Real-LAN interoperability tests; QEMU success alone is not proof of Internet access
+- [x] Constrained TCP client rejects future/partial ACKs for its one outstanding data segment, avoids double-consuming the SYN sequence number, and only accepts an in-order FIN; host regression covers handshake, ACK and FIN cases
 
 ## Phase 9: Desktop Environment (PARTIAL, ACTIVE)
 - [x] Minimal workspace replaces the dashboard-style home surface; Files desktop shortcut, launcher and taskbar render in QEMU
