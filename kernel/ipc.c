@@ -78,8 +78,16 @@ static bool shm_used[SHM_MAX_BLOCKS];
 static bool ipc_initialized;
 
 #ifdef IPC_HOST_TEST
-static u64 ipc_irq_save(void) { return 0; }
-static void ipc_irq_restore(u64 flags) { (void)flags; }
+static u32 ipc_host_irq_depth;
+static u64 ipc_irq_save(void) {
+    u64 previous = ipc_host_irq_depth;
+    ipc_host_irq_depth++;
+    return previous;
+}
+static void ipc_irq_restore(u64 flags) {
+    ipc_host_irq_depth = (u32)flags;
+}
+bool ipc_test_irq_disabled(void) { return ipc_host_irq_depth != 0; }
 #else
 /* Local IRQ exclusion only. The current kernel is single-CPU, not SMP-safe. */
 static u64 ipc_irq_save(void) {
