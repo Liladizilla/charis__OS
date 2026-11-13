@@ -115,11 +115,9 @@ static void ipc_wake_waiters_locked(struct ipc_endpoint* endpoint, u32 reason) {
         waiter->ipc_wait_next = NULL;
         waiter->ipc_wait_endpoint = NULL;
         waiter->ipc_wait_status = (s32)reason;
-        if (waiter->waiting_event == TASK_WAITING_IPC) {
-            waiter->waiting_event = 0;
-            waiter->event_data = 0;
-            task_unblock(waiter);
-        }
+        waiter->waiting_event = 0;
+        waiter->event_data = 0;
+        task_unblock(waiter);
     }
 }
 
@@ -130,11 +128,9 @@ static void ipc_cancel_waiter_locked(task_t* waiter, u32 reason) {
     waiter->ipc_wait_next = NULL;
     waiter->ipc_wait_endpoint = NULL;
     waiter->ipc_wait_status = (s32)reason;
-    if (waiter->waiting_event == TASK_WAITING_IPC) {
-        waiter->waiting_event = 0;
-        waiter->event_data = 0;
-        task_unblock(waiter);
-    }
+    waiter->waiting_event = 0;
+    waiter->event_data = 0;
+    task_unblock(waiter);
 }
 
 static bool ipc_waiter_register_locked(struct ipc_endpoint* endpoint,
@@ -438,6 +434,7 @@ void ipc_task_close_all(task_t* task) {
         task->waiting_event = 0;
         task->event_data = 0;
         task->ipc_wait_status = IPC_WAIT_STATUS_CANCELLED;
+        task_unblock(task);
     }
     for (u32 i = 0; i < IPC_MAX_ENDPOINTS; i++)
         ipc_close_slot_locked(task, i);
