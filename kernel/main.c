@@ -21,7 +21,6 @@
 #include <kernel/wm.h>
 #include <kernel/input.h>
 #include <kernel/ipc.h>
-#include <kernel/ipc.h>
 #include <kernel/desktop.h>
 #include <kernel/apps.h>
 #include <kernel/audio.h>
@@ -65,6 +64,201 @@ static void kernel_stack_guard_probe(void* unused) {
 
 
 #ifdef TEST_WAITPID
+
+#ifdef TEST_IPC_WAIT
+static task_t* ipc_wait_receiver_task;
+static ipc_handle_t ipc_wait_receiver_handle;
+static ipc_handle_t ipc_wait_peer_handle;
+static u32 ipc_wait_peer_pid;
+static volatile s32 ipc_wait_cancel_result;
+static volatile s32 ipc_wait_peer_send_result;
+
+static void ipc_wait_test_fail(const char* reason) {
+    serial_puts("IPC_WAIT_TEST_FAIL: ");
+    serial_puts(reason);
+    serial_puts("\n");
+    for (;;) asm volatile("cli; hlt" : : : "memory");
+}
+
+static u64 ipc_wait_test_irq_save(void) {
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+    return flags;
+}
+
+static void ipc_wait_test_irq_restore(u64 flags) {
+    asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
+}
+
+static bool ipc_wait_test_payload_matches(const char* actual,
+                                          const char* expected, u32 size) {
+    for (u32 i = 0; i < size; i++)
+        if (actual[i] != expected[i]) return false;
+    return true;
+}
+
+/* Keep construction, scheduler publication and endpoint-pair installation
+ * atomic relative to the timer. A new task must not run before its handle
+ * has been installed in its task-local endpoint table. */
+static void ipc_wait_test_create_pair(const char* receiver_name,
+                                      task_func_t receiver_entry,
+                                      const char* peer_name,
+                                      task_func_t peer_entry,
+                                      task_t** receiver_out,
+                                      task_t** peer_out,
+                                      ipc_handle_t* receiver_handle,
+                                      ipc_handle_t* peer_handle) {
+    u64 flags = ipc_wait_test_irq_save();
+    task_t* receiver = task_create(receiver_name, receiver_entry, NULL, 0, false);
+    task_t* peer = task_create(peer_name, peer_entry, NULL, 0, false);
+    if (!receiver || !peer) {
+        ipc_wait_test_irq_restore(flags);
+        ipc_wait_test_fail("task allocation failed");
+    }
+    scheduler_add_task(receiver);
+    scheduler_add_task(peer);
+    if (!ipc_endpoint_pair_create(receiver, peer,
+            IPC_RIGHT_RECEIVE, IPC_RIGHT_SEND,
+            receiver_handle, peer_handle)) {
+        ipc_wait_test_irq_restore(flags);
+        ipc_wait_test_fail("endpoint pair creation failed");
+    }
+    *receiver_out = receiver;
+    *peer_out = peer;
+    ipc_wait_peer_pid = peer->pid;
+    ipc_wait_test_irq_restore(flags);
+}
+
+static void ipc_wait_test_reap_pair(void) {
+    for (u32 child = 0; child < 2; child++) {
+        u32 status = 0xFFFFFFFFU;
+        s64 pid = task_waitpid(-1, &status, false);
+        if (pid <= 0 || status != 0)
+            ipc_wait_test_fail("waitpid could not reap a successful IPC worker");
+    }
+}
+
+/* The receiver must actually block before the peer sends. The peer exits
+ * immediately after publishing one message, so the receiver must drain that
+ * message and then observe EOF rather than losing the queued payload. */
+static void ipc_wait_message_receiver(void* unused) {
+    (void)unused;
+    char payload[16] = {0};
+    u32 sender = 0;
+    const char expected[] = "wake-and-drain";
+    int received = ipc_recv_wait(ipc_wait_receiver_handle,
+                                 payload, sizeof(payload), &sender);
+    if (received != (int)sizeof(expected) ||
+        !ipc_wait_test_payload_matches(payload, expected, sizeof(expected)) ||
+        sender != ipc_wait_peer_pid)
+        ipc_wait_test_fail("message wake, payload or sender identity failed");
+
+    int eof = ipc_recv_wait(ipc_wait_receiver_handle, NULL, 0, NULL);
+    if (eof != IPC_STATUS_PEER_CLOSED)
+        ipc_wait_test_fail("queued message did not drain before peer EOF");
+    serial_puts("IPC_WAIT_MESSAGE_DRAIN_OK\n");
+    task_exit_with_status(0);
+}
+
+static void ipc_wait_message_peer(void* unused) {
+    (void)unused;
+    if (!ipc_wait_receiver_task ||
+        ipc_wait_receiver_task->ipc_wait_endpoint == NULL ||
+        ipc_wait_receiver_task->waiting_event != TASK_WAITING_IPC ||
+        ipc_wait_receiver_task->state != TASK_STATE_BLOCKED)
+        ipc_wait_test_fail("receiver did not block before peer send");
+    const char payload[] = "wake-and-drain";
+    int sent = ipc_send(ipc_wait_peer_handle, payload, sizeof(payload));
+    if (sent != IPC_STATUS_OK)
+        ipc_wait_test_fail("message send failed");
+    task_exit_with_status(0);
+}
+
+/* The peer exits without sending. This exercises the real task_exit ->
+ * ipc_task_close_all -> endpoint wake chain while the reader is blocked. */
+static void ipc_wait_close_receiver(void* unused) {
+    (void)unused;
+    int result = ipc_recv_wait(ipc_wait_receiver_handle, NULL, 0, NULL);
+    if (result != IPC_STATUS_PEER_CLOSED)
+        ipc_wait_test_fail("blocked reader was not woken by peer task exit");
+    serial_puts("IPC_WAIT_PEER_EXIT_WAKE_OK\n");
+    task_exit_with_status(0);
+}
+
+static void ipc_wait_exit_peer(void* unused) {
+    (void)unused;
+    if (!ipc_wait_receiver_task ||
+        ipc_wait_receiver_task->ipc_wait_endpoint == NULL ||
+        ipc_wait_receiver_task->waiting_event != TASK_WAITING_IPC ||
+        ipc_wait_receiver_task->state != TASK_STATE_BLOCKED)
+        ipc_wait_test_fail("reader did not block before peer exit");
+    task_exit_with_status(0);
+}
+
+/* A trusted kernel coordinator revokes the blocked reader's local endpoint.
+ * This drives the cancellation/unlink path under the real scheduler, then
+ * lets the reader resume, observe CANCELLED and exit normally. */
+static void ipc_wait_cancel_receiver(void* unused) {
+    (void)unused;
+    int result = ipc_recv_wait(ipc_wait_receiver_handle, NULL, 0, NULL);
+    ipc_wait_cancel_result = result;
+    if (result != IPC_STATUS_CANCELLED)
+        ipc_wait_test_fail("blocked receive did not return CANCELLED");
+    serial_puts("IPC_WAIT_CANCEL_WAKE_OK\n");
+    task_exit_with_status(0);
+}
+
+static void ipc_wait_cancel_peer(void* unused) {
+    (void)unused;
+    task_sleep_ms(20);
+    ipc_wait_peer_send_result = ipc_send(ipc_wait_peer_handle, "x", 1);
+    if (ipc_wait_peer_send_result != IPC_STATUS_PEER_CLOSED)
+        ipc_wait_test_fail("peer handle remained usable after local revoke");
+    task_exit_with_status(0);
+}
+
+static void ipc_wait_test_coordinator(void* unused) {
+    (void)unused;
+    task_t* peer_task = NULL;
+
+    ipc_wait_test_create_pair("ipc-wait-reader", ipc_wait_message_receiver,
+        "ipc-wait-sender", ipc_wait_message_peer,
+        &ipc_wait_receiver_task, &peer_task,
+        &ipc_wait_receiver_handle, &ipc_wait_peer_handle);
+    ipc_wait_test_reap_pair();
+
+    ipc_wait_test_create_pair("ipc-close-reader", ipc_wait_close_receiver,
+        "ipc-close-peer", ipc_wait_exit_peer,
+        &ipc_wait_receiver_task, &peer_task,
+        &ipc_wait_receiver_handle, &ipc_wait_peer_handle);
+    ipc_wait_test_reap_pair();
+
+    ipc_wait_cancel_result = 0;
+    ipc_wait_peer_send_result = 0;
+    ipc_wait_test_create_pair("ipc-cancel-reader", ipc_wait_cancel_receiver,
+        "ipc-cancel-peer", ipc_wait_cancel_peer,
+        &ipc_wait_receiver_task, &peer_task,
+        &ipc_wait_receiver_handle, &ipc_wait_peer_handle);
+
+    u32 attempts = 0;
+    while (!ipc_wait_receiver_task->ipc_wait_endpoint && attempts++ < 2000)
+        task_sleep_ms(1);
+    if (!ipc_wait_receiver_task->ipc_wait_endpoint ||
+        ipc_wait_receiver_task->waiting_event != TASK_WAITING_IPC ||
+        ipc_wait_receiver_task->state != TASK_STATE_BLOCKED)
+        ipc_wait_test_fail("reader never entered blocked waiter state");
+
+    ipc_task_close_all(ipc_wait_receiver_task);
+    ipc_wait_test_reap_pair();
+    if (ipc_wait_cancel_result != IPC_STATUS_CANCELLED ||
+        ipc_wait_peer_send_result != IPC_STATUS_PEER_CLOSED)
+        ipc_wait_test_fail("endpoint revocation results did not match");
+
+    serial_puts("IPC_WAIT_QEMU_TEST_OK\n");
+    task_exit_with_status(0);
+}
+#endif
+
 static volatile u32 waitpid_orphan_pid;
 
 static void waitpid_child_probe(void* requested_status) {
@@ -383,6 +577,16 @@ void kernel_main(u32 magic, u64 info_ptr) {
         for (;;) asm volatile("cli; hlt" : : : "memory");
     }
     scheduler_add_task(guard_probe);
+#endif
+
+#ifdef TEST_IPC_WAIT
+    task_t* ipc_wait_probe = task_create("ipc-wait-coordinator",
+        ipc_wait_test_coordinator, NULL, 0, false);
+    if (!ipc_wait_probe) {
+        serial_puts("IPC_WAIT_TEST_SETUP_FAIL\n");
+    } else {
+        scheduler_add_task(ipc_wait_probe);
+    }
 #endif
 
 #ifdef TEST_WAITPID
