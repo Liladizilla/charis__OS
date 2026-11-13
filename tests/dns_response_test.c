@@ -140,6 +140,16 @@ static void test_compression_loops_and_forward_pointers_are_rejected(void) {
     put16(packet, pending_id);
     put16(packet + 2u, 0x8180u);
     put16(packet + 4u, 1u);
+    packet[12] = 0xC0u; packet[13] = 0x00u; /* points into DNS header */
+    handle_dns_response(53u, dns_server, packet, 14u);
+    expect(callback_count == 1 && !callback_success,
+           "compression pointer into DNS header must be rejected");
+
+    reset_dns_test();
+    memset(packet, 0, sizeof(packet));
+    put16(packet, pending_id);
+    put16(packet + 2u, 0x8180u);
+    put16(packet + 4u, 1u);
     packet[12] = 0xC0u; packet[13] = 0x20u; /* points beyond packet */
     handle_dns_response(53u, dns_server, packet, 14u);
     expect(callback_count == 1 && !callback_success,
