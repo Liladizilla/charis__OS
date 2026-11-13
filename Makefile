@@ -211,6 +211,14 @@ ipc-test:
 
 	@echo "VMM test object built successfully with RUN_VMM_TESTS defined"
 
+# Generate the same embedded Inter glyph format from the licensed build-time
+# font package and compile/test the generated output independently.
+font-check:
+	mkdir -p $(BUILD_DIR)
+	$(PYTHON) tools/genfont.py $(BUILD_DIR)/font_data.generated.c
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -I$(INCLUDE_DIR) tests/font_data_test.c $(BUILD_DIR)/font_data.generated.c -o $(BUILD_DIR)/font_data_generated_test
+	$(BUILD_DIR)/font_data_generated_test
+
 # Fail early and legibly when the toolchain is incomplete, rather than part
 # way through a build with a confusing "command not found".
 check-tools:
@@ -223,7 +231,10 @@ check-tools:
 			printf "  MISSING %-14s %s\n" "$$name" "$$cmd"; ok=0; \
 		fi; \
 	done; \
-	if [ "$$ok" = "0" ]; then \
+	if ! $(PYTHON) -c 'from PIL import Image, ImageFont' >/dev/null 2>&1; then \
+		echo "  MISSING Python Pillow (required by the wallpaper/font asset tools)"; ok=0; \
+	fi; \
+	if [ "$ok" = "0" ]; then \
 		echo; echo "Install the missing tools, e.g.:"; \
 		echo "  Debian/Ubuntu: install a freestanding x86_64-elf toolchain, nasm, grub-pc-bin, xorriso, qemu-system-x86"; \
 		echo "  Fedora:        install an x86_64-elf cross-toolchain, nasm, grub2-tools, xorriso, qemu-system-x86"; \
@@ -286,4 +297,4 @@ clean:
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-waitpid-test images-ipc-wait-test images-elf-exec-test ipc-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
+.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-waitpid-test images-ipc-wait-test images-elf-exec-test ipc-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test font-check clean
