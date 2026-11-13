@@ -169,6 +169,16 @@ static void test_duplicate_transfer_encoding_is_rejected(void) {
            "duplicate transfer-encoding fields must fail");
 }
 
+static void test_chunk_size_trailing_whitespace_is_rejected(void) {
+    static const char response[] =
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "3 \r\nabc\r\n0\r\n\r\n";
+    reset_parser();
+    http_on_data((const u8*)response, sizeof(response) - 1u, 0);
+    expect(!active && completion_calls == 1 && !completion_success,
+           "chunk-size line with trailing whitespace but no extension must fail");
+}
+
 static void test_invalid_chunk_extensions_are_rejected(void) {
     static const char response[] =
         "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
@@ -233,6 +243,7 @@ int main(void) {
     test_truncated_chunk_is_not_success();
     test_duplicate_transfer_encoding_is_rejected();
     test_invalid_chunk_extensions_are_rejected();
+    test_chunk_size_trailing_whitespace_is_rejected();
     test_invalid_and_forbidden_trailers_are_rejected();
     test_overlong_chunk_line_is_rejected();
     test_chunked_status_without_body_completes_at_headers();
