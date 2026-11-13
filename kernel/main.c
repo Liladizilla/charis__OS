@@ -145,7 +145,6 @@ static void ipc_wait_test_sender(void* unused) {
 
 /* Independent workers prove that local endpoint revocation wakes a reader
  * which is genuinely blocked in ipc_recv_wait(). */
-static task_t* volatile ipc_cancel_receiver_task;
 static ipc_handle_t ipc_cancel_receiver_handle;
 static ipc_handle_t ipc_cancel_peer_handle;
 static volatile s32 ipc_cancel_receiver_result;
@@ -192,7 +191,6 @@ static void ipc_cancel_test_coordinator(void* unused) {
         asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
         ipc_wait_test_fail("cannot create cancellation endpoint pair");
     }
-    ipc_cancel_receiver_task = receiver;
     ipc_cancel_receiver_result = 0x7FFFFFFF;
     ipc_cancel_peer_send_result = 0x7FFFFFFF;
     asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
