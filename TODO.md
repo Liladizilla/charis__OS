@@ -266,7 +266,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [ ] CI #775 verifies successful authorized ELF entry through the dedicated exec-test image; default build remains denied by `CAP_ALLOW_EXEC`
 - [ ] Complete user ABI/libc and validate SYSRET path
 - [ ] Per-task kernel interrupt stacks and SMP-safe TSS handling
-- [ ] wait()/waitpid() syscall for zombie reaping
+- [x] `waitpid()` with exact-child/any-child selection, `WNOHANG`, validated status copy-out, deferred-stack-safe zombie publication, slot reclamation and orphan adoption; dedicated QEMU regression coverage
 - [ ] Process groups/sessions
 - [ ] Signal delivery to process groups
 - [ ] Resource limits (RLIMIT_*)
@@ -337,13 +337,13 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 
 ## Recommended Next Steps
 
-1. **Authenticated IPC objects** - replace global integer channels and raw shared-memory pointers with task-owned endpoint/object handles, explicit rights and transactional resource transfer
-2. **Internet connectivity** - validate DHCP, route/DNS installation, lease renewal and reconnect behavior against real LAN DHCP servers, then complete HTTPS/TLS prerequisites
-3. **Secure transport** - add TLS with certificate and clock validation before presenting the Browser as Internet-ready
-4. **Hardware services** - add timezone-aware RTC policy, ACPI battery discovery and reliable HDA PCM playback
-5. **Wireless networking** - define a supported adapter matrix, then implement and test the first Wi-Fi driver without claiming generic support
-6. **Storage and process lifecycle** - finish FAT32 write safety, wait()/waitpid(), resource reaping and writable Files UI
-7. **Desktop quality** - finish verified CC0 wallpaper loading, font/scale geometry, real device status and QEMU capture publication
+1. **IPC runtime validation** - add scheduler-backed QEMU coverage for blocked service connect/accept, unregister and task-exit races before exposing any user ABI
+2. **Transactional IPC transfer** - add descriptor attachments, queue-owned open-file references, recipient-slot reservation and rollback; keep ring-3 IPC disabled until user-memory preflight and authorization tests exist
+3. **Internet connectivity** - validate DHCP, route/DNS installation, lease renewal and reconnect behavior against real LAN DHCP servers, then complete HTTPS/TLS prerequisites
+4. **Secure transport** - add TLS with certificate and clock validation before presenting the Browser as Internet-ready
+5. **Hardware services** - add timezone-aware RTC policy, ACPI battery discovery and reliable HDA PCM playback
+6. **Wireless networking** - define a supported adapter matrix, then implement and test the first Wi-Fi driver without claiming generic support
+7. **Storage and desktop quality** - finish FAT32 write safety and writable Files UI, verified CC0 wallpaper loading, font/scale geometry, real device status and QEMU capture publication
 
 ## Implementation Details (merged from PROGRESS.md, source of truth)
 
