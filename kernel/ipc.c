@@ -2,11 +2,15 @@
 #include <kernel/scheduler.h>
 #include <kernel/string.h>
 #include <kernel/security.h>
+#include <kernel/vfs.h>
 
 typedef struct ipc_channel ipc_channel_t;
 typedef struct {
     u32 sender_pid;
     u32 size;
+    /* The queue owns one reference until descriptor import commits. */
+    vfs_open_file_t* attachment;
+    u32 attachment_rights;
     u8 data[IPC_MAX_MSG_SIZE];
 } ipc_message_t;
 typedef struct {
@@ -65,6 +69,12 @@ static struct ipc_connection_request ipc_requests[IPC_MAX_CONNECTIONS];
 static u8 shm_blocks[SHM_MAX_BLOCKS][SHM_BLOCK_SIZE];
 static bool shm_used[SHM_MAX_BLOCKS];
 static bool ipc_initialized;
+
+#define IPC_RELEASE_BATCH_MAX (IPC_MAX_ENDPOINTS * IPC_MAX_MESSAGES)
+typedef struct {
+    vfs_open_file_t* files[IPC_RELEASE_BATCH_MAX];
+    u32 count;
+} ipc_release_batch_t;
 
 #ifdef IPC_HOST_TEST
 static u64 ipc_irq_save(void) { return 0; }
@@ -370,6 +380,31 @@ static struct ipc_endpoint* ipc_resolve_locked(task_t* owner,
 }
 static void ipc_queue_clear(ipc_queue_t* q) {
     q->head = q->tail = q->count = 0;
+}
+
+/* Detach queue-owned references while interrupts are disabled. Actual final
+ * releases run later, because VFS close callbacks may free nodes or allocate. */
+static void ipc_queue_collect_attachments_locked(
+    ipc_queue_t* q, ipc_release_batch_t* releases) {
+    if (!q || !releases) return;
+    for (u32 i = 0; i < q->count; i++) {
+        u32 index = (q->tail + i) % IPC_MAX_MESSAGES;
+        ipc_message_t* message = &q->messages[index];
+        if (message->attachment) {
+            if (releases->count >= IPC_RELEASE_BATCH_MAX) continue;
+            releases->files[releases->count++] = message->attachment;
+            message->attachment = NULL;
+        }
+        message->attachment_rights = 0;
+    }
+    ipc_queue_clear(q);
+}
+
+static void ipc_release_batch(ipc_release_batch_t* releases) {
+    if (!releases) return;
+    for (u32 i = 0; i < releases->count; i++)
+        fd_release(releases->files[i]);
+    releases->count = 0;
 }
 static bool ipc_waiter_unlink_locked(task_t* waiter,
                                          struct ipc_endpoint* endpoint) {
