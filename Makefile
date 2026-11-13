@@ -12,6 +12,8 @@ GCC = $(CROSS_COMPILE)gcc
 LD = $(CROSS_COMPILE)ld
 NASM ?= nasm
 QEMU ?= qemu-system-x86_64
+CURL ?= curl
+PYTHON ?= python3
 
 # Fedora names this grub2-mkrescue; Debian/Ubuntu use grub-mkrescue.
 # An explicit GRUB=... override remains supported.
@@ -52,9 +54,26 @@ ALL_OBJS = $(BOOT_OBJS) $(KERNEL_OBJS) $(ASM_OBJS)
 # `all` stays the canonical build so CI and existing scripts keep working.
 all: $(BUILD_DIR)/charisos.iso
 
-$(BUILD_DIR)/charisos.iso: $(BUILD_DIR)/kernel.elf
+WALLPAPER_SOURCE_URL = https://upload.wikimedia.org/wikipedia/commons/7/75/Lake_Mountain_Landscape.jpg
+WALLPAPER_SOURCE_SHA1 = 60eab74e7704db6375f1426fb11421ba29d7603e
+WALLPAPER_SOURCE = $(BUILD_DIR)/wallpaper-source.jpg
+WALLPAPER_MODULE = $(BUILD_DIR)/wallpaper.cwp
+
+# The original is CC0 1.0. Download by a pinned source URL and verify the
+# published SHA-1 plus byte length before producing the deterministic RGB565
+# module. The kernel receives only the bounded CWP1 module, never a JPEG.
+$(WALLPAPER_MODULE): tools/prepare_wallpaper.py
+	mkdir -p $(BUILD_DIR)
+	$(CURL) --fail --location --retry 3 --connect-timeout 20 --max-time 180 \
+		"$(WALLPAPER_SOURCE_URL)" -o "$(WALLPAPER_SOURCE)"
+	test "$(wc -c < "$(WALLPAPER_SOURCE)")" -eq 2915869
+	echo "$(WALLPAPER_SOURCE_SHA1)  $(WALLPAPER_SOURCE)" | sha1sum -c -
+	$(PYTHON) tools/prepare_wallpaper.py "$(WALLPAPER_SOURCE)" "$@"
+
+$(BUILD_DIR)/charisos.iso: $(BUILD_DIR)/kernel.elf $(WALLPAPER_MODULE)
 	mkdir -p iso/boot/grub
 	cp $(BUILD_DIR)/kernel.elf iso/boot/
+	cp $(WALLPAPER_MODULE) iso/boot/wallpaper.cwp
 	$(GRUB) -o $@ iso/
 
 $(BUILD_DIR)/kernel.elf: $(ALL_OBJS) link.ld
@@ -196,7 +215,7 @@ ipc-test:
 # way through a build with a confusing "command not found".
 check-tools:
 	@ok=1; \
-	for pair in "compiler:$(GCC)" "linker:$(LD)" "nasm:$(NASM)" "qemu:$(QEMU)" "grub rescue:$(GRUB)"; do \
+	for pair in "compiler:$(GCC)" "linker:$(LD)" "nasm:$(NASM)" "qemu:$(QEMU)" "grub rescue:$(GRUB)" "curl:$(CURL)" "python:$(PYTHON)"; do \
 		name=$${pair%%:*}; cmd=$${pair#*:}; \
 		if command -v $$cmd >/dev/null 2>&1; then \
 			printf "  ok    %-16s %s\n" "$$name" "$$cmd"; \
@@ -262,7 +281,7 @@ verify-boot: $(VM_ISO) $(USB_IMG) elf-test
 	@if [ -f "$(OVMF)" ]; then 		OVMF="$(OVMF)" ./tools/verify-boot.sh $(VM_ISO) --uefi; 		OVMF="$(OVMF)" ./tools/verify-boot.sh $(USB_IMG) --disk --uefi; 		OVMF="$(OVMF)" ./tools/verify-boot.sh $(VM_ISO) --uefi --kvm; 	else 		echo "SKIP: no OVMF firmware at $(OVMF), skipping UEFI checks"; 	fi
 
 clean:
-	rm -rf $(BUILD_DIR) iso/boot/kernel.elf iso/charisos.iso
+	rm -rf $(BUILD_DIR) iso/boot/kernel.elf iso/boot/wallpaper.cwp iso/charisos.iso
 
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
