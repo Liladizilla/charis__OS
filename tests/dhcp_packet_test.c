@@ -85,6 +85,46 @@ int main(void) {
     p[16]=224; /* Multicast address cannot be offered to this client. */
     assert(!dhcp_decode_reply(p,n,xid,mac,&reply));
 
+    /* Offers cannot assign the subnet's network or directed-broadcast ID. */
+    n=make_reply(p,2,xid,mac,true,true);
+    p[19]=0;
+    assert(!dhcp_decode_reply(p,n,xid,mac,&reply));
+    n=make_reply(p,2,xid,mac,true,true);
+    p[19]=255;
+    assert(!dhcp_decode_reply(p,n,xid,mac,&reply));
+
+    /* A supplied router must be a different usable host on the offered LAN. */
+    n=make_reply(p,2,xid,mac,true,true);
+    p[260]=0; /* Router 192.168.1.0 is the network identifier. */
+    assert(!dhcp_decode_reply(p,n,xid,mac,&reply));
+    n=make_reply(p,2,xid,mac,true,true);
+    p[260]=255; /* Router 192.168.1.255 is the directed broadcast. */
+    assert(!dhcp_decode_reply(p,n,xid,mac,&reply));
+    n=make_reply(p,2,xid,mac,true,true);
+    p[257]=10; p[258]=0; p[259]=0; p[260]=1; /* Off-subnet router. */
+    assert(!dhcp_decode_reply(p,n,xid,mac,&reply));
+    n=make_reply(p,2,xid,mac,true,true);
+    p[257]=192; p[258]=168; p[259]=1; p[260]=120; /* Router equals lease. */
+    assert(!dhcp_decode_reply(p,n,xid,mac,&reply));
+
+    /* A /31 has two usable endpoints, including the numerically even one. */
+    n=make_reply(p,2,xid,mac,true,true);
+    p[19]=120;
+    p[254]=254;
+    p[257]=192; p[258]=168; p[259]=1; p[260]=121;
+    assert(dhcp_decode_reply(p,n,xid,mac,&reply));
+    assert(reply.address[3]==120 && reply.router[3]==121);
+
+    /* A /32 host route is valid when no distinct default router is supplied. */
+    n=make_reply(p,2,xid,mac,false,true);
+    p[254]=255;
+    assert(dhcp_decode_reply(p,n,xid,mac,&reply));
+
+    /* A DNS server must be a unicast address; it may be off-subnet. */
+    n=make_reply(p,2,xid,mac,true,true);
+    p[263]=224;
+    assert(!dhcp_decode_reply(p,n,xid,mac,&reply));
+
     puts("dhcp_packet_test: PASS");
     return 0;
 }
