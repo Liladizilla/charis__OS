@@ -165,6 +165,22 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Validate configured IPv4 interface/gateway host addresses, reject subnet network/directed-broadcast IDs and off-link gateways, preserve `/31` and `/32`, and resolve external traffic through the on-link gateway instead of ARPing the remote destination; host tests cover configuration, routing and DHCP lease boundaries; reject zero-prefix (`/0`) masks so external destinations cannot be misclassified as on-link
 
 ## Phase 9: Desktop Environment (PARTIAL, ACTIVE)
+
+### Settings v2 target scope — planned, not implemented
+The complete Settings information architecture and capability gates are defined in [docs/settings-architecture.md](./docs/settings-architecture.md). Do not ship decorative controls before their owning services exist.
+
+- [ ] Replace the current Display-only Settings page and three cosmetic navigation labels with real searchable category/page navigation and per-page keyboard focus.
+- [ ] Display: orientation, resolution, refresh rate, mode test/revert, per-display scaling, brightness when supported, night light, color profiles/calibration and monitor arrangement.
+- [ ] Appearance: dark/light/automatic style, accent palettes, multiple CC0 wallpapers with preview/fallback and per-workspace backgrounds.
+- [ ] Multitasking: named virtual workspaces, overview, snap/tiling, screen-edge actions, app switching preferences and multi-monitor workspace rules.
+- [ ] Devices: pointer speed/acceleration/buttons/scrolling; detected touchpad settings; keyboard input sources/layout switching, special-character entry, repeat behavior and configurable shortcuts.
+- [ ] Sound and power: real audio output/input inventory, per-device/app volume and alerts; power modes, screen-off timers, battery/lid telemetry and suspend/resume only where hardware support exists.
+- [ ] Apps and services: default applications, startup/background policy, per-app capabilities, notification permissions/history/quiet hours and scoped local/online search providers.
+- [ ] Accounts and sharing: local profiles, secure Google/Microsoft/Apple authorization flows, token revocation, authenticated file/media sharing and expiring share grants.
+- [ ] Wellbeing and accessibility: screen-time summaries/limits, break reminders, high contrast, pointer options, keyboard accessibility, magnifier and screen-reader service.
+- [ ] System: privacy/security status and per-app permissions, region/language/locale, timezone-aware date/time, users, authenticated remote desktop, secure SSH, About, signed software updates and rollback/recovery.
+- [ ] Build the settings registry, capability detection, validation, apply/read-back/rollback, versioned configuration migration and regression tests before expanding the page count.
+
 - [x] Minimal workspace replaces the dashboard-style home surface; Files desktop shortcut, launcher and taskbar render in QEMU
 - [x] Native Files launcher and read-only FAT32 root browser (8.3 names only)
 - [x] Native Terminal surface with bounded built-in commands
