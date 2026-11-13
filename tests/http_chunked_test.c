@@ -157,6 +157,58 @@ static void test_truncated_chunk_is_not_success(void) {
     expect(!active && completion_calls == 1 && !completion_success,
            "truncated chunked response must fail");
 }
+
+static void test_body_and_trailer_limits(void) {
+    char response[4096];
+    const char* chunk_prefix =
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n";
+    reset_parser();
+    int n = snprintf(response, sizeof(response), "%s40001\r\n", chunk_prefix);
+    expect(n > 0 && (usize)n < sizeof(response), "large chunk response formatting");
+    http_on_data((const u8*)response, (usize)n, 0);
+    expect(!active && completion_calls == 1 && !completion_success,
+           "chunk exceeding decoded body limit must fail before delivery");
+
+    reset_parser();
+    n = snprintf(response, sizeof(response), "%s0\r\n", chunk_prefix);
+    expect(n > 0 && (usize)n < sizeof(response), "trailer response formatting");
+    usize used = (usize)n;
+    for (u32 i = 0; i < 16u; i++) {
+        int written = snprintf(response + used, sizeof(response) - used,
+                               "X-Padding-%u: ", i);
+        expect(written > 0 && (usize)written < sizeof(response) - used,
+               "trailer line formatting");
+        used += (usize)written;
+        if (used + 82u >= sizeof(response)) abort();
+        memset(response + used, 'x', 80u);
+        used += 80u;
+        response[used++] = '\r';
+        response[used++] = '\n';
+    }
+    response[used++] = '\r';
+    response[used++] = '\n';
+    http_on_data((const u8*)response, used, 0);
+    expect(!active && completion_calls == 1 && !completion_success,
+           "aggregate trailer bytes must be bounded");
+}
+
+static void test_invalid_trailer_fields_are_rejected(void) {
+    static const char leading_space[] =
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "0\r\n Content-Length: 4\r\n\r\n";
+    static const char framing_trailer[] =
+        "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n"
+        "0\r\nContent-Length: 4\r\n\r\n";
+    reset_parser();
+    http_on_data((const u8*)leading_space, sizeof(leading_space) - 1u, 0);
+    expect(!active && completion_calls == 1 && !completion_success,
+           "obsolete folded trailer lines must be rejected");
+    reset_parser();
+    http_on_data((const u8*)framing_trailer, sizeof(framing_trailer) - 1u, 0);
+    expect(!active && completion_calls == 1 && !completion_success,
+           "framing fields are not accepted in trailers");
+}
+
 int main(void) {
     test_chunked_split_at_every_boundary();
     test_chunked_one_byte_at_a_time();
@@ -167,6 +219,8 @@ int main(void) {
     test_conflicting_framing_is_rejected();
     test_no_body_status_completes_at_headers();
     test_truncated_chunk_is_not_success();
+    test_body_and_trailer_limits();
+    test_invalid_trailer_fields_are_rejected();
     puts("HTTP chunked parser tests passed");
     return 0;
 }
