@@ -221,6 +221,33 @@ static void test_browser_window_manager_bounds_contract(void) {
            "browser restores a bounded framebuffer fallback after reset");
 }
 
+
+static void test_browser_mouse_hit_testing_uses_window_manager_bounds(void) {
+    g_framebuffer.initialized = true;
+    g_framebuffer.width = 1024u;
+    g_framebuffer.height = 768u;
+    browser_visible = true;
+    tab_count = 1;
+    active_tab = 0;
+    strcpy(tabs[0].address, "charis://home");
+    browser_set_bounds(120u, 84u, 640u, 480u);
+
+    /* This point is inside the legacy full-screen fallback but outside the
+     * actual moved/resized Browser window. It must not be delivered here. */
+    expect(!browser_handle_mouse(800, 100),
+           "click outside managed Browser bounds is not consumed by Browser");
+    expect(browser_visible,
+           "outside click does not close the Browser application");
+
+    expect(browser_handle_mouse(140, 95),
+           "click inside the moved Browser tab strip is handled");
+    browser_reset_bounds();
+    browser_visible = false;
+    tab_count = 0;
+    active_tab = 0;
+    g_framebuffer.initialized = false;
+}
+
 int main(void) {
     test_tags_and_block_boundaries();
     test_scripts_and_styles_are_hidden();
@@ -238,6 +265,7 @@ int main(void) {
     test_http_status_feedback_distinguishes_redirects_and_errors();
     test_wrapping_prefers_word_boundaries();
     test_browser_window_manager_bounds_contract();
+    test_browser_mouse_hit_testing_uses_window_manager_bounds();
     puts("Browser HTML extraction tests passed");
     return 0;
 }
