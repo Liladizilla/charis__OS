@@ -11,6 +11,7 @@
  */
 
 #include <kernel/shell_ui.h>
+#include <kernel/cursor.h>
 #include <kernel/browser.h>
 #include <kernel/calculator_ui.h>
 #include <kernel/fb.h>
@@ -1023,46 +1024,13 @@ static bool settings_handle_window_click(window_t* win, int mx, int my) {
 /* Software cursor. The PS/2 mouse has no hardware cursor once the display is
  * in graphics mode, so the pointer is drawn into the framebuffer. */
 void ui_draw_cursor(void) {
-    int x = input_get_mouse_x();
-    int y = input_get_mouse_y();
-    if (x < 0 || y < 0) return;
-    if ((u32)x >= g_framebuffer.width || (u32)y >= g_framebuffer.height) return;
-
-    /* 10x16 arrow. */
-    static const char SHAPE[16][11] = {
-        "X........",
-        "XX.......",
-        "X.X......",
-        "X..X.....",
-        "X...X....",
-        "X....X...",
-        "X.....X..",
-        "X......X.",
-        "X.......X",
-        "X........",
-        "X........",
-        "X........",
-        "X........",
-        "X........",
-        "X........",
-        "X........",
-    };
-
-    for (u32 row = 0; row < 16; row++) {
-        for (u32 col = 0; col < 10; col++) {
-            bool on = SHAPE[row][col] == 'X';
-            /* Draw a dark outline so the cursor stays visible on any wallpaper. */
-            if (on) fb_put_pixel(x + col, y + row, T_CURSOR);
-            else {
-                bool edge = (row + 1 < 16 && SHAPE[row + 1][col] == 'X')
-                         || (col + 1 < 10 && SHAPE[row][col + 1] == 'X');
-                if (edge) fb_put_pixel(x + col, y + row, FB_ARGB(0xFF, 0, 0, 0));
-            }
-        }
-    }
+    cursor_draw();
 }
 
 static void redraw_all(void) {
+    /* Any old save-under belongs to the previous desktop frame. Restore it
+     * before repainting so cursor pixels never become part of the wallpaper. */
+    cursor_erase();
     wallpaper_draw((u32)config_get_int("wallpaper", 0));
     desktop_surface_render();
     draw_taskbar();
@@ -1292,7 +1260,8 @@ static void handle_event(const input_event_t* e) {
         return;
     }
 
-    case INPUT_MOUSE_MOVE:
+    case INPUT_MOUSE_MOVE: {
+        bool content_changed = false;
         if (shell_resize_window) {
             int requested_w = shell_resize_start_width +
                               e->mouse.x - shell_resize_origin_x;
@@ -1300,14 +1269,22 @@ static void handle_event(const input_event_t* e) {
                               e->mouse.y - shell_resize_origin_y;
             (void)shell_resize_app_window(shell_resize_window,
                                           requested_w, requested_h);
+            content_changed = true;
         } else if (shell_drag_window) {
-            (void)wm_move_window(shell_drag_window,
-                                 e->mouse.x - shell_drag_offset_x,
-                                 e->mouse.y - shell_drag_offset_y);
+            content_changed = wm_move_window(shell_drag_window,
+                                             e->mouse.x - shell_drag_offset_x,
+                                             e->mouse.y - shell_drag_offset_y);
         }
-        ui.hover_item = hit_menu_item(e->mouse.x, e->mouse.y);
-        ui.needs_redraw = true;
+        int hover = hit_menu_item(e->mouse.x, e->mouse.y);
+        if (hover != ui.hover_item) {
+            ui.hover_item = hover;
+            content_changed = true;
+        }
+        /* Ordinary pointer movement is handled by the save-under cursor.
+         * Only repaint the desktop when a real surface or hover state changed. */
+        if (content_changed) ui.needs_redraw = true;
         return;
+    }
 
     case INPUT_MOUSE_UP:
         if (e->mouse.button == 1) {
@@ -1499,8 +1476,8 @@ void shell_ui_main(void* arg) {
             redraw_all();
             ui.needs_redraw = false;
         }
-        /* The cursor moves on every mouse packet, so it is drawn every pass
-         * rather than waiting for a redraw decision. */
+        /* Cursor compositing is independent from desktop painting. It restores
+         * the old save-under and paints only the new 10x16 pointer footprint. */
         ui_draw_cursor();
 
         /* The scheduler is cooperative: yield after each frame so a busy
