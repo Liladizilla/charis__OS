@@ -278,6 +278,13 @@ static u32 draw_system_panel(void) {
     const char* free_label = gfx_text_get_scale() >= 2u ? "FREE MiB" : "FREE RAM (MiB)";
     const char* total_label = gfx_text_get_scale() >= 2u ? "TOTAL MiB" : "MANAGED (MiB)";
     const char* used_label = gfx_text_get_scale() >= 2u ? "USED MiB" : "ALLOCATED (MiB)";
+    u32 measured_label_width = 0;
+    gfx_text_size(free_label, &measured_label_width, NULL);
+    if (measured_label_width > col_w) free_label = "FREE";
+    gfx_text_size(total_label, &measured_label_width, NULL);
+    if (measured_label_width > col_w) total_label = "TOTAL";
+    gfx_text_size(used_label, &measured_label_width, NULL);
+    if (measured_label_width > col_w) used_label = "USED";
 
     fb_set_clip(left, row1_label_y, col_w, line);
     gfx_draw_string(left, row1_label_y, "UPTIME",
