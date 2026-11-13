@@ -1436,10 +1436,11 @@ void shell_ui_main(void* arg) {
         input_process_events();
 
         input_event_t e;
-        bool had_event = false;
         while (input_pop_event(&e)) {
+            /* Event handlers decide whether an event changes a visible surface.
+             * In particular, pointer motion must not schedule a full desktop
+             * repaint unless a window or hover state actually changed. */
             handle_event(&e);
-            had_event = true;
         }
         char key;
         bool terminal_has_focus =
@@ -1447,10 +1448,11 @@ void shell_ui_main(void* arg) {
             wm_get_focused() == shell_app_windows[SHELL_APP_TERMINAL] &&
             !shell_app_windows[SHELL_APP_TERMINAL]->minimized;
         while (keyboard_get_key(&key)) {
-            if (terminal_has_focus) terminal_handle_char(key);
-            had_event = true;
+            if (terminal_has_focus) {
+                terminal_handle_char(key);
+                ui.needs_redraw = true;
+            }
         }
-        if (had_event) ui.needs_redraw = true;
         shell_sync_app_windows();
 
         /* Cursor blink. */
