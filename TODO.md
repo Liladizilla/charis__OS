@@ -385,7 +385,7 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 - [ ] High-quality bundled wallpaper set with no embedded logos, watermarks or UI overlays; user-selectable wallpaper and fallback procedural themes
 - [x] QEMU desktop capture pipeline publishes the actual framebuffer, pointer frames, app windows and settings/reboot captures as CI artifacts
 - [x] Refresh the checked-in README desktop screenshots from successful CI run #1002; capture is a real QEMU framebuffer image
-- [ ] Native terminal visual pass: near-black console canvas, compact chrome, dedicated monospace font metrics, carefully measured CharisOS ASCII banner and stable prompt/output layout
+- [x] Native terminal visual pass: near-black console canvas, compact chrome, dedicated fixed-cell monospace rendering, CharisOS ASCII banner, stable prompt and output layout; QEMU captures the native Terminal window
 - [ ] Verify ASCII banner width/height against font-cell metrics at all supported text scales and narrow window sizes
 - [x] Add host regressions for RTC BCD/binary modes, 12-hour conversion, invalid dates, leap days and Unix epoch/calendar conversion
 - [ ] Add QEMU checks for RTC-present and RTC-absent boot, taskbar date/time rollover and long-uptime monotonic behavior
