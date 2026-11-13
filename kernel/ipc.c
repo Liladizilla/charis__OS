@@ -571,6 +571,10 @@ int ipc_service_connect(const char* name, ipc_request_handle_t* request_handle) 
         ipc_irq_restore(flags);
         return IPC_STATUS_ERROR;
     }
+    if (service->owner == client && service->owner_pid == client->pid) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_DENIED;
+    }
     if (!ipc_service_client_authorized(client, service)) {
         ipc_irq_restore(flags);
         return IPC_STATUS_DENIED;
