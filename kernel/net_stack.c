@@ -186,8 +186,14 @@ void net_stack_init(void) {
     const char* configured = config_get_string("net_ip", "0.0.0.0");
     if (!parse_ipv4(configured, local_ip))
         kmemset(local_ip, 0, sizeof(local_ip));
-    if (!parse_ipv4(config_get_string("net_mask", "255.255.255.0"), local_mask) ||
-        !valid_netmask(local_mask)) {
+    bool mask_valid =
+        parse_ipv4(config_get_string("net_mask", "255.255.255.0"), local_mask) &&
+        valid_netmask(local_mask);
+    if (!mask_valid) {
+        /* Do not silently reinterpret a bad saved subnet as /24. Keep a
+         * harmless fallback mask for internal calculations but fail closed
+         * by leaving the interface address unconfigured. */
+        kmemset(local_ip, 0, sizeof(local_ip));
         local_mask[0] = 255;
         local_mask[1] = 255;
         local_mask[2] = 255;
