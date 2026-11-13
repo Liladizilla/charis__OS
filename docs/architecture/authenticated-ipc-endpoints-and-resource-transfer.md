@@ -67,26 +67,47 @@ Implemented endpoint rights:
 Transfer and administration rights are reserved, not implemented. Unknown,
 empty or unsupported grants fail closed.
 
-## Authenticated connection setup
+## Kernel service namespace and authenticated rendezvous
 
-A user-supplied PID or channel number is not proof of identity or permission.
+The first kernel-only service namespace is implemented:
 
-A future public connection path must use a kernel-authorized rendezvous:
+- The global table is bounded to 16 service records. Names are unique,
+  case-sensitive ASCII identifiers of 1-31 characters from
+  `[A-Za-z0-9._-]`.
+- Registration is bound to the current live kernel task. A service must provide
+  a nonzero `required_client_capabilities` mask; a zero-mask catch-all service
+  cannot be registered. A client is authorized only when every required bit
+  exists in the current task's kernel-assigned `capabilities` field.
+- Registration assigns server and client endpoint rights. A client cannot
+  request stronger rights or supply a trusted PID.
+- Service handles encode the owner PID, slot generation and slot. Resolution
+  requires the current server task to match the stored owner pointer and PID.
+  Generations never wrap; exhausted slots are permanently retired.
+- The pending request table is bounded to 32 records. Request handles are
+  scoped to the connecting task's PID and a separate generation/slot pair.
+  The kernel derives the client identity from `scheduler_current()`.
+- `ipc_service_next()` claims the oldest pending request for the registering
+  service and returns its opaque request token plus the kernel-observed client
+  PID. A different service cannot claim or accept that token.
+- The owner may call `ipc_service_accept()` or `ipc_service_reject()`.
+  Acceptance atomically installs both endpoint objects using rights selected
+  at registration. The server receives its endpoint immediately; the client
+  obtains its endpoint once through `ipc_service_result()`.
+- Connect and result retrieval are nonblocking. A client polls its own request
+  token and receives EMPTY until the server accepts or rejects.
+- Unregister and server task exit reject unaccepted/offered requests. Accepted
+  endpoints are independent channel references and survive service unregister
+  until their owning tasks close them. Client task exit discards its request
+  records and closes any accepted endpoint during normal task cleanup.
+- Duplicate names, invalid name characters, zero capability policy, unknown
+  service handles, cross-task request tokens and exhausted tables fail closed.
 
-1. A server creates a private listening endpoint and registers a service name
-   through a kernel-controlled name service.
-2. Registration records server identity, service generation, listener rights
-   and explicit access policy.
-3. A client asks the name service to connect. The kernel derives client identity
-   from the current task; it does not trust a PID supplied in the request.
-4. The server receives a pending request with kernel-authenticated peer
-   identity and may accept or reject it.
-5. Acceptance creates a channel and two endpoint objects atomically.
-6. Listener closure, task exit or service replacement invalidates pending
-   requests through generation checks.
-
-The public implementation should prefer explicit server acceptance. Do not add
-wildcard public services, ambient channel lookup or global `connect(pid)`.
+This is still a kernel-only API. It does not register user services, expose
+names or request handles to ring 3, or create a public syscall. It also does
+not yet provide blocking connect, request timeout/requeue, listener wildcard
+matching or SMP synchronization. The current IRQ exclusion is valid only for
+the single-CPU scheduler. Do not add global `connect(pid)`, client-selected
+endpoint rights or ambient integer channel lookup.
 
 ## Transactional resource attachment
 
@@ -127,9 +148,12 @@ for retry. No recipient may receive a handle with escalated rights.
 | Resource | Limit |
 |---|---:|
 | Live channel objects | 32 |
+| Services in kernel namespace | 16 |
+| Pending connection requests | 32 |
 | Endpoints per task | 16 |
 | Messages per direction | 16 |
 | Message payload | 512 bytes |
+| Service name length | 1-31 ASCII characters |
 
 Queue full is explicit; undersized receive buffers do not dequeue or truncate
 messages. Before blocking, transfers or public ring-3 exposure, also bound
@@ -155,6 +179,16 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Task enters EXITING | All local endpoints revoked before other teardown |
 | Ring-3 IPC syscall | Reserved/unregistered and fails closed |
 | Shared-memory pointer exposure | Ring-3 shared-memory calls remain denied |
+| Client lacks required service capabilities | Deny before request allocation |
+| Zero-capability public service registration | Reject |
+| Duplicate service name | Reject without changing existing service |
+| Wrong task uses service handle | Reject |
+| Wrong service attempts to accept request token | Reject |
+| Server rejects request | Client receives REJECTED once; no endpoint is installed |
+| Service unregisters with pending/offered requests | Reject pending work; accepted channel pairs remain independent |
+| Client exits with pending request | Release request record before TCB reuse |
+| Server exits | Revoke registrations and reject unaccepted requests |
+| Reused service/request slot | Old generation token remains invalid |
 
 Host tests cover waiter unlinking on task teardown. A dedicated QEMU test also
 proves the receiver is actually BLOCKED before send, wakes after message commit,
@@ -171,13 +205,14 @@ exhaustion and concurrent multi-core operation before enabling those features.
 4. [x] Add bounded per-direction data queues with nonblocking send/receive.
 5. [x] Revoke task-owned endpoints during EXITING teardown.
 6. [x] Add kernel-only cancellation-safe blocking receive and endpoint waiter queues.
-7. [ ] Add service-name registration and accept/reject connection lifecycle.
-8. [ ] Add host tests for blocked waiter cancellation and concurrent close/send/receive.
-9. [ ] Add message attachment records and queue-owned open-file references.
-10. [ ] Add transactional receive-side descriptor-slot reservation and rollback.
-11. [ ] Add QEMU tests for service connection, task exit and endpoint teardown.
-12. [ ] Only then design ring-3 syscalls, user-memory preflight, ABI versioning
-    and public service policy.
+7. [x] Add a kernel-only bounded service namespace with explicit capability policy and accept/reject rendezvous.
+8. [x] Add host tests for service authorization, cross-task tokens, request lifecycle, task exit and table limits.
+9. [ ] Add host tests for concurrent endpoint close/send/receive and waiter cancellation under stress.
+10. [ ] Add message attachment records and queue-owned open-file references.
+11. [ ] Add transactional receive-side descriptor-slot reservation and rollback.
+12. [ ] Add QEMU tests for service connection, task exit and endpoint teardown.
+13. [ ] Only then design ring-3 syscalls, user-memory preflight, ABI versioning
+     and public service policy.
 
 ## Explicit non-goals
 

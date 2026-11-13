@@ -214,6 +214,215 @@ static void test_stale_handle_and_teardown(void) {
     active_task = &task_c;
     assert(ipc_close(peer) == IPC_STATUS_OK);
 }
+static void test_service_registration_and_policy(void) {
+    ipc_service_handle_t service = 0;
+    active_task = &task_a;
+    task_a.capabilities = 0;
+    assert(ipc_service_register("com.charis.echo", 0,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_ERROR);
+    assert(ipc_service_register("bad name", 1,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_ERROR);
+    assert(ipc_service_register("", 1,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_ERROR);
+    assert(ipc_service_register("com.charis.echo", 1,
+        0, IPC_RIGHT_MASK, &service) == IPC_STATUS_ERROR);
+    assert(ipc_service_register("com.charis.echo", 0x04U,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_OK);
+    assert(service != 0);
+    /* Re-entering subsystem init must not reset live service generations. */
+    ipc_init();
+    ipc_service_handle_t duplicate = 0;
+    assert(ipc_service_register("com.charis.echo", 0x04U,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &duplicate) == IPC_STATUS_ERROR);
+
+    active_task = &task_b;
+    task_b.capabilities = 0x02U;
+    ipc_request_handle_t request = 0xFFFFFFFFFFFFFFFFULL;
+    assert(ipc_service_connect("com.charis.echo", &request) ==
+           IPC_STATUS_DENIED);
+    assert(request == 0);
+    task_b.capabilities = 0x04U;
+    assert(ipc_service_connect("com.charis.echo", &request) == IPC_STATUS_OK);
+    ipc_handle_t client_endpoint = 99;
+    assert(ipc_service_result(request, &client_endpoint) == IPC_STATUS_EMPTY);
+    assert(client_endpoint == IPC_HANDLE_INVALID);
+
+    active_task = &task_c;
+    ipc_request_handle_t offered = 0;
+    u32 client_pid = 0;
+    assert(ipc_service_next(service, &offered, &client_pid) == IPC_STATUS_ERROR);
+    assert(ipc_service_result(request, &client_endpoint) == IPC_STATUS_ERROR);
+
+    active_task = &task_a;
+    assert(ipc_service_next(service, &offered, &client_pid) == IPC_STATUS_OK);
+    assert(offered == request && client_pid == task_b.pid);
+
+    active_task = &task_c;
+    ipc_handle_t forbidden_endpoint = 0;
+    assert(ipc_service_accept(service, offered, &forbidden_endpoint) ==
+           IPC_STATUS_ERROR);
+    assert(forbidden_endpoint == IPC_HANDLE_INVALID);
+
+    active_task = &task_a;
+    ipc_handle_t server_endpoint = IPC_HANDLE_INVALID;
+    assert(ipc_service_accept(service, offered, &server_endpoint) ==
+           IPC_STATUS_OK);
+    assert(server_endpoint != IPC_HANDLE_INVALID);
+
+    active_task = &task_b;
+    assert(ipc_service_result(request, &client_endpoint) == IPC_STATUS_OK);
+    assert(client_endpoint != IPC_HANDLE_INVALID);
+    assert(ipc_service_result(request, &client_endpoint) == IPC_STATUS_ERROR);
+
+    /* Service policy, not the client, assigns endpoint rights. */
+    const char payload[] = "service-rendezvous";
+    active_task = &task_b;
+    assert(ipc_send(client_endpoint, payload, sizeof(payload)) == IPC_STATUS_OK);
+    active_task = &task_a;
+    char received[sizeof(payload)] = {0};
+    u32 sender = 0;
+    assert(ipc_recv(server_endpoint, received, sizeof(received), &sender) ==
+           (int)sizeof(payload));
+    assert(sender == task_b.pid &&
+           memcmp(received, payload, sizeof(payload)) == 0);
+    assert(ipc_close(server_endpoint) == IPC_STATUS_OK);
+    active_task = &task_b;
+    assert(ipc_close(client_endpoint) == IPC_STATUS_OK);
+
+    active_task = &task_a;
+    assert(ipc_service_unregister(service) == IPC_STATUS_OK);
+    assert(ipc_service_unregister(service) == IPC_STATUS_ERROR);
+    ipc_service_handle_t replacement = 0;
+    assert(ipc_service_register("com.charis.echo", 0x04U,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &replacement) == IPC_STATUS_OK);
+    assert(replacement != service);
+    assert(ipc_service_next(service, &offered, &client_pid) == IPC_STATUS_ERROR);
+    assert(ipc_service_unregister(replacement) == IPC_STATUS_OK);
+}
+
+static void test_service_rejection_and_unregister_pending(void) {
+    active_task = &task_a;
+    task_a.capabilities = 0;
+    ipc_service_handle_t service = 0;
+    assert(ipc_service_register("com.charis.reject", 0x04U,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_OK);
+
+    active_task = &task_b;
+    task_b.capabilities = 0x04U;
+    ipc_request_handle_t request = 0;
+    assert(ipc_service_connect("com.charis.reject", &request) == IPC_STATUS_OK);
+    active_task = &task_a;
+    ipc_request_handle_t offered = 0;
+    u32 client_pid = 0;
+    assert(ipc_service_next(service, &offered, &client_pid) == IPC_STATUS_OK);
+    assert(client_pid == task_b.pid);
+    assert(ipc_service_reject(service, offered) == IPC_STATUS_OK);
+
+    active_task = &task_b;
+    ipc_handle_t endpoint = 99;
+    assert(ipc_service_result(request, &endpoint) == IPC_STATUS_REJECTED);
+    assert(endpoint == IPC_HANDLE_INVALID);
+    assert(ipc_service_result(request, &endpoint) == IPC_STATUS_ERROR);
+
+    request = 0;
+    assert(ipc_service_connect("com.charis.reject", &request) == IPC_STATUS_OK);
+    active_task = &task_a;
+    assert(ipc_service_unregister(service) == IPC_STATUS_OK);
+    active_task = &task_b;
+    assert(ipc_service_result(request, &endpoint) == IPC_STATUS_REJECTED);
+
+    active_task = &task_a;
+    ipc_service_handle_t new_service = 0;
+    assert(ipc_service_register("com.charis.reject", 0x04U,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &new_service) == IPC_STATUS_OK);
+    assert(new_service != service);
+    assert(ipc_service_unregister(new_service) == IPC_STATUS_OK);
+}
+
+static void test_service_request_lifecycle_on_task_exit(void) {
+    active_task = &task_a;
+    ipc_service_handle_t service = 0;
+    assert(ipc_service_register("com.charis.exit", 0x04U,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_OK);
+
+    active_task = &task_b;
+    task_b.capabilities = 0x04U;
+    ipc_request_handle_t pending = 0;
+    assert(ipc_service_connect("com.charis.exit", &pending) == IPC_STATUS_OK);
+    /* A client exiting drops its pending request before its TCB can be reused. */
+    ipc_task_close_all(&task_b);
+    active_task = &task_a;
+    ipc_request_handle_t next = 0;
+    u32 client_pid = 0;
+    assert(ipc_service_next(service, &next, &client_pid) == IPC_STATUS_EMPTY);
+    active_task = &task_b;
+    ipc_handle_t endpoint = 0;
+    assert(ipc_service_result(pending, &endpoint) == IPC_STATUS_ERROR);
+
+    /* If a client is already terminal before its normal close pass reaches
+     * the namespace, the server scan must still reclaim its request slot. */
+    active_task = &task_b;
+    ipc_request_handle_t dead_client_request = 0;
+    assert(ipc_service_connect("com.charis.exit", &dead_client_request) ==
+           IPC_STATUS_OK);
+    task_b.state = TASK_STATE_EXITING;
+    active_task = &task_a;
+    assert(ipc_service_next(service, &next, &client_pid) == IPC_STATUS_EMPTY);
+    task_b.state = TASK_STATE_READY;
+    active_task = &task_b;
+    assert(ipc_service_result(dead_client_request, &endpoint) == IPC_STATUS_ERROR);
+
+    /* A server exiting revokes its namespace entries and rejects pending work. */
+    active_task = &task_c;
+    task_c.capabilities = 0x04U;
+    ipc_request_handle_t pending_for_shutdown = 0;
+    assert(ipc_service_connect("com.charis.exit", &pending_for_shutdown) ==
+           IPC_STATUS_OK);
+    ipc_task_close_all(&task_a);
+    active_task = &task_c;
+    assert(ipc_service_result(pending_for_shutdown, &endpoint) ==
+           IPC_STATUS_REJECTED);
+    active_task = &task_a;
+    assert(ipc_service_next(service, &next, &client_pid) == IPC_STATUS_ERROR);
+}
+
+static void test_service_and_request_table_limits(void) {
+    active_task = &task_a;
+    ipc_service_handle_t services[IPC_MAX_SERVICES];
+    char name[IPC_MAX_SERVICE_NAME] = "s00";
+    for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
+        name[1] = (char)('0' + (i / 10U));
+        name[2] = (char)('0' + (i % 10U));
+        assert(ipc_service_register(name, 0x04U, IPC_RIGHT_MASK,
+            IPC_RIGHT_MASK, &services[i]) == IPC_STATUS_OK);
+    }
+    ipc_service_handle_t overflow = 0;
+    assert(ipc_service_register("s-overflow", 0x04U, IPC_RIGHT_MASK,
+        IPC_RIGHT_MASK, &overflow) == IPC_STATUS_LIMIT);
+    ipc_task_close_all(&task_a);
+
+    active_task = &task_c;
+    task_c.capabilities = 0x04U;
+    ipc_service_handle_t service = 0;
+    active_task = &task_a;
+    assert(ipc_service_register("com.charis.capacity", 0x04U,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_OK);
+    active_task = &task_c;
+    ipc_request_handle_t requests[IPC_MAX_CONNECT_REQUESTS];
+    for (u32 i = 0; i < IPC_MAX_CONNECT_REQUESTS; i++)
+        assert(ipc_service_connect("com.charis.capacity", &requests[i]) ==
+               IPC_STATUS_OK);
+    ipc_request_handle_t request_overflow = 0;
+    assert(ipc_service_connect("com.charis.capacity", &request_overflow) ==
+           IPC_STATUS_LIMIT);
+    ipc_task_close_all(&task_c);
+    active_task = &task_a;
+    ipc_request_handle_t next = 0;
+    u32 client_pid = 0;
+    assert(ipc_service_next(service, &next, &client_pid) == IPC_STATUS_EMPTY);
+    assert(ipc_service_unregister(service) == IPC_STATUS_OK);
+}
+
 static void test_generation_exhaustion(void) {
     task_t retired, peer;
     reset_task(&retired, 950);
@@ -250,6 +459,12 @@ int main(void) {
     test_waiter_cancelled_on_task_teardown();
     test_rights_queue_and_close();
     test_stale_handle_and_teardown();
+    test_service_registration_and_policy();
+    test_service_rejection_and_unregister_pending();
+    test_service_request_lifecycle_on_task_exit();
+    test_service_and_request_table_limits();
+    assert(ipc_test_service_generation_exhaustion());
+    assert(ipc_test_request_generation_exhaustion());
     test_generation_exhaustion();
     test_table_limit();
     puts("PASS: task-owned IPC handles, rights, bounded queues and teardown");
