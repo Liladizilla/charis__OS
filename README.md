@@ -500,8 +500,11 @@ immediately after publishing EXITING.
 This is a kernel-only first stage: endpoint-pair creation rejects ring-3 tasks,
 syscall slots 91-93 are unregistered, and the legacy user wrappers are removed.
 Kernel-only blocking receive now uses atomic waiter registration and teardown
-cancellation. Service-name rendezvous, descriptor attachments and
-transactional receive rollback remain unimplemented. Shared-memory syscalls also remain kernel-only because the
+cancellation. A kernel-only named service registry supports unique exact-name
+registration, CAP_IPC_SERVICE ownership, required-client-capability policy,
+blocking connect/accept, explicit rejection, bounded pending requests and
+unregister/task-exit cleanup. Descriptor attachments and transactional receive
+rollback remain unimplemented. Shared-memory syscalls also remain kernel-only because the
 current API returns raw kernel pointers and has no per-task mapping/revocation
 model. The endpoint, rendezvous and resource-transfer contract is in
 [Authenticated IPC Endpoints and Resource Transfer](./docs/architecture/authenticated-ipc-endpoints-and-resource-transfer.md).
