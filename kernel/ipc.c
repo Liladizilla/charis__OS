@@ -21,8 +21,9 @@ typedef struct {
  * are collected under the IPC lock and released only after IRQ exclusion ends. */
 #define IPC_RELEASE_BATCH_CAP (IPC_MAX_ENDPOINTS * IPC_MAX_MESSAGES)
 typedef struct {
-    vfs_open_file_t* files[IPC_RELEASE_BATCH_CAP];
+    vfs_open_file_t** files;
     u32 count;
+    u32 capacity;
 } ipc_release_batch_t;
 
 struct ipc_endpoint {
@@ -405,7 +406,8 @@ static void ipc_queue_detach_locked(ipc_queue_t* q,
     for (u32 i = 0; i < q->count && i < IPC_MAX_MESSAGES; i++) {
         ipc_message_t* message = &q->messages[index];
         if (message->attachment) {
-            if (release->count < IPC_RELEASE_BATCH_CAP)
+            /* Caller sizes the batch for the number of queues being closed. */
+            if (release->count < release->capacity)
                 release->files[release->count++] = message->attachment;
             message->attachment = NULL;
             message->attachment_rights = 0;
@@ -857,7 +859,12 @@ bool ipc_test_wake_waiters(ipc_handle_t handle, u32 reason) {
 int ipc_close(ipc_handle_t handle) {
     task_t* owner = scheduler_current();
     if (!owner) return IPC_STATUS_ERROR;
-    ipc_release_batch_t release = {0};
+    vfs_open_file_t* release_files[IPC_MAX_MESSAGES];
+    ipc_release_batch_t release = {
+        .files = release_files,
+        .count = 0,
+        .capacity = IPC_MAX_MESSAGES
+    };
     u64 flags = ipc_irq_save();
     struct ipc_endpoint* ep = ipc_resolve_locked(owner, handle, 0);
     if (!ep) { ipc_irq_restore(flags); return IPC_STATUS_ERROR; }
@@ -869,7 +876,12 @@ int ipc_close(ipc_handle_t handle) {
 
 void ipc_task_close_all(task_t* task) {
     if (!task) return;
-    ipc_release_batch_t release = {0};
+    vfs_open_file_t* release_files[IPC_RELEASE_BATCH_CAP];
+    ipc_release_batch_t release = {
+        .files = release_files,
+        .count = 0,
+        .capacity = IPC_RELEASE_BATCH_CAP
+    };
     u64 flags = ipc_irq_save();
     /* Revoke service registration and all pending client/server rendezvous
      * before the TCB or any task-owned endpoint can be recycled. */
