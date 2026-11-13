@@ -283,3 +283,22 @@ char* kstrchr(const char* s, char c) { return (char*)strchr(s, c); }
 char* kstrrchr(const char* s, char c) { return (char*)strrchr(s, c); }
 char* kstrstr(const char* h, const char* n) { return (char*)strstr(h, n); }
 void kstrcat(char* d, const char* s) { strcat(d, s); }
+
+/* Browser navigation and local-file functions are not exercised by the
+ * parser/window-geometry tests. Keep their external kernel dependencies
+ * explicit so the real browser.c implementation can still be linked. */
+bool net_http_get(const char* hostname, const char* path,
+                  net_http_headers_callback_t on_headers,
+                  net_http_body_callback_t on_body,
+                  net_http_complete_callback_t on_complete,
+                  void* context) {
+    (void)hostname; (void)path; (void)on_headers; (void)on_body;
+    (void)on_complete; (void)context;
+    return false;
+}
+void net_http_cancel(void) {}
+vfs_node_t* vfs_resolve(const char* path) {
+    (void)path;
+    return NULL;
+}
+void kfree(void* pointer) { (void)pointer; }
