@@ -752,6 +752,31 @@ int ipc_service_result(ipc_request_handle_t request_handle,
     return result;
 }
 
+int ipc_service_cancel(ipc_request_handle_t request_handle) {
+    task_t* client = scheduler_current();
+    if (!client) return IPC_STATUS_ERROR;
+    u64 flags = ipc_irq_save();
+    ipc_connect_request_t* request =
+        ipc_resolve_request_for_client_locked(client, request_handle);
+    if (!request) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ERROR;
+    }
+
+    /* If acceptance already committed, revoke the unclaimed client endpoint
+     * before dropping its request record. Peer waiters are woken by the same
+     * endpoint close path used for ordinary owner teardown. */
+    if (request->state == IPC_REQUEST_ACCEPTED &&
+        request->client_endpoint != IPC_HANDLE_INVALID) {
+        struct ipc_endpoint* endpoint =
+            ipc_resolve_locked(client, request->client_endpoint, 0);
+        if (endpoint) ipc_close_slot_locked(client, endpoint->slot);
+    }
+    ipc_request_release_locked(request);
+    ipc_irq_restore(flags);
+    return IPC_STATUS_OK;
+}
+
 int ipc_send(ipc_handle_t handle, const void* data, u64 size) {
     if (size > IPC_MAX_MSG_SIZE || (size && !data)) return IPC_STATUS_ERROR;
     task_t* sender = scheduler_current();
