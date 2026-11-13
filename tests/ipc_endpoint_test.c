@@ -347,6 +347,44 @@ static void test_service_rejection_and_unregister_pending(void) {
     assert(ipc_service_unregister(new_service) == IPC_STATUS_OK);
 }
 
+static void test_service_request_generation_reuse(void) {
+    active_task = &task_a;
+    ipc_service_handle_t service = 0;
+    assert(ipc_service_register("com.charis.reuse", CAP_FS_CREATE,
+        IPC_RIGHT_MASK, IPC_RIGHT_MASK, &service) == IPC_STATUS_OK);
+
+    active_task = &task_b;
+    task_b.capabilities = CAP_FS_CREATE;
+    ipc_request_handle_t old_request = 0;
+    assert(ipc_service_connect("com.charis.reuse", &old_request) == IPC_STATUS_OK);
+    active_task = &task_a;
+    ipc_request_handle_t offered = 0;
+    u32 client_pid = 0;
+    assert(ipc_service_next(service, &offered, &client_pid) == IPC_STATUS_OK);
+    assert(offered == old_request && client_pid == task_b.pid);
+    assert(ipc_service_reject(service, offered) == IPC_STATUS_OK);
+
+    active_task = &task_b;
+    ipc_handle_t endpoint = 99;
+    assert(ipc_service_result(old_request, &endpoint) == IPC_STATUS_REJECTED);
+    assert(endpoint == IPC_HANDLE_INVALID);
+
+    ipc_request_handle_t new_request = 0;
+    assert(ipc_service_connect("com.charis.reuse", &new_request) == IPC_STATUS_OK);
+    assert(new_request != old_request);
+    assert(ipc_service_result(old_request, &endpoint) == IPC_STATUS_ERROR);
+
+    active_task = &task_a;
+    assert(ipc_service_next(service, &offered, &client_pid) == IPC_STATUS_OK);
+    assert(offered == new_request && client_pid == task_b.pid);
+    assert(ipc_service_reject(service, offered) == IPC_STATUS_OK);
+
+    active_task = &task_b;
+    assert(ipc_service_result(new_request, &endpoint) == IPC_STATUS_REJECTED);
+    active_task = &task_a;
+    assert(ipc_service_unregister(service) == IPC_STATUS_OK);
+}
+
 static void test_service_request_lifecycle_on_task_exit(void) {
     active_task = &task_a;
     ipc_service_handle_t service = 0;
@@ -469,6 +507,7 @@ int main(void) {
     test_stale_handle_and_teardown();
     test_service_registration_and_policy();
     test_service_rejection_and_unregister_pending();
+    test_service_request_generation_reuse();
     test_service_request_lifecycle_on_task_exit();
     test_service_and_request_table_limits();
     assert(ipc_test_service_generation_exhaustion());
