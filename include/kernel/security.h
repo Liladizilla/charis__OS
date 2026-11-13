@@ -17,8 +17,9 @@
 #define CAP_SYS_ADMIN   (1U << 10)
 #define CAP_ALLOW_EXEC  (1U << 11)
 #define CAP_DENY_EXEC   (1U << 12)
-/* Only these thirteen authority bits are currently defined by the kernel. */
-#define CAP_ALL         ((1U << 13) - 1U)
+#define CAP_IPC_SERVICE (1U << 13) /* Register and administer named kernel IPC services. */
+/* Only these fourteen authority bits are currently defined by the kernel. */
+#define CAP_ALL         ((1U << 14) - 1U)
 
 #define SECURITY_MAX_CAPS         32
 #define SECURITY_TOKEN_SIZE       32
