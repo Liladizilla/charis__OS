@@ -286,6 +286,33 @@ u32 fb_get_pixel(u32 x, u32 y) {
     return fb_unpack(native);
 }
 
+u32 fb_blend_argb(u32 destination, u32 source, u8 alpha) {
+    if (!alpha) return destination;
+    if (alpha == 255u) return source | 0xFF000000u;
+
+    u32 inverse = 255u - alpha;
+    u32 red = ((((source >> 16) & 0xFFu) * alpha) +
+               (((destination >> 16) & 0xFFu) * inverse) + 127u) / 255u;
+    u32 green = ((((source >> 8) & 0xFFu) * alpha) +
+                 (((destination >> 8) & 0xFFu) * inverse) + 127u) / 255u;
+    u32 blue = (((source & 0xFFu) * alpha) +
+                ((destination & 0xFFu) * inverse) + 127u) / 255u;
+    return FB_ARGB(0xFF, red, green, blue);
+}
+
+void fb_blend_pixel(u32 x, u32 y, u32 argb, u8 alpha) {
+    framebuffer_t* fb = &g_framebuffer;
+    if (!fb->initialized || !alpha || x >= fb->width || y >= fb->height)
+        return;
+    if (fb_clip_enabled &&
+        (x < fb_clip_x || y < fb_clip_y ||
+         x - fb_clip_x >= fb_clip_w || y - fb_clip_y >= fb_clip_h))
+        return;
+
+    u32 destination = fb_get_pixel(x, y);
+    fb_put_pixel(x, y, fb_blend_argb(destination, argb, alpha));
+}
+
 void fb_fill_rect(u32 x, u32 y, u32 w, u32 h, u32 argb) {
     if (!g_framebuffer.initialized || argb == FB_TRANSPARENT) return;
 
