@@ -122,7 +122,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Add bounded full-duplex queues (16 messages per direction, 512 bytes per message), explicit FULL/EMPTY/BUFFER_SMALL/PEER_CLOSED results and non-truncating receive
 - [x] Revoke endpoint handles during TASK_STATE_EXITING and preserve peer lifetime until its own endpoint closes
 - [x] Host regression covers wrong-owner handles, directional rights, stale generations, generation exhaustion, aliased outputs, queue capacity, peer close, task teardown and endpoint-table limits
-- [ ] Add cancellation-safe blocking receive and endpoint wait queues
+- [x] Add kernel-only cancellable blocking receive, atomic waiter registration, message/peer-close wakeups and task-exit unlinking
+- [ ] Add QEMU stress coverage for waiter wake/close/exit interleavings
 - [ ] Add a kernel-owned service namespace with explicit listener registration and accept/reject rendezvous
 - [ ] Add transactional descriptor attachments, reference pinning, recipient-slot reservation and rollback
 - [ ] Only design ring-3 IPC syscalls after user-memory preflight, service authorization and QEMU lifecycle tests exist
