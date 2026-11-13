@@ -476,6 +476,7 @@ jobs:
           test -s build/charisos-browser-preview.ppm
           grep -q 'SHELL_APP_OPEN Browser' build/desktop-capture-serial.log
           grep -q 'SHELL_APP_OPEN Calculator' build/desktop-capture-serial.log
+          grep -q 'SHELL_SETTINGS_REFLOW 912x544 ' build/desktop-capture-serial.log
           test -s build/charisos-calculator-preview.ppm
           test -s build/charisos-files-preview.ppm
           grep -q 'FILES_OPEN' build/desktop-capture-serial.log
