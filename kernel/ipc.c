@@ -752,26 +752,6 @@ int ipc_service_result(ipc_request_handle_t request_handle,
     return result;
 }
 
-static void ipc_client_requests_close_all_locked(task_t* client) {
-    if (!client) return;
-    for (u32 i = 0; i < IPC_MAX_CONNECT_REQUESTS; i++) {
-        ipc_connect_request_t* request = &ipc_connect_requests[i];
-        if (request->in_use && request->client == client &&
-            request->client_pid == client->pid)
-            ipc_request_release_locked(request);
-    }
-}
-
-static void ipc_service_close_all_locked(task_t* owner) {
-    if (!owner) return;
-    for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
-        ipc_service_t* service = &ipc_services[i];
-        if (service->in_use && service->owner == owner &&
-            service->owner_pid == owner->pid)
-            ipc_service_revoke_locked(service);
-    }
-}
-
 int ipc_send(ipc_handle_t handle, const void* data, u64 size) {
     if (size > IPC_MAX_MSG_SIZE || (size && !data)) return IPC_STATUS_ERROR;
     task_t* sender = scheduler_current();
