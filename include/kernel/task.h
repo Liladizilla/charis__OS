@@ -25,6 +25,7 @@
 #define TASK_WAITING_SLEEP       0x534C4550U /* 'SLEP': blocked until event_data deadline */
 #define TASK_WAITING_KEYBOARD    0x4B455942U /* 'KEYB': waiting for keyboard input */
 #define TASK_WAITING_CHILD       0x43484C44U /* 'CHLD': waiting for a child exit */
+#define TASK_WAITING_IPC         0x49504357U /* 'IPCW': blocked on an IPC endpoint */
 #define IPC_MAX_ENDPOINTS        16U
 
 /* VMA - Virtual Memory Area */
@@ -83,6 +84,10 @@ typedef struct task {
     void* address_space;
     struct ipc_endpoint* ipc_endpoints[IPC_MAX_ENDPOINTS];
     u32 ipc_endpoint_generations[IPC_MAX_ENDPOINTS];
+    /* One execution context can block on one owner-bound endpoint at a time. */
+    struct ipc_endpoint* ipc_wait_endpoint;
+    struct task* ipc_wait_next;
+    s32 ipc_wait_status;
 } task_t;
 
 task_t* task_allocate(void);
