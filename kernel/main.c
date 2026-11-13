@@ -149,6 +149,7 @@ static ipc_handle_t ipc_cancel_receiver_handle;
 static ipc_handle_t ipc_cancel_peer_handle;
 static volatile s32 ipc_cancel_receiver_result;
 static volatile s32 ipc_cancel_peer_send_result;
+static volatile u32 ipc_cancel_revoke_done;
 
 static void ipc_cancel_receiver(void* unused) {
     (void)unused;
@@ -161,7 +162,11 @@ static void ipc_cancel_receiver(void* unused) {
 
 static void ipc_cancel_peer(void* unused) {
     (void)unused;
-    task_sleep_ms(30);
+    u32 attempts = 0;
+    while (!ipc_cancel_revoke_done && attempts++ < 5000U)
+        task_sleep_ms(1);
+    if (!ipc_cancel_revoke_done)
+        ipc_wait_test_fail("coordinator did not revoke reader endpoint");
     int result = ipc_send(ipc_cancel_peer_handle, "x", 1);
     ipc_cancel_peer_send_result = result;
     if (result != IPC_STATUS_PEER_CLOSED)
@@ -193,6 +198,7 @@ static void ipc_cancel_test_coordinator(void* unused) {
     }
     ipc_cancel_receiver_result = 0x7FFFFFFF;
     ipc_cancel_peer_send_result = 0x7FFFFFFF;
+    ipc_cancel_revoke_done = 0;
     asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
 
     /* Require the exact BLOCKED state and waiter link before cancellation;
@@ -211,6 +217,7 @@ static void ipc_cancel_test_coordinator(void* unused) {
         ipc_wait_test_fail("cancellation reader never blocked");
 
     ipc_task_close_all(receiver);
+    ipc_cancel_revoke_done = 1;
 
     /* The receiver returns CANCELLED; the delayed peer must see PEER_CLOSED.
      * Reap both children to prove that cancellation leaves no waiter/zombie. */
