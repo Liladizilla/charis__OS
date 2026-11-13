@@ -161,10 +161,11 @@ def generate(destination):
     lines += ["};", "", "static const u16 font_glyphs[][GLYPH_H] = {"]
     for cp in ordered:
         label = chr(cp) if FIRST <= cp <= LAST else f"CP437 0x{cp:02X}"
-        lines.append(f"    /* {label} */")
+        lines.append(f"    {{ /* {label} */")
         for row in glyphs[cp]:
             bits = sum(1 << x for x, pixel in enumerate(row) if pixel)
-            lines.append(f"    0x{bits:03X},")
+            lines.append(f"        0x{bits:03X},")
+        lines.append("    },")
 
     count = len(ordered)
     lines += [
