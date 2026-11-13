@@ -164,16 +164,35 @@ static void test_cache_miss_requests_are_coalesced_and_retried(void) {
     }
     assert(transmitted_count == ARP_MAX_ATTEMPTS);
 
-    /* Exhaustion enters a hold-down instead of retransmitting every lookup. */
+    /* Exhaustion enters a five-second hold-down, then permits a fresh
+     * bounded retry cycle rather than flooding on every cache miss. */
     test_now_ms += ARP_RETRY_INTERVAL_MS;
     assert(!net_stack_resolve_ipv4(peer_ip_test, mac));
     assert(transmitted_count == ARP_MAX_ATTEMPTS);
-    test_now_ms += ARP_FAILURE_HOLDDOWN_MS - ARP_RETRY_INTERVAL_MS;
+    test_now_ms += ARP_FAILURE_HOLDDOWN_MS - ARP_RETRY_INTERVAL_MS - 1u;
     assert(!net_stack_resolve_ipv4(peer_ip_test, mac));
     assert(transmitted_count == ARP_MAX_ATTEMPTS);
-    test_now_ms += ARP_RETRY_INTERVAL_MS;
+    test_now_ms++;
     assert(!net_stack_resolve_ipv4(peer_ip_test, mac));
     assert(transmitted_count == ARP_MAX_ATTEMPTS + 1u);
+
+    /* A new cycle still follows the one-second cadence and is bounded. */
+    assert(!net_stack_resolve_ipv4(peer_ip_test, mac));
+    assert(transmitted_count == ARP_MAX_ATTEMPTS + 1u);
+    for (u32 retry = 1; retry < ARP_MAX_ATTEMPTS; retry++) {
+        test_now_ms += ARP_RETRY_INTERVAL_MS;
+        assert(!net_stack_resolve_ipv4(peer_ip_test, mac));
+    }
+    assert(transmitted_count == 2u * ARP_MAX_ATTEMPTS + 1u);
+    test_now_ms += ARP_RETRY_INTERVAL_MS;
+    assert(!net_stack_resolve_ipv4(peer_ip_test, mac));
+    assert(transmitted_count == 2u * ARP_MAX_ATTEMPTS + 1u);
+    test_now_ms += ARP_FAILURE_HOLDDOWN_MS - ARP_RETRY_INTERVAL_MS;
+    assert(!net_stack_resolve_ipv4(peer_ip_test, mac));
+    assert(transmitted_count == 2u * ARP_MAX_ATTEMPTS + 1u);
+    test_now_ms += ARP_RETRY_INTERVAL_MS;
+    assert(!net_stack_resolve_ipv4(peer_ip_test, mac));
+    assert(transmitted_count == 2u * ARP_MAX_ATTEMPTS + 2u);
 }
 
 static void test_only_solicited_matching_arp_reply_is_learned(void) {
