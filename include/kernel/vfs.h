@@ -72,9 +72,21 @@ typedef struct vfs_open_file {
 typedef struct fd_entry {
     vfs_open_file_t* file;
     u32 rights;
-    /* Preserved across close and task-slot reuse; never silently wraps. */
+    /* A reserved slot is unavailable to ordinary opens and duplicates. */
+    bool reserved;
+    /* Preserved across close, reservation cancellation and task-slot reuse. */
     u32 generation;
 } fd_entry_t;
+
+/* Kernel-only two-phase descriptor publication. A successful reserve burns
+ * one generation. Commit transfers the caller's existing file reference into
+ * the recipient entry; on failure the caller still owns that reference. */
+typedef struct {
+    u32 recipient_pid;
+    u32 slot;
+    u32 generation;
+    u32 rights;
+} fd_transfer_reservation_t;
 
 void vfs_init(void);
 vfs_node_t* vfs_resolve(const char* path);
@@ -100,6 +112,15 @@ fd_handle_t fd_alloc(vfs_node_t* node, u32 flags, u32 rights,
  * rights must be a nonzero subset of the sender's rights. */
 fd_handle_t fd_duplicate_to(fd_handle_t source, u32 recipient_pid,
                             u32 requested_rights);
+/* Reserve recipient capacity before a message/attachment commit. No reference
+ * is acquired here. The caller must commit or cancel every successful reserve. */
+bool fd_transfer_reserve(u32 recipient_pid, u32 rights,
+                         fd_transfer_reservation_t* reservation);
+/* On success, transfers one caller-owned reference into the reserved entry. */
+fd_handle_t fd_transfer_commit(fd_transfer_reservation_t* reservation,
+                               vfs_open_file_t* file);
+/* Cancels a reservation without publishing a descriptor. */
+void fd_transfer_cancel(fd_transfer_reservation_t* reservation);
 bool fd_close(fd_handle_t handle);
 /* Close non-standard descriptors owned by a task and restore standard streams. */
 void fd_table_close_all(fd_entry_t* table);

@@ -393,6 +393,173 @@ static void test_duplicate_rejects_full_and_exiting_recipients(void) {
            FD_HANDLE_INVALID);
 }
 
+static void test_descriptor_transfer_reservation_and_commit(void) {
+    task_t sender, recipient;
+    reset_task(&sender, 111);
+    reset_task(&recipient, 112);
+    active_task = &sender;
+    close_count = 0;
+    observed_fd = FD_HANDLE_INVALID;
+
+    fd_handle_t source = alloc_fd(&read_write_node, 0,
+                                 FD_RIGHT_READ | FD_RIGHT_WRITE);
+    assert(source != FD_HANDLE_INVALID);
+    vfs_open_file_t* pinned = fd_acquire(
+        source, FD_RIGHT_READ | FD_RIGHT_WRITE);
+    assert(pinned != NULL);
+    assert((pinned->lifecycle & VFS_OPEN_FILE_REF_MASK) == 2u);
+
+    fd_transfer_reservation_t reservation = {0};
+    assert(fd_transfer_reserve(recipient.pid, FD_RIGHT_READ, &reservation));
+    assert(reservation.recipient_pid == recipient.pid);
+    assert(reservation.slot == 3u && reservation.generation == 1u);
+    assert(reservation.rights == FD_RIGHT_READ);
+    assert(recipient.fd_table[3].reserved);
+    assert(recipient.fd_table[3].file == NULL);
+
+    /* Reserved capacity is invisible to handles and unavailable to allocs. */
+    active_task = &recipient;
+    assert(!fd_has_rights(((u64)recipient.pid << 32) |
+                          ((u64)reservation.generation << FD_HANDLE_SLOT_BITS) |
+                          reservation.slot, FD_RIGHT_READ));
+    fd_handle_t other = alloc_fd(&write_only_node, 0, FD_RIGHT_WRITE);
+    assert(other != FD_HANDLE_INVALID && FD_HANDLE_SLOT(other) == 4u);
+
+    /* A malformed copy of the reservation cannot publish or consume it. */
+    fd_transfer_reservation_t forged = reservation;
+    forged.rights |= 0x80u;
+    active_task = &sender;
+    assert(fd_transfer_commit(&forged, pinned) == FD_HANDLE_INVALID);
+    assert(recipient.fd_table[3].reserved);
+    assert((pinned->lifecycle & VFS_OPEN_FILE_REF_MASK) == 2u);
+
+    fd_handle_t received = fd_transfer_commit(&reservation, pinned);
+    assert(received != FD_HANDLE_INVALID);
+    assert(reservation.recipient_pid == 0 && reservation.generation == 0);
+    assert((u32)(received >> 32) == recipient.pid);
+    assert(FD_HANDLE_SLOT(received) == 3u);
+    assert(!recipient.fd_table[3].reserved);
+
+    active_task = &recipient;
+    assert(fd_has_rights(received, FD_RIGHT_READ));
+    assert(!fd_has_rights(received, FD_RIGHT_WRITE));
+    vfs_open_file_t* recipient_file = fd_acquire(received, FD_RIGHT_READ);
+    assert(recipient_file == pinned);
+    recipient_file->offset = 1234u;
+    fd_release(recipient_file);
+
+    active_task = &sender;
+    assert(fd_close(source));
+    assert(close_count == 0);
+    active_task = &recipient;
+    recipient_file = fd_acquire(received, FD_RIGHT_READ);
+    assert(recipient_file != NULL && recipient_file->offset == 1234u);
+    fd_release(recipient_file);
+    assert(fd_close(received));
+    assert(close_count == 1);
+    assert(fd_close(other));
+}
+
+static void test_descriptor_transfer_cancel_and_stale_reservations(void) {
+    task_t sender, recipient;
+    reset_task(&sender, 113);
+    reset_task(&recipient, 114);
+    active_task = &sender;
+    close_count = 0;
+
+    fd_handle_t source = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
+    assert(source != FD_HANDLE_INVALID);
+    vfs_open_file_t* pinned = fd_acquire(source, FD_RIGHT_READ);
+    assert(pinned != NULL);
+
+    fd_transfer_reservation_t old_reservation = {0};
+    assert(fd_transfer_reserve(recipient.pid, FD_RIGHT_READ,
+                               &old_reservation));
+    fd_transfer_reservation_t stale_reservation = old_reservation;
+    u32 old_generation = old_reservation.generation;
+    u32 old_slot = old_reservation.slot;
+    fd_transfer_cancel(&old_reservation);
+    assert(old_reservation.recipient_pid == 0);
+    assert(!recipient.fd_table[old_slot].reserved);
+
+    /* Cancellation burns the token generation; a later allocation cannot be
+     * revoked by a stale cancel or committed through the old reservation. */
+    active_task = &recipient;
+    fd_handle_t replacement = alloc_fd(&write_only_node, 0,
+                                       FD_RIGHT_WRITE);
+    assert(replacement != FD_HANDLE_INVALID);
+    assert(FD_HANDLE_SLOT(replacement) == old_slot);
+    assert((u32)((replacement >> FD_HANDLE_SLOT_BITS) &
+                 FD_HANDLE_GENERATION_MAX) > old_generation);
+
+    active_task = &sender;
+    assert(fd_transfer_commit(&stale_reservation, pinned) == FD_HANDLE_INVALID);
+    fd_transfer_cancel(&stale_reservation);
+    fd_release(pinned);
+    assert(fd_close(source));
+    assert(close_count == 1);
+
+    active_task = &recipient;
+    assert(fd_has_rights(replacement, FD_RIGHT_WRITE));
+    assert(fd_close(replacement));
+}
+
+static void test_descriptor_transfer_reservation_rejects_invalid_and_full(void) {
+    task_t sender, recipient;
+    vfs_node_t fillers[MAX_FDS];
+    reset_task(&sender, 115);
+    reset_task(&recipient, 116);
+    fd_transfer_reservation_t reservation = {0};
+
+    assert(!fd_transfer_reserve(recipient.pid, 0, &reservation));
+    assert(!fd_transfer_reserve(recipient.pid, FD_RIGHT_READ | 0x80u,
+                                &reservation));
+    recipient.state = TASK_STATE_EXITING;
+    assert(!fd_transfer_reserve(recipient.pid, FD_RIGHT_READ, &reservation));
+    recipient.state = TASK_STATE_READY;
+
+    active_task = &recipient;
+    for (u32 i = 3; i < MAX_FDS; i++) {
+        fillers[i] = (vfs_node_t){
+            .flags = VFS_FILE, .read = test_read, .close = test_close
+        };
+        fd_alloc_status_t status = FD_ALLOC_FAILED;
+        assert(fd_alloc(&fillers[i], 0, FD_RIGHT_READ, &status) !=
+               FD_HANDLE_INVALID);
+        assert(status == FD_ALLOC_OK);
+    }
+    assert(!fd_transfer_reserve(recipient.pid, FD_RIGHT_READ, &reservation));
+    fd_table_close_all(recipient.fd_table);
+}
+
+static void test_descriptor_transfer_reservation_cancelled_on_recipient_exit(void) {
+    task_t sender, recipient;
+    reset_task(&sender, 117);
+    reset_task(&recipient, 118);
+    active_task = &sender;
+    close_count = 0;
+
+    fd_handle_t source = alloc_fd(&read_write_node, 0, FD_RIGHT_READ);
+    assert(source != FD_HANDLE_INVALID);
+    vfs_open_file_t* pinned = fd_acquire(source, FD_RIGHT_READ);
+    assert(pinned != NULL);
+    fd_transfer_reservation_t reservation = {0};
+    assert(fd_transfer_reserve(recipient.pid, FD_RIGHT_READ, &reservation));
+
+    /* The exit path revokes unpublished reservations together with entries. */
+    recipient.state = TASK_STATE_EXITING;
+    fd_table_close_all(recipient.fd_table);
+    fd_handle_t failed = fd_transfer_commit(&reservation, pinned);
+    assert(failed == FD_HANDLE_INVALID);
+    assert(recipient.fd_table[reservation.slot].reserved == false);
+    fd_transfer_cancel(&reservation);
+    assert(reservation.recipient_pid == 0);
+
+    fd_release(pinned);
+    assert(fd_close(source));
+    assert(close_count == 1);
+}
+
 static void test_open_file_allocation_failure_preserves_node_ownership(void) {
     task_t task;
     vfs_node_t node = {
@@ -728,6 +895,10 @@ int main(void) {
     test_sender_close_races_descriptor_duplication();
     test_recipient_exit_releases_only_its_duplicate_reference();
     test_duplicate_rejects_full_and_exiting_recipients();
+    test_descriptor_transfer_reservation_and_commit();
+    test_descriptor_transfer_cancel_and_stale_reservations();
+    test_descriptor_transfer_reservation_rejects_invalid_and_full();
+    test_descriptor_transfer_reservation_cancelled_on_recipient_exit();
     test_concurrent_closeable_node_claim_is_unique();
     test_open_file_allocation_failure_preserves_node_ownership();
     test_open_file_pins_outlive_descriptor_revocation();
