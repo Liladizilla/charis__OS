@@ -26,6 +26,8 @@
 #define TASK_WAITING_KEYBOARD    0x4B455942U /* 'KEYB': waiting for keyboard input */
 #define TASK_WAITING_CHILD       0x43484C44U /* 'CHLD': waiting for a child exit */
 #define TASK_WAITING_IPC         0x49504357U /* 'IPCW': blocked on an IPC endpoint */
+#define TASK_WAITING_IPC_SERVICE 0x49505356U /* 'IPSV': waiting for a service request */
+#define TASK_WAITING_IPC_CONNECT 0x4950434EU /* 'IPCN': waiting for connect completion */
 #define IPC_MAX_ENDPOINTS        16U
 
 /* VMA - Virtual Memory Area */
@@ -47,6 +49,8 @@ typedef struct {
 
 /* Task control block */
 struct ipc_endpoint;
+struct ipc_service;
+struct ipc_connection_request;
 
 typedef struct task {
     u64 rsp;
@@ -88,6 +92,13 @@ typedef struct task {
     struct ipc_endpoint* ipc_wait_endpoint;
     struct task* ipc_wait_next;
     s32 ipc_wait_status;
+    /* IPC service accept/connect state; these links are task-owned and bounded. */
+    struct ipc_service* ipc_service_wait;
+    struct ipc_connection_request* ipc_connect_request;
+    u64 ipc_connect_request_id;
+    u64 ipc_connect_result;
+    s32 ipc_connect_status;
+    s32 ipc_service_wait_status;
 } task_t;
 
 task_t* task_allocate(void);
