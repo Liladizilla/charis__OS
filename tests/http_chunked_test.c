@@ -29,6 +29,7 @@ static void reset_parser(void) {
     chunk_state = HTTP_CHUNK_SIZE;
     chunk_line_length = 0;
     chunk_remaining = 0;
+    chunk_trailer_bytes = 0;
     response_status = 0;
     expected_body = 0;
     received_body = 0;
