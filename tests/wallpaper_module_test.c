@@ -90,6 +90,40 @@ int main(void) {
         expect(pixels[i] == CHARIS_UI_BACKGROUND,
                "truncated wallpaper module is rejected before pixel access");
 
+    boot_info.wallpaper_size = sizeof(valid_image);
+    valid_image.version = 2;
+    wallpaper_draw(WALLPAPER_CHARIS);
+    for (u32 i = 0; i < 4; i++)
+        expect(pixels[i] == CHARIS_UI_BACKGROUND,
+               "unsupported CWP1 versions are rejected");
+
+    valid_image.version = 1;
+    valid_image.width = 0;
+    wallpaper_draw(WALLPAPER_CHARIS);
+    for (u32 i = 0; i < 4; i++)
+        expect(pixels[i] == CHARIS_UI_BACKGROUND,
+               "zero-width images are rejected");
+
+    valid_image.width = 4097;
+    wallpaper_draw(WALLPAPER_CHARIS);
+    for (u32 i = 0; i < 4; i++)
+        expect(pixels[i] == CHARIS_UI_BACKGROUND,
+               "dimensions above the kernel limit are rejected");
+
+    valid_image.width = 2;
+    valid_image.stride = 2;
+    wallpaper_draw(WALLPAPER_CHARIS);
+    for (u32 i = 0; i < 4; i++)
+        expect(pixels[i] == CHARIS_UI_BACKGROUND,
+               "row strides smaller than RGB565 row width are rejected");
+
+    valid_image.stride = 4;
+    valid_image.data_size = 7;
+    wallpaper_draw(WALLPAPER_CHARIS);
+    for (u32 i = 0; i < 4; i++)
+        expect(pixels[i] == CHARIS_UI_BACKGROUND,
+               "payload sizes that disagree with dimensions are rejected");
+
     puts("CWP1 wallpaper module tests: PASS");
     return 0;
 }
