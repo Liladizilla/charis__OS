@@ -159,6 +159,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [ ] IRQ-driven RX or bounded DMA/ring processing with hardware stress tests
 - [ ] Real-LAN interoperability tests; QEMU success alone is not proof of Internet access
 - [x] Constrained TCP client rejects partial/future ACKs for its one outstanding data segment, avoids double-consuming the SYN sequence number, and accepts only an in-order FIN; host regression covers handshake, ACK and FIN cases
+- [x] Decode HTTP/1.x chunked transfer bodies with split-boundary handling, strict CRLF framing, extension byte validation, conflicting framing rejection, 256 KiB decoded-body cap and 1 KiB aggregate trailer cap; host regressions cover malformed and truncated streams
+- [x] Browser validates DNS-style hostnames and request targets, strips URL fragments, extracts HTML document titles and scrolls wrapped local/remote text previews; host regressions cover malformed URLs, titles and scroll bounds
 
 ## Phase 9: Desktop Environment (PARTIAL, ACTIVE)
 - [x] Minimal workspace replaces the dashboard-style home surface; Files desktop shortcut, launcher and taskbar render in QEMU
