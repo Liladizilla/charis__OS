@@ -199,7 +199,7 @@ static ipc_request_handle_t ipc_make_request_handle(u32 pid, u32 generation,
 
 static ipc_service_t* ipc_resolve_service_locked(task_t* owner,
                                                   ipc_service_handle_t handle) {
-    if (!owner || !owner->pid || !handle ||
+    if (!ipc_task_live_kernel(owner) || !handle ||
         (u32)(handle >> 32) != owner->pid) return NULL;
     u32 slot = (u32)(handle & IPC_SERVICE_SLOT_MASK);
     u32 generation = (u32)((handle >> IPC_SERVICE_SLOT_BITS) &
@@ -215,7 +215,7 @@ static ipc_service_t* ipc_resolve_service_locked(task_t* owner,
 
 static ipc_connect_request_t* ipc_resolve_request_for_client_locked(
     task_t* client, ipc_request_handle_t handle) {
-    if (!client || !client->pid || !handle ||
+    if (!ipc_task_live_kernel(client) || !handle ||
         (u32)(handle >> 32) != client->pid) return NULL;
     u32 slot = (u32)(handle & IPC_REQUEST_SLOT_MASK);
     u32 generation = (u32)((handle >> IPC_REQUEST_SLOT_BITS) &
