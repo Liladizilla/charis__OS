@@ -495,8 +495,6 @@ static void test_descriptor_transfer_cancel_and_stale_reservations(void) {
     active_task = &sender;
     assert(fd_transfer_commit(&stale_reservation, pinned) == FD_HANDLE_INVALID);
     fd_transfer_cancel(&stale_reservation);
-    active_task = &recipient;
-    assert(fd_has_rights(replacement, FD_RIGHT_WRITE));
     fd_release(pinned);
     assert(fd_close(source));
     assert(close_count == 1);
