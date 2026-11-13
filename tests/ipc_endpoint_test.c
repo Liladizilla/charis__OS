@@ -663,6 +663,14 @@ static void test_fd_attachment_requires_transfer_rights(void) {
     reset_task(&task_a, 1211);
     reset_task(&task_b, 1212);
     transfer_test_reset();
+    transfer_source_rights = FD_RIGHT_READ;
+
+    const char denied_payload[] = "rights-denied";
+    active_task = &task_a;
+    assert(ipc_send_with_fd(IPC_HANDLE_INVALID, denied_payload,
+                            sizeof(denied_payload), IPC_TEST_SOURCE_FD,
+                            FD_RIGHT_WRITE) == IPC_STATUS_ACCESS_DENIED);
+    assert(transfer_file.lifecycle == 1u);
 
     ipc_handle_t send_a, receive_b;
     assert(ipc_endpoint_pair_create(&task_a, &task_b,
@@ -771,6 +779,38 @@ static void test_fd_attachment_task_exit_releases_queue_pin(void) {
     assert(ipc_close(send_a) == IPC_STATUS_OK);
 }
 
+static void test_fd_attachment_multi_message_task_cleanup(void) {
+    reset_task(&task_a, 1251);
+    reset_task(&task_b, 1252);
+    transfer_test_reset();
+
+    ipc_handle_t send_a, receive_b;
+    assert(ipc_endpoint_pair_create(&task_a, &task_b,
+        IPC_RIGHT_SEND | IPC_RIGHT_TRANSFER,
+        IPC_RIGHT_RECEIVE | IPC_RIGHT_TRANSFER, &send_a, &receive_b));
+    const char payload[] = "queue-owned-reference";
+
+    active_task = &task_a;
+    for (u32 i = 0; i < 5u; i++) {
+        assert(ipc_send_with_fd(send_a, payload, sizeof(payload),
+                                IPC_TEST_SOURCE_FD, FD_RIGHT_READ) ==
+               IPC_STATUS_OK);
+    }
+    assert(transfer_file.lifecycle == 6u);
+    transfer_test_close_source();
+    assert(transfer_file.lifecycle == 5u);
+
+    /* Task teardown collects references from the full inbound queue, restores
+     * interrupt state, then releases each reference exactly once. */
+    ipc_task_close_all(&task_b);
+    assert(!ipc_test_irq_disabled());
+    assert(transfer_file.lifecycle == 0u);
+    assert(transfer_final_release_count == 1u);
+
+    active_task = &task_a;
+    assert(ipc_close(send_a) == IPC_STATUS_OK);
+}
+
 int main(void) {
     reset_task(&task_a, 101); reset_task(&task_b, 202); reset_task(&task_c, 303);
     ipc_init();
@@ -794,6 +834,7 @@ int main(void) {
     test_fd_attachment_receiver_authority_and_close_cleanup();
     test_fd_attachment_send_failure_and_task_exit_release();
     test_fd_attachment_task_exit_releases_queue_pin();
+    test_fd_attachment_multi_message_task_cleanup();
     puts("PASS: task-owned IPC endpoints, transactional file attachments and teardown");
     return 0;
 }
