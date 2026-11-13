@@ -105,6 +105,15 @@ bool fd_close(fd_handle_t handle);
 void fd_table_close_all(fd_entry_t* table);
 /* Pin a task-local descriptor across callbacks; caller must release exactly once. */
 vfs_open_file_t* fd_acquire(fd_handle_t handle, u32 required_rights);
+/* Kernel-only IPC helpers. The explicit owner is resolved under the global
+ * descriptor lock; acquired references are released with fd_release(). */
+vfs_open_file_t* fd_acquire_from(task_t* owner, fd_handle_t handle,
+                                 u32 required_rights);
+/* Import a queue-owned open-file reference into a live kernel task. The
+ * caller keeps its reference; success creates an additional recipient ref.
+ * Failure leaves the recipient table and supplied reference unchanged. */
+fd_handle_t fd_import_file_to(task_t* recipient, vfs_open_file_t* file,
+                             u32 rights);
 void fd_release(vfs_open_file_t* file);
 /* Serialize callbacks and shared-offset updates. Callbacks must not block/yield. */
 u64 fd_file_io_lock(vfs_open_file_t* file);
