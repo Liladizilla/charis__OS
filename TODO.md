@@ -237,7 +237,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [ ] Persistent audit log
 - [x] Allocate each kernel task stack from page-aligned supervisor-only writable/NX frames, with a genuinely unmapped guard page and deferred physical-frame reclamation after context switch
 - [x] Configure a dedicated, aligned TSS.IST1 landing stack for page-fault vector 14 and verify the exception frame remains within it
-- [x] QEMU deliberately writes into a kernel task's unmapped stack guard; CI run #732 verifies IST1 frame placement and the diagnostic panic markers
+- [x] QEMU deliberately writes into a kernel task's unmapped stack guard; CI run #1000 verifies IST1 frame placement and the diagnostic panic markers
 - [ ] Add a separate IST2/double-fault stack and nested-fault regression; the guard test halts safely rather than attempting unsafe recovery of a damaged kernel task
 
 ## Phase 15: Configuration & Persistence (PARTIAL, QEMU VERIFIED)
@@ -265,8 +265,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions
 - [x] CI workflow run #1000 passed the freestanding build, x86-64 baseline audit, BIOS/ring-3 isolation checks, fresh-address-space ELF execution, VMM huge-page/permission regression suite, waitpid and IPC tests, dedicated kernel-stack guard fault on IST1, QEMU pointer restoration and desktop/settings persistence captures
-- [x] QEMU capture from run #732 verifies Files, Terminal, Browser, multi-window routing, maximize/restore, keyboard resize, System Status and Kernel Activity counters
-- [x] QEMU guard-probe from run #732 verifies the kernel stack-guard #PF arrives on IST1 and produces the expected diagnostic markers
+- [x] QEMU capture from run #1000 verifies Files, Terminal, Browser, multi-window routing, maximize/restore, keyboard resize, System Status and Kernel Activity counters
+- [x] QEMU guard-probe from run #1000 verifies the kernel stack-guard #PF arrives on IST1 and produces the expected diagnostic markers
 - [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`); the capture also checks the largest font preset
 - [ ] Expand automated regression coverage to pointer-drag resize, snap/tiling, real hardware and long-session desktop stability
 
