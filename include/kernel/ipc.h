@@ -22,6 +22,13 @@ typedef u64 ipc_handle_t;
 #define IPC_STATUS_FULL          -3
 #define IPC_STATUS_BUFFER_SMALL  -4
 #define IPC_STATUS_PEER_CLOSED   -5
+#define IPC_STATUS_CANCELLED     -6
+
+#define IPC_WAIT_STATUS_IDLE          0
+#define IPC_WAIT_STATUS_PENDING       1
+#define IPC_WAIT_STATUS_MESSAGE       2
+#define IPC_WAIT_STATUS_PEER_CLOSED   3
+#define IPC_WAIT_STATUS_CANCELLED     4
 
 void ipc_init(void);
 
@@ -31,8 +38,12 @@ bool ipc_endpoint_pair_create(task_t* first_task, task_t* second_task,
                               ipc_handle_t* first_handle,
                               ipc_handle_t* second_handle);
 int ipc_send(ipc_handle_t endpoint, const void* data, u64 size);
+/* Nonblocking receive: EMPTY means the queue is empty but the peer is live. */
 int ipc_recv(ipc_handle_t endpoint, void* buffer, u64 capacity,
              u32* sender_pid);
+/* Kernel-only blocking variant. Returns on message, peer close or cancellation. */
+int ipc_recv_wait(ipc_handle_t endpoint, void* buffer, u64 capacity,
+                  u32* sender_pid);
 int ipc_close(ipc_handle_t endpoint);
 void ipc_task_close_all(task_t* task);
 
@@ -42,3 +53,9 @@ void ipc_task_close_all(task_t* task);
 int shm_alloc(void);
 void* shm_get(int id);
 void shm_free(int id);
+
+#ifdef IPC_HOST_TEST
+/* Deterministic host-only hooks; the host runner has no real context switch. */
+bool ipc_test_register_waiter(ipc_handle_t endpoint);
+bool ipc_test_wake_waiters(ipc_handle_t endpoint, u32 reason);
+#endif

@@ -35,9 +35,16 @@ The first implementation stage is deliberately kernel-only:
 - Legacy syscall slots 91-93 are unregistered and reserved. No ring-3 IPC call
   or raw kernel pointer is exposed.
 
-Nonblocking receive avoids a waiter reservation that could be stranded by task
-exit. A future blocking design must add explicit cancellation and wakeup
-invariants before replacing this behavior.
+The nonblocking `ipc_recv()` remains available. Kernel services may use
+`ipc_recv_wait()`, which registers the current task on its owner-bound endpoint
+while interrupts are disabled, publishes TASK_WAITING_IPC/BLOCKED in the same
+critical section, and sleeps with the scheduler's STI/HLT pattern. A send wakes
+a waiter after publishing a complete queue entry. Endpoint close wakes local
+waiters as cancelled and wakes peer waiters while preserving their inbound
+queue, so queued messages drain before PEER_CLOSED. Task teardown first unlinks
+the task from any peer waiter list, then revokes its own endpoints. Generic or
+spurious wakeups recheck queue and peer state rather than duplicating waiter
+links. This remains kernel-only; no ring-3 syscall or user pointer is exposed.
 
 The shared-memory API remains separate and kernel-only. Its global IDs and raw
 pointers are not endpoint capabilities and must not cross into ring 3.
@@ -140,7 +147,11 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Queue full | Explicit FULL; all existing messages intact |
 | Undersized receive buffer | Explicit BUFFER_SMALL; message remains queued |
 | Message larger than maximum | Reject; never truncate |
-| One endpoint closes | Peer remains; queued messages drain, then receive/send report PEER_CLOSED |
+| One endpoint closes | Peer remains; queued messages drain, then receive/send report PEER_CLOSED; blocked peer readers wake |
+| Message arrives while receiver waits | Message is committed before blocked receiver becomes runnable |
+| Generic/spurious wake | Receiver rechecks queue and peer state without duplicate waiter links |
+| Waiting task exits/is cancelled | Waiter is unlinked before its TCB can be recycled |
+| Local endpoint is revoked | Blocked receive returns CANCELLED or invalid-handle, without stale endpoint access |
 | Task enters EXITING | All local endpoints revoked before other teardown |
 | Ring-3 IPC syscall | Reserved/unregistered and fails closed |
 | Shared-memory pointer exposure | Ring-3 shared-memory calls remain denied |
@@ -156,7 +167,7 @@ concurrent multi-core operation before enabling those features.
 3. [x] Add kernel-only channel-pair creation for tests and trusted services.
 4. [x] Add bounded per-direction data queues with nonblocking send/receive.
 5. [x] Revoke task-owned endpoints during EXITING teardown.
-6. [ ] Add cancellation-safe blocking receive and endpoint wait queues.
+6. [x] Add kernel-only cancellation-safe blocking receive and endpoint waiter queues.
 7. [ ] Add service-name registration and accept/reject connection lifecycle.
 8. [ ] Add host tests for blocked waiter cancellation and concurrent close/send/receive.
 9. [ ] Add message attachment records and queue-owned open-file references.

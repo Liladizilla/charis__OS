@@ -6,6 +6,12 @@
 static task_t task_a, task_b, task_c;
 static task_t* active_task;
 task_t* scheduler_current(void) { return active_task; }
+void scheduler_yield(void) { }
+
+void task_unblock(task_t* task) {
+    if (task && task->state == TASK_STATE_BLOCKED)
+        task->state = (task == active_task) ? TASK_STATE_RUNNING : TASK_STATE_READY;
+}
 
 static void reset_task(task_t* task, u32 pid) {
     *task = (task_t){0};
@@ -61,6 +67,92 @@ static void test_directional_rights(void) {
     assert(ipc_recv(receive_a, &received, sizeof(received), &sender) ==
            IPC_STATUS_PEER_CLOSED);
     assert(ipc_close(receive_a) == IPC_STATUS_OK);
+}
+
+static void test_waiter_message_wakeup(void) {
+    ipc_handle_t send_a, receive_b;
+    assert(ipc_endpoint_pair_create(&task_a, &task_b,
+        IPC_RIGHT_SEND, IPC_RIGHT_RECEIVE, &send_a, &receive_b));
+    active_task = &task_b;
+    assert(ipc_test_register_waiter(receive_b));
+    assert(task_b.state == TASK_STATE_BLOCKED);
+    assert(task_b.waiting_event == TASK_WAITING_IPC);
+    assert(task_b.ipc_wait_endpoint != NULL);
+    assert(task_b.ipc_wait_status == IPC_WAIT_STATUS_PENDING);
+
+    active_task = &task_a;
+    const char message[] = "wake";
+    assert(ipc_send(send_a, message, sizeof(message)) == IPC_STATUS_OK);
+    assert(task_b.state == TASK_STATE_READY);
+    assert(task_b.waiting_event == 0);
+    assert(task_b.ipc_wait_endpoint == NULL && task_b.ipc_wait_next == NULL);
+    assert(task_b.ipc_wait_status == IPC_WAIT_STATUS_MESSAGE);
+
+    active_task = &task_b;
+    char received[sizeof(message)] = {0};
+    assert(ipc_recv(receive_b, received, sizeof(received), NULL) ==
+           (int)sizeof(message));
+    assert(memcmp(received, message, sizeof(message)) == 0);
+    assert(ipc_close(receive_b) == IPC_STATUS_OK);
+    active_task = &task_a;
+    assert(ipc_close(send_a) == IPC_STATUS_OK);
+}
+
+static void test_waiter_spurious_wakeup(void) {
+    ipc_handle_t send_a, receive_b;
+    assert(ipc_endpoint_pair_create(&task_a, &task_b,
+        IPC_RIGHT_SEND, IPC_RIGHT_RECEIVE, &send_a, &receive_b));
+    active_task = &task_b;
+    assert(ipc_test_register_waiter(receive_b));
+    assert(ipc_test_wake_waiters(receive_b, IPC_WAIT_STATUS_MESSAGE));
+    assert(task_b.state == TASK_STATE_RUNNING);
+    assert(task_b.ipc_wait_endpoint == NULL && task_b.waiting_event == 0);
+    assert(ipc_recv(receive_b, NULL, 0, NULL) == IPC_STATUS_EMPTY);
+
+    /* A spurious wake did not consume a message or poison the next wait. */
+    assert(ipc_test_register_waiter(receive_b));
+    active_task = &task_a;
+    assert(ipc_send(send_a, "z", 1) == IPC_STATUS_OK);
+    assert(task_b.state == TASK_STATE_READY);
+    active_task = &task_b;
+    char byte = 0;
+    assert(ipc_recv(receive_b, &byte, sizeof(byte), NULL) == 1);
+    assert(byte == 'z');
+    assert(ipc_close(receive_b) == IPC_STATUS_OK);
+    active_task = &task_a;
+    assert(ipc_close(send_a) == IPC_STATUS_OK);
+}
+
+static void test_waiter_peer_close_wakeup(void) {
+    ipc_handle_t send_a, receive_b;
+    assert(ipc_endpoint_pair_create(&task_a, &task_b,
+        IPC_RIGHT_SEND, IPC_RIGHT_RECEIVE, &send_a, &receive_b));
+    active_task = &task_b;
+    assert(ipc_test_register_waiter(receive_b));
+    active_task = &task_a;
+    assert(ipc_close(send_a) == IPC_STATUS_OK);
+    assert(task_b.state == TASK_STATE_READY);
+    assert(task_b.ipc_wait_endpoint == NULL && task_b.waiting_event == 0);
+    assert(task_b.ipc_wait_status == IPC_WAIT_STATUS_PEER_CLOSED);
+    active_task = &task_b;
+    assert(ipc_recv(receive_b, NULL, 0, NULL) == IPC_STATUS_PEER_CLOSED);
+    assert(ipc_close(receive_b) == IPC_STATUS_OK);
+}
+
+static void test_waiter_cancelled_on_task_teardown(void) {
+    ipc_handle_t send_a, receive_b;
+    assert(ipc_endpoint_pair_create(&task_a, &task_b,
+        IPC_RIGHT_SEND, IPC_RIGHT_RECEIVE, &send_a, &receive_b));
+    active_task = &task_b;
+    assert(ipc_test_register_waiter(receive_b));
+    active_task = &task_a;
+    ipc_task_close_all(&task_b);
+    assert(task_b.ipc_wait_endpoint == NULL && task_b.ipc_wait_next == NULL);
+    assert(task_b.waiting_event == 0);
+    assert(task_b.ipc_wait_status == IPC_WAIT_STATUS_CANCELLED);
+    assert(task_b.state == TASK_STATE_READY);
+    assert(ipc_send(send_a, "x", 1) == IPC_STATUS_PEER_CLOSED);
+    assert(ipc_close(send_a) == IPC_STATUS_OK);
 }
 
 static void test_rights_queue_and_close(void) {
@@ -152,6 +244,10 @@ int main(void) {
     ipc_init();
     test_pair_validation();
     test_directional_rights();
+    test_waiter_message_wakeup();
+    test_waiter_spurious_wakeup();
+    test_waiter_peer_close_wakeup();
+    test_waiter_cancelled_on_task_teardown();
     test_rights_queue_and_close();
     test_stale_handle_and_teardown();
     test_generation_exhaustion();
