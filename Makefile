@@ -190,6 +190,12 @@ ipc-test:
 	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -DIPC_HOST_TEST -I$(INCLUDE_DIR) tests/ipc_endpoint_test.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/string.c -o $(BUILD_DIR)/ipc_endpoint_test
 	$(BUILD_DIR)/ipc_endpoint_test
 
+# End-to-end host test of IPC queue ownership and VFS descriptor import.
+ipc-fd-test:
+	mkdir -p $(BUILD_DIR)
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -DIPC_HOST_TEST -ffunction-sections -fdata-sections -I$(INCLUDE_DIR) tests/ipc_fd_transfer_test.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/vfs.c $(KERNEL_DIR)/string.c -Wl,--gc-sections -o $(BUILD_DIR)/ipc_fd_transfer_test
+	$(BUILD_DIR)/ipc_fd_transfer_test
+
 	@echo "VMM test object built successfully with RUN_VMM_TESTS defined"
 
 # Fail early and legibly when the toolchain is incomplete, rather than part
@@ -267,4 +273,4 @@ clean:
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-waitpid-test images-ipc-wait-test images-elf-exec-test ipc-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
+.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-waitpid-test images-ipc-wait-test images-elf-exec-test ipc-test ipc-fd-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
