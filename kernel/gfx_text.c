@@ -2,8 +2,8 @@
  *
  * Family 0 uses measured proportional advances, family 1 is fixed-cell
  * monospace, and family 2 draws serif terminals on qualifying vertical stems.
- * Every mode is generated from the built-in 8x16 font, so boot rendering has
- * no external filesystem or runtime font dependency.
+ * Every mode is generated from the embedded Inter-derived 12x22 glyph
+ * table, so boot rendering has no external filesystem or runtime dependency.
  */
 #include <kernel/gfx_text.h>
 #include <kernel/fb.h>
