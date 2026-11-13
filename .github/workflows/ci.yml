@@ -44,7 +44,8 @@ jobs:
             dosfstools \
             curl \
             python3 \
-            python3-pil
+            python3-pil \
+            fonts-inter
 
       - name: Verify build toolchain
         run: make check-tools
@@ -144,6 +145,17 @@ jobs:
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/cursor_compositor_test.c kernel/cursor.c -Wl,--gc-sections -o /tmp/cursor_compositor_test
           /tmp/cursor_compositor_test
+
+      - name: Test embedded Inter bitmap font and reproducible generator
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/font_data_test.c kernel/font_data.c -o /tmp/font_data_test
+          /tmp/font_data_test
+          make font-check
+
+      - name: Test CWP1 wallpaper module validation and RGB565 rendering
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/wallpaper_module_test.c kernel/wallpaper.c kernel/string.c -Wl,--gc-sections -o /tmp/wallpaper_module_test
+          /tmp/wallpaper_module_test
 
       - name: Test window manager lifecycle and bounds
         run: |
