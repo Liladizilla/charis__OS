@@ -57,7 +57,8 @@
 - [x] Add bounded full-duplex queues with nonblocking send/receive, explicit FULL/EMPTY/BUFFER_SMALL outcomes and no silent truncation
 - [x] Revoke task-owned endpoints and release channel references during EXITING teardown
 - [x] Add kernel-only blocking receive with atomic waiter registration, message/peer-close wakeups and task-exit cancellation
-- [x] Add dedicated QEMU guest coverage for real waiter message wake, peer task exit, queued-message drain before EOF, local-endpoint revocation cancellation and peer-handle invalidation- [ ] Add QEMU stress coverage for waiter wake/close/exit interleavings
+- [x] Add dedicated QEMU guest coverage for real waiter message wake, peer task exit, queued-message drain before EOF, local-endpoint revocation cancellation and peer-handle invalidation
+- [ ] Add QEMU stress coverage for waiter wake/close/exit interleavings
 - [ ] Add a kernel-owned service namespace with explicit listener registration and accept/reject rendezvous
 - [ ] Add transactional descriptor attachments, reference pinning, recipient-slot reservation and rollback
 - [ ] Only design ring-3 IPC syscalls after user-memory preflight, service authorization and QEMU lifecycle tests exist
