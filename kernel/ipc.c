@@ -292,9 +292,9 @@ static bool ipc_service_pop_request_locked(
 }
 
 static void ipc_service_cancel_client_request_locked(task_t* client) {
-    if (!client || !client->ipc_connect_request) return;
+    if (!client) return;
     struct ipc_connection_request* request = client->ipc_connect_request;
-    if (request->in_use && request->client == client) {
+    if (request && request->in_use && request->client == client) {
         (void)ipc_request_unlink_pending_locked(request);
         ipc_request_release_locked(request);
     }
@@ -722,7 +722,11 @@ int ipc_close(ipc_handle_t handle) {
 void ipc_task_close_all(task_t* task) {
     if (!task) return;
     u64 flags = ipc_irq_save();
-    /* Unlink this TCB from a peer's waiter list before task-slot reuse. */
+    /* Revoke service registration and all pending client/server rendezvous
+     * before the TCB or any task-owned endpoint can be recycled. */
+    ipc_service_teardown_task_locked(task);
+
+    /* Unlink this TCB from a peer's endpoint waiter list before task reuse. */
     if (task->ipc_wait_endpoint || task->ipc_wait_next)
         ipc_cancel_waiter_locked(task, IPC_WAIT_STATUS_CANCELLED);
     else if (task->waiting_event == TASK_WAITING_IPC) {
@@ -735,6 +739,361 @@ void ipc_task_close_all(task_t* task) {
         ipc_close_slot_locked(task, i);
     ipc_irq_restore(flags);
 }
+
+int ipc_service_register(const char* name, ipc_service_handle_t* handle) {
+    task_t* owner = scheduler_current();
+    if (!handle) return IPC_STATUS_ERROR;
+    *handle = 0;
+    if (!ipc_task_live_kernel(owner)) return IPC_STATUS_ERROR;
+    if (!security_check_capability(owner, CAP_IPC_SERVICE))
+        return IPC_STATUS_ACCESS_DENIED;
+
+    char canonical[IPC_SERVICE_NAME_MAX];
+    if (!ipc_copy_service_name(name, canonical)) return IPC_STATUS_ERROR;
+
+    u64 flags = ipc_irq_save();
+    for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
+        struct ipc_service* existing = &ipc_services[i];
+        if (existing->in_use && kstrcmp(existing->name, canonical) == 0) {
+            ipc_irq_restore(flags);
+            return IPC_STATUS_SERVICE_EXISTS;
+        }
+    }
+    int slot = ipc_find_service_slot_locked();
+    if (slot < 0) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_SERVICE_FULL;
+    }
+
+    struct ipc_service* service = &ipc_services[slot];
+    u32 generation = service->generation;
+    kmemset(service, 0, sizeof(*service));
+    service->generation = generation;
+    service->in_use = true;
+    service->owner = owner;
+    service->owner_pid = owner->pid;
+    kstrncpy(service->name, canonical, sizeof(service->name));
+    *handle = ipc_make_service_handle(owner->pid, generation, (u32)slot);
+    ipc_irq_restore(flags);
+    return IPC_STATUS_OK;
+}
+
+int ipc_service_unregister(ipc_service_handle_t handle) {
+    task_t* owner = scheduler_current();
+    if (!ipc_task_live_kernel(owner)) return IPC_STATUS_ERROR;
+    if (!security_check_capability(owner, CAP_IPC_SERVICE))
+        return IPC_STATUS_ACCESS_DENIED;
+    u64 flags = ipc_irq_save();
+    struct ipc_service* service = ipc_resolve_service_locked(owner, handle);
+    if (!service) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ERROR;
+    }
+    ipc_service_close_locked(service, IPC_STATUS_SERVICE_CLOSED);
+    ipc_irq_restore(flags);
+    return IPC_STATUS_OK;
+}
+
+int ipc_service_connect_begin(const char* name, u32 requested_client_rights,
+                              ipc_request_handle_t* handle) {
+    task_t* client = scheduler_current();
+    if (!handle) return IPC_STATUS_ERROR;
+    *handle = 0;
+    if (!ipc_task_live_kernel(client) ||
+        !ipc_rights_valid(requested_client_rights) ||
+        client->ipc_connect_request || client->ipc_connect_request_id ||
+        client->ipc_service_wait || client->ipc_wait_endpoint ||
+        client->waiting_event != 0) return IPC_STATUS_ERROR;
+
+    char canonical[IPC_SERVICE_NAME_MAX];
+    if (!ipc_copy_service_name(name, canonical)) return IPC_STATUS_ERROR;
+
+    u64 flags = ipc_irq_save();
+    struct ipc_service* service = NULL;
+    for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
+        struct ipc_service* candidate = &ipc_services[i];
+        if (candidate->in_use && kstrcmp(candidate->name, canonical) == 0) {
+            service = candidate;
+            break;
+        }
+    }
+    if (!service) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_SERVICE_NOT_FOUND;
+    }
+    if (!ipc_task_live_kernel(service->owner)) {
+        ipc_service_close_locked(service, IPC_STATUS_SERVICE_CLOSED);
+        ipc_irq_restore(flags);
+        return IPC_STATUS_SERVICE_CLOSED;
+    }
+    if (service->pending_count >= IPC_MAX_PENDING_PER_SERVICE) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_SERVICE_FULL;
+    }
+    int slot = ipc_find_request_slot_locked();
+    if (slot < 0) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_SERVICE_FULL;
+    }
+
+    struct ipc_connection_request* request = &ipc_requests[slot];
+    u32 generation = request->generation;
+    kmemset(request, 0, sizeof(*request));
+    request->generation = generation;
+    request->in_use = true;
+    request->state = IPC_REQUEST_STATE_PENDING;
+    request->service = service;
+    request->client = client;
+    request->client_pid = client->pid;
+    request->requested_client_rights = requested_client_rights;
+
+    if (service->pending_tail)
+        service->pending_tail->next = request;
+    else
+        service->pending_head = request;
+    service->pending_tail = request;
+    service->pending_count++;
+
+    ipc_request_handle_t client_handle =
+        ipc_make_request_handle(client->pid, generation, (u32)slot);
+    client->ipc_connect_request = request;
+    client->ipc_connect_request_id = client_handle;
+    client->ipc_connect_result = IPC_HANDLE_INVALID;
+    client->ipc_connect_status = IPC_STATUS_PENDING;
+    *handle = client_handle;
+
+    /* Connect is event-driven: queue publication precedes waking one server
+     * accept waiter. No client-side polling or supplied PID is involved. */
+    ipc_service_wake_one_accept_waiter_locked(service);
+    ipc_irq_restore(flags);
+    return IPC_STATUS_OK;
+}
+
+int ipc_service_connect_wait(ipc_request_handle_t handle,
+                             ipc_handle_t* client_endpoint) {
+    task_t* client = scheduler_current();
+    if (!client_endpoint) return IPC_STATUS_ERROR;
+    *client_endpoint = IPC_HANDLE_INVALID;
+    if (!client || !client->pid || !handle ||
+        client->ipc_connect_request_id != handle ||
+        (u32)(handle >> 32) != client->pid) return IPC_STATUS_REQUEST_INVALID;
+
+    u64 flags = ipc_irq_save();
+    for (;;) {
+        if (client->ipc_connect_status != IPC_STATUS_PENDING) {
+            int result = client->ipc_connect_status;
+            if (result == IPC_STATUS_OK)
+                *client_endpoint = client->ipc_connect_result;
+            client->ipc_connect_request = NULL;
+            client->ipc_connect_request_id = 0;
+            client->ipc_connect_result = IPC_HANDLE_INVALID;
+            client->ipc_connect_status = 0;
+            ipc_irq_restore(flags);
+            return result;
+        }
+
+        struct ipc_connection_request* request = client->ipc_connect_request;
+        if (!request || !request->in_use || request->client != client ||
+            request->client_pid != client->pid) {
+            /* A stale TCB request pointer is never followed or dereferenced. */
+            client->ipc_connect_request = NULL;
+            client->ipc_connect_request_id = 0;
+            client->ipc_connect_result = IPC_HANDLE_INVALID;
+            client->ipc_connect_status = 0;
+            ipc_irq_restore(flags);
+            return IPC_STATUS_REQUEST_INVALID;
+        }
+
+        if (client->waiting_event == TASK_WAITING_IPC_CONNECT) {
+            client->state = TASK_STATE_BLOCKED;
+        } else if (client->waiting_event == 0 &&
+                   !client->ipc_wait_endpoint && !client->ipc_service_wait) {
+            client->waiting_event = TASK_WAITING_IPC_CONNECT;
+            client->event_data = handle;
+            client->state = TASK_STATE_BLOCKED;
+        } else {
+            ipc_irq_restore(flags);
+            return IPC_STATUS_ERROR;
+        }
+
+        scheduler_yield();
+        while (client->state == TASK_STATE_BLOCKED &&
+               client->waiting_event == TASK_WAITING_IPC_CONNECT) {
+            asm volatile("sti; hlt; cli" : : : "memory");
+        }
+        /* Spurious/generic wake: retain the token and recheck completion. */
+    }
+}
+
+int ipc_service_connect(const char* name, u32 requested_client_rights,
+                        ipc_handle_t* client_endpoint) {
+    if (!client_endpoint) return IPC_STATUS_ERROR;
+    *client_endpoint = IPC_HANDLE_INVALID;
+    ipc_request_handle_t request = 0;
+    int result = ipc_service_connect_begin(name, requested_client_rights,
+                                           &request);
+    if (result != IPC_STATUS_OK) return result;
+    return ipc_service_connect_wait(request, client_endpoint);
+}
+
+int ipc_service_accept_wait(ipc_service_handle_t handle,
+                            ipc_request_handle_t* request_handle,
+                            u32* client_pid) {
+    task_t* server = scheduler_current();
+    if (!request_handle) return IPC_STATUS_ERROR;
+    *request_handle = 0;
+    if (client_pid) *client_pid = 0;
+    if (!ipc_task_live_kernel(server)) return IPC_STATUS_ERROR;
+    if (!security_check_capability(server, CAP_IPC_SERVICE))
+        return IPC_STATUS_ACCESS_DENIED;
+
+    u64 flags = ipc_irq_save();
+    for (;;) {
+        struct ipc_service* service =
+            ipc_resolve_service_locked(server, handle);
+        if (!service) {
+            ipc_irq_restore(flags);
+            return IPC_STATUS_ERROR;
+        }
+        if (ipc_service_pop_request_locked(service, server,
+                                           request_handle, client_pid)) {
+            ipc_irq_restore(flags);
+            return IPC_STATUS_OK;
+        }
+
+        if (server->ipc_service_wait == service &&
+            server->waiting_event == TASK_WAITING_IPC_SERVICE) {
+            server->state = TASK_STATE_BLOCKED;
+        } else if (!server->ipc_service_wait && !server->ipc_wait_next &&
+                   !server->ipc_wait_endpoint && !server->ipc_connect_request &&
+                   server->waiting_event == 0) {
+            server->ipc_service_wait = service;
+            server->ipc_wait_next = service->accept_waiters;
+            service->accept_waiters = server;
+            server->ipc_service_wait_status = IPC_STATUS_PENDING;
+            server->waiting_event = TASK_WAITING_IPC_SERVICE;
+            server->event_data = 0;
+            server->state = TASK_STATE_BLOCKED;
+        } else {
+            ipc_irq_restore(flags);
+            return IPC_STATUS_ERROR;
+        }
+
+        scheduler_yield();
+        while (server->state == TASK_STATE_BLOCKED &&
+               server->waiting_event == TASK_WAITING_IPC_SERVICE) {
+            asm volatile("sti; hlt; cli" : : : "memory");
+        }
+        /* A request or service-close event wakes us; always re-resolve owner
+         * and generation before touching the service object again. */
+    }
+}
+
+int ipc_service_accept(ipc_service_handle_t service_handle,
+                       ipc_request_handle_t request_handle,
+                       u32 granted_client_rights, u32 server_rights,
+                       ipc_handle_t* server_endpoint) {
+    task_t* server = scheduler_current();
+    if (!server_endpoint) return IPC_STATUS_ERROR;
+    *server_endpoint = IPC_HANDLE_INVALID;
+    if (!ipc_task_live_kernel(server)) return IPC_STATUS_ERROR;
+    if (!ipc_rights_valid(granted_client_rights) ||
+        !ipc_rights_valid(server_rights)) return IPC_STATUS_ERROR;
+    if (!security_check_capability(server, CAP_IPC_SERVICE))
+        return IPC_STATUS_ACCESS_DENIED;
+
+    u64 flags = ipc_irq_save();
+    struct ipc_service* service =
+        ipc_resolve_service_locked(server, service_handle);
+    struct ipc_connection_request* request =
+        ipc_resolve_request_locked(server, request_handle, true);
+    if (!service || !request || request->service != service ||
+        (granted_client_rights & ~request->requested_client_rights) != 0) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_REQUEST_INVALID;
+    }
+    task_t* client = request->client;
+    if (!ipc_task_live_kernel(client) ||
+        client->ipc_connect_request != request ||
+        client->ipc_connect_request_id !=
+            ipc_make_request_handle(client->pid, request->generation,
+                                    (u32)(request - ipc_requests))) {
+        (void)ipc_request_unlink_pending_locked(request);
+        ipc_request_release_locked(request);
+        ipc_irq_restore(flags);
+        return IPC_STATUS_REQUEST_INVALID;
+    }
+
+    ipc_handle_t client_endpoint = IPC_HANDLE_INVALID;
+    ipc_handle_t endpoint_for_server = IPC_HANDLE_INVALID;
+    if (!ipc_endpoint_pair_create(client, server, granted_client_rights,
+                                  server_rights, &client_endpoint,
+                                  &endpoint_for_server)) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_SERVICE_FULL;
+    }
+    ipc_request_complete_client_locked(request, IPC_STATUS_OK,
+                                       client_endpoint);
+    *server_endpoint = endpoint_for_server;
+    ipc_irq_restore(flags);
+    return IPC_STATUS_OK;
+}
+
+int ipc_service_reject(ipc_service_handle_t service_handle,
+                       ipc_request_handle_t request_handle) {
+    task_t* server = scheduler_current();
+    if (!ipc_task_live_kernel(server)) return IPC_STATUS_ERROR;
+    if (!security_check_capability(server, CAP_IPC_SERVICE))
+        return IPC_STATUS_ACCESS_DENIED;
+    u64 flags = ipc_irq_save();
+    struct ipc_service* service =
+        ipc_resolve_service_locked(server, service_handle);
+    struct ipc_connection_request* request =
+        ipc_resolve_request_locked(server, request_handle, true);
+    if (!service || !request || request->service != service) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_REQUEST_INVALID;
+    }
+    ipc_request_complete_client_locked(request, IPC_STATUS_REQUEST_REJECTED,
+                                       IPC_HANDLE_INVALID);
+    ipc_irq_restore(flags);
+    return IPC_STATUS_OK;
+}
+
+#ifdef IPC_HOST_TEST
+bool ipc_test_service_register_waiter(ipc_service_handle_t handle) {
+    task_t* server = scheduler_current();
+    if (!server) return false;
+    u64 flags = ipc_irq_save();
+    struct ipc_service* service = ipc_resolve_service_locked(server, handle);
+    if (!service || service->pending_head || server->ipc_service_wait ||
+        server->ipc_wait_next || server->waiting_event != 0) {
+        ipc_irq_restore(flags);
+        return false;
+    }
+    server->ipc_service_wait = service;
+    server->ipc_wait_next = service->accept_waiters;
+    service->accept_waiters = server;
+    server->ipc_service_wait_status = IPC_STATUS_PENDING;
+    server->waiting_event = TASK_WAITING_IPC_SERVICE;
+    server->state = TASK_STATE_BLOCKED;
+    ipc_irq_restore(flags);
+    return true;
+}
+
+bool ipc_test_service_dequeue(ipc_service_handle_t handle,
+                              ipc_request_handle_t* request_handle,
+                              u32* client_pid) {
+    task_t* server = scheduler_current();
+    if (!server || !request_handle) return false;
+    u64 flags = ipc_irq_save();
+    struct ipc_service* service = ipc_resolve_service_locked(server, handle);
+    bool result = service && ipc_service_pop_request_locked(
+        service, server, request_handle, client_pid);
+    ipc_irq_restore(flags);
+    return result;
+}
+#endif
 
 int shm_alloc(void) {
     u64 flags = ipc_irq_save();
