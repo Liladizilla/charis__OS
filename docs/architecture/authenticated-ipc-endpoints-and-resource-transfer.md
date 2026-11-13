@@ -194,6 +194,7 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Zero-capability public service registration | Reject |
 | Duplicate service name | Reject without changing existing service |
 | Wrong task uses service handle | Reject |
+| Service owner connects to its own service | Deny before request allocation |
 | Wrong service attempts to accept request token | Reject |
 | Server rejects request | Client receives REJECTED once; no endpoint is installed |
 | Client cancels pending/offered request | Request token is revoked; stale server offer cannot be accepted |
