@@ -9,7 +9,7 @@
 - Outbound UDP/IPv4 frames with IPv4 and UDP checksums.
 - A bounded asynchronous DNS A-record resolver that validates the echoed single QNAME, A/IN question and matching A-record owner, including bounded backward compression-pointer traversal.
 - A minimal single-connection TCP client with SYN/SYN-ACK handshake, checksummed segments, basic ACK handling, data callbacks and FIN close.
-- A plain HTTP GET client that composes DNS and TCP, parses bounded response headers and streams response body chunks.
+- A plain HTTP GET client that composes DNS and TCP, parses bounded response headers, decodes chunked transfer bodies incrementally and streams response body chunks.
 - A bounded DHCPv4 client that performs DISCOVER/OFFER/REQUEST/ACK, installs subnet/router/DNS settings, renews at T1 by unicast and rebinds at T2 by broadcast, and stops using the lease after expiry.
 - Browser integration for `http://` URLs, with a bounded HTML-tag-stripped text preview; `https://` remains explicitly unsupported.
 
@@ -42,8 +42,8 @@ The resolver uses UDP port 53. It starts with `net_dns` and adopts the first DNS
 
 - DHCP is implemented but only exercised by packet-parser host tests and QEMU's virtual NIC capture. Physical LAN DHCP, relay agents, reconnect under loss and long-term lease behavior still need validation. IPv6 and IP fragment reassembly are not implemented.
 - TCP is a constrained single-connection client, not a complete socket implementation. Congestion control, robust retransmission, multiple concurrent connections and broad interoperability are missing.
-- TLS/HTTPS, certificate validation, redirects, chunked transfer decoding, full HTML/CSS layout, JavaScript and standards-compliant document rendering are not implemented.
+- TLS/HTTPS, certificate validation, redirects, full HTML/CSS layout, JavaScript and standards-compliant document rendering are not implemented.
 - No Wi-Fi driver exists. Current physical networking is the RTL8139 wired Ethernet path only.
 - End-to-end hardware tests against a real LAN and public Internet are still required.
 
-The kernel has a meaningful wired-networking foundation, but it is not yet a dependable general-purpose Internet stack. Do not treat successful kernel CI as proof of Internet connectivity.
+The HTTP parser supports bounded chunked response decoding and fails closed on conflicting Content-Length/Transfer-Encoding, unsupported or duplicate transfer codings, malformed chunk boundaries and invalid framing trailers. The kernel has a meaningful wired-networking foundation, but it is not yet a dependable general-purpose Internet stack. Do not treat successful kernel CI as proof of Internet connectivity.
