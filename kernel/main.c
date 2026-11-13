@@ -322,7 +322,6 @@ static void ipc_service_test_server(void* unused) {
     /* A third client request is left pending while the service owner removes
      * the name. Require the client to be truly BLOCKED in connect_wait before
      * unregistering, so this covers the wake/cancellation race in QEMU. */
-    ipc_service_test_close_request_started = 0;
     u32 attempts = 0;
     while (!ipc_service_test_close_request_started && attempts++ < 5000U)
         task_sleep_ms(1);
@@ -406,6 +405,7 @@ static void ipc_service_test_client(void* unused) {
 static void ipc_service_test_coordinator(void* unused) {
     (void)unused;
     ipc_service_test_registered = 0;
+    ipc_service_test_close_request_started = 0;
     task_t* server = task_create("ipc-service-server",
         ipc_service_test_server, NULL, CAP_IPC_SERVICE, false);
     task_t* client = task_create("ipc-service-client",
