@@ -1463,8 +1463,13 @@ void shell_ui_main(void* arg) {
         }
         if (now >= next_clock_refresh_ms) {
             next_clock_refresh_ms = now + 1000u;
-            /* A clock tick only repaints the taskbar, not every desktop surface. */
-            if (!ui.needs_redraw) draw_taskbar();
+            /* Restore the pointer before a partial taskbar paint. The cursor
+             * will be composited again at the end of this frame, with a fresh
+             * save-under snapshot for pixels the clock may have changed. */
+            if (!ui.needs_redraw) {
+                cursor_erase();
+                draw_taskbar();
+            }
         }
 
         /* Redraw on a change, or when the mode geometry moved underneath us. */
