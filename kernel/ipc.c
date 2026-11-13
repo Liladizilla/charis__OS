@@ -249,11 +249,9 @@ static void ipc_service_close_locked(struct ipc_service* service, int reason) {
         waiter->ipc_wait_next = NULL;
         waiter->ipc_service_wait = NULL;
         waiter->ipc_service_wait_status = reason;
-        if (waiter->waiting_event == TASK_WAITING_IPC_SERVICE) {
-            waiter->waiting_event = 0;
-            waiter->event_data = 0;
-            task_unblock(waiter);
-        }
+        waiter->waiting_event = 0;
+        waiter->event_data = 0;
+        task_unblock(waiter);
     }
     for (u32 i = 0; i < IPC_MAX_CONNECTIONS; i++) {
         struct ipc_connection_request* request = &ipc_requests[i];
@@ -266,6 +264,7 @@ static void ipc_service_close_locked(struct ipc_service* service, int reason) {
     service->in_use = false;
     service->owner = NULL;
     service->owner_pid = 0;
+    service->required_client_capabilities = 0;
     service->name[0] = '\0';
     service->pending_head = NULL;
     service->pending_tail = NULL;
@@ -315,11 +314,9 @@ static void ipc_service_teardown_task_locked(task_t* task) {
     if (task->ipc_service_wait) {
         (void)ipc_service_waiter_unlink_locked(task, task->ipc_service_wait);
         task->ipc_service_wait_status = IPC_STATUS_CANCELLED;
-        if (task->waiting_event == TASK_WAITING_IPC_SERVICE) {
-            task->waiting_event = 0;
-            task->event_data = 0;
-            task_unblock(task);
-        }
+        task->waiting_event = 0;
+        task->event_data = 0;
+        task_unblock(task);
     }
     ipc_service_cancel_client_request_locked(task);
     for (u32 i = 0; i < IPC_MAX_SERVICES; i++) {
@@ -733,11 +730,14 @@ void ipc_task_close_all(task_t* task) {
     ipc_irq_restore(flags);
 }
 
-int ipc_service_register(const char* name, ipc_service_handle_t* handle) {
+int ipc_service_register(const char* name,
+                         u32 required_client_capabilities,
+                         ipc_service_handle_t* handle) {
     task_t* owner = scheduler_current();
     if (!handle) return IPC_STATUS_ERROR;
     *handle = 0;
-    if (!ipc_task_live_kernel(owner)) return IPC_STATUS_ERROR;
+    if (!ipc_task_live_kernel(owner) ||
+        (required_client_capabilities & ~CAP_ALL)) return IPC_STATUS_ERROR;
     if (!security_check_capability(owner, CAP_IPC_SERVICE))
         return IPC_STATUS_ACCESS_DENIED;
 
@@ -765,6 +765,7 @@ int ipc_service_register(const char* name, ipc_service_handle_t* handle) {
     service->in_use = true;
     service->owner = owner;
     service->owner_pid = owner->pid;
+    service->required_client_capabilities = required_client_capabilities;
     kstrncpy(service->name, canonical, sizeof(service->name));
     *handle = ipc_make_service_handle(owner->pid, generation, (u32)slot);
     ipc_irq_restore(flags);
