@@ -28,6 +28,10 @@ static void send_packet(u8 flags, u8 dx, u8 dy) {
 int main(void) {
     mouse_set_bounds(800, 600);
 
+    mouse_test_process_byte(0x00u, 0x1Du);
+    expect(keyboard_bytes == 0 && mouse_packet_count() == 0,
+           "bytes without output-buffer status are ignored");
+
     mouse_test_process_byte(0x01u, 0x1Eu);
     expect(keyboard_bytes == 1 && last_keyboard_byte == 0x1E,
            "non-AUX byte is routed to keyboard");
