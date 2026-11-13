@@ -352,11 +352,20 @@ jobs:
             # movement and save-under restoration pixel-for-pixel.
             printf 'screendump build/charisos-pointer-start-preview.ppm\n'
             sleep 1
-            printf 'mouse_move 300 200\n'
+            # Keep every relative packet within the signed 8-bit PS/2
+            # movement range. A single large HMP delta can set the device's
+            # overflow flag; the guest correctly discards such a packet.
+            for step in {1..5}; do
+              printf 'mouse_move 20 16\n'
+              sleep 0.2
+            done
             sleep 1
             printf 'screendump build/charisos-pointer-moved-preview.ppm\n'
             sleep 1
-            printf 'mouse_move -300 -200\n'
+            for step in {1..5}; do
+              printf 'mouse_move -20 -16\n'
+              sleep 0.2
+            done
             sleep 1
             printf 'screendump build/charisos-pointer-restored-preview.ppm\n'
             sleep 1

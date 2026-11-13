@@ -87,7 +87,7 @@
 
 ## Phase 6: Window System (PARTIAL)
 - [x] Window/widget/input foundations exist; WM bounds window count, dimensions, allocation size, title strings, clipping and z-order
-- [x] PS/2 mouse input and pointer-driven shell interaction
+- [x] PS/2 mouse input and pointer-driven shell interaction; QEMU verifies pointer movement and pixel-exact save-under restoration
 - [x] Host-side WM lifecycle and bounds regression tests
 - [x] Bufferless shell-surface registration without duplicate pixel buffers
 - [x] Metadata-level move, transactional resize, minimize, restore, visibility and focus-cycle APIs with host tests
@@ -108,7 +108,7 @@
 - [x] Add direct Files, Terminal, Settings and Browser launch cards with responsive one-/two-/four-column geometry and a live PIT/PMM System Overview panel
 - [x] Add a lower System Status panel with live memory-allocation and display-profile values
 - [x] Add a Kernel Activity panel with O(1) context-switch, interrupt and syscall counters; suppress it when the selected text scale or available geometry cannot accommodate it
-- [x] Capture and verify the 1024×768 workspace, native app windows, multi-window focus routing, maximize/restore, keyboard resize, System Status, Kernel Activity and settings persistence across reboot in CI run #732
+- [x] Capture and verify the 1024×768 workspace, native app windows, multi-window focus routing, maximize/restore, keyboard resize, System Status, Kernel Activity and settings persistence across reboot in CI workflow run #1000
 - [ ] Use the remaining desktop area for useful user-facing content; the verified system panels are not a substitute for a richer workspace
 - [ ] Validate the full font/UI scale matrix and additional 1280×800 and 1920×1080 framebuffer modes
 
@@ -165,20 +165,36 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Validate configured IPv4 interface/gateway host addresses, reject subnet network/directed-broadcast IDs and off-link gateways, preserve `/31` and `/32`, and resolve external traffic through the on-link gateway instead of ARPing the remote destination; host tests cover configuration, routing and DHCP lease boundaries; reject zero-prefix (`/0`) masks so external destinations cannot be misclassified as on-link
 
 ## Phase 9: Desktop Environment (PARTIAL, ACTIVE)
+
+### Settings v2 target scope — planned, not implemented
+The complete Settings information architecture and capability gates are defined in [docs/settings-architecture.md](./docs/settings-architecture.md). Do not ship decorative controls before their owning services exist.
+
+- [ ] Replace the current Display-only Settings page and three cosmetic navigation labels with real searchable category/page navigation and per-page keyboard focus.
+- [ ] Display: orientation, resolution, refresh rate, mode test/revert, per-display scaling, brightness when supported, night light, color profiles/calibration and monitor arrangement.
+- [ ] Appearance: dark/light/automatic style, accent palettes, multiple CC0 wallpapers with preview/fallback and per-workspace backgrounds.
+- [ ] Multitasking: named virtual workspaces, overview, snap/tiling, screen-edge actions, app switching preferences and multi-monitor workspace rules.
+- [ ] Devices: pointer speed/acceleration/buttons/scrolling; detected touchpad settings; keyboard input sources/layout switching, special-character entry, repeat behavior and configurable shortcuts.
+- [ ] Sound and power: real audio output/input inventory, per-device/app volume and alerts; power modes, screen-off timers, battery/lid telemetry and suspend/resume only where hardware support exists.
+- [ ] Apps and services: default applications, startup/background policy, per-app capabilities, notification permissions/history/quiet hours and scoped local/online search providers.
+- [ ] Accounts and sharing: local profiles, secure Google/Microsoft/Apple authorization flows, token revocation, authenticated file/media sharing and expiring share grants.
+- [ ] Wellbeing and accessibility: screen-time summaries/limits, break reminders, high contrast, pointer options, keyboard accessibility, magnifier and screen-reader service.
+- [ ] System: privacy/security status and per-app permissions, region/language/locale, timezone-aware date/time, users, authenticated remote desktop, secure SSH, About, signed software updates and rollback/recovery.
+- [ ] Build the settings registry, capability detection, validation, apply/read-back/rollback, versioned configuration migration and regression tests before expanding the page count.
+
 - [x] Minimal workspace replaces the dashboard-style home surface; Files desktop shortcut, launcher and taskbar render in QEMU
 - [x] Native Files launcher and read-only FAT32 root browser (8.3 names only)
 - [x] Native Terminal surface with bounded built-in commands
 - [x] Native Calculator window integrated with WM lifecycle, z-order, resize, focus and titlebar handling; sequential integer arithmetic, checked signed 32-bit overflow, divide-by-zero handling, mouse keypad, keyboard input and F8 launch are covered by host regression tests; QEMU captures the native window at 200% text and 120% UI scale
 - [x] Settings controls for font family, text size and global UI scale
 - [x] Settings persist to `/CHARISOS.CFG` on supported primary ATA FAT32 and reload after reboot in CI
-- [x] QEMU capture verifies the desktop after closing Settings at 200% text and 120% interface scale without the previous welcome-card clipping
+- [x] QEMU verifies the Settings window reflows at 200% text and 120% UI scale, and captures the persisted 300% text layout after reboot
 - [x] Add a responsive one-/two-/four-column workspace shortcut grid for Files, Terminal, Settings and Browser with bounded hit testing
 - [x] Add verified live system status indicators (uptime and PMM memory counters) and a labelled workspace hierarchy
 - [x] Add scale-aware workspace geometry and suppress secondary card descriptions at larger font scales
 - [x] Distribute shortcut cards across responsive one-, two- or four-column layouts with bounded card width (fresh QEMU visual verification pending)
-- [ ] Verify card and System Overview typography at 100/125/150/200% text/UI scales; add measured wrapping where clipping remains
+- [ ] Verify card and System Overview typography at 125/150% intermediate text/UI scales and add measured wrapping where clipping remains; CI currently captures 100%, 200% and 300% font presets at 1024×768
 - [ ] Implement shared layout primitives: measure/arrange, horizontal/vertical flow, padding/gaps, wrapping, clipping/ellipsis and scroll containers
-- [ ] Verify layout at 100/125/150/200% text/UI scales and 1024x768, 1280x800 and 1920x1080 framebuffer sizes
+- [ ] Verify the full 80/100/120% UI-scale matrix and 1280×800/1920×1080 framebuffer sizes; CI currently exercises 1024×768 with 100%, 200% and 300% text settings
 - [x] Standardize native app titlebars, close controls, focus indication and keyboard dispatch for current applications
 - [x] Add independently movable windows, multi-window z-order, taskbar focus/restore and Alt+Tab
 - [x] Add pointer resize handles, maximize/restore and focused-window keyboard shortcuts
@@ -237,7 +253,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [ ] Persistent audit log
 - [x] Allocate each kernel task stack from page-aligned supervisor-only writable/NX frames, with a genuinely unmapped guard page and deferred physical-frame reclamation after context switch
 - [x] Configure a dedicated, aligned TSS.IST1 landing stack for page-fault vector 14 and verify the exception frame remains within it
-- [x] QEMU deliberately writes into a kernel task's unmapped stack guard; CI run #732 verifies IST1 frame placement and the diagnostic panic markers
+- [x] QEMU deliberately writes into a kernel task's unmapped stack guard; CI run #1000 verifies IST1 frame placement and the diagnostic panic markers
 - [ ] Add a separate IST2/double-fault stack and nested-fault regression; the guard test halts safely rather than attempting unsafe recovery of a damaged kernel task
 
 ## Phase 15: Configuration & Persistence (PARTIAL, QEMU VERIFIED)
@@ -264,9 +280,9 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] WM list traversal detects duplicate nodes and remains bounded if links form a cycle
 - [x] Build against the generic x86-64 baseline and disable BMI/BMI2 code generation
 - [x] CI disassembly gate rejects accidental BMI/BMI2-family kernel instructions
-- [x] CI run #732 passed the freestanding build, x86-64 baseline audit, BIOS/ring-3 isolation checks, VMM huge-page/permission regression suite, dedicated kernel-stack guard fault on IST1 and QEMU desktop/settings capture
-- [x] QEMU capture from run #732 verifies Files, Terminal, Browser, multi-window routing, maximize/restore, keyboard resize, System Status and Kernel Activity counters
-- [x] QEMU guard-probe from run #732 verifies the kernel stack-guard #PF arrives on IST1 and produces the expected diagnostic markers
+- [x] CI workflow run #1000 passed the freestanding build, x86-64 baseline audit, BIOS/ring-3 isolation checks, fresh-address-space ELF execution, VMM huge-page/permission regression suite, waitpid and IPC tests, dedicated kernel-stack guard fault on IST1, QEMU pointer restoration and desktop/settings persistence captures
+- [x] QEMU capture from run #1000 verifies Files, Terminal, Browser, multi-window routing, maximize/restore, keyboard resize, System Status and Kernel Activity counters
+- [x] QEMU guard-probe from run #1000 verifies the kernel stack-guard #PF arrives on IST1 and produces the expected diagnostic markers
 - [x] FAT32 settings persistence is read back and verified after reboot (`font_scale=2`, `ui_scale=120`); the capture also checks the largest font preset
 - [ ] Expand automated regression coverage to pointer-drag resize, snap/tiling, real hardware and long-session desktop stability
 
@@ -378,7 +394,7 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 - [ ] Real Internet path verification: DHCP/static config, DNS, HTTP, TLS, timeouts, packet loss and reconnect behavior
 - [x] Shortlist and record high-resolution CC0 wallpaper sources with source pages, author and original dimensions; see assets/wallpapers/README.md
 - [ ] Download and vendor the source files, record checksums and re-verify files after download
-- [ ] Wallpaper asset pipeline with image dimension limits, safe decoding and aspect-ratio-aware scaling
+- [x] Wallpaper build pipeline pins and hashes a CC0 source, converts it to a bounded RGB565 CWP1 Multiboot2 module, and validates signature/version/dimensions/stride/payload before aspect-ratio-aware framebuffer rendering
 - [ ] High-quality bundled wallpaper set with no embedded logos, watermarks or UI overlays; user-selectable wallpaper and fallback procedural themes
 - [ ] Desktop capture pipeline publishes the actual QEMU framebuffer capture and keeps README screenshots synchronized with the tested commit
 - [ ] Native terminal visual pass: near-black console canvas, compact chrome, dedicated monospace font metrics, carefully measured CharisOS ASCII banner and stable prompt/output layout

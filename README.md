@@ -31,8 +31,8 @@ CharisOS is an operating system under active development. Its kernel boots and r
 | User mode | DPL3 `int 0x80` bootstrap path exercised; static ELF64 `ET_EXEC` loader uses transactional address-space replacement; a separate CI-only build now exercises authorized ELF entry |
 | Storage | Primary ATA PIO and FAT32 support; current Files interface is read-only and limited to the root directory and 8.3 names |
 | Graphical shell | Framebuffer workspace with independent Terminal, Files, Calculator, Browser, Settings and About windows; workspace and application coverage remain limited |
-| Window manager | Bounded ownership, back-to-front composition, focus-only input, move, lower-right resize grip, maximize/restore, minimize, taskbar switching and Alt+Tab; snap/tiling and QEMU pointer-resize validation remain unfinished |
-| Settings | Font family, text size and interface scale; CI verifies saved values survive a reboot on a writable FAT32 test disk |
+| Window manager | Bounded ownership, back-to-front composition, focus-only input, move, lower-right resize grip, maximize/restore, minimize, taskbar switching and Alt+Tab; QEMU verifies PS/2 pointer movement and save-under restoration, while pointer-drag resize and snap/tiling remain unfinished |
+| Settings | Font family, text size and interface scale; QEMU verifies 200% and 300% text layouts, and saved preferences survive reboot on a writable FAT32 test disk |
 | Security | Selected capability checks and input validation; page faults use a dedicated TSS.IST1 stack with QEMU guard-fault verification; overall enforcement and isolation remain incomplete |
 | Networking | RTL8139 polling Ethernet TX/RX; ARP with sender/target validation and bounded retries, IPv4, ICMP, UDP, static routing with validated interface/gateway hosts, contiguous nonzero `/1`–`/32` masks (including `/31` and `/32`), on-link ARP and gateway next-hop selection, authenticated DNS A-record responses, constrained single-segment TCP, bounded plain HTTP with chunked decoding and a text-only browser preview, and a bounded DHCPv4 client with lease renewal are implemented. Real-LAN interoperability remains unverified; IPv6, TLS/HTTPS, robust multi-connection TCP and Wi-Fi are not implemented |
 | Socket API | Kernel-only fixed 16-entry AF_INET stream/datagram facade; boot table initialization is tested. This is not a complete POSIX socket stack or a userspace socket ABI |
@@ -44,17 +44,17 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop captures
 
-The primary image below is a **real 1024×768 QEMU framebuffer capture**, not a mockup. It was produced by the successful CI workflow run [43258397426](https://github.com/Liladizilla/charis__OS/actions/runs/43258397426) on the DHCP integration branch at `43c92a3`, then merged without source changes into `main` as `81e861e` on 12 November 2026.
+The checked-in image below is a **real 1024×768 QEMU framebuffer capture**, not a mockup. It documents the 12 November 2026 workspace; the newest 13 November capture set is linked separately below because the CI artifact contains several distinct pointer, Settings and native-app states.
 
 ![CharisOS desktop workspace, QEMU capture from 12 November 2026](docs/screenshots/charisos-desktop-2026-11-12.png)
 
-The calculator integration's [desktop preview artifact](https://github.com/Liladizilla/charis__OS/actions/runs/43411689911#artifacts) contains the Browser, Files, multi-window, maximized, resized, Settings, persisted-Settings-after-reboot, scaled-desktop, Calculator-at-200%-font/120%-UI and Terminal captures, together with serial and QEMU logs. The artifact is retained by GitHub Actions for a limited period; the desktop image above is checked into this repository.
+The latest [desktop preview artifact from workflow run #1000](https://github.com/Liladizilla/charis__OS/actions/runs/43487691015#artifacts) contains the clean workspace with the pointer parked clear of the heading, pointer start/moved/restored captures, Browser, Files, multi-window, maximized, resized, Settings at 200% and 300% text, Settings after reboot, scaled desktop, Calculator, Terminal, and serial/QEMU logs. GitHub retains the artifact for a limited period. The checked-in image above remains the earlier 12 November reference.
 
 ### Latest desktop validation
 
-The `Build, Boot & Ring-3 Test` job completed successfully in workflow run [43411689911](https://github.com/Liladizilla/charis__OS/actions/runs/43411689911). The QEMU capture step exercised the desktop, Browser, Files and Terminal launch paths; simultaneous Files/Terminal windows and Alt+Tab routing; maximize/restore and keyboard resize; F8 Calculator launch and its native window at 200% text and 120% UI scale; display preference changes; and persistence of font and UI-scale values across a reboot using a writable FAT32 test disk.
+The `Build, Boot & Ring-3 Test` job completed successfully in workflow run [#1000](https://github.com/Liladizilla/charis__OS/actions/runs/43487691015) on tested PR head `61b5cd0`, subsequently merged to `main` as `2f2a935`. All 51 workflow steps passed: freestanding kernel/ISO build, x86-64 baseline, BIOS/ring-3 boot, fresh-address-space ELF execution, VMM permission/huge-page regressions, waitpid, blocking/authenticated IPC, kernel-stack guard/IST containment, PS/2 pointer movement/save-under restoration, and desktop capture. The desktop gate verifies 200% text/120% UI and 300% text layouts, then reads the persisted FAT32 settings back after reboot.
 
-The screenshot documents the current engineering state, not a finished commercial desktop. The workspace is compact and framebuffer-based; Files remains read-only and limited to the FAT32 root with 8.3 names; Terminal is a bounded kernel command environment; Browser supports plain HTTP only. The visual system, application depth, hardware coverage and end-user workflows remain active work. Successful CI is evidence of these specific tests, not proof of broad hardware compatibility or production readiness.
+The captures document the current engineering state, not a finished commercial desktop. The workspace is compact and framebuffer-based; Files remains read-only and limited to the FAT32 root with 8.3 names; Terminal is a bounded kernel command environment; Browser supports plain HTTP only. Pointer-drag resize, snap/tiling, the full intermediate scale matrix, additional framebuffer resolutions, broader hardware coverage and richer end-user workflows remain active work. Successful CI is evidence of these specific tests, not proof of broad hardware compatibility or production readiness.
 
 Older [run #724 desktop capture](docs/screenshots/charisos-desktop-run-724.png), [run #722 capture](docs/screenshots/charisos-desktop-run-722.png) and [historical preview gallery](docs/screenshots/charisos-preview-gallery.jpg) remain available for comparison.
 
@@ -99,6 +99,7 @@ Do not use this project to store sensitive data or as the only operating system 
 |---|---|
 | [TODO.md](./TODO.md) | Current implementation status, milestones and remaining work |
 | [docs/charis-design-language.md](./docs/charis-design-language.md) | Desktop visual principles, scaling goals and current UI limitations |
+| [docs/settings-architecture.md](./docs/settings-architecture.md) | Full Settings information architecture, capability readiness, hardware dependencies and delivery sequence |
 | [SECURITY.md](./SECURITY.md) | Security reporting and responsible-disclosure guidance |
 | [docs/RELEASE_INTEGRATION.md](./docs/RELEASE_INTEGRATION.md) | Mainline branch discipline, test evidence and ISO release provenance |
 | [LICENSE](./LICENSE) | MIT license |
@@ -276,8 +277,10 @@ The build uses the **host** GCC with `-ffreestanding`; a cross-compiler is not
 required. `nasm`, `grub-mkrescue`, `xorriso`, `curl`, Python Pillow, and the
 Inter font package are required. The image build fetches one pinned CC0 wallpaper
 from Wikimedia Commons, verifies its expected byte length and SHA-1, and converts
-it to a bounded RGB565 boot asset. A network connection is therefore required
-for the first clean build; the running OS does not download or decode the JPEG.
+it to a bounded RGB565 CWP1 Multiboot2 boot module. The kernel validates its
+signature, version, dimensions, stride and payload bounds before drawing. A
+network connection is therefore required for the first clean build; the running
+OS does not download or decode the JPEG in the privileged kernel.
 
 ### Build and run
 
