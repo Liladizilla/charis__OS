@@ -153,15 +153,15 @@ static bool parse_headers(void) {
 
 static void deliver_body(const u8* data, usize length) {
     if (!length || !active) return;
-    if (received_body > HTTP_BODY_MAX ||
-        length > (usize)(HTTP_BODY_MAX - received_body)) {
-        finish_request(false, true);
-        return;
-    }
     if (has_content_length) {
         u32 remaining = expected_body > received_body
             ? expected_body - received_body : 0;
         if (length > remaining) length = remaining;
+    }
+    if (received_body > HTTP_BODY_MAX ||
+        length > (usize)(HTTP_BODY_MAX - received_body)) {
+        finish_request(false, true);
+        return;
     }
     if (length && body_callback) body_callback(data, length, request_context);
     if (!active) return;
