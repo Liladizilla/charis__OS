@@ -305,7 +305,9 @@ static void test_ipv4_interface_and_gateway_boundaries(void) {
     const u8 bad_network_gateway[4] = {192, 168, 1, 0};
     const u8 bad_broadcast_gateway[4] = {192, 168, 1, 255};
     const u8 no_gateway[4] = {0, 0, 0, 0};
+    const u8 zero_mask[4] = {0, 0, 0, 0};
 
+    assert(!net_stack_configure_ipv4(local_ip_test, zero_mask, no_gateway));
     assert(!net_stack_configure_ipv4(network_ip, mask_test, no_gateway));
     assert(!net_stack_configure_ipv4(directed_broadcast, mask_test, no_gateway));
     assert(!net_stack_configure_ipv4(zero_ip, mask_test, no_gateway));
