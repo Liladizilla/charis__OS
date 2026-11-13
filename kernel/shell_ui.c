@@ -836,6 +836,12 @@ static u32 settings_button_height(void) {
     u32 height = ui_px(34), readable = text_height() + ui_px(8);
     return height > readable ? height : readable;
 }
+static u32 settings_close_size(void) {
+    u32 size = ui_px(26), glyph_height = 0;
+    gfx_text_size("x", NULL, &glyph_height);
+    u32 readable = glyph_height + ui_px(8);
+    return size > readable ? size : readable;
+}
 static u32 settings_nav_step(void) {
     u32 step = ui_px(42), readable = text_height() + ui_px(14);
     return step > readable ? step : readable;
@@ -982,10 +988,9 @@ static void draw_settings_window(window_t* win) {
                         "SYSTEM PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
         fb_reset_clip();
     }
-    u32 close_size = ui_px(26), close_text_w = 0, close_text_h = 0;
+    u32 close_size = settings_close_size();
+    u32 close_text_w = 0, close_text_h = 0;
     gfx_text_size("x", &close_text_w, &close_text_h);
-    u32 close_minimum = close_text_h + ui_px(8);
-    if (close_size < close_minimum) close_size = close_minimum;
     u32 close_x = x+cw-close_size-ui_px(16);
     u32 close_y = y+(title_h>close_size ? (title_h-close_size)/2u : 0u);
     fb_fill_rect(close_x, close_y, close_size, close_size, CHARIS_UI_SURFACE);
@@ -1138,7 +1143,12 @@ static bool settings_handle_window_click(window_t* win, int mx, int my) {
     if (mx < (int)x || mx >= (int)(x+cw) ||
         my < (int)y || my >= (int)(y+ch)) return false;
     if (my < (int)(y+title_h)) {
-        if (mx >= (int)(x+cw-ui_px(48))) {
+        u32 close_size = settings_close_size();
+        u32 close_x = x+cw-close_size-ui_px(16);
+        u32 close_y = y+(title_h>close_size
+                      ? (title_h-close_size)/2u : 0u);
+        if (mx >= (int)close_x && mx < (int)(close_x+close_size) &&
+            my >= (int)close_y && my < (int)(close_y+close_size)) {
             settings_open=false;
             return true;
         }
