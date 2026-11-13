@@ -347,12 +347,11 @@ jobs:
               sleep 1
             done
             sleep 4
-            printf 'screendump build/charisos-desktop-preview.ppm\n'
-            sleep 2
-            # Exercise the real emulated PS/2 path. Start at the driver's
-            # initial 50,50 pointer position, move to clear workspace, then
-            # return exactly. The pair of screenshots proves both movement
-            # and restoration of the previous framebuffer pixels.
+            # Capture the starting PS/2 pointer state, then move away and
+            # return by the exact inverse delta. This proves both cursor
+            # movement and save-under restoration pixel-for-pixel.
+            printf 'screendump build/charisos-pointer-start-preview.ppm\n'
+            sleep 1
             printf 'mouse_move 300 200\n'
             sleep 1
             printf 'screendump build/charisos-pointer-moved-preview.ppm\n'
@@ -360,6 +359,17 @@ jobs:
             printf 'mouse_move -300 -200\n'
             sleep 1
             printf 'screendump build/charisos-pointer-restored-preview.ppm\n'
+            sleep 1
+            # The clean published workspace image should not have the pointer
+            # sitting on its heading. Reposition it through bounded relative
+            # deltas; a single oversized PS/2 motion can set the overflow bits
+            # and is correctly discarded by the guest packet decoder.
+            for step in {1..10}; do
+              printf 'mouse_move 80 60\n'
+              sleep 0.25
+            done
+            sleep 1
+            printf 'screendump build/charisos-desktop-preview.ppm\n'
             sleep 1
             # Verify the Browser desktop shortcut path and capture its native
             # window before exercising the multi-window Files/Terminal path.
@@ -467,16 +477,43 @@ jobs:
             >build/desktop-capture-qemu.log 2>&1 || true
 
           test -s build/charisos-desktop-preview.ppm
+          test -s build/charisos-pointer-start-preview.ppm
           test -s build/charisos-pointer-moved-preview.ppm
           test -s build/charisos-pointer-restored-preview.ppm
           python3 tools/verify-pointer-capture.py \
-            build/charisos-desktop-preview.ppm \
+            build/charisos-pointer-start-preview.ppm \
             build/charisos-pointer-moved-preview.ppm \
             build/charisos-pointer-restored-preview.ppm
           test -s build/charisos-browser-preview.ppm
           grep -q 'SHELL_APP_OPEN Browser' build/desktop-capture-serial.log
           grep -q 'SHELL_APP_OPEN Calculator' build/desktop-capture-serial.log
-          grep -q 'SHELL_SETTINGS_REFLOW 912x544 ' build/desktop-capture-serial.log
+          grep -q 'SHELL_SETTINGS_REFLOW 912x' build/desktop-capture-serial.log
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          serial = Path("build/desktop-capture-serial.log").read_text(errors="replace")
+          records = [
+              line.split("SHELL_SETTINGS_LAYOUT ", 1)[1]
+              for line in serial.splitlines()
+              if "SHELL_SETTINGS_LAYOUT " in line
+          ]
+          if not records:
+              raise SystemExit("missing Settings layout metrics")
+          fields = dict(re.findall(r"([a-z_]+)=([0-9]+)", records[-1]))
+          required = {"width", "total", "title", "row", "button", "text", "rail", "nav_step", "footer"}
+          missing = required.difference(fields)
+          if missing:
+              raise SystemExit(f"missing Settings metrics: {sorted(missing)}")
+          metrics = {key: int(value) for key, value in fields.items()}
+          assert metrics["width"] == 912, metrics
+          assert metrics["title"] >= metrics["text"], metrics
+          assert metrics["button"] > metrics["text"], metrics
+          assert metrics["nav_step"] > metrics["text"], metrics
+          assert metrics["footer"] > metrics["text"], metrics
+          assert metrics["rail"] < metrics["width"] // 2, metrics
+          assert metrics["row"] >= metrics["text"] + 20, metrics
+          print("Settings large-font layout metrics:", metrics)
+          PY
           test -s build/charisos-calculator-preview.ppm
           test -s build/charisos-files-preview.ppm
           grep -q 'FILES_OPEN' build/desktop-capture-serial.log
@@ -515,6 +552,8 @@ jobs:
             # the desktop without the Settings window obscuring the workspace.
             printf 'sendkey f6\n'
             sleep 2
+            printf 'screendump build/charisos-settings-largest-preview.ppm\n'
+            sleep 1
             printf 'sendkey esc\n'
             sleep 2
             printf 'screendump build/charisos-desktop-large-font-preview.ppm\n'
@@ -530,7 +569,34 @@ jobs:
           grep -q 'CONFIG_LOADED .*font_scale=2 ui_scale=120' build/desktop-reboot-serial.log
           test -s build/charisos-settings-reloaded-preview.ppm
           grep -q 'CONFIG_SAVE OK .*font_scale=3 ui_scale=120' build/desktop-reboot-serial.log
+          test -s build/charisos-settings-largest-preview.ppm
           test -s build/charisos-desktop-large-font-preview.ppm
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          serial = Path("build/desktop-reboot-serial.log").read_text(errors="replace")
+          records = [
+              line.split("SHELL_SETTINGS_LAYOUT ", 1)[1]
+              for line in serial.splitlines()
+              if "SHELL_SETTINGS_LAYOUT " in line
+          ]
+          if not records:
+              raise SystemExit("missing 300 percent Settings layout metrics")
+          fields = dict(re.findall(r"([a-z_]+)=([0-9]+)", records[-1]))
+          metrics = {key: int(value) for key, value in fields.items()}
+          required = {"width", "title", "row", "button", "text", "rail", "nav_step", "footer"}
+          missing = required.difference(metrics)
+          if missing:
+              raise SystemExit(f"missing maximum-font Settings metrics: {sorted(missing)}")
+          assert metrics["width"] == 912, metrics
+          assert metrics["title"] >= metrics["text"], metrics
+          assert metrics["button"] > metrics["text"], metrics
+          assert metrics["nav_step"] > metrics["text"], metrics
+          assert metrics["footer"] > metrics["text"], metrics
+          assert metrics["rail"] < metrics["width"] // 2, metrics
+          assert metrics["row"] >= metrics["text"] + 20, metrics
+          print("Settings 300 percent layout metrics:", metrics)
+          PY
 
           # Open Terminal through its keyboard shortcut, then execute help.
           # This exercises the real keyboard IRQ and shell event path without
@@ -571,6 +637,7 @@ jobs:
           name: charisos-desktop-preview
           path: |
             build/charisos-desktop-preview.ppm
+            build/charisos-pointer-start-preview.ppm
             build/charisos-pointer-moved-preview.ppm
             build/charisos-pointer-restored-preview.ppm
             build/charisos-browser-preview.ppm
@@ -583,6 +650,7 @@ jobs:
             build/charisos-desktop-scaled-preview.ppm
             build/charisos-calculator-preview.ppm
             build/charisos-settings-reloaded-preview.ppm
+            build/charisos-settings-largest-preview.ppm
             build/charisos-desktop-large-font-preview.ppm
             build/charisos-terminal-preview.ppm
             build/desktop-capture-serial.log

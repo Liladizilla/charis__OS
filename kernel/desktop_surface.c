@@ -498,6 +498,20 @@ void desktop_surface_render(void) {
     u32 heading_x = u(48u), heading_y = u(40u);
     u32 heading_w = 0, heading_h = 0;
     gfx_text_size("WORKSPACE", &heading_w, &heading_h);
+
+    /* Keep the workspace title legible over photographs and bright wallpaper.
+     * This is an opaque graphite title strip, not text painted directly over
+     * arbitrary image pixels. */
+    u32 title_left = u(32u);
+    u32 title_width = width > u(64u) ? width-u(64u) : width;
+    u32 title_top = heading_y > u(6u) ? heading_y-u(6u) : 0u;
+    u32 title_height = heading_h + u(12u);
+    fb_fill_rect(title_left, title_top, title_width, title_height,
+                 CHARIS_UI_PANEL);
+    fb_draw_rect(title_left, title_top, title_width, title_height,
+                 CHARIS_UI_BORDER);
+    fb_fill_rect(title_left, title_top, title_width, u(2u),
+                 CHARIS_UI_ACCENT);
     gfx_draw_string(heading_x, heading_y, "WORKSPACE",
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
     u32 secondary_x = heading_x + heading_w + u(24u);
