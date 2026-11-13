@@ -139,8 +139,95 @@ static void ipc_wait_test_sender(void* unused) {
         receiver->state != TASK_STATE_BLOCKED)
         ipc_wait_test_fail("receiver did not re-register for peer close");
 
-    if (ipc_close(ipc_wait_test_sender_handle) != IPC_STATUS_OK)
-        ipc_wait_test_fail("sender endpoint close failed");
+    /* Exercise the real task-exit -> ipc_task_close_all -> peer-wakeup path. */
+    task_exit_with_status(0);
+}
+
+/* Independent workers prove that local endpoint revocation wakes a reader
+ * which is genuinely blocked in ipc_recv_wait(). */
+static task_t* volatile ipc_cancel_receiver_task;
+static ipc_handle_t ipc_cancel_receiver_handle;
+static ipc_handle_t ipc_cancel_peer_handle;
+static volatile s32 ipc_cancel_receiver_result;
+static volatile s32 ipc_cancel_peer_send_result;
+
+static void ipc_cancel_receiver(void* unused) {
+    (void)unused;
+    int result = ipc_recv_wait(ipc_cancel_receiver_handle, NULL, 0, NULL);
+    ipc_cancel_receiver_result = result;
+    if (result != IPC_STATUS_CANCELLED)
+        ipc_wait_test_fail("revoked local endpoint did not cancel blocked receive");
+    task_exit_with_status(0);
+}
+
+static void ipc_cancel_peer(void* unused) {
+    (void)unused;
+    task_sleep_ms(30);
+    int result = ipc_send(ipc_cancel_peer_handle, "x", 1);
+    ipc_cancel_peer_send_result = result;
+    if (result != IPC_STATUS_PEER_CLOSED)
+        ipc_wait_test_fail("peer handle survived local endpoint revocation");
+    task_exit_with_status(0);
+}
+
+static void ipc_cancel_test_coordinator(void* unused) {
+    (void)unused;
+    u64 flags;
+    asm volatile("pushfq; popq %0; cli" : "=r"(flags) : : "memory");
+
+    task_t* receiver = task_create("ipc-cancel-reader",
+        ipc_cancel_receiver, NULL, 0, false);
+    task_t* peer = task_create("ipc-cancel-peer",
+        ipc_cancel_peer, NULL, 0, false);
+    if (!receiver || !peer) {
+        asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
+        ipc_wait_test_fail("cannot create cancellation workers");
+    }
+
+    scheduler_add_task(receiver);
+    scheduler_add_task(peer);
+    if (!ipc_endpoint_pair_create(receiver, peer,
+            IPC_RIGHT_RECEIVE, IPC_RIGHT_SEND,
+            &ipc_cancel_receiver_handle, &ipc_cancel_peer_handle)) {
+        asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
+        ipc_wait_test_fail("cannot create cancellation endpoint pair");
+    }
+    ipc_cancel_receiver_task = receiver;
+    ipc_cancel_receiver_result = 0x7FFFFFFF;
+    ipc_cancel_peer_send_result = 0x7FFFFFFF;
+    asm volatile("pushq %0; popfq" : : "r"(flags) : "memory", "cc");
+
+    /* Require the exact BLOCKED state and waiter link before cancellation;
+     * a queued-message fast path would not exercise the unlink logic. */
+    volatile task_t* blocked_reader = receiver;
+    u32 attempts = 0;
+    while ((!blocked_reader->ipc_wait_endpoint ||
+            blocked_reader->waiting_event != TASK_WAITING_IPC ||
+            blocked_reader->state != TASK_STATE_BLOCKED) &&
+           attempts++ < 5000U) {
+        task_sleep_ms(1);
+    }
+    if (!blocked_reader->ipc_wait_endpoint ||
+        blocked_reader->waiting_event != TASK_WAITING_IPC ||
+        blocked_reader->state != TASK_STATE_BLOCKED)
+        ipc_wait_test_fail("cancellation reader never blocked");
+
+    ipc_task_close_all(receiver);
+
+    /* The receiver returns CANCELLED; the delayed peer must see PEER_CLOSED.
+     * Reap both children to prove that cancellation leaves no waiter/zombie. */
+    for (u32 child = 0; child < 2; child++) {
+        u32 status = 0xFFFFFFFFU;
+        s64 pid = task_waitpid(-1, &status, false);
+        if (pid <= 0 || status != 0)
+            ipc_wait_test_fail("cannot reap cancellation worker cleanly");
+    }
+    if (ipc_cancel_receiver_result != IPC_STATUS_CANCELLED ||
+        ipc_cancel_peer_send_result != IPC_STATUS_PEER_CLOSED)
+        ipc_wait_test_fail("cancellation or peer invalidation result mismatch");
+
+    serial_puts("IPC_WAIT_TEST_CANCEL_OK\n");
+    task_exit_with_status(0);
 }
 #endif
 
@@ -483,6 +570,15 @@ void kernel_main(u32 magic, u64 info_ptr) {
                 &ipc_wait_test_receiver_handle,
                 &ipc_wait_test_sender_handle)) {
             serial_puts("IPC_WAIT_TEST_SETUP_FAILED\n");
+        } else {
+            task_t* cancel_coordinator = task_create(
+                "ipc-cancel-coordinator", ipc_cancel_test_coordinator,
+                NULL, 0, false);
+            if (!cancel_coordinator) {
+                serial_puts("IPC_WAIT_TEST_SETUP_FAILED\n");
+            } else {
+                scheduler_add_task(cancel_coordinator);
+            }
         }
     }
 #endif
