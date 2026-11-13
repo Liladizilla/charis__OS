@@ -475,6 +475,7 @@ static void test_descriptor_transfer_cancel_and_stale_reservations(void) {
     fd_transfer_reservation_t old_reservation = {0};
     assert(fd_transfer_reserve(recipient.pid, FD_RIGHT_READ,
                                &old_reservation));
+    fd_transfer_reservation_t stale_reservation = old_reservation;
     u32 old_generation = old_reservation.generation;
     u32 old_slot = old_reservation.slot;
     fd_transfer_cancel(&old_reservation);
@@ -492,8 +493,8 @@ static void test_descriptor_transfer_cancel_and_stale_reservations(void) {
                  FD_HANDLE_GENERATION_MAX) > old_generation);
 
     active_task = &sender;
-    assert(fd_transfer_commit(&old_reservation, pinned) == FD_HANDLE_INVALID);
-    fd_transfer_cancel(&old_reservation);
+    assert(fd_transfer_commit(&stale_reservation, pinned) == FD_HANDLE_INVALID);
+    fd_transfer_cancel(&stale_reservation);
     active_task = &recipient;
     assert(fd_has_rights(replacement, FD_RIGHT_WRITE));
     fd_release(pinned);
