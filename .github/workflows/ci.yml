@@ -514,11 +514,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Publish ISO artifacts
+      - name: Upload CI boot images for validation
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: charisos-images
+          name: charisos-ci-boot-images
           path: |
             build/charisos-vm.iso
             build/charisos-usb.img
