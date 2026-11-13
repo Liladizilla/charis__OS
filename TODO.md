@@ -126,7 +126,8 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Add kernel-only cancellable blocking receive, atomic waiter registration, message/peer-close wakeups and task-exit unlinking
 - [x] Add dedicated QEMU scheduler coverage proving receiver BLOCKED before send, message wake, second blocking wait and peer-close wake
 - [x] Extend the QEMU waiter gate to cover task-exit peer close and cancellation by revoking a blocked reader's local endpoint; assert CANCELLED/PEER_CLOSED and reap both workers
-- [ ] Add a kernel-owned service namespace with explicit listener registration and accept/reject rendezvous
+- [x] Add a bounded kernel-only service namespace with exact-name registration, CAP_IPC_SERVICE ownership, client-capability policy, generation-protected request handles, blocking connect/accept/reject and task-exit/unregister cleanup
+- [ ] Add dedicated QEMU coverage for blocked client connect and server accept wakeups, service unregister and task-exit races
 - [ ] Add transactional descriptor attachments, reference pinning, recipient-slot reservation and rollback
 - [ ] Only design ring-3 IPC syscalls after user-memory preflight, service authorization and QEMU lifecycle tests exist
 - [ ] Unix domain sockets (socket.c is INET-only)
