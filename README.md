@@ -497,13 +497,24 @@ messages and then receives PEER_CLOSED when its peer closes. Closing an endpoint
 revokes its handle, discards its own inbox and releases one channel reference. Task exit closes all endpoints
 immediately after publishing EXITING.
 
-This is a kernel-only first stage: endpoint-pair creation rejects ring-3 tasks,
-syscall slots 91-93 are unregistered, and the legacy user wrappers are removed.
-Kernel-only blocking receive now uses atomic waiter registration and teardown
-cancellation. Service-name rendezvous, descriptor attachments and
-transactional receive rollback remain unimplemented. Shared-memory syscalls also remain kernel-only because the
-current API returns raw kernel pointers and has no per-task mapping/revocation
-model. The endpoint, rendezvous and resource-transfer contract is in
+Kernel-only blocking receive uses atomic waiter registration and teardown
+cancellation. A bounded kernel service namespace now supports exact-name
+registration, nonzero client capability-mask authorization, request tokens,
+server-side next/accept/reject, and one-time client result retrieval. The
+namespace has 16 service entries and 32 pending request entries; names are
+bounded ASCII identifiers, service names are unique, and service/request
+generations never wrap. Accepted endpoint rights are selected by the service
+owner. Service unregister and server exit reject unaccepted requests; client
+exit discards its pending request metadata and closes task-owned endpoints.
+
+This remains kernel-only: endpoint creation rejects ring-3 tasks, syscall
+slots 91-93 are unregistered, and no user IPC wrappers exist. Service connect
+and result retrieval are nonblocking; clients poll for acceptance or rejection.
+Blocking connect, descriptor attachments, transactional receive rollback and
+public service policy remain unimplemented. Shared-memory syscalls also
+remain kernel-only because the current API returns raw kernel pointers and has
+no per-task mapping/revocation model. The endpoint, rendezvous and
+resource-transfer contract is in
 [Authenticated IPC Endpoints and Resource Transfer](./docs/architecture/authenticated-ipc-endpoints-and-resource-transfer.md).
 These are explicit security boundaries, not claims that public IPC is complete.
 Descriptor tables are task-local and are rebuilt when a task slot is reused. Non-standard descriptor values are 64-bit task-scoped
