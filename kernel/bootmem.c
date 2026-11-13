@@ -109,8 +109,21 @@ static void bootmem_read_mmap(multiboot_info_t* info, u32 off) {
     }
 }
 
+static bool bootmem_tag_string_equals(const u8* text, u32 bytes,
+                                      const char* expected) {
+    if (!text || !expected) return false;
+    u32 i = 0;
+    while (expected[i]) {
+        if (i >= bytes || text[i] != (u8)expected[i]) return false;
+        i++;
+    }
+    return i < bytes && text[i] == 0;
+}
+
 void bootmem_parse_multiboot(multiboot_info_t* info) {
     boot_info.has_framebuffer = false;
+    boot_info.wallpaper_addr = 0;
+    boot_info.wallpaper_size = 0;
     boot_info.cmdline = 0;
     boot_info.boot_loader = 0;
     g_bootmem_region_count = 0;
@@ -147,6 +160,24 @@ void bootmem_parse_multiboot(multiboot_info_t* info) {
         if (type == MULTIBOOT_TAG_END) break;
 
         switch (type) {
+        case MULTIBOOT_TAG_MODULE: {
+            /* Only accept the explicitly named wallpaper module. Bounds are
+             * taken from the tag itself; the image header is validated again
+             * by the renderer before a pixel can be read. */
+            if (size >= 17) {
+                u32 start = read_le32(t + 8);
+                u32 end = read_le32(t + 12);
+                u32 module_size = end - start;
+                if (end > start && module_size <= 16u * 1024u * 1024u &&
+                    bootmem_tag_string_equals(t + 16, size - 16,
+                                              "charisos-wallpaper")) {
+                    boot_info.wallpaper_addr = start;
+                    boot_info.wallpaper_size = module_size;
+                }
+            }
+            break;
+        }
+
         case MULTIBOOT_TAG_CMDLINE:
         case MULTIBOOT_TAG_BOOT_LOADER_NAME:
             if (size > 8) {
@@ -204,6 +235,14 @@ void bootmem_parse_multiboot(multiboot_info_t* info) {
         mem_map_entry_t* r = &g_bootmem_regions[0];
         vga_printf("Boot: first region base=%p len=%p type=%u\n",
                    (void*)(uintptr_t)r->base, (void*)(uintptr_t)r->length, r->type);
+    }
+
+    if (boot_info.wallpaper_addr && boot_info.wallpaper_size) {
+        vga_printf("Boot: wallpaper module at %p (%u bytes)\n",
+                   (void*)(uintptr_t)boot_info.wallpaper_addr,
+                   boot_info.wallpaper_size);
+    } else {
+        vga_puts("Boot: no wallpaper module\n");
     }
 
     if (boot_info.has_framebuffer) {

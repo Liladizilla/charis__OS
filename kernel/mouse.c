@@ -9,6 +9,17 @@ mouse_state_t g_mouse = {50, 50, 0, 0, 0};
 static uint32_t mouse_screen_width = 800;
 static uint32_t mouse_screen_height = 600;
 
+#ifdef MOUSE_HOST_TEST
+static u64 mouse_host_irq_state;
+static inline u64 mouse_irq_save(void) {
+    u64 previous = mouse_host_irq_state;
+    mouse_host_irq_state = 1;
+    return previous;
+}
+static inline void mouse_irq_restore(u64 flags) {
+    mouse_host_irq_state = flags;
+}
+#else
 static inline u64 mouse_irq_save(void) {
     u64 flags;
     asm volatile("pushfq; popq %0; cli" : "=r"(flags) :: "memory");
@@ -18,6 +29,7 @@ static inline u64 mouse_irq_save(void) {
 static inline void mouse_irq_restore(u64 flags) {
     asm volatile("pushq %0; popfq" :: "r"(flags) : "memory", "cc");
 }
+#endif
 
 void mouse_set_bounds(uint32_t width, uint32_t height) {
     /* Coordinates are signed 32-bit values. Do not store a bound that cannot
@@ -193,47 +205,48 @@ void mouse_init(void) {
     kprintf("Mouse: PS/2 enabled, config=0x%02x ACK(F6,F4)=yes\n", config);
 }
 
-void mouse_handler(void) {
-    /* PS/2 mouse packets are three bytes. Byte 0 always has bit 3 set, which is
-     * how the start of a packet is recognised; without that check a stray byte
-     * desynchronises the stream and every later packet is garbage. */
-    static u8 packet[3];
-    static int index = 0;
-    static bool overflow_seen = false;
+static u8 mouse_packet[3];
+static u8 mouse_packet_index;
+static bool mouse_overflow_seen;
 
-    u8 byte = inb(0x60);
-
-    if (index == 0) {
-        /* Wait for a valid header byte. */
-        if (!(byte & 0x08)) return;
-        /* Overflow bits mean the packet is unreliable; skip it. */
-        overflow_seen = (byte & 0xC0) != 0;
+/* Consume only bytes the 8042 says are present. IRQ12 normally means AUX, but
+ * routing a non-AUX byte through the keyboard decoder is safer than corrupting
+ * the mouse packet stream or silently losing a key. */
+static void mouse_process_byte(u8 status, u8 byte) {
+    if (!(status & PS2_STATUS_OUTPUT)) return;
+    if (!(status & PS2_STATUS_AUX)) {
+        keyboard_process_scancode(byte);
+        return;
     }
 
-    packet[index++] = byte;
+    if (mouse_packet_index == 0) {
+        /* Bit 3 is fixed in every PS/2 packet header. A stray byte must not
+         * shift the next two bytes into movement/button fields. */
+        if (!(byte & 0x08u)) return;
+        mouse_overflow_seen = (byte & 0xC0u) != 0;
+    }
 
-    if (index < 3) return;
-    index = 0;
-    if (overflow_seen) { overflow_seen = false; return; }
+    mouse_packet[mouse_packet_index++] = byte;
+    if (mouse_packet_index < 3) return;
+    mouse_packet_index = 0;
+    if (mouse_overflow_seen) {
+        mouse_overflow_seen = false;
+        return;
+    }
+    mouse_overflow_seen = false;
 
-    u8 flags = packet[0];
+    u8 flags = mouse_packet[0];
     g_mouse_packets++;
-    g_mouse.buttons = flags & 0x07;
+    g_mouse.buttons = flags & 0x07u;
+    g_mouse.dx = (s32)(s8)mouse_packet[1];
+    g_mouse.dy = (s32)(s8)mouse_packet[2];
 
-    /* Deltas are signed and must be sign-extended, not masked. */
-    g_mouse.dx = (s32)(s8)packet[1];
-    g_mouse.dy = (s32)(s8)packet[2];
-
-    /* Do the addition in 64 bits so a packet near INT32_MAX cannot trigger
-     * signed overflow before the screen clamp is applied. */
     s64 next_x = (s64)g_mouse.x + (s64)g_mouse.dx;
     s64 next_y = (s64)g_mouse.y - (s64)g_mouse.dy;
-
     if (!mouse_screen_width) next_x = 0;
     else if (next_x < 0) next_x = 0;
     else if (next_x >= (s64)mouse_screen_width)
         next_x = (s64)mouse_screen_width - 1;
-
     if (!mouse_screen_height) next_y = 0;
     else if (next_y < 0) next_y = 0;
     else if (next_y >= (s64)mouse_screen_height)
@@ -243,6 +256,18 @@ void mouse_handler(void) {
     g_mouse.y = (s32)next_y;
 }
 
+#ifdef MOUSE_HOST_TEST
+void mouse_test_process_byte(u8 status, u8 byte) {
+    mouse_process_byte(status, byte);
+}
+#endif
+
+void mouse_handler(void) {
+    u8 status = inb(PS2_STATUS_PORT);
+    if (!(status & PS2_STATUS_OUTPUT)) return;
+    u8 byte = inb(PS2_DATA_PORT);
+    mouse_process_byte(status, byte);
+}
 bool mouse_has_input(void) {
     mouse_state_t mouse;
     mouse_get_snapshot(&mouse);

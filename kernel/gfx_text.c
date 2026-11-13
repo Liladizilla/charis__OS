@@ -2,8 +2,8 @@
  *
  * Family 0 uses measured proportional advances, family 1 is fixed-cell
  * monospace, and family 2 draws serif terminals on qualifying vertical stems.
- * Every mode is generated from the built-in 8x16 font, so boot rendering has
- * no external filesystem or runtime font dependency.
+ * Every mode is generated from the embedded Inter-derived 16x22 glyph
+ * table, so boot rendering has no external filesystem or runtime dependency.
  */
 #include <kernel/gfx_text.h>
 #include <kernel/fb.h>
@@ -41,13 +41,12 @@ static const u8* glyph_data(char ch, u32* left, u32* right) {
     if (index < 0) index = font_glyph_index('?');
     if (index < 0) return NULL;
 
-    const u8* rows = font_glyph_rows((u16)index);
+    const u8* pixels = font_glyph_data((u16)index);
     u32 first = font_cell_w, last = 0;
     bool found = false;
     for (u32 row = 0; row < font_cell_h; row++) {
-        u8 bits = rows[row];
         for (u32 col = 0; col < font_cell_w; col++) {
-            if (!(bits & (1U << col))) continue;
+            if (!pixels[row * font_cell_w + col]) continue;
             if (col < first) first = col;
             if (col > last) last = col;
             found = true;
@@ -56,7 +55,7 @@ static const u8* glyph_data(char ch, u32* left, u32* right) {
     if (!found) first = last = 0;
     if (left) *left = first;
     if (right) *right = last;
-    return rows;
+    return pixels;
 }
 
 static u32 glyph_advance_with_style(char ch, u32 scale, u32 style) {
@@ -79,8 +78,8 @@ static void draw_glyph_with_style(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 sca
     if (!g_framebuffer.initialized || !scale || scale > 8) return;
 
     u32 left = 0, right = font_cell_w - 1;
-    const u8* rows = glyph_data(ch, &left, &right);
-    if (!rows) return;
+    const u8* pixels = glyph_data(ch, &left, &right);
+    if (!pixels) return;
 
     bool proportional = (style != 1);
     u32 source_left = proportional ? left : 0;
@@ -90,11 +89,17 @@ static void draw_glyph_with_style(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 sca
         fb_fill_rect(x, y, advance_width, (u32)font_cell_h * scale, bg);
 
     for (u32 row = 0; row < font_cell_h; row++) {
-        u8 bits = rows[row];
         for (u32 col = source_left; col <= source_right; col++) {
-            if (!(bits & (1U << col))) continue;
+            u8 coverage = pixels[row * font_cell_w + col];
+            if (!coverage) continue;
+            u32 alpha = ((u32)coverage * 255u + 7u) / 15u;
             u32 dx = proportional ? col - source_left : col;
-            fb_fill_rect(x + dx * scale, y + row * scale, scale, scale, fg);
+            for (u32 sy = 0; sy < scale; sy++) {
+                for (u32 sx = 0; sx < scale; sx++) {
+                    fb_blend_pixel(x + dx * scale + sx,
+                                   y + row * scale + sy, fg, (u8)alpha);
+                }
+            }
         }
     }
 
@@ -109,7 +114,7 @@ static void draw_glyph_with_style(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 sca
             if (side && source_right == source_left) continue;
             u32 ink_rows = 0, first_row = font_cell_h, last_row = 0;
             for (u32 row = 0; row < font_cell_h; row++) {
-                if (!(rows[row] & (1U << col))) continue;
+                if (!pixels[row * font_cell_w + col]) continue;
                 if (row < first_row) first_row = row;
                 last_row = row;
                 ink_rows++;

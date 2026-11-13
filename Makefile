@@ -12,6 +12,8 @@ GCC = $(CROSS_COMPILE)gcc
 LD = $(CROSS_COMPILE)ld
 NASM ?= nasm
 QEMU ?= qemu-system-x86_64
+CURL ?= curl
+PYTHON ?= python3
 
 # Fedora names this grub2-mkrescue; Debian/Ubuntu use grub-mkrescue.
 # An explicit GRUB=... override remains supported.
@@ -38,24 +40,51 @@ LD_FLAGS = -T link.ld -nostdlib -z max-page-size=0x1000 -z noexecstack
 
 # Source files
 BOOT_SOURCES = $(BOOT_DIR)/boot.asm $(BOOT_DIR)/long_mode.asm
-KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/bootmem.c $(KERNEL_DIR)/heap.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/rtc.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c $(KERNEL_DIR)/net_stack.c $(KERNEL_DIR)/dhcp.c $(KERNEL_DIR)/dns.c $(KERNEL_DIR)/tcp.c $(KERNEL_DIR)/http.c $(KERNEL_DIR)/ata.c $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/vfs.c $(KERNEL_DIR)/elf.c $(KERNEL_DIR)/user.c $(KERNEL_DIR)/input.c $(KERNEL_DIR)/mouse.c $(KERNEL_DIR)/fb.c $(KERNEL_DIR)/psf.c $(KERNEL_DIR)/graphics.c $(KERNEL_DIR)/compositor.c $(KERNEL_DIR)/wm.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/socket.c $(KERNEL_DIR)/demo.c $(KERNEL_DIR)/desktop.c $(KERNEL_DIR)/apps.c $(KERNEL_DIR)/audio.c $(KERNEL_DIR)/usb.c $(KERNEL_DIR)/pci.c $(KERNEL_DIR)/services.c $(KERNEL_DIR)/diagnostics.c $(KERNEL_DIR)/display.c $(KERNEL_DIR)/config.c $(KERNEL_DIR)/power.c $(KERNEL_DIR)/security.c $(KERNEL_DIR)/widgets.c $(KERNEL_DIR)/signal.c $(KERNEL_DIR)/pipe.c $(KERNEL_DIR)/driver.c $(KERNEL_DIR)/raster.c $(KERNEL_DIR)/hda.c $(KERNEL_DIR)/gamepad.c $(KERNEL_DIR)/logo.c $(KERNEL_DIR)/font_data.c $(KERNEL_DIR)/gfx_text.c $(KERNEL_DIR)/browser.c $(KERNEL_DIR)/desktop_surface.c $(KERNEL_DIR)/terminal_ui.c $(KERNEL_DIR)/files_ui.c $(KERNEL_DIR)/calculator_ui.c $(KERNEL_DIR)/shell_ui.c $(KERNEL_DIR)/wizard.c $(KERNEL_DIR)/wallpaper.c $(KERNEL_DIR)/vmm_test.c
+KERNEL_SOURCES = $(KERNEL_DIR)/main.c $(KERNEL_DIR)/vga.c $(KERNEL_DIR)/serial.c $(KERNEL_DIR)/string.c $(KERNEL_DIR)/printf.c $(KERNEL_DIR)/memory.c $(KERNEL_DIR)/bootmem.c $(KERNEL_DIR)/heap.c $(KERNEL_DIR)/pmm.c $(KERNEL_DIR)/vmm.c $(KERNEL_DIR)/idt.c $(KERNEL_DIR)/irq.c $(KERNEL_DIR)/timer.c $(KERNEL_DIR)/rtc.c $(KERNEL_DIR)/keyboard.c $(KERNEL_DIR)/syscall.c $(KERNEL_DIR)/task.c $(KERNEL_DIR)/scheduler.c $(KERNEL_DIR)/shell.c $(KERNEL_DIR)/il_runtime.c $(KERNEL_DIR)/net.c $(KERNEL_DIR)/net_stack.c $(KERNEL_DIR)/dhcp.c $(KERNEL_DIR)/dns.c $(KERNEL_DIR)/tcp.c $(KERNEL_DIR)/http.c $(KERNEL_DIR)/ata.c $(KERNEL_DIR)/fs.c $(KERNEL_DIR)/vfs.c $(KERNEL_DIR)/elf.c $(KERNEL_DIR)/user.c $(KERNEL_DIR)/input.c $(KERNEL_DIR)/mouse.c $(KERNEL_DIR)/cursor.c $(KERNEL_DIR)/fb.c $(KERNEL_DIR)/psf.c $(KERNEL_DIR)/graphics.c $(KERNEL_DIR)/compositor.c $(KERNEL_DIR)/wm.c $(KERNEL_DIR)/ipc.c $(KERNEL_DIR)/socket.c $(KERNEL_DIR)/demo.c $(KERNEL_DIR)/desktop.c $(KERNEL_DIR)/apps.c $(KERNEL_DIR)/audio.c $(KERNEL_DIR)/usb.c $(KERNEL_DIR)/pci.c $(KERNEL_DIR)/services.c $(KERNEL_DIR)/diagnostics.c $(KERNEL_DIR)/display.c $(KERNEL_DIR)/config.c $(KERNEL_DIR)/power.c $(KERNEL_DIR)/security.c $(KERNEL_DIR)/widgets.c $(KERNEL_DIR)/signal.c $(KERNEL_DIR)/pipe.c $(KERNEL_DIR)/driver.c $(KERNEL_DIR)/raster.c $(KERNEL_DIR)/hda.c $(KERNEL_DIR)/gamepad.c $(KERNEL_DIR)/logo.c $(KERNEL_DIR)/gfx_text.c $(KERNEL_DIR)/browser.c $(KERNEL_DIR)/desktop_surface.c $(KERNEL_DIR)/terminal_ui.c $(KERNEL_DIR)/files_ui.c $(KERNEL_DIR)/calculator_ui.c $(KERNEL_DIR)/shell_ui.c $(KERNEL_DIR)/wizard.c $(KERNEL_DIR)/wallpaper.c $(KERNEL_DIR)/vmm_test.c
 ASM_SOURCES = $(KERNEL_DIR)/asm/interrupt_stubs.asm $(KERNEL_DIR)/asm/context.asm $(KERNEL_DIR)/asm/gdt.asm $(KERNEL_DIR)/asm/io.asm
 
 # Object files
 BOOT_OBJS = $(patsubst $(BOOT_DIR)/%.asm,$(BUILD_DIR)/%.o,$(BOOT_SOURCES))
 KERNEL_OBJS = $(patsubst $(KERNEL_DIR)/%.c,$(BUILD_DIR)/%.o,$(KERNEL_SOURCES))
 ASM_OBJS = $(patsubst $(KERNEL_DIR)/asm/%.asm,$(BUILD_DIR)/%.o,$(ASM_SOURCES))
+FONT_SOURCE = $(BUILD_DIR)/font_data.generated.c
+FONT_OBJ = $(BUILD_DIR)/font_data.o
 
-ALL_OBJS = $(BOOT_OBJS) $(KERNEL_OBJS) $(ASM_OBJS)
+ALL_OBJS = $(BOOT_OBJS) $(KERNEL_OBJS) $(ASM_OBJS) $(FONT_OBJ)
 
 # Targets
 # `all` stays the canonical build so CI and existing scripts keep working.
 all: $(BUILD_DIR)/charisos.iso
 
-$(BUILD_DIR)/charisos.iso: $(BUILD_DIR)/kernel.elf
+WALLPAPER_SOURCE_URL = https://upload.wikimedia.org/wikipedia/commons/7/75/Lake_Mountain_Landscape.jpg
+WALLPAPER_SOURCE_SHA1 = 60eab74e7704db6375f1426fb11421ba29d7603e
+WALLPAPER_SOURCE = $(BUILD_DIR)/wallpaper-source.jpg
+WALLPAPER_MODULE = $(BUILD_DIR)/wallpaper.cwp
+
+# The original is CC0 1.0. Download by a pinned source URL and verify the
+# published SHA-1 plus byte length before producing the deterministic RGB565
+# module. The kernel receives only the bounded CWP1 module, never a JPEG.
+$(WALLPAPER_MODULE): tools/prepare_wallpaper.py
+	mkdir -p $(BUILD_DIR)
+	$(CURL) --fail --location --retry 3 --connect-timeout 20 --max-time 180 \
+		"$(WALLPAPER_SOURCE_URL)" -o "$(WALLPAPER_SOURCE)"
+	wc -c < "$(WALLPAPER_SOURCE)" | tr -d '[:space:]' | grep -qx '2915869'
+	echo "$(WALLPAPER_SOURCE_SHA1)  $(WALLPAPER_SOURCE)" | sha1sum -c -
+	$(PYTHON) tools/prepare_wallpaper.py "$(WALLPAPER_SOURCE)" "$@"
+
+$(BUILD_DIR)/charisos.iso: $(BUILD_DIR)/kernel.elf $(WALLPAPER_MODULE)
 	mkdir -p iso/boot/grub
 	cp $(BUILD_DIR)/kernel.elf iso/boot/
+	cp $(WALLPAPER_MODULE) iso/boot/wallpaper.cwp
 	$(GRUB) -o $@ iso/
+
+$(FONT_SOURCE): tools/genfont.py
+	mkdir -p $(BUILD_DIR)
+	$(PYTHON) tools/genfont.py $@
+
+$(FONT_OBJ): $(FONT_SOURCE)
+	mkdir -p $(BUILD_DIR)
+	$(GCC) $(GCC_FLAGS) $(EXTRA_CFLAGS) -c -o $@ $<
 
 $(BUILD_DIR)/kernel.elf: $(ALL_OBJS) link.ld
 	$(LD) $(LD_FLAGS) -o $@ $(ALL_OBJS)
@@ -192,26 +221,27 @@ ipc-test:
 
 	@echo "VMM test object built successfully with RUN_VMM_TESTS defined"
 
+# Generate the same embedded Inter glyph format from the licensed build-time
+# font package and compile/test the generated output independently.
+font-check:
+	mkdir -p $(BUILD_DIR)
+	$(PYTHON) tools/genfont.py $(BUILD_DIR)/font_data.generated.c
+	$(HOST_CC) -std=gnu11 -Wall -Wextra -Werror -I$(INCLUDE_DIR) tests/font_data_test.c $(BUILD_DIR)/font_data.generated.c -o $(BUILD_DIR)/font_data_generated_test
+	$(BUILD_DIR)/font_data_generated_test
+
 # Fail early and legibly when the toolchain is incomplete, rather than part
 # way through a build with a confusing "command not found".
 check-tools:
-	@ok=1; \
-	for pair in "compiler:$(GCC)" "linker:$(LD)" "nasm:$(NASM)" "qemu:$(QEMU)" "grub rescue:$(GRUB)"; do \
-		name=$${pair%%:*}; cmd=$${pair#*:}; \
-		if command -v $$cmd >/dev/null 2>&1; then \
-			printf "  ok    %-16s %s\n" "$$name" "$$cmd"; \
-		else \
-			printf "  MISSING %-14s %s\n" "$$name" "$$cmd"; ok=0; \
-		fi; \
-	done; \
-	if [ "$$ok" = "0" ]; then \
-		echo; echo "Install the missing tools, e.g.:"; \
-		echo "  Debian/Ubuntu: install a freestanding x86_64-elf toolchain, nasm, grub-pc-bin, xorriso, qemu-system-x86"; \
-		echo "  Fedora:        install an x86_64-elf cross-toolchain, nasm, grub2-tools, xorriso, qemu-system-x86"; \
-		exit 1; \
-	fi; \
-	if [ "$(CROSS_COMPILE)" = "" ]; then echo "  NOTE: x86_64-elf-gcc not found; using native gcc. Set CROSS_COMPILE=x86_64-elf- to require the cross toolchain."; fi; \
-	echo "  all build tools present"
+	@command -v $(GCC) >/dev/null 2>&1 || { echo "MISSING compiler: $(GCC)"; exit 1; }
+	@command -v $(LD) >/dev/null 2>&1 || { echo "MISSING linker: $(LD)"; exit 1; }
+	@command -v $(NASM) >/dev/null 2>&1 || { echo "MISSING assembler: $(NASM)"; exit 1; }
+	@command -v $(QEMU) >/dev/null 2>&1 || { echo "MISSING QEMU: $(QEMU)"; exit 1; }
+	@command -v $(GRUB) >/dev/null 2>&1 || { echo "MISSING GRUB rescue: $(GRUB)"; exit 1; }
+	@command -v $(CURL) >/dev/null 2>&1 || { echo "MISSING curl: $(CURL)"; exit 1; }
+	@command -v $(PYTHON) >/dev/null 2>&1 || { echo "MISSING Python: $(PYTHON)"; exit 1; }
+	@$(PYTHON) -c 'from PIL import Image, ImageFont' || { echo "MISSING Python Pillow (required by wallpaper/font asset tools)"; exit 1; }
+	@if [ -z "$(CROSS_COMPILE)" ]; then echo "NOTE: x86_64-elf-gcc not found; using native gcc."; fi
+	@echo "all build tools present"
 
 # ── Environment-specific runners ────────────────────────────────────
 
@@ -262,9 +292,9 @@ verify-boot: $(VM_ISO) $(USB_IMG) elf-test
 	@if [ -f "$(OVMF)" ]; then 		OVMF="$(OVMF)" ./tools/verify-boot.sh $(VM_ISO) --uefi; 		OVMF="$(OVMF)" ./tools/verify-boot.sh $(USB_IMG) --disk --uefi; 		OVMF="$(OVMF)" ./tools/verify-boot.sh $(VM_ISO) --uefi --kvm; 	else 		echo "SKIP: no OVMF firmware at $(OVMF), skipping UEFI checks"; 	fi
 
 clean:
-	rm -rf $(BUILD_DIR) iso/boot/kernel.elf iso/charisos.iso
+	rm -rf $(BUILD_DIR) iso/boot/kernel.elf iso/boot/wallpaper.cwp iso/charisos.iso
 
 # Pull in the generated header dependencies.
 -include $(wildcard $(BUILD_DIR)/*.d)
 
-.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-waitpid-test images-ipc-wait-test images-elf-exec-test ipc-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test clean
+.PHONY: all check-tools images images-vmm-test images-stack-guard-test images-waitpid-test images-ipc-wait-test images-elf-exec-test ipc-test elf-test images-text run run-vm run-usb run-vm-uefi run-usb-uefi verify-boot gdb debug run-debug test font-check clean

@@ -130,6 +130,11 @@ void pmm_init(multiboot_info_t* info) {
         pmm_reserve_range((u64)(uintptr_t)info, info->total_size);
         serial_puts("[BOOT] PMM: Multiboot info reservation complete");
     }
+    if (boot_info.wallpaper_addr && boot_info.wallpaper_size) {
+        serial_puts("[BOOT] PMM: wallpaper module reservation begin");
+        pmm_reserve_range(boot_info.wallpaper_addr, boot_info.wallpaper_size);
+        serial_puts("[BOOT] PMM: wallpaper module reservation complete");
+    }
 
     serial_printf("[BOOT] PMM: ready, free=%u total=%u pages\n",
                   pmm_free_pages(), pmm_total_pages());

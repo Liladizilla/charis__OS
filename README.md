@@ -66,9 +66,9 @@ Older [run #724 desktop capture](docs/screenshots/charisos-desktop-run-724.png),
 - Kernel-task scheduling and a tested ring-3 bootstrap path.
 - DPL3 `int 0x80` syscall dispatch and a bounded static ELF64 `ET_EXEC` loader. The loader builds a fresh process address space, loads segments and the initial stack there, switches CR3 only after success, then reclaims the previous image. A separate CI-only image now exercises successful authorized ELF entry; see the current CI gate for its result.
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
-- Framebuffer drawing and PSF2 bitmap-font rendering.
+- Framebuffer drawing with a 16×22 antialiased Inter-derived UI font embedded in the kernel; text rendering does not require a runtime font file. PSF2 support remains available for modules that explicitly provide a PSF2 font.
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
-- Terminal-specific fixed-cell monospace rendering, a near-black console and a 19-column CharisOS ASCII C mark. Host CI checks exact row dimensions; the terminal uses an independent fixed 8×16 monospace font so the startup identity remains visible even when desktop text is enlarged. The terminal remains a bounded kernel command environment, not a full userspace shell.
+- Terminal-specific fixed-cell monospace rendering, a near-black console and a 19-column CharisOS ASCII C mark. The entire desktop, including Terminal, uses the same embedded Inter-derived 16×22 antialiased glyph set; Terminal selects fixed-cell spacing for command alignment. The terminal remains a bounded kernel command environment, not a full userspace shell.
 - Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, a lower-right pointer resize grip, F8 Calculator launch, Alt+F8 keyboard resizing, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation; QEMU verifies simultaneous windows and keyboard maximize/restore.
 - Persistent display preferences on supported writable FAT32 storage.
 - Workspace System Status panel reads PMM allocator counters and the active display profile without walking task state during repaint.
@@ -266,14 +266,18 @@ Debian / Ubuntu / Fedora / WSL:
 ```bash
 # Debian / Ubuntu
 sudo apt update
-sudo apt install build-essential nasm grub-pc-bin grub-common xorriso qemu-system-x86
+sudo apt install build-essential nasm grub-pc-bin grub-common xorriso qemu-system-x86 curl python3-pil fonts-inter
 
 # Fedora
-sudo dnf install gcc nasm grub2-tools xorriso qemu-system-x86
+sudo dnf install gcc nasm grub2-tools xorriso qemu-system-x86 curl python3-pillow rsms-inter-fonts
 ```
 
 The build uses the **host** GCC with `-ffreestanding`; a cross-compiler is not
-required. `nasm`, `grub-mkrescue`, and `xorriso` are all mandatory.
+required. `nasm`, `grub-mkrescue`, `xorriso`, `curl`, Python Pillow, and the
+Inter font package are required. The image build fetches one pinned CC0 wallpaper
+from Wikimedia Commons, verifies its expected byte length and SHA-1, and converts
+it to a bounded RGB565 boot asset. A network connection is therefore required
+for the first clean build; the running OS does not download or decode the JPEG.
 
 ### Build and run
 
@@ -307,6 +311,7 @@ qemu-system-x86_64 -cdrom build/charisos.iso -m 256M -nographic
 | `make debug` | QEMU with interrupt, `pcall` and MMU tracing → `qemu.log` |
 | `make gdb` | QEMU paused on a GDB server at `:1234` |
 | `make test` | Compile the VMM self-tests with `-DRUN_VMM_TESTS` |
+| `make font-check` | Regenerate the Inter bitmap font and run its host validation tests |
 | `make clean` | Remove `build/` and the staged kernel ELF |
 
 ---
