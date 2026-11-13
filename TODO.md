@@ -58,7 +58,7 @@
 - [x] Revoke task-owned endpoints and release channel references during EXITING teardown
 - [x] Add kernel-only blocking receive with atomic waiter registration, message/peer-close wakeups and task-exit cancellation
 - [x] Add dedicated QEMU scheduler coverage proving receiver BLOCKED before send, message wake, second blocking wait and peer-close wake
-- [ ] Extend QEMU waiter coverage to prove task-exit peer close and local-endpoint revocation cancellation while the receiver is BLOCKED
+- [x] Extend QEMU waiter coverage to prove task-exit peer close and local-endpoint revocation cancellation while the receiver is BLOCKED; assert CANCELLED/PEER_CLOSED and reap both workers
 - [ ] Add transactional descriptor attachments with queue-owned references and receiver rollback
 - [ ] Keep ring-3 IPC and descriptor transfer denied until endpoint tests and user-memory preflight pass
 - [ ] Replace global shared-memory IDs/raw kernel-pointer access with task-owned objects and explicit user mappings
@@ -125,7 +125,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Host regression covers wrong-owner handles, directional rights, stale generations, generation exhaustion, aliased outputs, queue capacity, peer close, task teardown and endpoint-table limits
 - [x] Add kernel-only cancellable blocking receive, atomic waiter registration, message/peer-close wakeups and task-exit unlinking
 - [x] Add dedicated QEMU scheduler coverage proving receiver BLOCKED before send, message wake, second blocking wait and peer-close wake
-- [ ] Extend the QEMU waiter gate to cover task-exit peer close and cancellation by revoking a blocked reader's local endpoint
+- [x] Extend the QEMU waiter gate to cover task-exit peer close and cancellation by revoking a blocked reader's local endpoint; assert CANCELLED/PEER_CLOSED and reap both workers
 - [ ] Add a kernel-owned service namespace with explicit listener registration and accept/reject rendezvous
 - [ ] Add transactional descriptor attachments, reference pinning, recipient-slot reservation and rollback
 - [ ] Only design ring-3 IPC syscalls after user-memory preflight, service authorization and QEMU lifecycle tests exist
