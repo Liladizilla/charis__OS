@@ -258,8 +258,8 @@ static void mouse_process_byte(u8 status, u8 byte) {
     g_mouse.x = (s32)next_x;
     g_mouse.y = (s32)next_y;
 #ifdef CURSOR_TRACE
-    serial_printf("MOUSE_TRACE packet flags=%02x dx=%d dy=%d x=%d y=%d\\n",
-                  flags, g_mouse.dx, g_mouse.dy, g_mouse.x, g_mouse.y);
+    serial_printf("MOUSE_TRACE packet flags=%02x dx=%d dy=%d x=%d y=%d\n",
+                  (unsigned)flags, g_mouse.dx, g_mouse.dy, g_mouse.x, g_mouse.y);
 #endif
 }
 
