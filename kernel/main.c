@@ -64,6 +64,86 @@ static void kernel_stack_guard_probe(void* unused) {
 #endif
 
 
+#ifdef TEST_IPC_WAITERS
+static ipc_handle_t ipc_wait_test_sender_handle;
+static ipc_handle_t ipc_wait_test_receiver_handle;
+static task_t* volatile ipc_wait_test_receiver_task;
+static volatile u32 ipc_wait_test_message_received;
+
+static void ipc_wait_test_fail(const char* reason) {
+    serial_puts("IPC_WAIT_TEST_FAIL: ");
+    serial_puts(reason);
+    serial_puts("\n");
+    for (;;) asm volatile("cli; hlt" : : : "memory");
+}
+
+static void ipc_wait_test_receiver(void* unused) {
+    (void)unused;
+    static const char expected[] = "charisos-blocking-ipc";
+    char buffer[sizeof(expected)];
+    u32 sender_pid = 0;
+
+    int result = ipc_recv_wait(ipc_wait_test_receiver_handle,
+                               buffer, sizeof(buffer), &sender_pid);
+    if (result != (int)sizeof(expected) || sender_pid == 0)
+        ipc_wait_test_fail("message wake result or sender identity");
+    for (u32 i = 0; i < sizeof(expected); i++) {
+        if (buffer[i] != expected[i])
+            ipc_wait_test_fail("message payload mismatch");
+    }
+
+    ipc_wait_test_message_received = 1;
+    /* The sender waits for this second registration before closing its own
+     * endpoint, exercising peer-close wake through the real scheduler too. */
+    result = ipc_recv_wait(ipc_wait_test_receiver_handle,
+                           buffer, sizeof(buffer), &sender_pid);
+    if (result != IPC_STATUS_PEER_CLOSED)
+        ipc_wait_test_fail("peer-close did not wake blocked receiver");
+
+    serial_puts("IPC_WAIT_TEST_MESSAGE_WAKE_OK\n");
+    serial_puts("IPC_WAIT_TEST_PEER_CLOSE_OK\n");
+    serial_puts("IPC_WAIT_TEST_OK\n");
+}
+
+static void ipc_wait_test_sender(void* unused) {
+    (void)unused;
+    task_t* receiver = (task_t*)ipc_wait_test_receiver_task;
+    if (!receiver) ipc_wait_test_fail("receiver task pointer missing");
+
+    /* Do not send until the receiver has really entered its blocked state.
+     * This tests the wakeup path, not the already-queued fast path. */
+    u32 attempts = 0;
+    while (!receiver->ipc_wait_endpoint && attempts++ < 5000U)
+        task_sleep_ms(1);
+    if (!receiver->ipc_wait_endpoint ||
+        receiver->waiting_event != TASK_WAITING_IPC ||
+        receiver->state != TASK_STATE_BLOCKED)
+        ipc_wait_test_fail("receiver did not block on empty queue");
+
+    static const char payload[] = "charisos-blocking-ipc";
+    if (ipc_send(ipc_wait_test_sender_handle, payload, sizeof(payload)) !=
+        IPC_STATUS_OK)
+        ipc_wait_test_fail("sender could not publish message");
+
+    attempts = 0;
+    while (!ipc_wait_test_message_received && attempts++ < 5000U)
+        task_sleep_ms(1);
+    if (!ipc_wait_test_message_received)
+        ipc_wait_test_fail("receiver did not consume delivered message");
+
+    attempts = 0;
+    while (!receiver->ipc_wait_endpoint && attempts++ < 5000U)
+        task_sleep_ms(1);
+    if (!receiver->ipc_wait_endpoint ||
+        receiver->waiting_event != TASK_WAITING_IPC ||
+        receiver->state != TASK_STATE_BLOCKED)
+        ipc_wait_test_fail("receiver did not re-register for peer close");
+
+    if (ipc_close(ipc_wait_test_sender_handle) != IPC_STATUS_OK)
+        ipc_wait_test_fail("sender endpoint close failed");
+}
+#endif
+
 #ifdef TEST_WAITPID
 static volatile u32 waitpid_orphan_pid;
 
@@ -383,6 +463,28 @@ void kernel_main(u32 magic, u64 info_ptr) {
         for (;;) asm volatile("cli; hlt" : : : "memory");
     }
     scheduler_add_task(guard_probe);
+#endif
+
+#ifdef TEST_IPC_WAITERS
+    task_t* ipc_receiver = task_create("ipc-wait-receiver",
+        ipc_wait_test_receiver, NULL, 0, false);
+    task_t* ipc_sender = task_create("ipc-wait-sender",
+        ipc_wait_test_sender, NULL, 0, false);
+    if (!ipc_receiver || !ipc_sender) {
+        serial_puts("IPC_WAIT_TEST_SETUP_FAILED\n");
+    } else {
+        ipc_wait_test_receiver_task = ipc_receiver;
+        /* Publish both task records before installing owner-bound handles.
+         * scheduler_start has not run either test task yet. */
+        scheduler_add_task(ipc_receiver);
+        scheduler_add_task(ipc_sender);
+        if (!ipc_endpoint_pair_create(ipc_receiver, ipc_sender,
+                IPC_RIGHT_RECEIVE, IPC_RIGHT_SEND,
+                &ipc_wait_test_receiver_handle,
+                &ipc_wait_test_sender_handle)) {
+            serial_puts("IPC_WAIT_TEST_SETUP_FAILED\n");
+        }
+    }
 #endif
 
 #ifdef TEST_WAITPID
