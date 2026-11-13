@@ -155,9 +155,10 @@ separate authority and user-copy requirements are implemented and tested.
   destructor may run while a channel lock is held.
 - PID/generation handles are not cryptographic credentials.
 - Current IRQ exclusion is single-CPU only, not an SMP synchronization design.
-- Current endpoint queues are data-only. Blocking message waiters and service
-  connect/accept waiters are implemented; descriptor-attachment reservations
-  and transactional transfer are not.
+- Endpoint queues support one kernel-only open-file attachment per message.
+  Queue-owned references move into reserved recipient descriptor slots on
+  receive and are released outside the IPC critical section on teardown.
+  No ring-3 pointer or syscall is exposed.
 
 ## Bounded resource policy
 
@@ -187,6 +188,13 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Queue full | Explicit FULL; all existing messages intact |
 | Undersized receive buffer | Explicit BUFFER_SMALL; message remains queued |
 | Message larger than maximum | Reject; never truncate |
+| Attachment sent without SEND or TRANSFER right | Reject before queue mutation |
+| Attachment requests rights absent from source descriptor | Reject; source unchanged |
+| Normal receive encounters an attachment | ATTACHMENT_PENDING; preserve queue head |
+| Receiver descriptor table is full | DESCRIPTOR_TABLE_FULL; preserve message and file reference |
+| Descriptor commit fails | Cancel slot reservation; preserve message for retry |
+| Receiver accepts attachment | Publish only the explicitly requested rights subset |
+| Queued attachment is abandoned on endpoint/task teardown | Release every queue-owned reference exactly once, after IPC unlock |
 | One endpoint closes | Peer remains; queued messages drain, then receive/send report PEER_CLOSED; blocked peer readers wake |
 | Message arrives while receiver waits | Message is committed before blocked receiver becomes runnable |
 | Generic/spurious wake | Receiver rechecks queue and peer state without duplicate waiter links |
@@ -200,7 +208,12 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Ring-3 IPC syscall | Reserved/unregistered and fails closed |
 | Shared-memory pointer exposure | Ring-3 shared-memory calls remain denied |
 
-Host tests cover waiter unlinking on task teardown. The dedicated QEMU test
+Host tests cover waiter unlinking on task teardown and the attachment transaction:
+sender close after enqueue, data-only receive preservation, receiver slot
+exhaustion, commit failure and retry, transfer-right denial, queue-close release,
+task-exit release and multi-message cleanup. They assert that descriptor pin
+acquisition and final release run outside the IPC critical section, while
+reservation and commit run inside it. The dedicated QEMU test
 proves the receiver is actually BLOCKED before send, wakes after message commit,
 blocks again and wakes when its peer task exits through the real task-exit
 cleanup path. A second pair verifies local endpoint revocation while the reader
@@ -227,8 +240,8 @@ operation before exposing a public ABI.
 7. [x] Add kernel-only named service registration, client-capability policy and blocking connect/accept/reject lifecycle.
 8. [x] Add host service tests for registration policy, request rights, rejection, unregister/client exit, table limits and generation exhaustion.
 9. [ ] Add QEMU tests for blocked client connect/server accept wakeups and service teardown races.
-10. [ ] Add message attachment records and queue-owned open-file references.
-11. [ ] Add transactional receive-side descriptor-slot reservation and rollback.
+10. [x] Add one-file kernel-only message attachments with queue-owned open-file references.
+11. [x] Add transactional receive-side descriptor-slot reservation, rights attenuation, retry-safe commit rollback and teardown release.
 12. [ ] Only then design ring-3 syscalls, user-memory preflight, ABI versioning
     and public service policy.
 
