@@ -166,13 +166,18 @@ static void test_service_registration_policy_and_accept(void) {
     reset_task(&task_c, 303);
     task_a.capabilities = CAP_IPC_SERVICE;
     task_b.capabilities = CAP_FS_READ;
-    ipc_init();
 
     active_task = &task_a;
     ipc_service_handle_t service = 0;
     assert(ipc_service_register("com.charis.echo", CAP_FS_READ,
                                 &service) == IPC_STATUS_OK);
     assert(service != 0);
+    /* A second subsystem init must not revive old service/request generations. */
+    ipc_init();
+    ipc_request_handle_t self_request = 0;
+    assert(ipc_service_connect_begin("com.charis.echo", IPC_RIGHT_SEND,
+                                     &self_request) == IPC_STATUS_ACCESS_DENIED);
+    assert(self_request == 0);
     ipc_service_handle_t duplicate = 0;
     assert(ipc_service_register("com.charis.echo", 0, &duplicate) ==
            IPC_STATUS_SERVICE_EXISTS);
@@ -242,12 +247,48 @@ static void test_service_registration_policy_and_accept(void) {
     assert(ipc_service_unregister(service) == IPC_STATUS_ERROR);
 }
 
+static void test_service_revalidates_client_capabilities_at_accept(void) {
+    reset_task(&task_a, 131);
+    reset_task(&task_b, 242);
+    task_a.capabilities = CAP_IPC_SERVICE;
+    task_b.capabilities = CAP_FS_READ;
+
+    active_task = &task_a;
+    ipc_service_handle_t service = 0;
+    assert(ipc_service_register("com.charis.policy", CAP_FS_READ,
+                                &service) == IPC_STATUS_OK);
+
+    active_task = &task_b;
+    ipc_request_handle_t request = 0;
+    assert(ipc_service_connect_begin("com.charis.policy", IPC_RIGHT_SEND,
+                                     &request) == IPC_STATUS_OK);
+
+    /* Authority can be reduced while the request is pending. Acceptance must
+     * re-check the live TCB rather than relying only on connect-time policy. */
+    task_b.capabilities = 0;
+    active_task = &task_a;
+    ipc_request_handle_t offered = 0;
+    assert(ipc_service_accept_wait(service, &offered, NULL) == IPC_STATUS_OK);
+    ipc_handle_t server_endpoint = IPC_HANDLE_INVALID;
+    assert(ipc_service_accept(service, offered, IPC_RIGHT_SEND,
+        IPC_RIGHT_RECEIVE, &server_endpoint) == IPC_STATUS_ACCESS_DENIED);
+    assert(server_endpoint == IPC_HANDLE_INVALID);
+
+    active_task = &task_b;
+    ipc_handle_t client_endpoint = IPC_HANDLE_INVALID;
+    assert(ipc_service_connect_wait(request, &client_endpoint) ==
+           IPC_STATUS_ACCESS_DENIED);
+    assert(client_endpoint == IPC_HANDLE_INVALID);
+
+    active_task = &task_a;
+    assert(ipc_service_unregister(service) == IPC_STATUS_OK);
+}
+
 static void test_service_reject_and_pending_client_exit(void) {
     reset_task(&task_a, 111);
     reset_task(&task_b, 222);
     task_a.capabilities = CAP_IPC_SERVICE;
     task_b.capabilities = CAP_FS_READ;
-    ipc_init();
 
     active_task = &task_a;
     ipc_service_handle_t service = 0;
@@ -287,7 +328,6 @@ static void test_service_unregister_wakes_client_and_acceptor(void) {
     reset_task(&task_b, 232);
     task_a.capabilities = CAP_IPC_SERVICE;
     task_b.capabilities = CAP_FS_READ;
-    ipc_init();
 
     active_task = &task_a;
     ipc_service_handle_t service = 0;
@@ -320,7 +360,6 @@ static void test_service_request_table_capacity_and_generation_exhaustion(void) 
     reset_task(&task_a, 401);
     reset_task(&task_b, 402);
     task_a.capabilities = task_b.capabilities = CAP_IPC_SERVICE;
-    ipc_init();
 
     active_task = &task_a;
     ipc_service_handle_t service_a = 0;
@@ -441,6 +480,7 @@ int main(void) {
     test_waiter_peer_close_wakeup();
     test_waiter_cancelled_on_task_teardown();
     test_service_registration_policy_and_accept();
+    test_service_revalidates_client_capabilities_at_accept();
     test_service_reject_and_pending_client_exit();
     test_service_unregister_wakes_client_and_acceptor();
     test_service_request_table_capacity_and_generation_exhaustion();
