@@ -1122,8 +1122,9 @@ static void draw_settings_window(window_t* win) {
     gfx_draw_string(content_x, footer_y,
                     config_is_persistent()
                         ? (font_scale >= 2 ? "Saved" : "All changes saved")
-                        : (font_scale >= 2 ? "Session only" :
-                           "Session only  |  No writable configuration volume"),
+                        : (font_scale >= 3 ? "Session" :
+                           (font_scale >= 2 ? "Session only" :
+                            "Session only  |  No writable configuration volume")),
                     config_is_persistent() ? CHARIS_UI_SUCCESS : CHARIS_UI_WARNING,
                     FB_TRANSPARENT);
     fb_reset_clip();
