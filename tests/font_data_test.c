@@ -28,8 +28,8 @@ static void check_glyph(unsigned char codepoint, int should_have_ink) {
 }
 
 int main(void) {
-    expect(font_cell_w == 18, "UI glyph width is 18 pixels");
-    expect(font_cell_h == 24, "UI glyph height is 24 pixels");
+    expect(font_cell_w == 16, "UI glyph width is 16 pixels");
+    expect(font_cell_h == 22, "UI glyph height is 22 pixels");
     expect(font_glyph_count == 114, "95 ASCII and 19 CP437 glyphs are embedded");
     expect(font_glyph_index(' ') >= 0, "space glyph is present");
     check_glyph(' ', 0);
