@@ -18,6 +18,120 @@ void task_unblock(task_t* task) {
         task->state = (task == active_task) ? TASK_STATE_RUNNING : TASK_STATE_READY;
 }
 
+#define IPC_TEST_SOURCE_FD ((fd_handle_t)0xC41A0003ULL)
+
+static vfs_open_file_t transfer_file;
+static bool transfer_source_open;
+static u32 transfer_source_rights;
+static bool transfer_slot_available;
+static bool transfer_reservation_live;
+static bool transfer_commit_forced_failure;
+static fd_transfer_reservation_t transfer_reservation;
+static vfs_open_file_t* transfer_received_file;
+static fd_handle_t transfer_received_handle;
+static u32 transfer_received_rights;
+static u32 transfer_final_release_count;
+
+static void transfer_test_reset(void) {
+    transfer_file = (vfs_open_file_t){0};
+    transfer_file.lifecycle = 1;
+    transfer_source_open = true;
+    transfer_source_rights = FD_RIGHT_READ | FD_RIGHT_WRITE;
+    transfer_slot_available = true;
+    transfer_reservation_live = false;
+    transfer_commit_forced_failure = false;
+    transfer_reservation = (fd_transfer_reservation_t){0};
+    transfer_received_file = NULL;
+    transfer_received_handle = FD_HANDLE_INVALID;
+    transfer_received_rights = 0;
+    transfer_final_release_count = 0;
+}
+
+vfs_open_file_t* fd_acquire(fd_handle_t handle, u32 required_rights) {
+    assert(!ipc_test_irq_disabled());
+    if (active_task != &task_a || handle != IPC_TEST_SOURCE_FD ||
+        !transfer_source_open || !required_rights ||
+        (required_rights & ~FD_RIGHT_MASK) ||
+        (transfer_source_rights & required_rights) != required_rights)
+        return NULL;
+    __atomic_add_fetch(&transfer_file.lifecycle, 1u, __ATOMIC_ACQ_REL);
+    return &transfer_file;
+}
+
+void fd_release(vfs_open_file_t* file) {
+    assert(!ipc_test_irq_disabled());
+    assert(file == &transfer_file);
+    u64 previous = __atomic_fetch_sub(&file->lifecycle, 1u, __ATOMIC_ACQ_REL);
+    assert(previous > 0);
+    if (previous == 1u) transfer_final_release_count++;
+}
+
+bool fd_transfer_reserve(u32 recipient_pid, u32 rights,
+                         fd_transfer_reservation_t* reservation) {
+    assert(ipc_test_irq_disabled());
+    if (!reservation || recipient_pid != task_b.pid || !rights ||
+        (rights & ~FD_RIGHT_MASK) || !transfer_slot_available ||
+        transfer_reservation_live)
+        return false;
+    transfer_slot_available = false;
+    transfer_reservation_live = true;
+    transfer_reservation = (fd_transfer_reservation_t){
+        .recipient_pid = recipient_pid,
+        .slot = 3u,
+        .generation = 1u,
+        .rights = rights
+    };
+    *reservation = transfer_reservation;
+    return true;
+}
+
+fd_handle_t fd_transfer_commit(fd_transfer_reservation_t* reservation,
+                               vfs_open_file_t* file) {
+    assert(ipc_test_irq_disabled());
+    if (transfer_commit_forced_failure || !reservation ||
+        !transfer_reservation_live || file != &transfer_file ||
+        reservation->recipient_pid != transfer_reservation.recipient_pid ||
+        reservation->slot != transfer_reservation.slot ||
+        reservation->generation != transfer_reservation.generation ||
+        reservation->rights != transfer_reservation.rights)
+        return FD_HANDLE_INVALID;
+    transfer_received_file = file;
+    transfer_received_rights = reservation->rights;
+    transfer_received_handle =
+        ((u64)reservation->recipient_pid << 32) |
+        ((u64)reservation->generation << FD_HANDLE_SLOT_BITS) |
+        reservation->slot;
+    transfer_reservation_live = false;
+    *reservation = (fd_transfer_reservation_t){0};
+    return transfer_received_handle;
+}
+
+void fd_transfer_cancel(fd_transfer_reservation_t* reservation) {
+    assert(ipc_test_irq_disabled());
+    if (transfer_reservation_live && reservation &&
+        reservation->recipient_pid == transfer_reservation.recipient_pid &&
+        reservation->slot == transfer_reservation.slot &&
+        reservation->generation == transfer_reservation.generation) {
+        transfer_reservation_live = false;
+        transfer_slot_available = true;
+        transfer_reservation = (fd_transfer_reservation_t){0};
+    }
+    if (reservation) *reservation = (fd_transfer_reservation_t){0};
+}
+
+static void transfer_test_close_source(void) {
+    assert(transfer_source_open);
+    transfer_source_open = false;
+    fd_release(&transfer_file);
+}
+
+static void transfer_test_close_received(void) {
+    assert(transfer_received_file == &transfer_file);
+    fd_release(transfer_received_file);
+    transfer_received_file = NULL;
+    transfer_received_handle = FD_HANDLE_INVALID;
+}
+
 static void reset_task(task_t* task, u32 pid) {
     *task = (task_t){0};
     task->pid = pid;
@@ -470,6 +584,193 @@ static void test_table_limit(void) {
     ipc_task_close_all(&owner);
     for (u32 i = 0; i < IPC_MAX_ENDPOINTS; i++) ipc_task_close_all(&peers[i]);
 }
+static void test_fd_attachment_transfer_and_receiver_retry(void) {
+    reset_task(&task_a, 1201);
+    reset_task(&task_b, 1202);
+    transfer_test_reset();
+
+    ipc_handle_t send_a, receive_b;
+    assert(ipc_endpoint_pair_create(&task_a, &task_b,
+        IPC_RIGHT_SEND | IPC_RIGHT_TRANSFER,
+        IPC_RIGHT_RECEIVE | IPC_RIGHT_TRANSFER, &send_a, &receive_b));
+
+    const char payload[] = "file-attachment";
+    active_task = &task_a;
+    assert(ipc_send_with_fd(send_a, payload, sizeof(payload),
+                            IPC_TEST_SOURCE_FD, FD_RIGHT_READ) == IPC_STATUS_OK);
+    assert(transfer_file.lifecycle == 2u);
+    assert(transfer_received_file == NULL);
+
+    /* The sender may close its descriptor immediately. The queue now owns
+     * the only remaining reference until delivery or queue teardown. */
+    transfer_test_close_source();
+    assert(transfer_file.lifecycle == 1u);
+
+    active_task = &task_b;
+    char received[sizeof(payload)];
+    memset(received, 0x7B, sizeof(received));
+    u32 sender_pid = 0;
+    assert(ipc_recv(receive_b, received, sizeof(received), &sender_pid) ==
+           IPC_STATUS_ATTACHMENT_PENDING);
+    assert(sender_pid == 0 && (u8)received[0] == 0x7Bu);
+    assert(transfer_file.lifecycle == 1u);
+
+    fd_handle_t received_fd = FD_HANDLE_INVALID;
+    transfer_slot_available = false;
+    assert(ipc_recv_with_fd(receive_b, received, sizeof(received),
+                            &sender_pid, &received_fd) ==
+           IPC_STATUS_DESCRIPTOR_TABLE_FULL);
+    assert(received_fd == FD_HANDLE_INVALID);
+    assert(sender_pid == 0 && (u8)received[0] == 0x7Bu);
+    assert(transfer_file.lifecycle == 1u);
+
+    /* A failed descriptor commit cancels its slot reservation but leaves the
+     * original message and queue-owned reference available for retry. */
+    transfer_slot_available = true;
+    transfer_commit_forced_failure = true;
+    assert(ipc_recv_with_fd(receive_b, received, sizeof(received),
+                            &sender_pid, &received_fd) ==
+           IPC_STATUS_ATTACHMENT_FAILED);
+    assert(transfer_slot_available && !transfer_reservation_live);
+    assert(received_fd == FD_HANDLE_INVALID && sender_pid == 0);
+    assert(transfer_file.lifecycle == 1u);
+
+    transfer_commit_forced_failure = false;
+    memset(received, 0, sizeof(received));
+    assert(ipc_recv_with_fd_wait(receive_b, received, sizeof(received),
+                                 &sender_pid, &received_fd) ==
+           (int)sizeof(payload));
+    assert(sender_pid == task_a.pid);
+    assert(memcmp(received, payload, sizeof(payload)) == 0);
+    assert(received_fd == transfer_received_handle);
+    assert(transfer_received_file == &transfer_file);
+    assert(transfer_received_rights == FD_RIGHT_READ);
+    assert(transfer_file.lifecycle == 1u);
+
+    assert(ipc_recv(receive_b, received, sizeof(received), NULL) ==
+           IPC_STATUS_EMPTY);
+    transfer_test_close_received();
+    assert(transfer_file.lifecycle == 0u);
+    assert(transfer_final_release_count == 1u);
+
+    active_task = &task_a;
+    assert(ipc_close(send_a) == IPC_STATUS_OK);
+    active_task = &task_b;
+    assert(ipc_close(receive_b) == IPC_STATUS_OK);
+}
+
+static void test_fd_attachment_requires_transfer_rights(void) {
+    reset_task(&task_a, 1211);
+    reset_task(&task_b, 1212);
+    transfer_test_reset();
+
+    ipc_handle_t send_a, receive_b;
+    assert(ipc_endpoint_pair_create(&task_a, &task_b,
+        IPC_RIGHT_SEND, IPC_RIGHT_RECEIVE | IPC_RIGHT_TRANSFER,
+        &send_a, &receive_b));
+    const char payload[] = "denied";
+
+    active_task = &task_a;
+    assert(ipc_send_with_fd(send_a, payload, sizeof(payload),
+                            IPC_TEST_SOURCE_FD, FD_RIGHT_READ) ==
+           IPC_STATUS_ERROR);
+    assert(transfer_file.lifecycle == 1u);
+
+    transfer_test_close_source();
+    assert(transfer_file.lifecycle == 0u);
+    active_task = &task_a;
+    assert(ipc_close(send_a) == IPC_STATUS_OK);
+    active_task = &task_b;
+    assert(ipc_close(receive_b) == IPC_STATUS_OK);
+}
+
+static void test_fd_attachment_receiver_authority_and_close_cleanup(void) {
+    reset_task(&task_a, 1221);
+    reset_task(&task_b, 1222);
+    transfer_test_reset();
+
+    ipc_handle_t send_a, receive_b;
+    assert(ipc_endpoint_pair_create(&task_a, &task_b,
+        IPC_RIGHT_SEND | IPC_RIGHT_TRANSFER, IPC_RIGHT_RECEIVE,
+        &send_a, &receive_b));
+    const char payload[] = "must-remain-queued";
+
+    active_task = &task_a;
+    assert(ipc_send_with_fd(send_a, payload, sizeof(payload),
+                            IPC_TEST_SOURCE_FD, FD_RIGHT_READ) == IPC_STATUS_OK);
+    transfer_test_close_source();
+    assert(transfer_file.lifecycle == 1u);
+
+    active_task = &task_b;
+    char received[sizeof(payload)];
+    fd_handle_t received_fd = FD_HANDLE_INVALID;
+    assert(ipc_recv_with_fd(receive_b, received, sizeof(received), NULL,
+                            &received_fd) == IPC_STATUS_ACCESS_DENIED);
+    assert(received_fd == FD_HANDLE_INVALID);
+    assert(transfer_file.lifecycle == 1u);
+
+    /* Closing the receiver's inbound queue drops the queued pin after leaving
+     * the IPC critical section; fd_release asserts that ordering in this test. */
+    assert(ipc_close(receive_b) == IPC_STATUS_OK);
+    assert(transfer_file.lifecycle == 0u);
+    assert(transfer_final_release_count == 1u);
+    active_task = &task_a;
+    assert(ipc_close(send_a) == IPC_STATUS_OK);
+}
+
+static void test_fd_attachment_send_failure_and_task_exit_release(void) {
+    reset_task(&task_a, 1231);
+    reset_task(&task_b, 1232);
+    transfer_test_reset();
+
+    ipc_handle_t send_a, receive_b;
+    assert(ipc_endpoint_pair_create(&task_a, &task_b,
+        IPC_RIGHT_SEND | IPC_RIGHT_TRANSFER,
+        IPC_RIGHT_RECEIVE | IPC_RIGHT_TRANSFER, &send_a, &receive_b));
+    const char payload[] = "queued";
+
+    active_task = &task_a;
+    for (u32 i = 0; i < IPC_MAX_MESSAGES; i++)
+        assert(ipc_send(send_a, payload, sizeof(payload)) == IPC_STATUS_OK);
+    assert(ipc_send_with_fd(send_a, payload, sizeof(payload),
+                            IPC_TEST_SOURCE_FD, FD_RIGHT_READ) == IPC_STATUS_FULL);
+    assert(transfer_file.lifecycle == 1u);
+    transfer_test_close_source();
+    assert(transfer_file.lifecycle == 0u);
+    assert(transfer_final_release_count == 1u);
+
+    /* A receiver exiting with an unconsumed attachment closes its queue and
+     * releases every queue-owned open-file reference before TCB reuse. */
+    active_task = &task_a;
+    assert(ipc_close(send_a) == IPC_STATUS_OK);
+    active_task = &task_b;
+    assert(ipc_close(receive_b) == IPC_STATUS_OK);
+}
+
+static void test_fd_attachment_task_exit_releases_queue_pin(void) {
+    reset_task(&task_a, 1241);
+    reset_task(&task_b, 1242);
+    transfer_test_reset();
+
+    ipc_handle_t send_a, receive_b;
+    assert(ipc_endpoint_pair_create(&task_a, &task_b,
+        IPC_RIGHT_SEND | IPC_RIGHT_TRANSFER,
+        IPC_RIGHT_RECEIVE | IPC_RIGHT_TRANSFER, &send_a, &receive_b));
+    const char payload[] = "task-exit";
+
+    active_task = &task_a;
+    assert(ipc_send_with_fd(send_a, payload, sizeof(payload),
+                            IPC_TEST_SOURCE_FD, FD_RIGHT_READ) == IPC_STATUS_OK);
+    transfer_test_close_source();
+    assert(transfer_file.lifecycle == 1u);
+
+    ipc_task_close_all(&task_b);
+    assert(transfer_file.lifecycle == 0u);
+    assert(transfer_final_release_count == 1u);
+    active_task = &task_a;
+    assert(ipc_close(send_a) == IPC_STATUS_OK);
+}
+
 int main(void) {
     reset_task(&task_a, 101); reset_task(&task_b, 202); reset_task(&task_c, 303);
     ipc_init();
@@ -488,6 +789,11 @@ int main(void) {
     test_stale_handle_and_teardown();
     test_generation_exhaustion();
     test_table_limit();
-    puts("PASS: task-owned IPC handles, rights, bounded queues and teardown");
+    test_fd_attachment_transfer_and_receiver_retry();
+    test_fd_attachment_requires_transfer_rights();
+    test_fd_attachment_receiver_authority_and_close_cleanup();
+    test_fd_attachment_send_failure_and_task_exit_release();
+    test_fd_attachment_task_exit_releases_queue_pin();
+    puts("PASS: task-owned IPC endpoints, transactional file attachments and teardown");
     return 0;
 }
