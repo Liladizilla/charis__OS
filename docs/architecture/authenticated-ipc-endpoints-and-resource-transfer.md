@@ -85,8 +85,21 @@ A future public connection path must use a kernel-authorized rendezvous:
 6. Listener closure, task exit or service replacement invalidates pending
    requests through generation checks.
 
-The public implementation should prefer explicit server acceptance. Do not add
-wildcard public services, ambient channel lookup or global `connect(pid)`.
+The kernel-only implementation uses exact lowercase service names (ASCII
+letters, digits, dot, dash and underscore), a fixed service table and bounded
+FIFO request queues. Registration/unregistration require `CAP_IPC_SERVICE`;
+each registration may require a subset of client capability bits. Client
+identity and capability policy are derived from the current kernel task. A
+connect request asks for endpoint rights; the server may grant only a subset
+and chooses its own endpoint rights. The server can explicitly reject a
+delivered request. Client connect and server accept are event-driven blocking
+operations, not polling loops. Service and request handles are PID-bound and
+generation-checked. Task exit cancels a client request, wakes a blocked client,
+unlinks an accept waiter and unregisters services owned by the exiting task.
+
+The API remains kernel-only. There is no ring-3 name lookup, user pointer,
+syscall or implicit PID-based connect. Do not add wildcard public services,
+ambient channel lookup or global `connect(pid)`.
 
 ## Transactional resource attachment
 
@@ -171,7 +184,8 @@ exhaustion and concurrent multi-core operation before enabling those features.
 4. [x] Add bounded per-direction data queues with nonblocking send/receive.
 5. [x] Revoke task-owned endpoints during EXITING teardown.
 6. [x] Add kernel-only cancellation-safe blocking receive and endpoint waiter queues.
-7. [ ] Add service-name registration and accept/reject connection lifecycle.
+7. [x] Add kernel-only named service registration, required-client-capability policy and blocking connect/accept/reject lifecycle.
+8. [ ] Add QEMU coverage for client-connect/server-accept wakeup, unregister and task-exit races.
 8. [ ] Add host tests for blocked waiter cancellation and concurrent close/send/receive.
 9. [ ] Add message attachment records and queue-owned open-file references.
 10. [ ] Add transactional receive-side descriptor-slot reservation and rollback.
