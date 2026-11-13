@@ -476,7 +476,29 @@ jobs:
           test -s build/charisos-browser-preview.ppm
           grep -q 'SHELL_APP_OPEN Browser' build/desktop-capture-serial.log
           grep -q 'SHELL_APP_OPEN Calculator' build/desktop-capture-serial.log
-          grep -q 'SHELL_SETTINGS_REFLOW 912x544 ' build/desktop-capture-serial.log
+          grep -q 'SHELL_SETTINGS_REFLOW 912x' build/desktop-capture-serial.log
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          serial = Path("build/desktop-capture-serial.log").read_text(errors="replace")
+          records = re.findall(r"SHELL_SETTINGS_LAYOUT ([^\\r\\n]+)", serial)
+          if not records:
+              raise SystemExit("missing Settings layout metrics")
+          fields = dict(re.findall(r"([a-z_]+)=([0-9]+)", records[-1]))
+          required = {"width", "total", "title", "row", "button", "text", "rail", "nav_step", "footer"}
+          missing = required.difference(fields)
+          if missing:
+              raise SystemExit(f"missing Settings metrics: {sorted(missing)}")
+          metrics = {key: int(value) for key, value in fields.items()}
+          assert metrics["width"] == 912, metrics
+          assert metrics["title"] >= metrics["text"], metrics
+          assert metrics["button"] > metrics["text"], metrics
+          assert metrics["nav_step"] > metrics["text"], metrics
+          assert metrics["footer"] > metrics["text"], metrics
+          assert metrics["rail"] < metrics["width"] // 2, metrics
+          assert metrics["row"] >= metrics["text"] + 20, metrics
+          print("Settings large-font layout metrics:", metrics)
+          PY
           test -s build/charisos-calculator-preview.ppm
           test -s build/charisos-files-preview.ppm
           grep -q 'FILES_OPEN' build/desktop-capture-serial.log
