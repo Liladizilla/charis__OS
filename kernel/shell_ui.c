@@ -1061,9 +1061,9 @@ static void draw_settings_window(window_t* win) {
         font_scale >= 3 ? "UI" : (font_scale > 1 ? "UI" : "UI scale")
     };
     const char* hints[3] = {
-        "Native app typeface",
-        "Desktop text size",
-        "Window and control size"
+        "Typeface",
+        "Glyph size",
+        "Controls"
     };
     for (u32 i=0; i<3; i++) {
         u32 ry = y+title_h+ui_px(82)+i*row_h;
