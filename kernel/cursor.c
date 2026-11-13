@@ -72,7 +72,7 @@ static bool cursor_overlay_intact(void) {
                 static u32 cursor_mismatch_logs = 0;
                 if (cursor_mismatch_logs < 24u) {
                     cursor_mismatch_logs++;
-                    serial_printf("CURSOR_TRACE mismatch at=%d,%d offset=%u,%u actual=%08x expected=%08x bpp=%u\\n",
+                    serial_printf("CURSOR_TRACE mismatch at=%d,%d offset=%u,%u actual=%08x expected=%08x bpp=%u\n",
                                   cursor_saved_x, cursor_saved_y, x, y,
                                   actual, expected, g_framebuffer.bpp);
                 }
