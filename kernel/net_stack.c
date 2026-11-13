@@ -96,6 +96,9 @@ static bool ip_is_configured(void) {
 static bool valid_netmask(const u8 mask[4]) {
     u32 value = ((u32)mask[0] << 24) | ((u32)mask[1] << 16) |
                 ((u32)mask[2] << 8) | mask[3];
+    /* A /0 interface mask makes every remote destination look directly
+     * connected and bypasses the configured default-gateway next hop. */
+    if (!value) return false;
     bool saw_zero = false;
     for (u32 bit = 0x80000000u; bit; bit >>= 1) {
         if (!(value & bit)) saw_zero = true;
