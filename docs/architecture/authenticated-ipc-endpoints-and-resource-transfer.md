@@ -97,6 +97,10 @@ The first kernel-only service namespace is implemented:
   obtains its endpoint once through `ipc_service_result()`.
 - Connect and result retrieval are nonblocking. A client polls its own request
   token and receives EMPTY until the server accepts or rejects.
+- `ipc_service_cancel()` is scoped to the current client task. It invalidates
+  pending/offered tokens so a server's saved offer can no longer be accepted.
+  If acceptance already committed but the client has not retrieved its handle,
+  cancellation closes that endpoint and wakes the server with PEER_CLOSED.
 - Unregister and server task exit reject unaccepted/offered requests. Accepted
   endpoints are independent channel references and survive service unregister
   until their owning tasks close them. Client task exit discards its request
@@ -192,6 +196,8 @@ attachment counts, listener requests, outstanding reservations and waiters.
 | Wrong task uses service handle | Reject |
 | Wrong service attempts to accept request token | Reject |
 | Server rejects request | Client receives REJECTED once; no endpoint is installed |
+| Client cancels pending/offered request | Request token is revoked; stale server offer cannot be accepted |
+| Client cancels accepted, unclaimed request | Client endpoint is closed and server observes PEER_CLOSED |
 | Service unregisters with pending/offered requests | Reject pending work; accepted channel pairs remain independent |
 | Client exits with pending request | Release request record before TCB reuse |
 | Dead client discovered by server scan | Reclaim its request record |
