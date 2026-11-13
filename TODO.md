@@ -127,7 +127,7 @@ The shell still owns the framebuffer and application renderers, while the WM own
 - [x] Add dedicated QEMU scheduler coverage proving receiver BLOCKED before send, message wake, second blocking wait and peer-close wake
 - [x] Extend the QEMU waiter gate to cover task-exit peer close and cancellation by revoking a blocked reader's local endpoint; assert CANCELLED/PEER_CLOSED and reap both workers
 - [x] Add a bounded kernel-only service namespace with exact-name registration, CAP_IPC_SERVICE ownership, client-capability policy, generation-protected request handles, blocking connect/accept/reject and task-exit/unregister cleanup
-- [ ] Add dedicated QEMU coverage for blocked client connect and server accept wakeups, service unregister and task-exit races
+- [x] Add dedicated QEMU coverage for a server blocked in accept, client connect wakeup, rights-limited endpoint messaging, request rejection and unregister waking a genuinely blocked client
 - [ ] Add transactional descriptor attachments, reference pinning, recipient-slot reservation and rollback
 - [ ] Only design ring-3 IPC syscalls after user-memory preflight, service authorization and QEMU lifecycle tests exist
 - [ ] Unix domain sockets (socket.c is INET-only)
@@ -337,8 +337,8 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 
 ## Recommended Next Steps
 
-1. **IPC runtime validation** - add scheduler-backed QEMU coverage for blocked service connect/accept, unregister and task-exit races before exposing any user ABI
-2. **Transactional IPC transfer** - add descriptor attachments, queue-owned open-file references, recipient-slot reservation and rollback; keep ring-3 IPC disabled until user-memory preflight and authorization tests exist
+1. **Transactional IPC transfer** - add descriptor attachments, queue-owned open-file references, recipient-slot reservation and rollback; keep ring-3 IPC disabled until user-memory preflight and authorization tests exist
+2. **IPC adversarial lifecycle** - add QEMU coverage for service-owner exit during blocked accept, concurrent clients/acceptors, cancellation/timeout policy and request-table pressure before any public ABI exists
 3. **Internet connectivity** - validate DHCP, route/DNS installation, lease renewal and reconnect behavior against real LAN DHCP servers, then complete HTTPS/TLS prerequisites
 4. **Secure transport** - add TLS with certificate and clock validation before presenting the Browser as Internet-ready
 5. **Hardware services** - add timezone-aware RTC policy, ACPI battery discovery and reliable HDA PCM playback
