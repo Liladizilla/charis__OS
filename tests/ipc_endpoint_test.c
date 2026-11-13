@@ -692,7 +692,7 @@ static void test_fd_attachment_requires_transfer_rights(void) {
     assert(ipc_close(receive_b) == IPC_STATUS_OK);
 }
 
-static void test_fd_attachment_receiver_authority_and_close_cleanup(void) {
+static void test_fd_attachment_rejects_unauthorized_receiver(void) {
     reset_task(&task_a, 1221);
     reset_task(&task_b, 1222);
     transfer_test_reset();
@@ -701,29 +701,28 @@ static void test_fd_attachment_receiver_authority_and_close_cleanup(void) {
     assert(ipc_endpoint_pair_create(&task_a, &task_b,
         IPC_RIGHT_SEND | IPC_RIGHT_TRANSFER, IPC_RIGHT_RECEIVE,
         &send_a, &receive_b));
-    const char payload[] = "must-remain-queued";
+    const char payload[] = "must-not-be-queued";
 
     active_task = &task_a;
     assert(ipc_send_with_fd(send_a, payload, sizeof(payload),
-                            IPC_TEST_SOURCE_FD, FD_RIGHT_READ) == IPC_STATUS_OK);
-    transfer_test_close_source();
+                            IPC_TEST_SOURCE_FD, FD_RIGHT_READ) ==
+           IPC_STATUS_ACCESS_DENIED);
+    /* The temporary pin was released and no unreceivable queue entry exists. */
     assert(transfer_file.lifecycle == 1u);
+    transfer_test_close_source();
+    assert(transfer_file.lifecycle == 0u);
+    assert(transfer_final_release_count == 1u);
 
     active_task = &task_b;
     char received[sizeof(payload)];
     fd_handle_t received_fd = FD_HANDLE_INVALID;
     assert(ipc_recv_with_fd(receive_b, received, sizeof(received), NULL,
-                            &received_fd) == IPC_STATUS_ACCESS_DENIED);
+                            &received_fd) == IPC_STATUS_EMPTY);
     assert(received_fd == FD_HANDLE_INVALID);
-    assert(transfer_file.lifecycle == 1u);
-
-    /* Closing the receiver's inbound queue drops the queued pin after leaving
-     * the IPC critical section; fd_release asserts that ordering in this test. */
-    assert(ipc_close(receive_b) == IPC_STATUS_OK);
-    assert(transfer_file.lifecycle == 0u);
-    assert(transfer_final_release_count == 1u);
     active_task = &task_a;
     assert(ipc_close(send_a) == IPC_STATUS_OK);
+    active_task = &task_b;
+    assert(ipc_close(receive_b) == IPC_STATUS_OK);
 }
 
 static void test_fd_attachment_send_failure_and_task_exit_release(void) {
@@ -831,7 +830,7 @@ int main(void) {
     test_table_limit();
     test_fd_attachment_transfer_and_receiver_retry();
     test_fd_attachment_requires_transfer_rights();
-    test_fd_attachment_receiver_authority_and_close_cleanup();
+    test_fd_attachment_rejects_unauthorized_receiver();
     test_fd_attachment_send_failure_and_task_exit_release();
     test_fd_attachment_task_exit_releases_queue_pin();
     test_fd_attachment_multi_message_task_cleanup();
