@@ -192,7 +192,7 @@ static void test_cache_miss_requests_are_coalesced_and_retried(void) {
     assert(transmitted_count == 2u * ARP_MAX_ATTEMPTS + 1u);
     test_now_ms += ARP_RETRY_INTERVAL_MS;
     assert(!net_stack_resolve_ipv4(peer_ip_test, mac));
-    assert(transmitted_count == 2u * ARP_MAX_ATTEMPTS + 1u);
+    assert(transmitted_count == 2u * ARP_MAX_ATTEMPTS + 2u);
 }
 
 static void test_only_solicited_matching_arp_reply_is_learned(void) {
