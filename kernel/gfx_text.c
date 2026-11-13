@@ -79,7 +79,7 @@ static void draw_glyph_with_style(u32 x, u32 y, char ch, u32 fg, u32 bg, u32 sca
     if (!g_framebuffer.initialized || !scale || scale > 8) return;
 
     u32 left = 0, right = font_cell_w - 1;
-    const u8* rows = glyph_data(ch, &left, &right);
+    const u16* rows = glyph_data(ch, &left, &right);
     if (!rows) return;
 
     bool proportional = (style != 1);
