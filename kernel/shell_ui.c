@@ -1636,7 +1636,13 @@ void shell_ui_main(void* arg) {
              * will be composited again at the end of this frame, with a fresh
              * save-under snapshot for pixels the clock may have changed. */
             if (!ui.needs_redraw) {
-                cursor_erase();
+                u32 bar_h = taskbar_height();
+                u32 bar_y = g_framebuffer.height > bar_h
+                          ? g_framebuffer.height - bar_h : 0;
+                /* A clock repaint must not erase a pointer elsewhere on the
+                 * desktop. Restore save-under only when this paint intersects it. */
+                if (cursor_intersects_rect(0, bar_y, g_framebuffer.width, bar_h))
+                    cursor_erase();
                 draw_taskbar();
             }
         }
