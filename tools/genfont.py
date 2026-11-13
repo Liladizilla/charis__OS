@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 from PIL import Image, ImageDraw, ImageFont
 
-CELL_W, CELL_H = 18, 24
+CELL_W, CELL_H = 16, 22
 FIRST, LAST = 32, 126
 COVERAGE_LEVELS = 15
 FONT_CANDIDATES = (
