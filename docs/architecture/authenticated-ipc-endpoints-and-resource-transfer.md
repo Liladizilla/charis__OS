@@ -2,12 +2,14 @@
 
 ## Status
 
-The kernel-only endpoint and service-rendezvous stages are implemented and
-host-tested. QEMU verifies endpoint message wake, peer-task exit, local endpoint
-cancellation, blocked service accept/connect wakeup, rights-limited endpoint
-messaging, request rejection and unregister waking a blocked client. Public
-ring-3 IPC, public service lookup and descriptor attachments remain deliberately
-unavailable.
+The kernel-only endpoint, service-rendezvous and one-file descriptor-attachment
+stages are implemented and host-tested. QEMU verifies endpoint message wake,
+peer-task exit, local endpoint cancellation, blocked service accept/connect
+wakeup, rights-limited endpoint messaging, request rejection and unregister
+waking a blocked client. Attachment tests verify queue-owned open-file references,
+rights attenuation, receiver-slot exhaustion, commit rollback, queue preservation
+and teardown release. Public ring-3 IPC and public service lookup remain
+deliberately unavailable.
 
 ## Current boundary
 
@@ -101,22 +103,45 @@ exposed. Do not add wildcard public services, ambient channel lookup or global
 
 ## Transactional resource attachment
 
-Descriptor transfer must be an authenticated endpoint operation. A future
-attachment contains only kernel-owned metadata: a pinned
-`vfs_open_file_t *`, requested recipient rights, attachment type/version and
-an explicit copy-versus-move policy. Copy is the only acceptable first policy.
+The first kernel-only attachment increment is implemented. Each IPC message
+may carry at most one `vfs_open_file_t *` reference plus the requested
+recipient-rights mask. The pointer is kernel-owned metadata and is never
+serialized into a userspace payload. No attachment type/version field exists
+yet because this protocol admits only one open-file description.
 
-The send path must validate endpoint identity and transfer rights, resolve
-source descriptors in the sender's task, attenuate requested rights, pin each
-open-file description, reserve complete queue capacity, then publish bytes and
-references as one commit. Any pre-commit failure releases temporary pins and
-leaves sender descriptors and queues unchanged.
+The sender calls `ipc_send_with_fd()`. It resolves and pins the source
+descriptor in the current task before entering the IPC critical section. The
+sender endpoint must have both `IPC_RIGHT_SEND` and `IPC_RIGHT_TRANSFER`; the
+requested descriptor rights must already be granted by the source entry. The
+queue takes ownership of the temporary reference only when the payload and
+attachment are committed together. Queue full, peer-close, invalid endpoint or
+source-right failure leaves the sender descriptor unchanged and drops the
+temporary pin outside the IPC lock.
 
-The receive path must validate the full writable user destination before
-reserving a message, reserve all destination descriptor slots and references,
-copy through a kernel bounce buffer, and publish payload plus handles as one
-transaction. Failure before commit must leave the original message available
-for retry. No recipient may receive a handle with escalated rights.
+A normal `ipc_recv()` does not silently discard an attached reference. It
+returns `IPC_STATUS_ATTACHMENT_PENDING` and leaves that message at the queue
+head. `ipc_recv_with_fd()` is required to accept it. The receiving endpoint
+must have `IPC_RIGHT_RECEIVE` and `IPC_RIGHT_TRANSFER`. The receiver reserves
+a task-local descriptor slot using `fd_transfer_reserve()`, then publishes
+the queue-owned reference with `fd_transfer_commit()`. Only after a successful
+commit does it copy the bounded payload and dequeue the message. The recipient
+gets exactly the rights carried by the attachment, which were checked against
+the source descriptor. If the destination table is full or commit fails, the
+reservation is cancelled and the original message and its reference remain
+queued for retry.
+
+Closing an endpoint or tearing down a task detaches queued attachment
+references while local IRQ exclusion is held, then calls `fd_release()` only
+after the IPC critical section has been restored. The release batch is bounded
+by the per-task endpoint and per-direction queue limits. No filesystem close
+callback or heap destructor runs while the IPC lock is held.
+
+This increment is deliberately kernel-only. The receive buffer is a kernel
+buffer, and these APIs are not registered as syscalls. It does not yet provide
+user-memory preflight, a ring-3 ABI, arbitrary multi-file bundles, move
+semantics, shared-memory transfer, attachment metadata/version negotiation or
+SMP-safe synchronization. Public IPC must remain unavailable until those
+separate authority and user-copy requirements are implemented and tested.
 
 ## Lifecycle and concurrency invariants
 
