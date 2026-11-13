@@ -347,12 +347,13 @@ jobs:
               sleep 1
             done
             sleep 4
+            # Move the initial pointer away from the workspace title before
+            # the clean desktop capture. Then use a relative out-and-back
+            # movement to prove cursor restoration pixel-for-pixel.
+            printf 'mouse_move 450 30\n'
+            sleep 1
             printf 'screendump build/charisos-desktop-preview.ppm\n'
-            sleep 2
-            # Exercise the real emulated PS/2 path. Start at the driver's
-            # initial 50,50 pointer position, move to clear workspace, then
-            # return exactly. The pair of screenshots proves both movement
-            # and restoration of the previous framebuffer pixels.
+            sleep 1
             printf 'mouse_move 300 200\n'
             sleep 1
             printf 'screendump build/charisos-pointer-moved-preview.ppm\n'
