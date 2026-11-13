@@ -7,8 +7,8 @@ from PIL import Image
 
 MAGIC = b"CWP1"
 VERSION = 1
-WIDTH = 1024
-HEIGHT = 768
+WIDTH = 2560
+HEIGHT = 1440
 
 
 def main() -> None:
@@ -23,7 +23,7 @@ def main() -> None:
         if src_w < 2 or src_h < 2 or src_w > 16384 or src_h > 16384:
             raise SystemExit(f"refusing implausible source dimensions: {src_w}x{src_h}")
 
-        # Center-crop to 4:3 without stretching the original photograph.
+        # Center-crop to 16:9 without stretching the original photograph.
         if src_w * HEIGHT > src_h * WIDTH:
             crop_w = src_h * WIDTH // HEIGHT
             left = (src_w - crop_w) // 2
