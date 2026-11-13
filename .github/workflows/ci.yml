@@ -239,6 +239,12 @@ jobs:
           make images-waitpid-test
           BUILD_DIR=build/waitpid-test ./tools/verify-boot.sh build/waitpid-test/charisos-vm.iso --require-waitpid
 
+      - name: Verify IPC blocking receive wakeup, peer exit and cancellation
+        run: |
+          set -e
+          make images-ipc-wait-test
+          BUILD_DIR=build/ipc-wait-test ./tools/verify-boot.sh build/ipc-wait-test/charisos-vm.iso --require-ipc-wait
+
       - name: Boot kernel-stack guard IST containment test
         run: |
           set -e
