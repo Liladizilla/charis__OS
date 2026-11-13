@@ -99,6 +99,7 @@ Do not use this project to store sensitive data or as the only operating system 
 | [TODO.md](./TODO.md) | Current implementation status, milestones and remaining work |
 | [docs/charis-design-language.md](./docs/charis-design-language.md) | Desktop visual principles, scaling goals and current UI limitations |
 | [SECURITY.md](./SECURITY.md) | Security reporting and responsible-disclosure guidance |
+| [docs/RELEASE_INTEGRATION.md](./docs/RELEASE_INTEGRATION.md) | Mainline branch discipline, test evidence and ISO release provenance |
 | [LICENSE](./LICENSE) | MIT license |
 
 ---
