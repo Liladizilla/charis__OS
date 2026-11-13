@@ -64,6 +64,7 @@ static struct ipc_service ipc_services[IPC_MAX_SERVICES];
 static struct ipc_connection_request ipc_requests[IPC_MAX_CONNECTIONS];
 static u8 shm_blocks[SHM_MAX_BLOCKS][SHM_BLOCK_SIZE];
 static bool shm_used[SHM_MAX_BLOCKS];
+static bool ipc_initialized;
 
 #ifdef IPC_HOST_TEST
 static u64 ipc_irq_save(void) { return 0; }
@@ -455,6 +456,10 @@ static void ipc_close_slot_locked(task_t* owner, u32 slot) {
 }
 
 void ipc_init(void) {
+    /* This subsystem is boot-initialized once. Reinitializing live generation
+     * tables could make a stale service/request token valid again. */
+    if (ipc_initialized) return;
+    ipc_initialized = true;
     for (u32 i = 0; i < IPC_MAX_CHANNELS; i++) {
         ipc_channel_t* ch = &ipc_channels[i];
         ch->in_use = false;
@@ -815,6 +820,10 @@ int ipc_service_connect_begin(const char* name, u32 requested_client_rights,
         ipc_irq_restore(flags);
         return IPC_STATUS_SERVICE_NOT_FOUND;
     }
+    if (service->owner == client && service->owner_pid == client->pid) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ACCESS_DENIED;
+    }
     if (service->required_client_capabilities &&
         !security_check_capability(client, service->required_client_capabilities)) {
         ipc_irq_restore(flags);
@@ -1037,6 +1046,16 @@ int ipc_service_accept(ipc_service_handle_t service_handle,
         ipc_request_release_locked(request);
         ipc_irq_restore(flags);
         return IPC_STATUS_REQUEST_INVALID;
+    }
+
+    /* Revalidate policy at acceptance: client authority may have been
+     * reduced after connect_begin queued the request. */
+    if (service->required_client_capabilities &&
+        !security_check_capability(client, service->required_client_capabilities)) {
+        ipc_request_complete_client_locked(request, IPC_STATUS_ACCESS_DENIED,
+                                           IPC_HANDLE_INVALID);
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ACCESS_DENIED;
     }
 
     ipc_handle_t client_endpoint = IPC_HANDLE_INVALID;
