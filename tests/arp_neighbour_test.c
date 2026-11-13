@@ -436,7 +436,15 @@ static void test_persisted_ipv4_configuration_is_validated(void) {
     assert(!net_stack_has_ipv4_config());
     assert(ip_is_zero(default_gateway));
 
+    /* An invalid persisted /0 mask must not silently become a /24 lease. */
     configured_ip_override = "192.168.1.20";
+    configured_mask_override = "0.0.0.0";
+    stack_ready = false;
+    net_stack_init();
+    assert(!net_stack_has_ipv4_config());
+    assert(ip_is_zero(default_gateway));
+
+    configured_mask_override = "255.255.255.0";
     configured_gateway_override = "192.168.1.255";
     stack_ready = false;
     net_stack_init();
