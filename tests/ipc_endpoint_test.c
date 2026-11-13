@@ -292,7 +292,7 @@ static void test_service_unregister_wakes_client_and_acceptor(void) {
                                 &service) == IPC_STATUS_OK);
     assert(ipc_test_service_register_waiter(service));
     assert(ipc_service_unregister(service) == IPC_STATUS_OK);
-    assert(task_a.state == TASK_STATE_READY);
+    assert(task_a.state == TASK_STATE_RUNNING);
     assert(task_a.ipc_service_wait == NULL);
     assert(task_a.ipc_service_wait_status == IPC_STATUS_SERVICE_CLOSED);
 
