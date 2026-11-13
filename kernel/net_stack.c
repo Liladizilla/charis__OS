@@ -230,6 +230,12 @@ static bool mac_is_valid_unicast(const u8 mac[6]) {
 
 static bool ip_is_directed_broadcast(const u8 ip[4]) {
     if (!ip || !ip_is_configured()) return false;
+    u32 host_mask = 0;
+    for (usize i = 0; i < 4; i++)
+        host_mask = (host_mask << 8) | (u8)~local_mask[i];
+    /* /31 and /32 have no directed-broadcast address. */
+    if (host_mask <= 1u) return false;
+
     bool same_subnet = true;
     bool all_host_bits = true;
     for (usize i = 0; i < 4; i++) {
@@ -613,6 +619,8 @@ static void handle_arp(const ethernet_header_t* eth, usize length) {
 
     /* The ARP sender hardware address must agree with the Ethernet source.
      * Reject invalid, looped-back, multicast and unrelated protocol senders. */
+    static const u8 ethernet_broadcast[6] =
+        {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
     if (!mac_is_valid_unicast(req->sha) ||
         !same_bytes(req->sha, eth->src, 6) ||
         !arp_sender_ip_valid(req->spa) ||
@@ -621,12 +629,18 @@ static void handle_arp(const ethernet_header_t* eth, usize length) {
 
     if (operation == ARP_REPLY) {
         /* Never learn unsolicited replies or replies aimed at another host. */
-        if (!same_bytes(req->tha, iface->mac_addr, 6) ||
+        if (!same_bytes(eth->dest, iface->mac_addr, 6) ||
+            !same_bytes(req->tha, iface->mac_addr, 6) ||
             !arp_pending_find(req->spa))
             return;
         arp_cache_learn(req->spa, req->sha);
         return;
     }
+
+    /* Requests for our address may be broadcast or explicitly unicast. */
+    if (!same_bytes(eth->dest, iface->mac_addr, 6) &&
+        !same_bytes(eth->dest, ethernet_broadcast, 6))
+        return;
 
     /* Only a valid request for our own address is eligible for learning. */
     arp_cache_learn(req->spa, req->sha);
