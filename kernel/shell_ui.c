@@ -150,6 +150,7 @@ static bool alt_held;
 static u32 settings_title_height(void);
 static u32 settings_panel_width(void);
 static u32 settings_panel_height(void);
+static bool settings_reflow_window(window_t* win);
 static u32 about_titlebar_height(void);
 static void draw_settings_window(window_t* win);
 static bool settings_handle_window_click(window_t* win, int mx, int my);
