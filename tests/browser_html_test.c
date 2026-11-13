@@ -203,6 +203,24 @@ static void test_wrapping_prefers_word_boundaries(void) {
     expect(preview_skip_lines(text, sizeof(text) - 1u, 1u, 10u) == 11u,
            "scroll skips the first word-wrapped row and following spaces");
 }
+static void test_browser_window_manager_bounds_contract(void) {
+    u32 x = 0, y = 0, width = 0, height = 0;
+    g_framebuffer.width = 1024u;
+    g_framebuffer.height = 768u;
+    expect(browser_titlebar_height() == 42u,
+           "browser publishes the titlebar height expected by the window manager");
+
+    browser_set_bounds(120u, 84u, 640u, 480u);
+    browser_geometry(&x, &y, &width, &height);
+    expect(x == 120u && y == 84u && width == 640u && height == 480u,
+           "browser renderer uses the bounds supplied by the window manager");
+
+    browser_reset_bounds();
+    browser_geometry(&x, &y, &width, &height);
+    expect(x == 12u && y == 10u && width == 1000u && height == 706u,
+           "browser restores a bounded framebuffer fallback after reset");
+}
+
 int main(void) {
     test_tags_and_block_boundaries();
     test_scripts_and_styles_are_hidden();
@@ -219,6 +237,7 @@ int main(void) {
     test_http_url_parser_rejects_unsupported_or_malformed_urls();
     test_http_status_feedback_distinguishes_redirects_and_errors();
     test_wrapping_prefers_word_boundaries();
+    test_browser_window_manager_bounds_contract();
     puts("Browser HTML extraction tests passed");
     return 0;
 }
