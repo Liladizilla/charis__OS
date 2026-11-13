@@ -461,8 +461,9 @@ static bool ipc_waiter_register_locked(struct ipc_endpoint* endpoint,
     return true;
 }
 
-static void ipc_close_slot_locked(task_t* owner, u32 slot) {
-    if (!owner || slot >= IPC_MAX_ENDPOINTS) return;
+static void ipc_close_slot_locked(task_t* owner, u32 slot,
+                                    ipc_release_batch_t* releases) {
+    if (!owner || slot >= IPC_MAX_ENDPOINTS || !releases) return;
     struct ipc_endpoint* ep = owner->ipc_endpoints[slot];
     if (!ep) return;
     ipc_channel_t* ch = ep->channel;
@@ -480,7 +481,7 @@ static void ipc_close_slot_locked(task_t* owner, u32 slot) {
     ep->peer = NULL;
     ep->owner_pid = ep->peer_pid = ep->rights = 0;
     if (ch && ch->in_use) {
-        ipc_queue_clear(&ch->inbound[side]);
+        ipc_queue_collect_attachments_locked(&ch->inbound[side], releases);
         if (ch->endpoint_refs) ch->endpoint_refs--;
         if (!ch->endpoint_refs) {
             /* Payload bytes are unreachable once both queue counts are zero.
@@ -741,16 +742,22 @@ bool ipc_test_wake_waiters(ipc_handle_t handle, u32 reason) {
 int ipc_close(ipc_handle_t handle) {
     task_t* owner = scheduler_current();
     if (!owner) return IPC_STATUS_ERROR;
+    ipc_release_batch_t releases = {0};
     u64 flags = ipc_irq_save();
     struct ipc_endpoint* ep = ipc_resolve_locked(owner, handle, 0);
-    if (!ep) { ipc_irq_restore(flags); return IPC_STATUS_ERROR; }
-    ipc_close_slot_locked(owner, ep->slot);
+    if (!ep) {
+        ipc_irq_restore(flags);
+        return IPC_STATUS_ERROR;
+    }
+    ipc_close_slot_locked(owner, ep->slot, &releases);
     ipc_irq_restore(flags);
+    ipc_release_batch(&releases);
     return IPC_STATUS_OK;
 }
 
 void ipc_task_close_all(task_t* task) {
     if (!task) return;
+    ipc_release_batch_t releases = {0};
     u64 flags = ipc_irq_save();
     /* Revoke service registration and all pending client/server rendezvous
      * before the TCB or any task-owned endpoint can be recycled. */
@@ -766,8 +773,9 @@ void ipc_task_close_all(task_t* task) {
         task_unblock(task);
     }
     for (u32 i = 0; i < IPC_MAX_ENDPOINTS; i++)
-        ipc_close_slot_locked(task, i);
+        ipc_close_slot_locked(task, i, &releases);
     ipc_irq_restore(flags);
+    ipc_release_batch(&releases);
 }
 
 int ipc_service_register(const char* name,
