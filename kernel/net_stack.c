@@ -14,6 +14,7 @@
 #include <kernel/string.h>
 #include <kernel/scheduler.h>
 #include <kernel/task.h>
+#include <kernel/timer.h>
 
 #define ETH_HEADER_LEN 14u
 #define ETH_TYPE_IPV4  0x0800u
@@ -23,6 +24,9 @@
 #define ARP_REQUEST    1u
 #define ARP_REPLY      2u
 #define ARP_CACHE_ENTRIES 16u
+#define ARP_RETRY_INTERVAL_MS 1000u
+#define ARP_MAX_ATTEMPTS 4u
+#define ARP_FAILURE_HOLDDOWN_MS 5000u
 #define IPV4_MIN_LEN   20u
 #define IPV4_PROTO_ICMP 1u
 #define IPV4_PROTO_UDP 17u
@@ -57,6 +61,16 @@ typedef struct {
 } arp_cache_entry_t;
 static arp_cache_entry_t arp_cache[ARP_CACHE_ENTRIES];
 static u8 arp_cache_next;
+
+typedef struct {
+    u8 ip[4];
+    u64 last_sent_ms;
+    u8 attempts;
+    bool valid;
+} arp_pending_entry_t;
+
+static arp_pending_entry_t arp_pending[ARP_CACHE_ENTRIES];
+static u8 arp_pending_next;
 
 typedef struct {
     u16 port;
@@ -127,7 +141,9 @@ void net_stack_init(void) {
     kmemset(local_mask, 0, sizeof(local_mask));
     kmemset(default_gateway, 0, sizeof(default_gateway));
     kmemset(arp_cache, 0, sizeof(arp_cache));
+    kmemset(arp_pending, 0, sizeof(arp_pending));
     arp_cache_next = 0;
+    arp_pending_next = 0;
 
     const char* configured = config_get_string("net_ip", "0.0.0.0");
     if (!parse_ipv4(configured, local_ip))
@@ -183,7 +199,9 @@ bool net_stack_configure_ipv4(const u8 address[4], const u8 mask[4],
     kmemcpy(default_gateway, gateway, 4);
     kmemcpy(iface->ip_addr, address, 4);
     kmemset(arp_cache, 0, sizeof(arp_cache));
+    kmemset(arp_pending, 0, sizeof(arp_pending));
     arp_cache_next = 0;
+    arp_pending_next = 0;
     stack_ready = true;
     return true;
 }
@@ -193,7 +211,9 @@ void net_stack_clear_ipv4(void) {
     kmemset(local_mask, 0, sizeof(local_mask));
     kmemset(default_gateway, 0, sizeof(default_gateway));
     kmemset(arp_cache, 0, sizeof(arp_cache));
+    kmemset(arp_pending, 0, sizeof(arp_pending));
     arp_cache_next = 0;
+    arp_pending_next = 0;
     net_interface_t* iface = net_get_interface();
     if (iface) kmemset(iface->ip_addr, 0, sizeof(iface->ip_addr));
     stack_ready = true;
@@ -204,11 +224,70 @@ static bool mac_is_zero(const u8 mac[6]) {
     return true;
 }
 
+static bool mac_is_valid_unicast(const u8 mac[6]) {
+    return mac && !mac_is_zero(mac) && !(mac[0] & 1u);
+}
+
+static bool ip_is_directed_broadcast(const u8 ip[4]) {
+    if (!ip || !ip_is_configured()) return false;
+    bool same_subnet = true;
+    bool all_host_bits = true;
+    for (usize i = 0; i < 4; i++) {
+        if ((ip[i] & local_mask[i]) != (local_ip[i] & local_mask[i]))
+            same_subnet = false;
+        if ((u8)(ip[i] | local_mask[i]) != 0xFFu)
+            all_host_bits = false;
+    }
+    return same_subnet && all_host_bits;
+}
+
+static bool arp_sender_ip_valid(const u8 ip[4]) {
+    return ip_is_unicast(ip) && !same_bytes(ip, local_ip, 4) &&
+           !ip_is_directed_broadcast(ip);
+}
+
+static arp_pending_entry_t* arp_pending_find(const u8 ip[4]) {
+    for (usize i = 0; i < ARP_CACHE_ENTRIES; i++) {
+        if (arp_pending[i].valid && same_bytes(arp_pending[i].ip, ip, 4))
+            return &arp_pending[i];
+    }
+    return NULL;
+}
+
+static void arp_pending_clear(const u8 ip[4]) {
+    for (usize i = 0; i < ARP_CACHE_ENTRIES; i++) {
+        if (arp_pending[i].valid && same_bytes(arp_pending[i].ip, ip, 4))
+            arp_pending[i].valid = false;
+    }
+}
+
+static arp_pending_entry_t* arp_pending_reserve(const u8 ip[4]) {
+    arp_pending_entry_t* entry = arp_pending_find(ip);
+    if (entry) return entry;
+
+    for (usize i = 0; i < ARP_CACHE_ENTRIES; i++) {
+        if (!arp_pending[i].valid) {
+            entry = &arp_pending[i];
+            break;
+        }
+    }
+    if (!entry) {
+        entry = &arp_pending[arp_pending_next];
+        arp_pending_next = (u8)((arp_pending_next + 1u) % ARP_CACHE_ENTRIES);
+    }
+    kmemcpy(entry->ip, ip, 4);
+    entry->last_sent_ms = 0;
+    entry->attempts = 0;
+    entry->valid = true;
+    return entry;
+}
+
 static void arp_cache_learn(const u8 ip[4], const u8 mac[6]) {
-    if (ip_is_zero(ip) || mac_is_zero(mac) || (mac[0] & 1u)) return;
+    if (!arp_sender_ip_valid(ip) || !mac_is_valid_unicast(mac)) return;
     for (usize i = 0; i < ARP_CACHE_ENTRIES; i++) {
         if (arp_cache[i].valid && same_bytes(arp_cache[i].ip, ip, 4)) {
             kmemcpy(arp_cache[i].mac, mac, 6);
+            arp_pending_clear(ip);
             return;
         }
     }
@@ -217,22 +296,11 @@ static void arp_cache_learn(const u8 ip[4], const u8 mac[6]) {
     kmemcpy(entry->mac, mac, 6);
     entry->valid = true;
     arp_cache_next = (u8)((arp_cache_next + 1u) % ARP_CACHE_ENTRIES);
+    arp_pending_clear(ip);
 }
 
-/* Resolve an on-link neighbour. A cache miss sends ARP and returns false;
- * the caller retries after net_poll_task processes the response. */
-bool net_stack_resolve_ipv4(const u8 ip[4], u8 mac_out[6]) {
-    if (!stack_ready) net_stack_init();
-    if (!ip || !mac_out || !ip_is_configured() || ip_is_zero(ip)) return false;
-    for (usize i = 0; i < ARP_CACHE_ENTRIES; i++) {
-        if (arp_cache[i].valid && same_bytes(arp_cache[i].ip, ip, 4)) {
-            kmemcpy(mac_out, arp_cache[i].mac, 6);
-            return true;
-        }
-    }
-
-    net_interface_t* iface = net_get_interface();
-    if (!iface || !iface->initialized) return false;
+static void arp_send_request(const u8 ip[4], net_interface_t* iface,
+                             arp_pending_entry_t* pending) {
     kmemset(frame_out, 0, ETH_HEADER_LEN + sizeof(arp_packet_t));
     ethernet_header_t* eth = (ethernet_header_t*)frame_out;
     kmemset(eth->dest, 0xFF, 6);
@@ -248,7 +316,49 @@ bool net_stack_resolve_ipv4(const u8 ip[4], u8 mac_out[6]) {
     kmemcpy(req->spa, local_ip, 4);
     kmemset(req->tha, 0, 6);
     kmemcpy(req->tpa, ip, 4);
+
+    /* Count even a failed device submission: callers may retry, but must not
+     * turn an unavailable NIC into an unbounded ARP transmit loop. */
     (void)net_send_packet(frame_out, ETH_HEADER_LEN + sizeof(*req));
+    pending->last_sent_ms = timer_get_ms();
+    if (pending->attempts < ARP_MAX_ATTEMPTS) pending->attempts++;
+}
+
+/* Resolve an on-link neighbour. Cache misses are coalesced and retransmitted
+ * at a bounded cadence; unanswered neighbours enter a short failure hold-down. */
+bool net_stack_resolve_ipv4(const u8 ip[4], u8 mac_out[6]) {
+    if (!stack_ready) net_stack_init();
+    if (!ip || !mac_out || !ip_is_configured() || !ip_is_unicast(ip) ||
+        ip_is_directed_broadcast(ip))
+        return false;
+
+    net_interface_t* iface = net_get_interface();
+    if (!iface || !iface->initialized || !mac_is_valid_unicast(iface->mac_addr))
+        return false;
+    if (same_bytes(ip, local_ip, 4)) {
+        kmemcpy(mac_out, iface->mac_addr, 6);
+        return true;
+    }
+
+    for (usize i = 0; i < ARP_CACHE_ENTRIES; i++) {
+        if (arp_cache[i].valid && same_bytes(arp_cache[i].ip, ip, 4)) {
+            kmemcpy(mac_out, arp_cache[i].mac, 6);
+            return true;
+        }
+    }
+
+    arp_pending_entry_t* pending = arp_pending_reserve(ip);
+    u64 now = timer_get_ms();
+    if (pending->attempts >= ARP_MAX_ATTEMPTS) {
+        if (now - pending->last_sent_ms < ARP_FAILURE_HOLDDOWN_MS)
+            return false;
+        pending->attempts = 0;
+    } else if (pending->attempts &&
+               now - pending->last_sent_ms < ARP_RETRY_INTERVAL_MS) {
+        return false;
+    }
+
+    arp_send_request(ip, iface, pending);
     return false;
 }
 
@@ -488,7 +598,12 @@ static void handle_udp(const u8* ip, usize ip_len, u8 ihl) {
 static void handle_arp(const ethernet_header_t* eth, usize length) {
     if (length < ETH_HEADER_LEN + sizeof(arp_packet_t) || !ip_is_configured())
         return;
-    const arp_packet_t* req = (const arp_packet_t*)((const u8*)eth + ETH_HEADER_LEN);
+    net_interface_t* iface = net_get_interface();
+    if (!iface || !iface->initialized || !mac_is_valid_unicast(iface->mac_addr))
+        return;
+
+    const arp_packet_t* req =
+        (const arp_packet_t*)((const u8*)eth + ETH_HEADER_LEN);
     u16 operation = read_be16((const u8*)&req->oper_hi);
     if (read_be16((const u8*)&req->htype_hi) != ARP_HTYPE_ETH ||
         read_be16((const u8*)&req->ptype_hi) != ARP_PTYPE_IPV4 ||
@@ -496,13 +611,25 @@ static void handle_arp(const ethernet_header_t* eth, usize length) {
         (operation != ARP_REQUEST && operation != ARP_REPLY))
         return;
 
-    arp_cache_learn(req->spa, req->sha);
-    if (operation != ARP_REQUEST || !ip_is_configured() ||
+    /* The ARP sender hardware address must agree with the Ethernet source.
+     * Reject invalid, looped-back, multicast and unrelated protocol senders. */
+    if (!mac_is_valid_unicast(req->sha) ||
+        !same_bytes(req->sha, eth->src, 6) ||
+        !arp_sender_ip_valid(req->spa) ||
         !same_bytes(req->tpa, local_ip, 4))
         return;
 
-    net_interface_t* iface = net_get_interface();
-    if (!iface || !iface->initialized) return;
+    if (operation == ARP_REPLY) {
+        /* Never learn unsolicited replies or replies aimed at another host. */
+        if (!same_bytes(req->tha, iface->mac_addr, 6) ||
+            !arp_pending_find(req->spa))
+            return;
+        arp_cache_learn(req->spa, req->sha);
+        return;
+    }
+
+    /* Only a valid request for our own address is eligible for learning. */
+    arp_cache_learn(req->spa, req->sha);
     ethernet_header_t* reply_eth = (ethernet_header_t*)frame_out;
     kmemcpy(reply_eth->dest, req->sha, 6);
     kmemcpy(reply_eth->src, iface->mac_addr, 6);
