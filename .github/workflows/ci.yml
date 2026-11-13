@@ -51,9 +51,7 @@ jobs:
         run: make check-tools
 
       - name: Build kernel and boot images
-        # The desktop capture boot image carries opt-in PS/2/cursor diagnostics.
-        # Release and ordinary local builds remain free of pointer trace logging.
-        run: make images EXTRA_CFLAGS=-DCURSOR_TRACE
+        run: make images
 
       - name: Verify x86-64 baseline instruction set
         run: |
