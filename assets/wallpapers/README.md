@@ -19,7 +19,7 @@ The repository does not parse JPEG in kernel space. During `make`, the build:
 
 1. Downloads the exact original file from the URL above.
 2. Verifies the documented byte length and pinned SHA-1 before using the bytes.
-3. Uses `tools/prepare_wallpaper.py` and Pillow to center-crop without stretching, resize to 1024×768 and encode RGB565 pixels in the bounded CWP1 format.
+3. Uses `tools/prepare_wallpaper.py` and Pillow to center-crop without stretching, resize to 2560×1440 and encode RGB565 pixels in the bounded CWP1 format.
 4. Places `wallpaper.cwp` in the ISO and asks GRUB to load it as the named Multiboot2 module `charisos-wallpaper`.
 5. Lets the kernel reserve the module pages and validate the CWP1 signature, version, dimensions, stride and exact payload length before reading any pixel.
 
