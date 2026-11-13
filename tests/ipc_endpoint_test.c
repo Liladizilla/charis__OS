@@ -812,6 +812,36 @@ static void test_fd_attachment_multi_message_task_cleanup(void) {
     assert(ipc_close(send_a) == IPC_STATUS_OK);
 }
 
+static void test_fd_attachment_endpoint_close_releases_queue_pin(void) {
+    reset_task(&task_a, 1246);
+    reset_task(&task_b, 1247);
+    transfer_test_reset();
+
+    ipc_handle_t send_a, receive_b;
+    assert(ipc_endpoint_pair_create(&task_a, &task_b,
+        IPC_RIGHT_SEND | IPC_RIGHT_TRANSFER,
+        IPC_RIGHT_RECEIVE | IPC_RIGHT_TRANSFER, &send_a, &receive_b));
+    const char payload[] = "endpoint-close";
+
+    active_task = &task_a;
+    assert(ipc_send_with_fd(send_a, payload, sizeof(payload),
+                            IPC_TEST_SOURCE_FD, FD_RIGHT_READ) == IPC_STATUS_OK);
+    assert(transfer_file.lifecycle == 2u);
+    transfer_test_close_source();
+    assert(transfer_file.lifecycle == 1u);
+
+    /* Ordinary endpoint close must detach its inbound queue under IRQ
+     * exclusion, then run the final file release after restoring IRQ state. */
+    active_task = &task_b;
+    assert(ipc_close(receive_b) == IPC_STATUS_OK);
+    assert(!ipc_test_irq_disabled());
+    assert(transfer_file.lifecycle == 0u);
+    assert(transfer_final_release_count == 1u);
+
+    active_task = &task_a;
+    assert(ipc_close(send_a) == IPC_STATUS_OK);
+}
+
 int main(void) {
     reset_task(&task_a, 101); reset_task(&task_b, 202); reset_task(&task_c, 303);
     ipc_init();
@@ -835,6 +865,7 @@ int main(void) {
     test_fd_attachment_rejects_unauthorized_receiver();
     test_fd_attachment_send_failure_and_task_exit_release();
     test_fd_attachment_task_exit_releases_queue_pin();
+    test_fd_attachment_endpoint_close_releases_queue_pin();
     test_fd_attachment_multi_message_task_cleanup();
     puts("PASS: task-owned IPC endpoints, transactional file attachments and teardown");
     return 0;
