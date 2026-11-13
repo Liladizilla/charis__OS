@@ -781,7 +781,7 @@ static void draw_about_window(window_t* win) {
     gfx_draw_string(x + ui_px(24), y + title_h + ui_px(64),
                     NOTICE_LINE_2[4], CHARIS_UI_MUTED, FB_TRANSPARENT);
     gfx_draw_string(x + ui_px(24), y + title_h + ui_px(108),
-                    "Experimental software. Not a production operating system.",
+                    "Core services and desktop applications remain under active development.",
                     CHARIS_UI_WARNING, FB_TRANSPARENT);
     fb_fill_rect(x + ui_px(20), y + h - ui_px(40),
                  w - ui_px(40), ui_px(1), CHARIS_UI_BORDER);
