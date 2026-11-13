@@ -20,6 +20,8 @@ typedef struct {
     const char* boot_loader;
     u32       tags_offset;          /* validated position of the tag list */
     u32       region_count;         /* entries in the memory map */
+    u64       wallpaper_addr;       /* physical start of optional CWP1 module */
+    u32       wallpaper_size;       /* validated byte length of that module */
 } bootmem_display_t;
 
 extern bootmem_display_t boot_info;
