@@ -66,7 +66,7 @@ $(WALLPAPER_MODULE): tools/prepare_wallpaper.py
 	mkdir -p $(BUILD_DIR)
 	$(CURL) --fail --location --retry 3 --connect-timeout 20 --max-time 180 \
 		"$(WALLPAPER_SOURCE_URL)" -o "$(WALLPAPER_SOURCE)"
-	test "$(wc -c < "$(WALLPAPER_SOURCE)")" -eq 2915869
+	wc -c < "$(WALLPAPER_SOURCE)" | tr -d '[:space:]' | grep -qx '2915869'
 	echo "$(WALLPAPER_SOURCE_SHA1)  $(WALLPAPER_SOURCE)" | sha1sum -c -
 	$(PYTHON) tools/prepare_wallpaper.py "$(WALLPAPER_SOURCE)" "$@"
 
