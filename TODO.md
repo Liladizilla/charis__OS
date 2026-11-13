@@ -58,6 +58,7 @@
 - [x] Revoke task-owned endpoints and release channel references during EXITING teardown
 - [x] Add kernel-only blocking receive with atomic waiter registration, message/peer-close wakeups and task-exit cancellation
 - [x] Add dedicated QEMU scheduler coverage proving receiver BLOCKED before send, message wake, second blocking wait and peer-close wake
+- [ ] Extend QEMU waiter coverage to prove task-exit peer close and local-endpoint revocation cancellation while the receiver is BLOCKED
 - [ ] Add transactional descriptor attachments with queue-owned references and receiver rollback
 - [ ] Keep ring-3 IPC and descriptor transfer denied until endpoint tests and user-memory preflight pass
 - [ ] Replace global shared-memory IDs/raw kernel-pointer access with task-owned objects and explicit user mappings
