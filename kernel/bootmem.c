@@ -238,11 +238,11 @@ void bootmem_parse_multiboot(multiboot_info_t* info) {
     }
 
     if (boot_info.wallpaper_addr && boot_info.wallpaper_size) {
-        vga_printf("Boot: wallpaper module at %p (%u bytes)\\n",
+        vga_printf("Boot: wallpaper module at %p (%u bytes)\n",
                    (void*)(uintptr_t)boot_info.wallpaper_addr,
                    boot_info.wallpaper_size);
     } else {
-        vga_puts("Boot: no wallpaper module\\n");
+        vga_puts("Boot: no wallpaper module\n");
     }
 
     if (boot_info.has_framebuffer) {
