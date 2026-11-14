@@ -2384,9 +2384,6 @@ static void handle_event(const input_event_t* e) {
         return;
     }
 
-    default:        return;
-    }
-
     default:
         return;
     }
