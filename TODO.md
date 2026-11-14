@@ -176,12 +176,12 @@ The current catalog and capability boundaries are documented in [docs/settings-a
 - [x] Bounded, case-insensitive catalog search with a visible F3/click-to-focus field, printable input, Backspace, filtered Up/Down navigation, no-results state and Escape reset; QEMU verifies “touchpad” selects Mouse & Touchpad.
 - [x] Desktop right-click context menu for Change wallpaper, Display settings and About; New folder remains disabled because Files is read-only.
 - [x] Add visible Settings search, keyboard focus management and search-result navigation.
-- [ ] Add a multi-photo CC0 wallpaper gallery; current Charis photo is CC0 and other four presets are procedural.
+- [x] Add a four-photo CC0 wallpaper gallery with pinned originals, SHA-1 validation, CWP2 module packing, kernel validation and QEMU selection/persistence coverage.
 - [ ] Turn catalog metadata into a typed control registry with value types, ranges/enums, owners, capability requirements and persistence policy.
 - [ ] Add capability discovery so hardware-dependent controls appear only when supported.
 - [ ] Add central apply/read-back/persist/rollback transactions and versioned, validated, atomic configuration migration.
 - [ ] Implement Display mode enumeration, resolution/refresh/orientation test-and-revert, night light and monitor arrangement only with a real display backend.
-- [ ] Implement dark/light styles, accent palettes, preview/fit/fill and additional bundled CC0 wallpapers.
+- [ ] Implement live preview, fit/fill/center modes, dark/light palettes and accent colors.
 - [ ] Implement actual workspace, snap/tiling and screen-edge services before exposing their controls.
 - [x] Add detected-PS/2 pointer speed (50-200%, 25% steps), fixed-point movement remainder, FAT32 persistence and QEMU reboot validation.
 - [ ] Implement mouse button remapping, wheel settings, touchpad, keyboard-layout, sound and power services.
@@ -403,7 +403,7 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 - [x] Shortlist and record high-resolution CC0 wallpaper sources with source pages, author and original dimensions; see assets/wallpapers/README.md
 - [ ] Download and vendor the source files, record checksums and re-verify files after download
 - [x] Wallpaper build pipeline pins and hashes a CC0 source, converts it to a bounded RGB565 CWP1 Multiboot2 module, and validates signature/version/dimensions/stride/payload before aspect-ratio-aware framebuffer rendering
-- [ ] High-quality bundled wallpaper set with no embedded logos, watermarks or UI overlays; user-selectable wallpaper and fallback procedural themes
+- [x] Four high-quality CC0 photographic wallpapers with pinned sources, no logos or watermarks, eight stable selectable choices and procedural fallback themes
 - [ ] Desktop capture pipeline publishes the actual QEMU framebuffer capture and keeps README screenshots synchronized with the tested commit
 - [ ] Native terminal visual pass: near-black console canvas, compact chrome, dedicated monospace font metrics, carefully measured CharisOS ASCII banner and stable prompt/output layout
 - [ ] Verify ASCII banner width/height against font-cell metrics at all supported text scales and narrow window sizes

@@ -72,16 +72,16 @@ Older [run #724 desktop capture](docs/screenshots/charisos-desktop-run-724.png),
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
 - Terminal-specific fixed-cell monospace rendering, a near-black console and a 19-column CharisOS ASCII C mark. The entire desktop, including Terminal, uses the same embedded Inter-derived 16×22 antialiased glyph set; Terminal selects fixed-cell spacing for command alignment. The terminal remains a bounded kernel command environment, not a full userspace shell.
 - Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, a lower-right pointer resize grip, F8 Calculator launch, Alt+F8 keyboard resizing, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation; QEMU verifies simultaneous windows and keyboard maximize/restore.
-- Persistent font/UI-scale and built-in wallpaper preferences on supported writable FAT32 storage. The default photographic asset is **Lake Mountain Landscape** by Bonnie Moreland, dedicated under CC0 1.0; the build pins the Commons source and converts it to a bounded RGB565 boot module. The other four built-in choices remain procedural dark styles, not additional photos.
+- Persistent font/UI-scale and wallpaper preferences on supported writable FAT32 storage. The eight built-in choices comprise four CC0 photographs (Charis Lake, Alpine Village, Forest Sky and Cityscape) plus the retained Ember, Forest, Dusk and Mono procedural presets. Each original is pinned by Wikimedia source URL, byte length and SHA-1; the build converts them to RGB565 and packages them in a bounded CWP2 Multiboot2 module. Existing wallpaper IDs 0–4 retain their meaning, with the photographs appended at IDs 5–7. The kernel does not parse JPEG.
 - Workspace System Status panel reads PMM allocator counters and the active display profile without walking task state during repaint.
-- CI verifies the freestanding build, x86-64 baseline, BIOS/ring-3 path, VMM permission regressions, host-side WM tests and QEMU desktop/settings capture; [run #724](https://github.com/Liladizilla/charis__OS/actions/runs/43071788055) passed on commit `1f0414c`.
+- The latest mainline CI checkpoint verifies the freestanding build, x86-64 baseline, BIOS/ring-3 path, VMM permission regressions, host-side tests and QEMU desktop/settings capture; [run #1063](https://github.com/Liladizilla/charis__OS/actions/runs/43627019048) passed on commit `562b1de`. The CWP2 gallery branch adds packer, kernel validation and QEMU persistence coverage and is subject to its own CI run.
 
 ## Important limitations
 
 CharisOS is a developing operating system whose kernel, userspace and desktop are still being built out. In particular:
 
 - The desktop now supports independent Terminal, Files, Calculator, Browser, Settings and About windows with z-order composition, per-window focus/input, titlebar dragging/resizing, keyboard resize, maximize/restore, taskbar switching and Alt+Tab. Snap/tiling behavior, dirty-region repaint and a richer workspace are still unfinished; this is a small kernel-owned shell, not a mature desktop environment.
-- The workspace exposes direct shortcuts for Files, Terminal, Settings and Browser; Calculator is available from the launcher and F8; the separate multi-window capture demonstrates Files and Terminal open together. Settings now has a capability-aware 20-page catalog shown as one selectable list with four group separators, direct mouse selection, keyboard Up/Down navigation and explicit readiness explanations. Display font-family, text-size and interface-scale controls work; Appearance selects and persists one of five built-in backgrounds. The desktop right-click menu exposes Change wallpaper, Display settings and About CharisOS; New folder is intentionally disabled while Files remains read-only. Device/service pages remain status-only until their owning backends exist. The desktop is not yet at release-quality visual or interaction completeness.
+- The workspace exposes direct shortcuts for Files, Terminal, Settings and Browser; Calculator is available from the launcher and F8; the separate multi-window capture demonstrates Files and Terminal open together. Settings now has a capability-aware 20-page catalog shown as one selectable list with four group separators, direct mouse selection, keyboard Up/Down navigation and explicit readiness explanations. Display font-family, text-size and interface-scale controls work; Appearance selects and persists one of eight built-in backgrounds (four photographs, four procedural presets). The desktop right-click menu exposes Change wallpaper, Display settings and About CharisOS; New folder is intentionally disabled while Files remains read-only. Device/service pages remain status-only until their owning backends exist. The desktop is not yet at release-quality visual or interaction completeness.
 - Files does not yet support writable files, nested directory navigation or long filenames.
 - The executable loader currently targets static ELF64 `ET_EXEC`; dynamic linking, relocations, process groups/sessions, signal delivery and resource limits remain unfinished. Parent/child lifecycle now includes `waitpid()` with exact-child/any-child selection, `WNOHANG`, validated status copy-out, deferred-stack-safe zombie publication, slot reclamation and orphan adoption, with dedicated QEMU regression coverage. A successful end-to-end authorized ELF boot on the full firmware matrix remains unfinished. Successful exec builds a new address space transactionally, preserves the old image on any failure, switches CR3 only after segment and stack construction succeed, and reclaims the old image after the switch. The default image still denies `CAP_ALLOW_EXEC`; a dedicated CI-only image now tests the authorized path.
 - The `SYSCALL/SYSRET` user-mode path is configured but not yet validated as the normal syscall entry.
@@ -277,12 +277,14 @@ sudo dnf install gcc nasm grub2-tools xorriso qemu-system-x86 curl python3-pillo
 
 The build uses the **host** GCC with `-ffreestanding`; a cross-compiler is not
 required. `nasm`, `grub-mkrescue`, `xorriso`, `curl`, Python Pillow, and the
-Inter font package are required. The image build fetches one pinned CC0 wallpaper
-from Wikimedia Commons, verifies its expected byte length and SHA-1, and converts
-it to a bounded RGB565 CWP1 Multiboot2 boot module. The kernel validates its
-signature, version, dimensions, stride and payload bounds before drawing. A
-network connection is therefore required for the first clean build; the running
-OS does not download or decode the JPEG in the privileged kernel.
+Inter font package are required. The image build fetches four pinned CC0
+photographs from Wikimedia Commons, verifies each original byte length and SHA-1,
+converts them to RGB565 CWP1 payloads and packs them into one bounded CWP2
+Multiboot2 module. The kernel validates the collection directory, stable IDs,
+image dimensions, strides and non-overlapping payload bounds before drawing.
+CWP1 remains supported for older modules. A network connection is required for
+the first clean build; the running OS does not download or decode JPEG in the
+privileged kernel.
 
 ### Build and run
 

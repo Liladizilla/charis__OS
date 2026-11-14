@@ -168,7 +168,7 @@ void bootmem_parse_multiboot(multiboot_info_t* info) {
                 u32 start = read_le32(t + 8);
                 u32 end = read_le32(t + 12);
                 u32 module_size = end - start;
-                if (end > start && module_size <= 16u * 1024u * 1024u &&
+                if (end > start && module_size <= BOOTMEM_WALLPAPER_MAX_BYTES &&
                     bootmem_tag_string_equals(t + 16, size - 16,
                                               "charisos-wallpaper")) {
                     boot_info.wallpaper_addr = start;
