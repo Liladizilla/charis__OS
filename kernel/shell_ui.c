@@ -844,14 +844,14 @@ static u32 settings_close_size(void) {
     u32 readable = glyph_height + ui_px(8);
     return size > readable ? size : readable;
 }
-static u32 settings_nav_step(void) {
-    u32 step = settings_nav_height() + ui_px(2);
-    return step;
-}
 static u32 settings_nav_height(void) {
     u32 height = text_height() + ui_px(8);
     u32 minimum = ui_px(24);
     return height > minimum ? height : minimum;
+}
+static u32 settings_nav_step(void) {
+    u32 step = settings_nav_height() + ui_px(2);
+    return step;
 }
 static settings_group_t settings_group_at_index(u32 index) {
     switch (index) {
@@ -942,7 +942,7 @@ static void settings_draw_wrapped_text(u32 x, u32 y, u32 width,
                 while (accepted < word_length) {
                     char partial[128];
                     for (u32 i = 0; i < accepted; i++) partial[i] = word[i];
-                    partial[accepted + 1u] = 0;
+                    partial[accepted] = 0;
                     gfx_text_size(partial, &candidate_width, NULL);
                     if (candidate_width > width) break;
                     accepted++;
@@ -1171,7 +1171,7 @@ static void draw_settings_window(window_t* win) {
     u32 heading_y = y + title_h + ui_px(18);
     gfx_draw_string(content_x, heading_y, page->title,
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
-    if (text_height() <= ui_px(16)) {
+    if (gfx_text_get_scale() == 1u) {
         settings_draw_wrapped_text(content_x,
             heading_y + text_height() + ui_px(6), content_w,
             page->summary, CHARIS_UI_MUTED, 2);
