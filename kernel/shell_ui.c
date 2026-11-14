@@ -34,6 +34,8 @@
 #include <kernel/wm.h>
 #include <kernel/serial.h>
 #include <kernel/settings.h>
+#include <kernel/net.h>
+#include <kernel/audio.h>
 
 /* Native desktop widgets and launcher hit-testing. */
 extern void desktop_surface_render(void);
@@ -52,9 +54,16 @@ static u32 start_button_width(void) {
     return base > needed ? base : needed;
 }
 static u32 menu_width(void) {
-    u32 width = 0;
-    gfx_text_size("About CharisOS", &width, NULL);
-    u32 needed = width + ui_px(64), base = ui_px(260);
+    static const char* const labels[] = {
+        "About CharisOS", "Recent files unavailable",
+        "Power controls unavailable", "Search apps..."
+    };
+    u32 width = 0, measured = 0;
+    for (u32 i = 0; i < 4u; i++) {
+        gfx_text_size(labels[i], &measured, NULL);
+        if (measured > width) width = measured;
+    }
+    u32 needed = width + ui_px(36), base = ui_px(280);
     return base > needed ? base : needed;
 }
 static u32 menu_item_height(void) {
@@ -140,6 +149,8 @@ typedef enum {
 
 static window_t* shell_app_windows[SHELL_APP_COUNT];
 static int desktop_hover_shortcut = -1;
+static char menu_search_query[40];
+static u32 menu_search_length;
 static window_t* shell_drag_window;
 static int shell_drag_offset_x, shell_drag_offset_y;
 static window_t* shell_resize_window;
@@ -678,6 +689,41 @@ static void clock_append_two(char** cursor, u32 value) {
     *(*cursor)++ = (char)('0' + (value % 10u));
 }
 
+static void draw_taskbar_tray(u32 x, u32 y) {
+    net_interface_t* nic = net_get_interface();
+    bool network_ready = nic && nic->initialized;
+    bool hda_ready = audio_hda_available();
+    u32 network_color = network_ready ? CHARIS_UI_SUCCESS : CHARIS_UI_MUTED;
+    u32 audio_color = hda_ready ? CHARIS_UI_SUCCESS : CHARIS_UI_MUTED;
+
+    /* Network adapter readiness, not an assertion of Internet connectivity. */
+    fb_fill_rect(x + ui_px(8u), y + ui_px(2u), ui_px(4u), ui_px(4u),
+                 network_color);
+    fb_fill_rect(x + ui_px(2u), y + ui_px(12u), ui_px(5u), ui_px(4u),
+                 network_color);
+    fb_fill_rect(x + ui_px(13u), y + ui_px(12u), ui_px(5u), ui_px(4u),
+                 network_color);
+    fb_fill_rect(x + ui_px(8u), y + ui_px(7u), ui_px(3u), ui_px(2u),
+                 network_color);
+    fb_fill_rect(x + ui_px(5u), y + ui_px(9u), ui_px(2u), ui_px(3u),
+                 network_color);
+    fb_fill_rect(x + ui_px(12u), y + ui_px(9u), ui_px(2u), ui_px(3u),
+                 network_color);
+
+    u32 sx = x + ui_px(28u), sy = y + ui_px(3u);
+    fb_fill_rect(sx, sy + ui_px(5u), ui_px(4u), ui_px(8u), audio_color);
+    fb_fill_rect(sx + ui_px(4u), sy + ui_px(2u), ui_px(4u), ui_px(14u),
+                 audio_color);
+    if (hda_ready) {
+        fb_fill_rect(sx + ui_px(10u), sy + ui_px(3u), ui_px(2u), ui_px(2u),
+                     audio_color);
+        fb_fill_rect(sx + ui_px(12u), sy + ui_px(6u), ui_px(2u), ui_px(6u),
+                     audio_color);
+        fb_fill_rect(sx + ui_px(10u), sy + ui_px(13u), ui_px(2u), ui_px(2u),
+                     audio_color);
+    }
+}
+
 static void draw_taskbar_clock(u32 y, u32 bar_h, u32 screen_w) {
     rtc_datetime_t now;
     char label[6];
@@ -697,7 +743,11 @@ static void draw_taskbar_clock(u32 y, u32 bar_h, u32 screen_w) {
     u32 right_pad = ui_px(18u);
     if (screen_w <= width + right_pad) return;
     u32 x = screen_w - width - right_pad;
-    fb_fill_rect(x - ui_px(8u), y + ui_px(10u), ui_px(2u),
+    u32 tray_w = ui_px(48u);
+    if (x > tray_w + ui_px(10u))
+        draw_taskbar_tray(x - tray_w, y + (bar_h > ui_px(22u)
+                         ? (bar_h - ui_px(22u)) / 2u : 0u));
+    fb_fill_rect(x - tray_w - ui_px(6u), y + ui_px(10u), ui_px(1u),
                  bar_h > ui_px(20u) ? bar_h - ui_px(20u) : 1u,
                  CHARIS_UI_ACCENT);
     gfx_draw_string(x, y + (bar_h > text_height()
@@ -761,7 +811,7 @@ static u32 taskbar_running_count(void) {
 static u32 taskbar_slot_width(u32 screen_width, u32 count) {
     if (!count) return 0;
     u32 start = START_BTN_W + ui_px(8u);
-    u32 clock_lane = ui_px(64u), right_pad = ui_px(18u);
+    u32 clock_lane = ui_px(112u), right_pad = ui_px(18u);
     u32 gaps = ui_px(4u) * (count - 1u);
     u32 available = screen_width > start + clock_lane + right_pad + gaps
                   ? screen_width - start - clock_lane - right_pad - gaps : 0u;
@@ -860,28 +910,157 @@ static void draw_taskbar(void) {
     draw_taskbar_clock(y, bar_h, width);
 }
 
+static char menu_search_lower(char ch) {
+    return ch >= 'A' && ch <= 'Z' ? (char)(ch + ('a' - 'A')) : ch;
+}
+
+static bool menu_label_matches(const char* label, const char* query) {
+    if (!label || !query || !*query) return true;
+    for (const char* start = label; *start; start++) {
+        const char* a = start;
+        const char* b = query;
+        while (*a && *b && menu_search_lower(*a) == menu_search_lower(*b)) {
+            a++;
+            b++;
+        }
+        if (!*b) return true;
+    }
+    return false;
+}
+
+static shell_app_id_t menu_app_at(u32 index) {
+    static const shell_app_id_t apps[MENU_ITEM_COUNT] = {
+        SHELL_APP_TERMINAL, SHELL_APP_FILES, SHELL_APP_CALCULATOR,
+        SHELL_APP_SETTINGS, SHELL_APP_BROWSER, SHELL_APP_ABOUT
+    };
+    return index < MENU_ITEM_COUNT ? apps[index] : SHELL_APP_COUNT;
+}
+
+static u32 menu_build_results(int* results, u32 capacity) {
+    if (!results || !capacity) return 0;
+    u32 count = 0;
+    for (u32 i = 0; i < MENU_ITEM_COUNT && count < capacity; i++) {
+        if (menu_label_matches(MENU_ITEMS[i].label, menu_search_query))
+            results[count++] = (int)i;
+    }
+    return count;
+}
+
+static u32 menu_height_for_count(u32 count) {
+    u32 rows = count ? count : 1u;
+    return ui_px(52u) + rows * MENU_ITEM_H + ui_px(50u);
+}
+
+static void shell_menu_open(void) {
+    ui.menu_open = true;
+    ui.hover_item = -1;
+    menu_search_query[0] = 0;
+    menu_search_length = 0;
+    ui.needs_redraw = true;
+}
+
+static void shell_menu_toggle(void) {
+    if (ui.menu_open) {
+        ui.menu_open = false;
+        ui.hover_item = -1;
+    } else {
+        shell_menu_open();
+    }
+    ui.needs_redraw = true;
+}
+
+static void shell_menu_select_index(int index) {
+    if (index < 0 || (u32)index >= MENU_ITEM_COUNT) return;
+    ui.menu_open = false;
+    ui.hover_item = -1;
+    shell_open_app(menu_app_at((u32)index));
+    ui.needs_redraw = true;
+}
+
+static void shell_menu_handle_character(char key) {
+    if (!ui.menu_open) return;
+    if (key == '\b') {
+        if (menu_search_length) menu_search_query[--menu_search_length] = 0;
+        ui.needs_redraw = true;
+        return;
+    }
+    if (key == '\n' || key == '\r') {
+        int results[MENU_ITEM_COUNT];
+        u32 count = menu_build_results(results, MENU_ITEM_COUNT);
+        if (count) shell_menu_select_index(results[0]);
+        return;
+    }
+    if (key >= 32 && key <= 126 &&
+        menu_search_length + 1u < sizeof(menu_search_query)) {
+        menu_search_query[menu_search_length++] = key;
+        menu_search_query[menu_search_length] = 0;
+        ui.needs_redraw = true;
+    }
+}
+
 static void draw_menu(void) {
     if (!ui.menu_open) return;
 
+    int results[MENU_ITEM_COUNT];
+    u32 count = menu_build_results(results, MENU_ITEM_COUNT);
+    u32 rows = count ? count : 1u;
     u32 h = g_framebuffer.height;
-    u32 menu_h = MENU_ITEM_H * MENU_ITEM_COUNT + ui_px(16);
+    u32 menu_h = menu_height_for_count(count);
     u32 bar_h = taskbar_height();
     u32 y = h > bar_h + menu_h ? h - bar_h - menu_h : 0;
     u32 x = 0;
 
-    fb_fill_rect(x + ui_px(4), y + ui_px(4), MENU_W, menu_h, CHARIS_UI_SHADOW);
+    fb_fill_rect(x + ui_px(4u), y + ui_px(4u), MENU_W, menu_h,
+                 CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, MENU_W, menu_h, T_MENU);
     fb_draw_rect(x, y, MENU_W, menu_h, T_BORDER);
 
-    for (u32 i = 0; i < MENU_ITEM_COUNT; i++) {
-        u32 iy = y + ui_px(8) + i * MENU_ITEM_H;
-        bool hovered = (ui.hover_item == (int)i);
-        fb_fill_rect(x + ui_px(2), iy, MENU_W - ui_px(4), MENU_ITEM_H,
-                     hovered ? T_MENU_HOVER : T_MENU_ITEM);
-        draw_app_icon(i + 1u, x + ui_px(12), iy + ui_px(7));
-        gfx_draw_string(x + ui_px(44), iy + (MENU_ITEM_H > text_height() ? (MENU_ITEM_H - text_height()) / 2 : 0),
-                        MENU_ITEMS[i].label, T_FG, FB_TRANSPARENT);
+    u32 search_x = x + ui_px(10u), search_y = y + ui_px(10u);
+    u32 search_w = MENU_W - ui_px(20u), search_h = ui_px(32u);
+    fb_fill_rect(search_x, search_y, search_w, search_h,
+                 CHARIS_UI_SURFACE);
+    fb_draw_rect(search_x, search_y, search_w, search_h,
+                 CHARIS_UI_BORDER_STRONG);
+    const char* shown = menu_search_length ? menu_search_query : "Search apps...";
+    u32 shown_w = 0, shown_h = 0;
+    gfx_text_size(shown, &shown_w, &shown_h);
+    u32 shown_y = search_y + (search_h > shown_h
+                  ? (search_h - shown_h) / 2u : 0u);
+    fb_set_clip(search_x + ui_px(9u), search_y,
+                search_w > ui_px(18u) ? search_w - ui_px(18u) : 1u,
+                search_h);
+    gfx_draw_string(search_x + ui_px(9u), shown_y, shown,
+                    menu_search_length ? T_FG : T_FG_DIM, FB_TRANSPARENT);
+    fb_reset_clip();
+
+    u32 list_y = y + ui_px(50u);
+    if (!count) {
+        gfx_draw_string(x + ui_px(16u), list_y + ui_px(7u),
+                        "No matching apps", T_FG_DIM, FB_TRANSPARENT);
+    } else {
+        for (u32 row = 0; row < count; row++) {
+            int index = results[row];
+            u32 iy = list_y + row * MENU_ITEM_H;
+            bool hovered = ui.hover_item == index;
+            fb_fill_rect(x + ui_px(2u), iy, MENU_W - ui_px(4u), MENU_ITEM_H,
+                         hovered ? T_MENU_HOVER : T_MENU_ITEM);
+            draw_app_icon((u32)index + 1u, x + ui_px(12u), iy + ui_px(7u));
+            gfx_draw_string(x + ui_px(44u),
+                            iy + (MENU_ITEM_H > text_height()
+                                ? (MENU_ITEM_H - text_height()) / 2u : 0u),
+                            MENU_ITEMS[index].label, T_FG, FB_TRANSPARENT);
+        }
     }
+
+    u32 footer_y = list_y + rows * MENU_ITEM_H + ui_px(7u);
+    fb_fill_rect(x + ui_px(10u), footer_y - ui_px(3u),
+                 MENU_W - ui_px(20u), ui_px(1u), T_BORDER);
+    u32 footer_text_h = text_height();
+    gfx_draw_string(x + ui_px(14u), footer_y,
+                    "Recent files unavailable", T_FG_DIM, FB_TRANSPARENT);
+    gfx_draw_string(x + ui_px(14u),
+                    footer_y + footer_text_h + ui_px(3u),
+                    "Power controls unavailable", T_FG_DIM, FB_TRANSPARENT);
 }
 
 /* A launcher item must not silently send output to an invisible VGA console.
@@ -898,18 +1077,6 @@ static void draw_about_window(window_t* win) {
     fb_fill_rect(x + ui_px(5), y + ui_px(6), w, h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, w, h, CHARIS_UI_PANEL);
     fb_draw_rect(x, y, w, h, CHARIS_UI_BORDER_STRONG);
-    fb_fill_rect(x, y, w, title_h, CHARIS_UI_PANEL_RAISED);
-    fb_fill_rect(x, y + title_h, w, ui_px(1), CHARIS_UI_BORDER);
-    gfx_draw_string(x + ui_px(18), y + (title_h - text_height()) / 2u,
-                    "About CharisOS", CHARIS_UI_TEXT, FB_TRANSPARENT);
-
-    u32 close_x = x + w - ui_px(38);
-    u32 close_y = y + (title_h - ui_px(26)) / 2u;
-    fb_fill_rect(close_x, close_y, ui_px(26), ui_px(26), CHARIS_UI_SURFACE);
-    fb_draw_rect(close_x, close_y, ui_px(26), ui_px(26), CHARIS_UI_BORDER);
-    gfx_draw_string(close_x + ui_px(9), close_y + ui_px(5), "x",
-                    CHARIS_UI_TEXT, FB_TRANSPARENT);
-
     gfx_draw_string(x + ui_px(24), y + title_h + ui_px(34),
                     NOTICE_LINE_1[4], CHARIS_UI_TEXT, FB_TRANSPARENT);
     gfx_draw_string(x + ui_px(24), y + title_h + ui_px(64),
@@ -931,14 +1098,8 @@ static bool about_handle_window_click(window_t* win, int mx, int my) {
     u32 title_h = win->titlebar_height;
     if (mx < (int)x || mx >= (int)(x + w) ||
         my < (int)y || my >= (int)(y + h)) return false;
-    if (my < (int)(y + title_h)) {
-        if (mx >= (int)(x + w - ui_px(44))) {
-            notice_open = false;
-            notice_item = -1;
-            return true;
-        }
-        return false; /* unclaimed titlebar space remains draggable */
-    }
+    if (my < (int)(y + title_h))
+        return false; /* Shared window chrome and drag handling own the titlebar. */
     return true;
 }
 
@@ -1839,17 +2000,20 @@ static void redraw_all(void) {
 
 static int hit_menu_item(int mx, int my) {
     if (!ui.menu_open) return -1;
+    int results[MENU_ITEM_COUNT];
+    u32 count = menu_build_results(results, MENU_ITEM_COUNT);
+    u32 rows = count ? count : 1u;
+    u32 menu_h = menu_height_for_count(count);
     u32 h = g_framebuffer.height;
-    u32 menu_h = MENU_ITEM_H * MENU_ITEM_COUNT + ui_px(16);
     u32 bar_h = taskbar_height();
-    u32 top = h > bar_h + menu_h ? h - bar_h - menu_h : 0;
+    u32 top = h > bar_h + menu_h ? h - bar_h - menu_h : 0u;
+    u32 list_top = top + ui_px(50u);
 
-    if ((u32)mx >= MENU_W) return -1;
-    if (my < (int)top + 8) return -1;
-
-    u32 rel = (u32)my - top - 8;
-    if (rel >= MENU_ITEM_H * MENU_ITEM_COUNT) return -1;
-    return (int)(rel / MENU_ITEM_H);
+    if (mx < 0 || mx >= (int)MENU_W ||
+        my < (int)list_top) return -1;
+    u32 row = (u32)(my - (int)list_top) / MENU_ITEM_H;
+    if (row >= count || row >= rows) return -1;
+    return results[row];
 }
 
 /* ── Input plumbing ───────────────────────────────────────────────── */
@@ -2042,11 +2206,7 @@ static void handle_event(const input_event_t* e) {
         /* Super is global and toggles the launcher regardless of app focus. */
         if (extended && (base == 0x5Bu || base == 0x5Cu)) {
             super_held = pressed;
-            if (pressed) {
-                ui.menu_open = !ui.menu_open;
-                ui.hover_item = -1;
-                ui.needs_redraw = true;
-            }
+            if (pressed) shell_menu_toggle();
             return;
         }
 
@@ -2203,9 +2363,7 @@ static void handle_event(const input_event_t* e) {
         }
 
         if (on_taskbar && mx < (int)START_BTN_W) {
-            ui.menu_open = !ui.menu_open;
-            ui.hover_item = -1;
-            ui.needs_redraw = true;
+            shell_menu_toggle();
             return;
         }
 
@@ -2222,25 +2380,11 @@ static void handle_event(const input_event_t* e) {
         }
 
         int menu_hit = hit_menu_item(mx, my);
-        if (menu_hit >= 0) {
-            ui.menu_open = false;
-            ui.hover_item = -1;
-            if (menu_hit == 0) {
-                shell_open_app(SHELL_APP_TERMINAL);
-            } else if (menu_hit == 1) {
-                shell_open_app(SHELL_APP_FILES);
-            } else if (menu_hit == 2) {
-                shell_open_app(SHELL_APP_CALCULATOR);
-            } else if (menu_hit == 3) {
-                shell_open_app(SHELL_APP_SETTINGS);
-            } else if (menu_hit == 4) {
-                shell_open_app(SHELL_APP_BROWSER);
-            } else {
-                shell_open_app(SHELL_APP_ABOUT);
-            }
-            ui.needs_redraw = true;
-        }
+        if (menu_hit >= 0) shell_menu_select_index(menu_hit);
         return;
+    }
+
+    default:        return;
     }
 
     default:
@@ -2280,7 +2424,9 @@ void shell_ui_main(void* arg) {
             wm_get_focused() == shell_app_windows[SHELL_APP_TERMINAL] &&
             !shell_app_windows[SHELL_APP_TERMINAL]->minimized;
         while (keyboard_get_key(&key)) {
-            if (terminal_has_focus) {
+            if (ui.menu_open) {
+                shell_menu_handle_character(key);
+            } else if (terminal_has_focus) {
                 terminal_handle_char(key);
                 ui.needs_redraw = true;
             }

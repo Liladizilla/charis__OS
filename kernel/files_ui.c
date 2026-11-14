@@ -166,16 +166,6 @@ void files_render(void) {
     fb_fill_rect(x+px(5),y+px(6),w,h,CHARIS_UI_SHADOW);
     fb_fill_rect(x,y,w,h,CHARIS_UI_PANEL);
     fb_draw_rect(x,y,w,h,CHARIS_UI_BORDER_STRONG);
-    fb_fill_rect(x,y,w,title_h(),CHARIS_UI_PANEL_RAISED);
-    fb_fill_rect(x,y+title_h(),w,px(1),CHARIS_UI_BORDER);
-    gfx_draw_string(x+px(18),y+(title_h()-th)/2u,
-                    "Files",CHARIS_UI_TEXT,FB_TRANSPARENT);
-    gfx_draw_string(x+px(78),y+(title_h()-th)/2u,
-                    "FILE MANAGER",CHARIS_UI_MUTED,FB_TRANSPARENT);
-    fb_fill_rect(x+w-px(40),y+px(10),px(26),px(24),CHARIS_UI_SURFACE);
-    fb_draw_rect(x+w-px(40),y+px(10),px(26),px(24),CHARIS_UI_BORDER);
-    gfx_draw_string(x+w-px(32),y+px(15),"x",CHARIS_UI_TEXT,FB_TRANSPARENT);
-
     /* Location and action toolbar. */
     u32 ty=toolbar_y();
     fb_fill_rect(x+px(12),ty,w-px(24),px(38),CHARIS_UI_SURFACE);

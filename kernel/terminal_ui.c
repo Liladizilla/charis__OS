@@ -327,33 +327,11 @@ void terminal_render(void) {
     u32 rows = content_bottom > content_top ? (content_bottom - content_top) / line_h : 1;
     if (!rows) rows = 1;
 
-    /* Window frame and application chrome. */
+    /* Shared shell draws the titlebar and its controls after this surface.
+     * Keep only the terminal canvas and its session strip here. */
     fb_fill_rect(x + term_px(5), y + term_px(6), w, h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, w, h, 0xFF080B10u);
     fb_draw_rect(x, y, w, h, 0xFF27313Du);
-    fb_fill_rect(x, y, w, title_h, 0xFF10151Cu);
-    fb_fill_rect(x, y + title_h, w, term_px(1), CHARIS_UI_BORDER);
-
-    /* Three restrained window controls and a real session title. */
-    u32 dot_y = y + title_h / 2;
-    fb_fill_rect(x + term_px(16), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_DANGER);
-    fb_fill_rect(x + term_px(32), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_WARNING);
-    fb_fill_rect(x + term_px(48), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_SUCCESS);
-    term_draw(x + term_px(72), y + (title_h - text_h) / 2,
-                    "Terminal", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    const char* session_label = "LOCAL SESSION";
-    u32 session_width = term_measure(session_label);
-    u32 session_right = x + w > term_px(48) ? x + w - term_px(48) : x + w;
-    u32 session_x = session_right > session_width + term_px(16)
-                  ? session_right - session_width - term_px(16) : x + term_px(72);
-    term_draw(session_x, y + (title_h - text_h) / 2,
-              session_label, CHARIS_UI_MUTED, FB_TRANSPARENT);
-    u32 close_x = x + w - term_px(34);
-    u32 close_y = y + (title_h - term_px(24)) / 2u;
-    fb_fill_rect(close_x, close_y, term_px(26), term_px(24), CHARIS_UI_SURFACE);
-    fb_draw_rect(close_x, close_y, term_px(26), term_px(24), CHARIS_UI_BORDER);
-    term_draw(close_x + term_px(9), close_y + (term_px(24) - text_h) / 2u,
-              "x", CHARIS_UI_TEXT, FB_TRANSPARENT);
 
     /* Session strip separates app identity from command output. */
     u32 strip_y = y + title_h + term_px(1);
