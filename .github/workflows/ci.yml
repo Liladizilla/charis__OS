@@ -497,13 +497,13 @@ jobs:
             printf 'sendkey esc\n'
             sleep 1
             printf 'quit\n'
-          } | timeout 85s qemu-system-x86_64 \
+          } | timeout 120s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
             -serial file:build/desktop-capture-serial.log \
             -monitor stdio -display none \
-            >build/desktop-capture-qemu.log 2>&1 || true
+            >build/desktop-capture-qemu.log 2>&1
 
           test -s build/charisos-desktop-preview.ppm
           test -s build/charisos-pointer-start-preview.ppm
@@ -569,7 +569,8 @@ jobs:
           # settings changes exercised above must have reached persistent media.
           mcopy -i build/config-test-disk.img ::CHARISOS.CFG build/CHARISOS.CFG
           grep -qx 'font_scale=2' build/CHARISOS.CFG
-          grep -qx 'ui_scale=120' build/CHARISOS.CFG          grep -qx 'wallpaper=1' build/CHARISOS.CFG
+          grep -qx 'ui_scale=120' build/CHARISOS.CFG
+          grep -qx 'wallpaper=1' build/CHARISOS.CFG
           grep -q 'SHELL_WALLPAPER_SELECTED 1' build/desktop-capture-serial.log
 
           # Reboot against the same disk and verify the kernel reloads the
@@ -635,7 +636,7 @@ jobs:
           # This exercises the real keyboard IRQ and shell event path without
           # relying on QEMU's emulated pointer device or guessed mouse deltas.
           {
-            sleep 2
+            sleep 10
             printf 'sendkey f12\n'
             sleep 2
             printf 'sendkey h\n'
@@ -652,7 +653,7 @@ jobs:
             printf 'screendump build/charisos-terminal-preview.ppm\n'
             sleep 1
             printf 'quit\n'
-          } | timeout 35s qemu-system-x86_64 \
+          } | timeout 45s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
