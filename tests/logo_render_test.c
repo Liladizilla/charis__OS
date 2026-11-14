@@ -65,7 +65,7 @@ int main(void) {
     failures += check(outline_calls == 1, "splash panel outline drawn exactly once");
     failures += check(text_calls == 3, "brand, tagline and real boot stage drawn");
     failures += check(strstr(serial_output,
-                      "[BOOT_STAGE] TEST BOOT STAGE\\n") != NULL,
+                      "[BOOT_STAGE] TEST BOOT STAGE\n") != NULL,
                       "each on-screen boot stage is mirrored to serial");
     failures += check(bounds_ok, "all splash rectangles remain inside the framebuffer");
     failures += check(first_x == 348 && first_y == 193 &&
