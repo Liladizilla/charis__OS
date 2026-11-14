@@ -162,10 +162,11 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/fb_blend_test.c kernel/fb.c -Wl,--gc-sections -o /tmp/fb_blend_test
           /tmp/fb_blend_test
 
-      - name: Test CWP1 wallpaper module validation and RGB565 rendering
+      - name: Test CWP1 compatibility and CWP2 wallpaper collection validation
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/wallpaper_module_test.c kernel/wallpaper.c -Wl,--gc-sections -o /tmp/wallpaper_module_test
           /tmp/wallpaper_module_test
+          python3 tests/wallpaper_pack_test.py
 
       - name: Test window manager lifecycle and bounds
         run: |
