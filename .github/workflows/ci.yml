@@ -162,6 +162,19 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/fb_blend_test.c kernel/fb.c -Wl,--gc-sections -o /tmp/fb_blend_test
           /tmp/fb_blend_test
 
+      - name: Test CharisOS emblem RLE asset integrity
+        run: python3 tests/logo_asset_test.py
+
+      - name: Test firmware framebuffer display inventory
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/display_state_test.c kernel/display.c -o /tmp/display_state_test
+          /tmp/display_state_test
+
+      - name: Test boot emblem rendering bounds and scaling
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/logo_render_test.c kernel/logo.c -o /tmp/logo_render_test
+          /tmp/logo_render_test
+
       - name: Test CWP1 compatibility and CWP2 wallpaper collection validation
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/wallpaper_module_test.c kernel/wallpaper.c -Wl,--gc-sections -o /tmp/wallpaper_module_test
