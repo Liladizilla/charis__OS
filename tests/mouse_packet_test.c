@@ -25,6 +25,13 @@ static void send_packet(u8 flags, u8 dx, u8 dy) {
     mouse_test_process_byte(0x21u, dy);
 }
 
+static void send_wheel_packet(u8 flags, u8 dx, u8 dy, u8 wheel) {
+    mouse_test_process_byte(0x21u, flags);
+    mouse_test_process_byte(0x21u, dx);
+    mouse_test_process_byte(0x21u, dy);
+    mouse_test_process_byte(0x21u, wheel);
+}
+
 int main(void) {
     mouse_set_bounds(800, 600);
 
@@ -106,6 +113,38 @@ int main(void) {
     mouse_set_speed_percent(113u);
     expect(mouse_get_speed_percent() == 125u,
            "pointer speed snaps to the nearest 25 percent step");
+
+    mouse_test_set_device_id(0u);
+    send_packet(0x08u, 0u, 0u);
+    s32 scroll_x = 0, scroll_y = 0;
+    mouse_take_scroll_deltas(&scroll_x, &scroll_y);
+    expect(scroll_x == 0 && scroll_y == 0,
+           "standard PS/2 packet mode has no wheel data");
+
+    mouse_test_set_device_id(3u);
+    expect(mouse_wheel_available(), "ID 3 advertises vertical wheel support");
+    send_wheel_packet(0x08u, 0u, 0u, 2u);
+    mouse_take_scroll_deltas(&scroll_x, &scroll_y);
+    expect(scroll_x == 0 && scroll_y == 2,
+           "ID 3 positive wheel delta is accumulated");
+    send_wheel_packet(0x08u, 0u, 0u, 0xFEu);
+    mouse_take_scroll_deltas(&scroll_x, &scroll_y);
+    expect(scroll_y == -2, "ID 3 negative wheel delta is sign extended");
+
+    mouse_test_set_device_id(4u);
+    send_wheel_packet(0x08u, 0u, 0u, 0x33u);
+    mouse_get_snapshot(&state);
+    mouse_take_scroll_deltas(&scroll_x, &scroll_y);
+    expect((state.buttons & 0x18u) == 0x18u,
+           "ID 4 side and extra button bits are mapped");
+    expect(scroll_y == 3, "ID 4 vertical wheel nibble is decoded");
+    send_wheel_packet(0x08u, 0u, 0u, 0x08u);
+    mouse_take_scroll_deltas(&scroll_x, &scroll_y);
+    expect(scroll_y == -8, "ID 4 negative wheel nibble is sign extended");
+    send_wheel_packet(0x08u, 0u, 0u, 0x42u);
+    mouse_take_scroll_deltas(&scroll_x, &scroll_y);
+    expect(scroll_x == 2 && scroll_y == 0,
+           "ID 4 horizontal wheel uses its signed 6-bit field");
 
     puts("mouse packet decoder tests: PASS");
     return 0;

@@ -5,7 +5,7 @@
 typedef struct {
     int32_t x, y;         /* current cursor position in pixels */
     int32_t dx, dy;       /* last movement delta */
-    uint8_t buttons;      /* bitmask: bit 0=left, bit 1=right, bit 2=middle */
+    uint8_t buttons;      /* bits 0-2=left/right/middle, bits 3-4=side/extra */
 } mouse_state_t;
 
 extern mouse_state_t g_mouse;
@@ -18,6 +18,9 @@ void mouse_init(void);
 bool mouse_is_available(void);
 u32 mouse_get_speed_percent(void);
 void mouse_set_speed_percent(u32 percent);
+bool mouse_wheel_available(void);
+/* Atomically take pending wheel movement; positive is physical wheel-down. */
+void mouse_take_scroll_deltas(s32* horizontal, s32* vertical);
 
 /* Diagnostics: live state and a packet counter, so a stuck pointer can be
  * told apart from a dead IRQ. */
@@ -33,3 +36,8 @@ void mouse_set_bounds(uint32_t width, uint32_t height);
 bool mouse_has_input(void);
 int mouse_get_movement(int* dx, int* dy);
 int mouse_get_buttons(int* buttons);
+
+#ifdef MOUSE_HOST_TEST
+void mouse_test_process_byte(u8 status, u8 byte);
+void mouse_test_set_device_id(u8 id);
+#endif

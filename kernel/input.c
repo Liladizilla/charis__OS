@@ -8,7 +8,20 @@ static input_event_t input_queue[INPUT_QUEUE_SIZE];
 static u32 input_head = 0;
 static u32 input_tail = 0;
 static volatile u32 input_dropped = 0;
+static int input_last_x = -1, input_last_y = -1;
+static u8 input_last_buttons;
 
+#ifdef INPUT_HOST_TEST
+static u64 input_host_irq_state;
+static inline u64 input_irq_save(void) {
+    u64 previous = input_host_irq_state;
+    input_host_irq_state = 1u;
+    return previous;
+}
+static inline void input_irq_restore(u64 flags) {
+    input_host_irq_state = flags;
+}
+#else
 /*
  * Keyboard events are produced from IRQ1, while mouse events are produced
  * by the desktop task. Protect the shared ring against an IRQ interrupting
@@ -24,12 +37,19 @@ static inline u64 input_irq_save(void) {
 static inline void input_irq_restore(u64 flags) {
     asm volatile("pushq %0; popfq" :: "r"(flags) : "memory", "cc");
 }
+#endif
 
 void input_init(void) {
     u64 flags = input_irq_save();
     input_head = 0;
     input_tail = 0;
     input_dropped = 0;
+    input_last_x = -1;
+    input_last_y = -1;
+    input_last_buttons = 0u;
+#ifdef INPUT_HOST_TEST
+    input_host_irq_state = 0u;
+#endif
     input_irq_restore(flags);
 }
 
@@ -92,10 +112,8 @@ void input_process_events(void) {
     mouse_state_t mouse;
     mouse_get_snapshot(&mouse);
 
-    static int last_x = -1, last_y = -1;
-    static uint8_t last_buttons = 0;
-
-    if (mouse.x != last_x || mouse.y != last_y || mouse.buttons != last_buttons) {
+    if (mouse.x != input_last_x || mouse.y != input_last_y ||
+        mouse.buttons != input_last_buttons) {
         input_event_t evt;
         evt.type = INPUT_MOUSE_MOVE;
         evt.mouse.x = mouse.x;
@@ -107,9 +125,9 @@ void input_process_events(void) {
         input_push_event(&evt);
 
         /* Also push click events for button changes */
-        uint8_t prev = last_buttons;
+        uint8_t prev = input_last_buttons;
         uint8_t cur = mouse.buttons;
-        for (int btn = 0; btn < 3; btn++) {
+        for (int btn = 0; btn < 5; btn++) {
             bool was_down = (prev >> btn) & 1;
             bool is_down = (cur >> btn) & 1;
 
@@ -126,9 +144,25 @@ void input_process_events(void) {
             }
         }
 
-        last_x = mouse.x;
-        last_y = mouse.y;
-        last_buttons = mouse.buttons;
+        input_last_x = mouse.x;
+        input_last_y = mouse.y;
+        input_last_buttons = mouse.buttons;
+    }
+
+    s32 scroll_x = 0, scroll_y = 0;
+    mouse_take_scroll_deltas(&scroll_x, &scroll_y);
+    if (scroll_x || scroll_y) {
+        input_event_t evt;
+        evt.type = INPUT_MOUSE_SCROLL;
+        evt.mouse.x = mouse.x;
+        evt.mouse.y = mouse.y;
+        evt.mouse.dx = 0;
+        evt.mouse.dy = 0;
+        evt.mouse.button = 0;
+        evt.mouse.scroll_x = scroll_x;
+        evt.mouse.scroll_y = scroll_y;
+        evt.timestamp = timer_get_ms();
+        input_push_event(&evt);
     }
 }
 

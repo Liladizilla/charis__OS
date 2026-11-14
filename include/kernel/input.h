@@ -8,14 +8,14 @@ typedef enum {
     INPUT_MOUSE_MOVE,
     INPUT_MOUSE_DOWN,
     INPUT_MOUSE_UP,
-    INPUT_MOUSE_SCROLL
+    INPUT_MOUSE_SCROLL /* scroll_x and scroll_y are signed wheel deltas */
 } input_event_type_t;
 
 typedef struct {
     input_event_type_t type;
     union {
         struct { int keycode; int scancode; } key;
-        struct { int x, y; int dx, dy; int button; } mouse;
+        struct { int x, y; int dx, dy; int button; int scroll_x, scroll_y; } mouse;
     };
     u64 timestamp;
 } input_event_t;

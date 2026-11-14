@@ -12,6 +12,11 @@ static volatile bool mouse_device_ready;
 static volatile u32 mouse_speed_percent = 100u;
 static s32 mouse_speed_remainder_x;
 static s32 mouse_speed_remainder_y;
+static volatile bool mouse_wheel_ready;
+static volatile u8 mouse_device_id;
+static volatile u8 mouse_packet_size = 3u;
+static volatile s32 mouse_scroll_pending_x;
+static volatile s32 mouse_scroll_pending_y;
 
 #ifdef MOUSE_HOST_TEST
 static u64 mouse_host_irq_state;
@@ -62,6 +67,24 @@ void mouse_set_speed_percent(u32 percent) {
     mouse_speed_remainder_x = 0;
     mouse_speed_remainder_y = 0;
     mouse_irq_restore(irq_flags);
+}
+
+bool mouse_wheel_available(void) { return mouse_device_ready && mouse_wheel_ready; }
+
+void mouse_take_scroll_deltas(s32* horizontal, s32* vertical) {
+    u64 irq_flags = mouse_irq_save();
+    if (horizontal) *horizontal = mouse_scroll_pending_x;
+    if (vertical) *vertical = mouse_scroll_pending_y;
+    mouse_scroll_pending_x = 0;
+    mouse_scroll_pending_y = 0;
+    mouse_irq_restore(irq_flags);
+}
+
+static void mouse_accumulate_scroll(s32* pending, s32 delta) {
+    s64 next = (s64)*pending + (s64)delta;
+    if (next > 0x7FFFFFFFLL) next = 0x7FFFFFFFLL;
+    if (next < (-0x7FFFFFFFLL - 1LL)) next = -0x7FFFFFFFLL - 1LL;
+    *pending = (s32)next;
 }
 
 void mouse_set_bounds(uint32_t width, uint32_t height) {
@@ -175,6 +198,38 @@ static bool ps2_write_aux_data(u8 value) {
     return false;
 }
 
+static bool ps2_set_sample_rate(u8 rate) {
+    return ps2_write_aux_data(0xF3) && ps2_write_aux_data(rate);
+}
+
+static bool ps2_get_device_id(u8* id) {
+    if (!id || !ps2_write_aux_data(0xF2)) return false;
+    return ps2_wait_aux_reply(id);
+}
+
+/* Enter IntelliMouse wheel mode when the device supports it. ID 3 enables
+ * vertical wheel packets; ID 4 adds the Explorer horizontal-wheel extension.
+ * Any unsupported ID or failed negotiation leaves the caller on 3-byte mode. */
+static bool ps2_negotiate_device(u8* id) {
+    if (!id ||
+        !ps2_set_sample_rate(200u) ||
+        !ps2_set_sample_rate(100u) ||
+        !ps2_set_sample_rate(80u) ||
+        !ps2_get_device_id(id)) return false;
+
+    if (*id == 3u) {
+        u8 extended_id = 3u;
+        if (ps2_set_sample_rate(200u) &&
+            ps2_set_sample_rate(200u) &&
+            ps2_set_sample_rate(80u) &&
+            ps2_get_device_id(&extended_id) &&
+            extended_id == 4u) {
+            *id = 4u;
+        }
+    }
+    return true;
+}
+
 void mouse_init(void) {
     mouse_device_ready = false;
     /* IRQ12 must stay masked until both the controller and device have
@@ -230,17 +285,33 @@ void mouse_init(void) {
         kprintf("Mouse: device did not ACK defaults command\n");
         return;
     }
+
+    u8 negotiated_id = 0u;
+    if (!ps2_negotiate_device(&negotiated_id) ||
+        (negotiated_id != 0u && negotiated_id != 3u && negotiated_id != 4u)) {
+        /* Restore the standard packet format after any incomplete negotiation. */
+        (void)ps2_write_aux_data(0xF6);
+        negotiated_id = 0u;
+    }
+    mouse_device_id = negotiated_id;
+    mouse_packet_size = negotiated_id >= 3u ? 4u : 3u;
+    mouse_wheel_ready = negotiated_id >= 3u;
+
     if (!ps2_write_aux_data(0xF4)) {
+        mouse_wheel_ready = false;
+        mouse_device_id = 0u;
+        mouse_packet_size = 3u;
         kprintf("Mouse: device did not ACK enable-reporting command\n");
         return;
     }
 
     mouse_device_ready = true;
     pic_unmask_irq(IRQ_MOUSE);
-    kprintf("Mouse: PS/2 enabled, config=0x%02x ACK(F6,F4)=yes\n", config);
+    kprintf("Mouse: PS/2 enabled, config=0x%02x id=%u packet_bytes=%u\n",
+            config, (u32)mouse_device_id, (u32)mouse_packet_size);
 }
 
-static u8 mouse_packet[3];
+static u8 mouse_packet[4];
 static u8 mouse_packet_index;
 static bool mouse_overflow_seen;
 
@@ -261,8 +332,10 @@ static void mouse_process_byte(u8 status, u8 byte) {
         mouse_overflow_seen = (byte & 0xC0u) != 0;
     }
 
+    u8 packet_size = mouse_packet_size;
+    if (packet_size != 3u && packet_size != 4u) packet_size = 3u;
     mouse_packet[mouse_packet_index++] = byte;
-    if (mouse_packet_index < 3) return;
+    if (mouse_packet_index < packet_size) return;
     mouse_packet_index = 0;
     if (mouse_overflow_seen) {
         mouse_overflow_seen = false;
@@ -272,7 +345,26 @@ static void mouse_process_byte(u8 status, u8 byte) {
 
     u8 flags = mouse_packet[0];
     g_mouse_packets++;
-    g_mouse.buttons = flags & 0x07u;
+    u8 buttons = flags & 0x07u;
+    if (packet_size == 4u && mouse_device_id == 4u)
+        buttons |= (u8)((mouse_packet[3] & 0x30u) >> 1);
+    g_mouse.buttons = buttons;
+
+    if (packet_size == 4u && mouse_wheel_ready) {
+        u8 extra = mouse_packet[3];
+        if (mouse_device_id == 4u && (extra & 0x40u)) {
+            s32 horizontal = (s32)(extra & 0x3Fu);
+            if (horizontal & 0x20) horizontal -= 0x40;
+            mouse_accumulate_scroll(&mouse_scroll_pending_x, horizontal);
+        } else if (mouse_device_id == 4u) {
+            s32 vertical = (s32)(extra & 0x0Fu);
+            if (vertical & 0x08) vertical -= 0x10;
+            mouse_accumulate_scroll(&mouse_scroll_pending_y, vertical);
+        } else {
+            mouse_accumulate_scroll(&mouse_scroll_pending_y, (s32)(s8)extra);
+        }
+    }
+
     s32 raw_dx = (s32)(s8)mouse_packet[1];
     s32 raw_dy = (s32)(s8)mouse_packet[2];
     u32 speed = mouse_speed_percent;
@@ -308,6 +400,18 @@ static void mouse_process_byte(u8 status, u8 byte) {
 #ifdef MOUSE_HOST_TEST
 void mouse_test_process_byte(u8 status, u8 byte) {
     mouse_process_byte(status, byte);
+}
+
+void mouse_test_set_device_id(u8 id) {
+    u64 flags = mouse_irq_save();
+    mouse_device_id = id;
+    mouse_packet_size = (id == 3u || id == 4u) ? 4u : 3u;
+    mouse_wheel_ready = id >= 3u;
+    mouse_packet_index = 0u;
+    mouse_overflow_seen = false;
+    mouse_scroll_pending_x = 0;
+    mouse_scroll_pending_y = 0;
+    mouse_irq_restore(flags);
 }
 #endif
 
