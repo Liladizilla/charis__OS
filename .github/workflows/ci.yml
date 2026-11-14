@@ -352,6 +352,29 @@ jobs:
               sleep 1
             done
             sleep 4
+            # Exercise the native desktop context menu using QEMU's PS/2
+            # right-button state (HMP bitmask: 1=left, 2=right, 4=middle).
+            # Open at the initial pointer position, capture it, then choose
+            # Display settings with a real pointer move and left click.
+            printf 'mouse_button 2\n'
+            sleep 1
+            printf 'screendump build/charisos-context-menu-preview.ppm\n'
+            sleep 1
+            printf 'mouse_button 0\n'
+            sleep 0.5
+            # Menu begins at (50,50); Display settings is the third row.
+            printf 'mouse_move 20 91\n'
+            sleep 1
+            printf 'mouse_button 1\n'
+            sleep 0.5
+            printf 'mouse_button 0\n'
+            sleep 2
+            printf 'screendump build/charisos-context-menu-display-preview.ppm\n'
+            sleep 1
+            printf 'sendkey esc\n'
+            sleep 1
+            printf 'mouse_move -20 -91\n'
+            sleep 1
             # Capture the starting PS/2 pointer state, then move away and
             # return by the exact inverse delta. This proves both cursor
             # movement and save-under restoration pixel-for-pixel.
@@ -513,6 +536,11 @@ jobs:
 
           test -s build/charisos-desktop-preview.ppm
           test -s build/charisos-pointer-start-preview.ppm
+          test -s build/charisos-context-menu-preview.ppm
+          test -s build/charisos-context-menu-display-preview.ppm
+          grep -q 'SHELL_CONTEXT_MENU_OPEN' build/desktop-capture-serial.log
+          grep -q 'SHELL_CONTEXT_MENU_ACTION display-settings' build/desktop-capture-serial.log
+          grep -q 'SHELL_APP_OPEN Settings' build/desktop-capture-serial.log
           test -s build/charisos-pointer-moved-preview.ppm
           test -s build/charisos-pointer-restored-preview.ppm
           python3 tools/verify-pointer-capture.py \
@@ -680,6 +708,8 @@ jobs:
             build/charisos-pointer-start-preview.ppm
             build/charisos-pointer-moved-preview.ppm
             build/charisos-pointer-restored-preview.ppm
+            build/charisos-context-menu-preview.ppm
+            build/charisos-context-menu-display-preview.ppm
             build/charisos-browser-preview.ppm
             build/charisos-files-preview.ppm
             build/charisos-multiwindow-preview.ppm

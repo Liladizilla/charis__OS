@@ -1044,6 +1044,9 @@ static void desktop_context_menu_open_at(int mx, int my) {
     ui.menu_open = false;
     ui.hover_item = -1;
     ui.needs_redraw = true;
+    serial_printf("SHELL_CONTEXT_MENU_OPEN %u,%u %ux%u\n",
+                  desktop_context_menu_x, desktop_context_menu_y,
+                  width, height);
 }
 
 static bool desktop_context_menu_contains(int mx, int my) {
@@ -1090,14 +1093,17 @@ static void desktop_context_menu_select(int index) {
             serial_puts("SHELL_CONTEXT_NEW_FOLDER_UNAVAILABLE_READ_ONLY");
             return;
         case 1:
+            serial_puts("SHELL_CONTEXT_MENU_ACTION wallpaper\n");
             shell_open_app(SHELL_APP_SETTINGS);
             settings_select_page(SETTINGS_PAGE_APPEARANCE);
             break;
         case 2:
+            serial_puts("SHELL_CONTEXT_MENU_ACTION display-settings\n");
             shell_open_app(SHELL_APP_SETTINGS);
             settings_select_page(SETTINGS_PAGE_DISPLAY);
             break;
         case 3:
+            serial_puts("SHELL_CONTEXT_MENU_ACTION about\n");
             shell_open_app(SHELL_APP_ABOUT);
             break;
         default:
