@@ -41,6 +41,25 @@ int main(void) {
         }
     }
 
+    static const usize expected_group_counts[] = { 0u, 4u, 5u, 5u, 6u };
+    for (settings_group_t group = SETTINGS_GROUP_PERSONALIZATION;
+         group < SETTINGS_GROUP_LIMIT; group++) {
+        check(settings_catalog_group_count(group) ==
+              expected_group_counts[group],
+              "catalog group has the expected number of pages");
+        for (usize i = 0; i < settings_catalog_group_count(group); i++) {
+            const settings_page_t* page =
+                settings_catalog_group_at(group, i);
+            check(page != NULL && page->group == group,
+                  "group lookup preserves canonical group membership");
+        }
+        check(settings_catalog_group_at(
+                  group, settings_catalog_group_count(group)) == NULL,
+              "group lookup rejects an out-of-range index");
+    }
+    check(settings_catalog_group_count((settings_group_t)99) == 0u,
+          "invalid group has no pages");
+
     usize n = settings_catalog_search("touchpad", matches,
                                      SETTINGS_PAGE_ID_LIMIT);
     check(n == 1u && matches[0] == SETTINGS_PAGE_MOUSE_TOUCHPAD,
