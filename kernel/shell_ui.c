@@ -33,6 +33,7 @@
 #include <kernel/files_ui.h>
 #include <kernel/wm.h>
 #include <kernel/serial.h>
+#include <kernel/settings.h>
 
 /* Native desktop widgets and launcher hit-testing. */
 extern void desktop_surface_render(void);
@@ -99,6 +100,7 @@ static const menu_entry_t MENU_ITEMS[] = {
 static bool notice_open = false;
 static int notice_item = -1;
 static bool settings_open = false;
+static settings_page_id_t settings_active_page_id = SETTINGS_PAGE_DISPLAY;
 
 static const char* const NOTICE_LINE_1[] = {
     "", "", "", "",
@@ -843,33 +845,205 @@ static u32 settings_close_size(void) {
     return size > readable ? size : readable;
 }
 static u32 settings_nav_step(void) {
-    u32 step = ui_px(42), readable = text_height() + ui_px(14);
-    return step > readable ? step : readable;
+    u32 step = settings_nav_height() + ui_px(2);
+    return step;
 }
 static u32 settings_nav_height(void) {
-    u32 height = ui_px(34), readable = text_height() + ui_px(12);
-    return height > readable ? height : readable;
+    u32 height = text_height() + ui_px(8);
+    u32 minimum = ui_px(24);
+    return height > minimum ? height : minimum;
+}
+static settings_group_t settings_group_at_index(u32 index) {
+    switch (index) {
+        case 0: return SETTINGS_GROUP_PERSONALIZATION;
+        case 1: return SETTINGS_GROUP_DESKTOP_DEVICES;
+        case 2: return SETTINGS_GROUP_APPS_SERVICES;
+        case 3: return SETTINGS_GROUP_SYSTEM;
+        default: return 0;
+    }
+}
+static const char* settings_group_short_name(settings_group_t group) {
+    switch (group) {
+        case SETTINGS_GROUP_PERSONALIZATION: return "Personal";
+        case SETTINGS_GROUP_DESKTOP_DEVICES: return "Devices";
+        case SETTINGS_GROUP_APPS_SERVICES: return "Apps";
+        case SETTINGS_GROUP_SYSTEM: return "System";
+        default: return "Other";
+    }
+}
+static const settings_page_t* settings_active_page(void) {
+    const settings_page_t* page = settings_catalog_find(settings_active_page_id);
+    if (page) return page;
+    settings_active_page_id = SETTINGS_PAGE_DISPLAY;
+    return settings_catalog_find(settings_active_page_id);
+}
+static void settings_select_page(settings_page_id_t id) {
+    if (settings_catalog_find(id)) settings_active_page_id = id;
+}
+static void settings_select_group(settings_group_t group) {
+    const settings_page_t* first = settings_catalog_group_at(group, 0);
+    if (first) settings_select_page(first->id);
 }
 static u32 settings_rail_width(void) {
-    int font_scale = config_get_int("font_scale", 1);
-    if (font_scale < 1 || font_scale > 3) font_scale = 1;
-    const char* heading = font_scale >= 3 ? "MENU" : "PREFERENCES";
-    const char* nav[] = {
-        "Display",
-        font_scale >= 3 ? "User" :
-            (font_scale > 1 ? "Personal" : "Personalization"),
-        "System"
-    };
     u32 width = ui_px(164), measured = 0;
-    gfx_text_size(heading, &measured, NULL);
+    gfx_text_size("PREFERENCES", &measured, NULL);
     if (measured > width) width = measured;
-    for (u32 i=0; i<3; i++) {
-        gfx_text_size(nav[i], &measured, NULL);
+    for (u32 i = 0; i < 4; i++) {
+        gfx_text_size(settings_group_short_name(settings_group_at_index(i)),
+                      &measured, NULL);
         if (measured > width) width = measured;
     }
-    width += ui_px(36);
+    width += ui_px(32);
     u32 maximum = settings_panel_width() / 2u;
     return width > maximum ? maximum : width;
+}
+
+static void settings_draw_wrapped_text(u32 x, u32 y, u32 width,
+                                       const char* text, u32 color,
+                                       u32 max_lines) {
+    if (!text || !width || !max_lines) return;
+    u32 line_step = text_height() + ui_px(4);
+    fb_set_clip(x, y, width, line_step * max_lines);
+    const char* cursor = text;
+    u32 line_number = 0;
+
+    while (*cursor && line_number < max_lines) {
+        while (*cursor == ' ' || *cursor == '\t') cursor++;
+        if (!*cursor) break;
+
+        char line[128];
+        u32 line_length = 0;
+        line[0] = 0;
+
+        while (*cursor && *cursor != '\n') {
+            const char* word = cursor;
+            u32 word_length = 0;
+            while (word[word_length] && word[word_length] != ' ' &&
+                   word[word_length] != '\t' && word[word_length] != '\n')
+                word_length++;
+            if (word_length >= sizeof(line)) word_length = sizeof(line) - 1u;
+
+            char candidate[128];
+            u32 candidate_length = 0;
+            for (u32 i = 0; i < line_length; i++)
+                candidate[candidate_length++] = line[i];
+            if (candidate_length) candidate[candidate_length++] = ' ';
+            for (u32 i = 0; i < word_length &&
+                 candidate_length < sizeof(candidate) - 1u; i++)
+                candidate[candidate_length++] = word[i];
+            candidate[candidate_length] = 0;
+
+            u32 candidate_width = 0;
+            gfx_text_size(candidate, &candidate_width, NULL);
+            if (candidate_width > width && line_length) break;
+
+            if (candidate_width > width && !line_length) {
+                u32 accepted = 0;
+                while (accepted < word_length) {
+                    char partial[128];
+                    for (u32 i = 0; i < accepted; i++) partial[i] = word[i];
+                    partial[accepted + 1u] = 0;
+                    gfx_text_size(partial, &candidate_width, NULL);
+                    if (candidate_width > width) break;
+                    accepted++;
+                }
+                if (!accepted) accepted = 1;
+                for (u32 i = 0; i < accepted; i++) line[i] = word[i];
+                line_length = accepted;
+                line[line_length] = 0;
+                cursor += accepted;
+                break;
+            }
+
+            for (u32 i = 0; i < candidate_length; i++)
+                line[i] = candidate[i];
+            line_length = candidate_length;
+            line[line_length] = 0;
+            cursor += word_length;
+            while (*cursor == ' ' || *cursor == '\t') cursor++;
+        }
+
+        if (line_length) {
+            gfx_draw_string(x, y + line_number * line_step, line,
+                            color, FB_TRANSPARENT);
+            line_number++;
+        }
+        if (*cursor == '\n') cursor++;
+        else if (!line_length) break;
+    }
+    fb_reset_clip();
+}
+
+static void settings_draw_navigation(u32 x, u32 y, u32 rail_width,
+                                     u32 total_height, u32 title_height,
+                                     const settings_page_t* active) {
+    u32 rail_x = x + ui_px(1);
+    u32 clip_y = y + title_height + ui_px(1);
+    u32 clip_h = total_height > title_height + ui_px(2)
+               ? total_height - title_height - ui_px(2) : 1u;
+    fb_set_clip(rail_x, clip_y, rail_width, clip_h);
+
+    u32 heading_y = y + title_height + ui_px(18);
+    gfx_draw_string(x + ui_px(18), heading_y,
+                    gfx_text_get_scale() >= 3u ? "MENU" : "PREFERENCES",
+                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+
+    u32 nav_height = settings_nav_height();
+    u32 nav_step = settings_nav_step();
+    u32 group_top = heading_y + text_height() + ui_px(10);
+    for (u32 i = 0; i < 4; i++) {
+        settings_group_t group = settings_group_at_index(i);
+        u32 row_y = group_top + i * nav_step;
+        bool selected = active && active->group == group;
+        if (selected) {
+            fb_fill_rect(x + ui_px(8), row_y, rail_width - ui_px(16),
+                         nav_height, CHARIS_UI_ACCENT_SURFACE);
+            fb_fill_rect(x + ui_px(8), row_y, ui_px(3), nav_height,
+                         CHARIS_UI_ACCENT);
+        }
+        fb_set_clip(x + ui_px(18), row_y,
+                    rail_width > ui_px(30) ? rail_width - ui_px(30) : 1u,
+                    nav_height);
+        u32 label_y = row_y + (nav_height > text_height()
+                      ? (nav_height - text_height()) / 2u : 0u);
+        gfx_draw_string(x + ui_px(22), label_y,
+                        settings_group_short_name(group),
+                        selected ? CHARIS_UI_TEXT : CHARIS_UI_MUTED,
+                        FB_TRANSPARENT);
+        fb_reset_clip();
+    }
+
+    u32 pages_heading_y = group_top + 4u * nav_step + ui_px(6);
+    gfx_draw_string(x + ui_px(18), pages_heading_y,
+                    gfx_text_get_scale() >= 3u ? "PAGES" : "SETTINGS PAGES",
+                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+    u32 pages_top = pages_heading_y + text_height() + ui_px(6);
+    if (active) {
+        usize count = settings_catalog_group_count(active->group);
+        for (usize i = 0; i < count; i++) {
+            const settings_page_t* page =
+                settings_catalog_group_at(active->group, i);
+            if (!page) continue;
+            u32 row_y = pages_top + (u32)i * nav_step;
+            bool selected = page->id == active->id;
+            if (selected) {
+                fb_fill_rect(x + ui_px(8), row_y, rail_width - ui_px(16),
+                             nav_height, CHARIS_UI_ACCENT_SURFACE);
+                fb_fill_rect(x + ui_px(8), row_y, ui_px(3), nav_height,
+                             CHARIS_UI_ACCENT);
+            }
+            fb_set_clip(x + ui_px(18), row_y,
+                        rail_width > ui_px(30) ? rail_width - ui_px(30) : 1u,
+                        nav_height);
+            u32 label_y = row_y + (nav_height > text_height()
+                          ? (nav_height - text_height()) / 2u : 0u);
+            gfx_draw_string(x + ui_px(22), label_y, page->title,
+                            selected ? CHARIS_UI_TEXT : CHARIS_UI_MUTED,
+                            FB_TRANSPARENT);
+            fb_reset_clip();
+        }
+    }
+    fb_reset_clip();
 }
 static u32 settings_row_height_for(u32 full_height) {
     u32 desired = settings_row_height();
@@ -939,158 +1113,205 @@ static bool settings_reflow_window(window_t* win) {
 
 static void draw_settings_window(window_t* win) {
     if (!win || !settings_open) return;
-    static const char* const styles[] = { "Proportional", "Monospace", "Bitmap serif" };
-    static const char* const scales[] = { "100%", "200%", "300%" };
-    static const char* const ui_scales[] = { "80%", "100%", "120%" };
+
     u32 cw = (u32)win->width;
     u32 ch = (u32)win->height + win->titlebar_height;
     u32 x = (u32)win->x, y = (u32)win->y;
     u32 title_h = settings_title_height();
     u32 row_h = settings_row_height_for(ch);
     u32 rail_w = settings_rail_width();
-    if (rail_w > cw/2u) rail_w = cw/2u;
-    u32 content_x = x+rail_w+ui_px(28);
-    u32 button_w = settings_button_width();
-    u32 plus_x = x+cw-button_w-ui_px(24);
-    u32 control_x = plus_x-button_w-ui_px(8);
-    u32 label_column_w = 0, measured_label_w = 0;
-    int configured_font_scale = config_get_int("font_scale", 1);
-    if (configured_font_scale < 1 || configured_font_scale > 3)
-        configured_font_scale = 1;
-    const char* measured_labels[] = {
-        configured_font_scale >= 3 ? "F" :
-            (configured_font_scale > 1 ? "Font" : "Font family"),
-        configured_font_scale >= 3 ? "T" :
-            (configured_font_scale > 1 ? "Text" : "Text size"),
-        configured_font_scale >= 3 ? "UI" :
-            (configured_font_scale > 1 ? "UI" : "UI scale")
-    };
-    for (u32 i=0; i<3; i++) {
-        gfx_text_size(measured_labels[i], &measured_label_w, NULL);
-        if (measured_label_w > label_column_w)
-            label_column_w = measured_label_w;
-    }
-    u32 value_x = content_x + ui_px(8) + label_column_w + ui_px(16);
-    if (value_x >= control_x) value_x = content_x;
-    u32 button_h = settings_button_height();
+    if (rail_w > cw / 2u) rail_w = cw / 2u;
 
-    fb_fill_rect(x+ui_px(7), y+ui_px(8), cw, ch, CHARIS_UI_SHADOW);
+    const settings_page_t* page = settings_active_page();
+    if (!page) return;
+
+    u32 content_x = x + rail_w + ui_px(28);
+    u32 content_w = cw > rail_w + ui_px(52)
+                  ? cw - rail_w - ui_px(52) : 1u;
+    u32 button_w = settings_button_width();
+    u32 button_h = settings_button_height();
+    u32 plus_x = x + cw - button_w - ui_px(24);
+    u32 control_x = plus_x - button_w - ui_px(8);
+    u32 first_row_y = y + title_h + ui_px(82);
+
+    fb_fill_rect(x + ui_px(7), y + ui_px(8), cw, ch, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, cw, ch, CHARIS_UI_PANEL);
     fb_draw_rect(x, y, cw, ch, CHARIS_UI_BORDER_STRONG);
     fb_fill_rect(x, y, cw, title_h, CHARIS_UI_PANEL_RAISED);
-    fb_fill_rect(x, y+title_h, cw, ui_px(1), CHARIS_UI_BORDER);
-    gfx_draw_string(x+ui_px(22), y+(title_h-text_height())/2u,
+    fb_fill_rect(x, y + title_h, cw, ui_px(1), CHARIS_UI_BORDER);
+    gfx_draw_string(x + ui_px(22), y + (title_h - text_height()) / 2u,
                     "Settings", CHARIS_UI_TEXT, FB_TRANSPARENT);
+
     if (text_height() <= ui_px(16)) {
-        fb_set_clip(x+ui_px(104), y,
-                    cw>ui_px(168) ? cw-ui_px(168) : 1, title_h);
-        gfx_draw_string(x+ui_px(104), y+(title_h-text_height())/2u,
+        fb_set_clip(x + ui_px(104), y,
+                    cw > ui_px(168) ? cw - ui_px(168) : 1u, title_h);
+        gfx_draw_string(x + ui_px(104), y + (title_h - text_height()) / 2u,
                         "SYSTEM PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
         fb_reset_clip();
     }
+
     u32 close_size = settings_close_size();
     u32 close_text_w = 0, close_text_h = 0;
     gfx_text_size("x", &close_text_w, &close_text_h);
-    u32 close_x = x+cw-close_size-ui_px(16);
-    u32 close_y = y+(title_h>close_size ? (title_h-close_size)/2u : 0u);
+    u32 close_x = x + cw - close_size - ui_px(16);
+    u32 close_y = y + (title_h > close_size ? (title_h - close_size) / 2u : 0u);
     fb_fill_rect(close_x, close_y, close_size, close_size, CHARIS_UI_SURFACE);
     fb_draw_rect(close_x, close_y, close_size, close_size, CHARIS_UI_BORDER);
-    gfx_draw_string(close_x+(close_size>close_text_w
-                    ? (close_size-close_text_w)/2u : 0u),
-                    close_y+(close_size>close_text_h
-                    ? (close_size-close_text_h)/2u : 0u),
+    gfx_draw_string(close_x + (close_size > close_text_w
+                    ? (close_size - close_text_w) / 2u : 0u),
+                    close_y + (close_size > close_text_h
+                    ? (close_size - close_text_h) / 2u : 0u),
                     "x", CHARIS_UI_TEXT, FB_TRANSPARENT);
 
-    fb_fill_rect(x+ui_px(1), y+title_h+ui_px(1), rail_w,
-                 ch>title_h+ui_px(2) ? ch-title_h-ui_px(2) : 1u,
+    fb_fill_rect(x + ui_px(1), y + title_h + ui_px(1), rail_w,
+                 ch > title_h + ui_px(2) ? ch - title_h - ui_px(2) : 1u,
                  CHARIS_UI_PANEL_RAISED);
-    u32 preferences_y = y+title_h+ui_px(24);
-    int active_font_scale = config_get_int("font_scale", 1);
-    if (active_font_scale < 1 || active_font_scale > 3) active_font_scale = 1;
-    gfx_draw_string(x+ui_px(18), preferences_y,
-                    active_font_scale >= 3 ? "MENU" : "PREFERENCES",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    const char* nav[] = {
-        "Display",
-        active_font_scale >= 3 ? "User" :
-            (active_font_scale > 1 ? "Personal" : "Personalization"),
-        "System"
-    };
-    u32 nav_step = settings_nav_step();
-    u32 nav_height = settings_nav_height();
-    u32 nav_first_y = preferences_y + text_height() + ui_px(20);
-    for (u32 i=0; i<3; i++) {
-        u32 ny = nav_first_y+i*nav_step;
-        if (i==0) {
-            fb_fill_rect(x+ui_px(8), ny-ui_px(6), rail_w-ui_px(16),
-                         nav_height, CHARIS_UI_ACCENT_SURFACE);
-            fb_fill_rect(x+ui_px(8), ny-ui_px(6), ui_px(3),
-                         nav_height, CHARIS_UI_ACCENT);
+    settings_draw_navigation(x, y, rail_w, ch, title_h, page);
+
+    u32 heading_y = y + title_h + ui_px(18);
+    gfx_draw_string(content_x, heading_y, page->title,
+                    CHARIS_UI_TEXT, FB_TRANSPARENT);
+    if (text_height() <= ui_px(16)) {
+        settings_draw_wrapped_text(content_x,
+            heading_y + text_height() + ui_px(6), content_w,
+            page->summary, CHARIS_UI_MUTED, 2);
+    }
+
+    if (page->id == SETTINGS_PAGE_DISPLAY) {
+        static const char* const styles[] = {
+            "Proportional", "Monospace", "Bitmap serif"
+        };
+        static const char* const scales[] = { "100%", "200%", "300%" };
+        static const char* const ui_scales[] = { "80%", "100%", "120%" };
+
+        int configured_font_scale = config_get_int("font_scale", 1);
+        if (configured_font_scale < 1 || configured_font_scale > 3)
+            configured_font_scale = 1;
+        const char* measured_labels[] = {
+            configured_font_scale >= 3 ? "F" :
+                (configured_font_scale > 1 ? "Font" : "Font family"),
+            configured_font_scale >= 3 ? "T" :
+                (configured_font_scale > 1 ? "Text" : "Text size"),
+            configured_font_scale >= 3 ? "UI" :
+                (configured_font_scale > 1 ? "UI" : "UI scale")
+        };
+        u32 label_column_w = 0, measured_label_w = 0;
+        for (u32 i = 0; i < 3; i++) {
+            gfx_text_size(measured_labels[i], &measured_label_w, NULL);
+            if (measured_label_w > label_column_w)
+                label_column_w = measured_label_w;
         }
-        fb_set_clip(x+ui_px(18), ny-ui_px(4),
-                    rail_w>ui_px(28) ? rail_w-ui_px(28) : 1, nav_height);
-        gfx_draw_string(x+ui_px(22), ny, nav[i],
-                        i==0 ? CHARIS_UI_TEXT : CHARIS_UI_MUTED,
-                        FB_TRANSPARENT);
-        fb_reset_clip();
-    }
+        u32 value_x = content_x + ui_px(8) + label_column_w + ui_px(16);
+        if (value_x >= control_x) value_x = content_x;
 
-    u32 page_heading_y = y+title_h+ui_px(18);
-    gfx_draw_string(content_x, page_heading_y,
-                    "Display", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    if (gfx_text_get_scale() == 1u) {
-        gfx_draw_string(content_x, page_heading_y+text_height()+ui_px(6),
-                        "Control the way CharisOS looks and reads.",
-                        CHARIS_UI_MUTED, FB_TRANSPARENT);
-    }
+        int style = config_get_int("font_style", 0);
+        int font_scale = config_get_int("font_scale", 1);
+        int global_scale = config_get_int("ui_scale", 100);
+        if (style < 0 || style > 2) style = 0;
+        if (font_scale < 1 || font_scale > 3) font_scale = 1;
+        int scale_index = global_scale <= 80 ? 0 : global_scale >= 120 ? 2 : 1;
+        const char* compact_styles[] = { "Inter", "Mono", "Serif" };
+        const char* values[3] = {
+            font_scale > 1 ? compact_styles[style] : styles[style],
+            scales[font_scale - 1], ui_scales[scale_index]
+        };
+        const char* labels[3] = {
+            font_scale >= 3 ? "F" :
+                (font_scale > 1 ? "Font" : "Font family"),
+            font_scale >= 3 ? "T" :
+                (font_scale > 1 ? "Text" : "Text size"),
+            font_scale >= 3 ? "UI" :
+                (font_scale > 1 ? "UI" : "UI scale")
+        };
+        const char* hints[3] = { "Typeface", "Glyph size", "Controls" };
 
-    int style = config_get_int("font_style", 0);
-    int font_scale = config_get_int("font_scale", 1);
-    int global_scale = config_get_int("ui_scale", 100);
-    if (style<0 || style>2) style=0;
-    if (font_scale<1 || font_scale>3) font_scale=1;
-    int scale_index = global_scale<=80 ? 0 : global_scale>=120 ? 2 : 1;
-    const char* compact_styles[] = { "Inter", "Mono", "Serif" };
-    const char* values[3] = {
-        font_scale > 1 ? compact_styles[style] : styles[style],
-        scales[font_scale-1], ui_scales[scale_index]
-    };
-    const char* labels[3] = {
-        font_scale >= 3 ? "F" : (font_scale > 1 ? "Font" : "Font family"),
-        font_scale >= 3 ? "T" : (font_scale > 1 ? "Text" : "Text size"),
-        font_scale >= 3 ? "UI" : (font_scale > 1 ? "UI" : "UI scale")
-    };
-    const char* hints[3] = {
-        "Typeface",
-        "Glyph size",
-        "Controls"
-    };
-    for (u32 i=0; i<3; i++) {
-        u32 ry = y+title_h+ui_px(82)+i*row_h;
-        u32 row_w = cw>rail_w+ui_px(30) ? cw-rail_w-ui_px(30) : 1;
-        fb_fill_rect(content_x-ui_px(10), ry, row_w,
-                     row_h>ui_px(10) ? row_h-ui_px(10) : 1u, CHARIS_UI_SURFACE);
-        fb_draw_rect(content_x-ui_px(10), ry, row_w,
-                     row_h>ui_px(10) ? row_h-ui_px(10) : 1u, CHARIS_UI_BORDER);
-        u32 label_x = content_x+ui_px(8);
-        u32 label_w = value_x > label_x+ui_px(12)
-                    ? value_x-label_x-ui_px(12) : 1;
-        u32 row_draw_h = row_h>ui_px(10) ? row_h-ui_px(10) : 1u;
-        fb_set_clip(label_x, ry, label_w, row_draw_h);
-        u32 label_y = ry + (row_draw_h>text_height()
-                    ? (row_draw_h-text_height())/2u : 0u);
-        gfx_draw_string(label_x, label_y,
-                        labels[i], CHARIS_UI_TEXT, FB_TRANSPARENT);
-        if (font_scale == 1) {
-            u32 hint_y = label_y+text_height()+ui_px(6);
-            fb_set_clip(label_x, hint_y, label_w,
-                        row_draw_h>hint_y-ry ? row_draw_h-(hint_y-ry) : 1u);
-            gfx_draw_string(label_x, hint_y, hints[i],
-                            CHARIS_UI_MUTED, FB_TRANSPARENT);
+        for (u32 i = 0; i < 3; i++) {
+            u32 row_y = first_row_y + i * row_h;
+            u32 row_w = cw > rail_w + ui_px(30)
+                      ? cw - rail_w - ui_px(30) : 1u;
+            u32 row_draw_h = row_h > ui_px(10) ? row_h - ui_px(10) : 1u;
+            fb_fill_rect(content_x - ui_px(10), row_y, row_w,
+                         row_draw_h, CHARIS_UI_SURFACE);
+            fb_draw_rect(content_x - ui_px(10), row_y, row_w,
+                         row_draw_h, CHARIS_UI_BORDER);
+
+            u32 label_x = content_x + ui_px(8);
+            u32 label_w = value_x > label_x + ui_px(12)
+                        ? value_x - label_x - ui_px(12) : 1u;
+            fb_set_clip(label_x, row_y, label_w, row_draw_h);
+            u32 label_y = row_y + (row_draw_h > text_height()
+                         ? (row_draw_h - text_height()) / 2u : 0u);
+            gfx_draw_string(label_x, label_y, labels[i],
+                            CHARIS_UI_TEXT, FB_TRANSPARENT);
+            if (font_scale == 1) {
+                u32 hint_y = label_y + text_height() + ui_px(6);
+                fb_set_clip(label_x, hint_y, label_w,
+                    row_draw_h > hint_y - row_y
+                        ? row_draw_h - (hint_y - row_y) : 1u);
+                gfx_draw_string(label_x, hint_y, hints[i],
+                                CHARIS_UI_MUTED, FB_TRANSPARENT);
+                fb_reset_clip();
+            }
+            fb_reset_clip();
+
+            u32 by = row_y + (row_h - button_h) / 2u;
+            fb_fill_rect(control_x, by, button_w, button_h,
+                         CHARIS_UI_PANEL_RAISED);
+            fb_draw_rect(control_x, by, button_w, button_h, CHARIS_UI_BORDER);
+            fb_fill_rect(plus_x, by, button_w, button_h,
+                         CHARIS_UI_ACCENT_SURFACE);
+            fb_draw_rect(plus_x, by, button_w, button_h,
+                         CHARIS_UI_BORDER_STRONG);
+            u32 minus_w = 0, glyph_h = 0, plus_w = 0;
+            gfx_text_size("-", &minus_w, &glyph_h);
+            gfx_text_size("+", &plus_w, NULL);
+            u32 glyph_y = by + (button_h > glyph_h
+                          ? (button_h - glyph_h) / 2u : 0u);
+            gfx_draw_string(control_x + (button_w > minus_w
+                            ? (button_w - minus_w) / 2u : 0u),
+                            glyph_y, "-", CHARIS_UI_TEXT, FB_TRANSPARENT);
+            gfx_draw_string(plus_x + (button_w > plus_w
+                            ? (button_w - plus_w) / 2u : 0u),
+                            glyph_y, "+", CHARIS_UI_TEXT, FB_TRANSPARENT);
+
+            u32 value_w = control_x > value_x + ui_px(8)
+                        ? control_x - value_x - ui_px(8) : 1u;
+            fb_set_clip(value_x, by, value_w, button_h);
+            u32 value_h = 0;
+            gfx_text_size(values[i], NULL, &value_h);
+            gfx_draw_string(value_x, by + (button_h > value_h
+                            ? (button_h - value_h) / 2u : 0u),
+                            values[i], CHARIS_UI_ACCENT, FB_TRANSPARENT);
             fb_reset_clip();
         }
+    } else if (page->id == SETTINGS_PAGE_APPEARANCE) {
+        int selected = config_get_int("wallpaper", (int)WALLPAPER_CHARIS);
+        if (selected < 0 || selected >= (int)wallpaper_count())
+            selected = (int)WALLPAPER_CHARIS;
+
+        u32 row_y = first_row_y;
+        u32 row_draw_h = row_h > ui_px(10) ? row_h - ui_px(10) : 1u;
+        u32 row_w = cw > rail_w + ui_px(30)
+                  ? cw - rail_w - ui_px(30) : 1u;
+        fb_fill_rect(content_x - ui_px(10), row_y, row_w,
+                     row_draw_h, CHARIS_UI_SURFACE);
+        fb_draw_rect(content_x - ui_px(10), row_y, row_w,
+                     row_draw_h, CHARIS_UI_BORDER);
+
+        u32 label_x = content_x + ui_px(8);
+        u32 label_y = row_y + ui_px(16);
+        fb_set_clip(label_x, row_y + ui_px(8),
+                    control_x > label_x + ui_px(12)
+                      ? control_x - label_x - ui_px(12) : 1u,
+                    row_draw_h > ui_px(16) ? row_draw_h - ui_px(16) : 1u);
+        gfx_draw_string(label_x, label_y,
+                        "Desktop background", CHARIS_UI_TEXT, FB_TRANSPARENT);
+        gfx_draw_string(label_x, label_y + text_height() + ui_px(5),
+                        wallpaper_description((u32)selected),
+                        CHARIS_UI_MUTED, FB_TRANSPARENT);
         fb_reset_clip();
-        u32 by = ry+(row_h-button_h)/2u;
+
+        u32 by = row_y + (row_h - button_h) / 2u;
         fb_fill_rect(control_x, by, button_w, button_h,
                      CHARIS_UI_PANEL_RAISED);
         fb_draw_rect(control_x, by, button_w, button_h, CHARIS_UI_BORDER);
@@ -1101,94 +1322,192 @@ static void draw_settings_window(window_t* win) {
         u32 minus_w = 0, glyph_h = 0, plus_w = 0;
         gfx_text_size("-", &minus_w, &glyph_h);
         gfx_text_size("+", &plus_w, NULL);
-        u32 glyph_y = by + (button_h>glyph_h ? (button_h-glyph_h)/2u : 0u);
-        gfx_draw_string(control_x+(button_w>minus_w
-                        ? (button_w-minus_w)/2u : 0u), glyph_y,
-                        "-", CHARIS_UI_TEXT, FB_TRANSPARENT);
-        gfx_draw_string(plus_x+(button_w>plus_w
-                        ? (button_w-plus_w)/2u : 0u), glyph_y,
-                        "+", CHARIS_UI_TEXT, FB_TRANSPARENT);
-        u32 value_w = control_x > value_x+ui_px(8)
-                    ? control_x-value_x-ui_px(8) : 1;
-        fb_set_clip(value_x, by, value_w, button_h);
-        u32 value_h = 0;
-        gfx_text_size(values[i], NULL, &value_h);
-        gfx_draw_string(value_x, by+(button_h>value_h
-                        ? (button_h-value_h)/2u : 0u),
-                        values[i], CHARIS_UI_ACCENT, FB_TRANSPARENT);
+        u32 glyph_y = by + (button_h > glyph_h
+                      ? (button_h - glyph_h) / 2u : 0u);
+        gfx_draw_string(control_x + (button_w > minus_w
+                        ? (button_w - minus_w) / 2u : 0u),
+                        glyph_y, "-", CHARIS_UI_TEXT, FB_TRANSPARENT);
+        gfx_draw_string(plus_x + (button_w > plus_w
+                        ? (button_w - plus_w) / 2u : 0u),
+                        glyph_y, "+", CHARIS_UI_TEXT, FB_TRANSPARENT);
+
+        const char* name = wallpaper_name((u32)selected);
+        u32 name_w = 0, name_h = 0;
+        gfx_text_size(name, &name_w, &name_h);
+        u32 value_x = control_x > name_w + ui_px(10)
+                    ? control_x - name_w - ui_px(10) : content_x;
+        fb_set_clip(value_x, by,
+                    control_x > value_x ? control_x - value_x : 1u,
+                    button_h);
+        gfx_draw_string(value_x, by + (button_h > name_h
+                        ? (button_h - name_h) / 2u : 0u),
+                        name, CHARIS_UI_ACCENT, FB_TRANSPARENT);
         fb_reset_clip();
+
+        u32 note_y = first_row_y + row_h + ui_px(8);
+        settings_draw_wrapped_text(content_x, note_y, content_w,
+            page->state_detail, CHARIS_UI_MUTED, 3);
+    } else {
+        u32 card_y = first_row_y;
+        u32 footer_top = y + ch - settings_footer_reserved() - ui_px(12);
+        u32 card_h = footer_top > card_y + ui_px(16)
+                   ? footer_top - card_y : ui_px(80);
+        fb_fill_rect(content_x - ui_px(10), card_y, content_w + ui_px(10),
+                     card_h, CHARIS_UI_SURFACE);
+        fb_draw_rect(content_x - ui_px(10), card_y, content_w + ui_px(10),
+                     card_h, CHARIS_UI_BORDER);
+
+        u32 state_y = card_y + ui_px(18);
+        u32 state_color = page->state == SETTINGS_PAGE_READY
+                        ? CHARIS_UI_SUCCESS : CHARIS_UI_WARNING;
+        gfx_draw_string(content_x + ui_px(8), state_y,
+                        "Capability status", CHARIS_UI_MUTED, FB_TRANSPARENT);
+        gfx_draw_string(content_x + ui_px(8),
+                        state_y + text_height() + ui_px(8),
+                        settings_page_state_label(page->state),
+                        state_color, FB_TRANSPARENT);
+        settings_draw_wrapped_text(content_x + ui_px(8),
+            state_y + text_height() * 2u + ui_px(20),
+            content_w > ui_px(20) ? content_w - ui_px(20) : 1u,
+            page->state_detail, CHARIS_UI_TEXT, 5);
+        settings_draw_wrapped_text(content_x + ui_px(8),
+            card_y + card_h - text_height() - ui_px(10),
+            content_w > ui_px(20) ? content_w - ui_px(20) : 1u,
+            "Only controls backed by a working OS service are enabled.",
+            CHARIS_UI_MUTED, 1);
     }
 
-    u32 footer_y = y+ch-ui_px(12)-text_height();
-    u32 footer_w = cw>rail_w+ui_px(36) ? cw-rail_w-ui_px(36) : 1u;
-    fb_fill_rect(x+rail_w+ui_px(18), footer_y-ui_px(12),
+    u32 footer_y = y + ch - ui_px(12) - text_height();
+    u32 footer_w = cw > rail_w + ui_px(36)
+                 ? cw - rail_w - ui_px(36) : 1u;
+    fb_fill_rect(x + rail_w + ui_px(18), footer_y - ui_px(12),
                  footer_w, ui_px(1), CHARIS_UI_BORDER);
     fb_set_clip(content_x, footer_y, footer_w, text_height());
     gfx_draw_string(content_x, footer_y,
-                    config_is_persistent()
-                        ? (font_scale >= 2 ? "Saved" : "All changes saved")
-                        : (font_scale >= 3 ? "Session" :
-                           (font_scale >= 2 ? "Session only" :
-                            "Session only  |  No writable configuration volume")),
-                    config_is_persistent() ? CHARIS_UI_SUCCESS : CHARIS_UI_WARNING,
-                    FB_TRANSPARENT);
+        config_is_persistent()
+            ? (gfx_text_get_scale() >= 2u ? "Saved" : "All changes saved")
+            : (gfx_text_get_scale() >= 3u ? "Session only" :
+               (gfx_text_get_scale() >= 2u ? "Session only" :
+                "Session only  |  No writable configuration volume")),
+        config_is_persistent() ? CHARIS_UI_SUCCESS : CHARIS_UI_WARNING,
+        FB_TRANSPARENT);
     fb_reset_clip();
 }
 
 static bool settings_handle_window_click(window_t* win, int mx, int my) {
     if (!win) return false;
-    u32 x=(u32)win->x, y=(u32)win->y;
-    u32 cw=(u32)win->width, ch=(u32)win->height+win->titlebar_height;
-    u32 title_h=settings_title_height();
-    if (mx < (int)x || mx >= (int)(x+cw) ||
-        my < (int)y || my >= (int)(y+ch)) return false;
-    if (my < (int)(y+title_h)) {
+    u32 x = (u32)win->x, y = (u32)win->y;
+    u32 cw = (u32)win->width, ch = (u32)win->height + win->titlebar_height;
+    u32 title_h = settings_title_height();
+    if (mx < (int)x || mx >= (int)(x + cw) ||
+        my < (int)y || my >= (int)(y + ch)) return false;
+
+    if (my < (int)(y + title_h)) {
         u32 close_size = settings_close_size();
-        u32 close_x = x+cw-close_size-ui_px(16);
-        u32 close_y = y+(title_h>close_size
-                      ? (title_h-close_size)/2u : 0u);
-        if (mx >= (int)close_x && mx < (int)(close_x+close_size) &&
-            my >= (int)close_y && my < (int)(close_y+close_size)) {
-            settings_open=false;
+        u32 close_x = x + cw - close_size - ui_px(16);
+        u32 close_y = y + (title_h > close_size
+                      ? (title_h - close_size) / 2u : 0u);
+        if (mx >= (int)close_x && mx < (int)(close_x + close_size) &&
+            my >= (int)close_y && my < (int)(close_y + close_size)) {
+            settings_open = false;
             return true;
         }
-        return false; /* unclaimed titlebar space is draggable */
+        return false;
     }
 
-    u32 rail_w=settings_rail_width();
-    if (rail_w > cw/2u) rail_w = cw/2u;
-    u32 row_h=settings_row_height_for(ch);
-    u32 button_w=settings_button_width();
-    u32 plus_x=x+cw-button_w-ui_px(24);
-    u32 control_x=plus_x-button_w-ui_px(8);
-    u32 first_y=y+title_h+ui_px(82);
-    if (mx < (int)(x+rail_w) || my < (int)first_y) return true;
-    u32 row=(u32)(my-(int)first_y)/row_h;
-    if (row>=3) return true;
-    int direction=mx>=(int)plus_x && mx<(int)(plus_x+button_w) ? 1 :
-                  mx>=(int)control_x && mx<(int)(control_x+button_w) ? -1 : 0;
-    if (!direction) return true;
-    if (row==0) {
-        int value=config_get_int("font_style",0)+direction;
-        if (value<0) value=2;
-        if (value>2) value=0;
-        config_set_int("font_style",value);
-    } else if (row==1) {
-        int value=config_get_int("font_scale",1)+direction;
-        if (value<1) value=1;
-        if (value>3) value=3;
-        config_set_int("font_scale",value);
-    } else {
-        int value=config_get_int("ui_scale",100)+direction*20;
-        if (value<80) value=80;
-        if (value>120) value=120;
-        config_set_int("ui_scale",value);
+    u32 rail_w = settings_rail_width();
+    if (rail_w > cw / 2u) rail_w = cw / 2u;
+    u32 nav_height = settings_nav_height();
+    u32 nav_step = settings_nav_step();
+    u32 heading_y = y + title_h + ui_px(18);
+    u32 group_top = heading_y + text_height() + ui_px(10);
+
+    if (mx < (int)(x + rail_w)) {
+        for (u32 i = 0; i < 4; i++) {
+            u32 row_y = group_top + i * nav_step;
+            if (my >= (int)row_y &&
+                my < (int)(row_y + nav_height)) {
+                settings_select_group(settings_group_at_index(i));
+                return true;
+            }
+        }
+
+        u32 pages_heading_y = group_top + 4u * nav_step + ui_px(6);
+        u32 pages_top = pages_heading_y + text_height() + ui_px(6);
+        const settings_page_t* active = settings_active_page();
+        if (active) {
+            usize count = settings_catalog_group_count(active->group);
+            for (usize i = 0; i < count; i++) {
+                u32 row_y = pages_top + (u32)i * nav_step;
+                if (my >= (int)row_y &&
+                    my < (int)(row_y + nav_height)) {
+                    const settings_page_t* page =
+                        settings_catalog_group_at(active->group, i);
+                    if (page) settings_select_page(page->id);
+                    return true;
+                }
+            }
+        }
+        return true;
     }
-    gfx_text_apply_preferences();
-    (void)settings_reflow_window(win);
-    config_save(CONFIG_FILE_PATH);
+
+    u32 button_w = settings_button_width();
+    u32 plus_x = x + cw - button_w - ui_px(24);
+    u32 control_x = plus_x - button_w - ui_px(8);
+    u32 first_row_y = y + title_h + ui_px(82);
+    u32 row_h = settings_row_height_for(ch);
+    if (my < (int)first_row_y) return true;
+
+    int direction = mx >= (int)plus_x &&
+                    mx < (int)(plus_x + button_w) ? 1 :
+                    mx >= (int)control_x &&
+                    mx < (int)(control_x + button_w) ? -1 : 0;
+    const settings_page_t* active = settings_active_page();
+    if (!active) return true;
+
+    if (active->id == SETTINGS_PAGE_DISPLAY) {
+        u32 row = (u32)(my - (int)first_row_y) / row_h;
+        if (row >= 3u || !direction) return true;
+
+        if (row == 0u) {
+            int value = config_get_int("font_style", 0) + direction;
+            if (value < 0) value = 2;
+            if (value > 2) value = 0;
+            config_set_int("font_style", value);
+        } else if (row == 1u) {
+            int value = config_get_int("font_scale", 1) + direction;
+            if (value < 1) value = 1;
+            if (value > 3) value = 3;
+            config_set_int("font_scale", value);
+        } else {
+            int value = config_get_int("ui_scale", 100) + direction * 20;
+            if (value < 80) value = 80;
+            if (value > 120) value = 120;
+            config_set_int("ui_scale", value);
+        }
+        gfx_text_apply_preferences();
+        (void)settings_reflow_window(win);
+        config_save(CONFIG_FILE_PATH);
+        return true;
+    }
+
+    if (active->id == SETTINGS_PAGE_APPEARANCE) {
+        int selected = config_get_int("wallpaper", (int)WALLPAPER_CHARIS);
+        if (selected < 0 || selected >= (int)wallpaper_count())
+            selected = (int)WALLPAPER_CHARIS;
+        if (my >= (int)first_row_y &&
+            my < (int)(first_row_y + row_h) && direction) {
+            selected = (selected + (int)wallpaper_count() + direction) %
+                       (int)wallpaper_count();
+            config_set_int("wallpaper", selected);
+            (void)config_save(CONFIG_FILE_PATH);
+        }
+        return true;
+    }
+
     return true;
 }
+
 
 /* Software cursor. The PS/2 mouse has no hardware cursor once the display is
  * in graphics mode, so the pointer is drawn into the framebuffer. */
