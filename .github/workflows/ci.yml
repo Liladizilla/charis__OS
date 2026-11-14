@@ -777,8 +777,10 @@ jobs:
             build/charisos-resized-preview.ppm
             build/charisos-settings-preview.ppm
             build/charisos-settings-appearance-preview.ppm
+            build/charisos-settings-alpine-preview.ppm
             build/charisos-settings-adjusted-preview.ppm
             build/charisos-settings-mouse-speed-preview.ppm
+            build/charisos-desktop-alpine-preview.ppm
             build/charisos-desktop-scaled-preview.ppm
             build/charisos-calculator-preview.ppm
             build/charisos-settings-reloaded-preview.ppm
