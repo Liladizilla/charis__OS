@@ -4,6 +4,9 @@
 #include <kernel/types.h>
 #include <kernel/multiboot.h>
 
+/* Largest accepted bounded wallpaper collection module (CWP2). */
+#define BOOTMEM_WALLPAPER_MAX_BYTES (24u * 1024u * 1024u)
+
 /* What the bootloader told us about the display, if anything. */
 typedef struct {
     bool     has_framebuffer;
@@ -20,7 +23,7 @@ typedef struct {
     const char* boot_loader;
     u32       tags_offset;          /* validated position of the tag list */
     u32       region_count;         /* entries in the memory map */
-    u64       wallpaper_addr;       /* physical start of optional CWP1 module */
+    u64       wallpaper_addr;       /* physical start of optional CWP1/CWP2 module */
     u32       wallpaper_size;       /* validated byte length of that module */
 } bootmem_display_t;
 
