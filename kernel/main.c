@@ -653,6 +653,12 @@ void kernel_main(u32 magic, u64 info_ptr) {
     config_init();
     BOOT_MARK('c');
     config_load(CONFIG_FILE_PATH);
+    int saved_pointer_speed = config_get_int("pointer_speed", 100);
+    if (saved_pointer_speed < (int)MOUSE_SPEED_MIN_PERCENT ||
+        saved_pointer_speed > (int)MOUSE_SPEED_MAX_PERCENT)
+        saved_pointer_speed = 100;
+    mouse_set_speed_percent((u32)saved_pointer_speed);
+    config_set_int("pointer_speed", (int)mouse_get_speed_percent());
     gfx_text_apply_preferences();
     BOOT_MARK('L');
     display_init();

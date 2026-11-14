@@ -69,6 +69,44 @@ int main(void) {
     mouse_get_snapshot(&state);
     expect(state.x == 0 && state.y == 0, "zero-sized bounds pin the pointer safely");
 
+    mouse_set_bounds(100u, 100u);
+    mouse_set_speed_percent(50u);
+    expect(mouse_get_speed_percent() == 50u,
+           "minimum pointer speed is accepted");
+    send_packet(0x08u, 1u, 0xFFu);
+    mouse_get_snapshot(&state);
+    expect(state.x == 0 && state.y == 0,
+           "half-speed movement carries fractional pixels");
+    send_packet(0x08u, 1u, 0xFFu);
+    mouse_get_snapshot(&state);
+    expect(state.x == 1 && state.y == 1 &&
+           state.dx == 1 && state.dy == -1,
+           "two half-speed packets accumulate to one pixel");
+
+    mouse_set_speed_percent(100u);
+    send_packet(0x08u, 1u, 0xFFu);
+    mouse_get_snapshot(&state);
+    expect(state.x == 2 && state.y == 2,
+           "changing pointer speed clears the previous fractional remainder");
+
+    mouse_set_speed_percent(200u);
+    expect(mouse_get_speed_percent() == 200u,
+           "maximum pointer speed is accepted");
+    send_packet(0x08u, 2u, 0xFEu);
+    mouse_get_snapshot(&state);
+    expect(state.x == 6 && state.y == 6,
+           "double-speed pointer movement doubles both axes");
+
+    mouse_set_speed_percent(0u);
+    expect(mouse_get_speed_percent() == MOUSE_SPEED_MIN_PERCENT,
+           "out-of-range low pointer speed clamps to minimum");
+    mouse_set_speed_percent(300u);
+    expect(mouse_get_speed_percent() == MOUSE_SPEED_MAX_PERCENT,
+           "out-of-range high pointer speed clamps to maximum");
+    mouse_set_speed_percent(113u);
+    expect(mouse_get_speed_percent() == 125u,
+           "pointer speed snaps to the nearest 25 percent step");
+
     puts("mouse packet decoder tests: PASS");
     return 0;
 }
