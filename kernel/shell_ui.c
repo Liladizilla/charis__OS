@@ -38,8 +38,6 @@
 /* Native desktop widgets and launcher hit-testing. */
 extern void desktop_surface_render(void);
 extern int desktop_surface_hit_test(int mx, int my);
-extern void desktop_surface_draw_taskbar_icons(u32 y);
-extern int desktop_surface_taskbar_hit_test(int mx, int my, u32 taskbar_y);
 
 static u32 ui_px(u32 logical) { return gfx_ui_scale(logical); }
 static u32 text_height(void) { return font_cell_h * gfx_text_get_scale(); }
@@ -138,6 +136,7 @@ typedef enum {
 } shell_app_id_t;
 
 static window_t* shell_app_windows[SHELL_APP_COUNT];
+static int desktop_hover_shortcut = -1;
 static window_t* shell_drag_window;
 static int shell_drag_offset_x, shell_drag_offset_y;
 static window_t* shell_resize_window;
@@ -599,114 +598,30 @@ static void clock_append_two(char** cursor, u32 value) {
 }
 
 static void draw_taskbar_clock(u32 y, u32 bar_h, u32 screen_w) {
-    static const char* const months[12] = {
-        "JAN","FEB","MAR","APR","MAY","JUN",
-        "JUL","AUG","SEP","OCT","NOV","DEC"
-    };
     rtc_datetime_t now;
-    char label[32];
+    char label[6];
     char* cursor = label;
-
-    if (!rtc_get_datetime(&now) || !now.valid) {
-        const char unavailable[] = "RTC UNAVAILABLE";
-        u32 width = 0;
-        gfx_text_size(unavailable, &width, NULL);
-        if (screen_w > width + ui_px(18)) {
-            u32 x = screen_w - width - ui_px(18);
-            fb_fill_rect(x - ui_px(8), y + ui_px(13), ui_px(2),
-                         bar_h > ui_px(26) ? bar_h - ui_px(26) : 1,
-                         CHARIS_UI_BORDER);
-            gfx_draw_string(x, y + (bar_h > text_height()
-                             ? (bar_h - text_height()) / 2 : 0),
-                            unavailable, CHARIS_UI_MUTED, FB_TRANSPARENT);
-        }
-        return;
+    if (rtc_get_datetime(&now) && now.valid) {
+        clock_append_two(&cursor, now.hour);
+        *cursor++ = ':';
+        clock_append_two(&cursor, now.minute);
+    } else {
+        *cursor++ = '-'; *cursor++ = '-';
+        *cursor++ = ':'; *cursor++ = '-'; *cursor++ = '-';
     }
-
-    clock_append_two(&cursor, now.day);
-    *cursor++ = ' ';
-    const char* month = months[now.month - 1u];
-    for (u32 i = 0; i < 3u; i++) *cursor++ = month[i];
-    *cursor++ = ' ';
-    *cursor++ = (char)('0' + ((now.year / 1000u) % 10u));
-    *cursor++ = (char)('0' + ((now.year / 100u) % 10u));
-    *cursor++ = (char)('0' + ((now.year / 10u) % 10u));
-    *cursor++ = (char)('0' + (now.year % 10u));
-    *cursor++ = ' ';
-    clock_append_two(&cursor, now.hour);
-    *cursor++ = ':';
-    clock_append_two(&cursor, now.minute);
-    *cursor++ = ':';
-    clock_append_two(&cursor, now.second);
     *cursor = 0;
 
     u32 width = 0;
     gfx_text_size(label, &width, NULL);
-    u32 right_pad = ui_px(18);
-    u32 left_limit = ui_px(270);
-    if (screen_w <= width + right_pad + left_limit) {
-        /* Preserve a useful clock on narrow framebuffers; omit the date first. */
-        cursor = label;
-        clock_append_two(&cursor, now.hour);
-        *cursor++ = ':';
-        clock_append_two(&cursor, now.minute);
-        *cursor = 0;
-        gfx_text_size(label, &width, NULL);
-    }
-    if (screen_w <= width + right_pad + left_limit) return;
-
+    u32 right_pad = ui_px(18u);
+    if (screen_w <= width + right_pad) return;
     u32 x = screen_w - width - right_pad;
-    fb_fill_rect(x - ui_px(8), y + ui_px(13), ui_px(2),
-                 bar_h > ui_px(26) ? bar_h - ui_px(26) : 1,
+    fb_fill_rect(x - ui_px(8u), y + ui_px(10u), ui_px(2u),
+                 bar_h > ui_px(20u) ? bar_h - ui_px(20u) : 1u,
                  CHARIS_UI_ACCENT);
     gfx_draw_string(x, y + (bar_h > text_height()
-                     ? (bar_h - text_height()) / 2 : 0),
+                     ? (bar_h - text_height()) / 2u : 0u),
                     label, CHARIS_UI_TEXT, FB_TRANSPARENT);
-}
-
-static void draw_taskbar(void) {
-    u32 w = g_framebuffer.width;
-    u32 h = g_framebuffer.height;
-    u32 bar_h = taskbar_height();
-    u32 y = h > bar_h ? h - bar_h : 0;
-
-    fb_fill_rect(0, y, w, bar_h, T_TASKBAR);
-    fb_fill_rect(0, y, w, 1, T_BORDER);
-
-    /* Start button. */
-    bool hovered = input_get_mouse_y() >= (int)y && input_get_mouse_x() < (int)START_BTN_W;
-    u32 bg = ui.menu_open ? T_MENU_HOVER
-            : hovered     ? T_START_HOVER : T_START_BTN;
-    fb_fill_rect(0, y, START_BTN_W, bar_h, bg);
-    fb_draw_rect(0, y, START_BTN_W, bar_h, T_BORDER);
-
-    /* Flat CharisOS mark. The wordmark belongs on boot and About screens,
-     * not inside the running desktop. */
-    u32 mark_size = ui_px(24);
-    u32 mark_x = (START_BTN_W > mark_size ? (START_BTN_W - mark_size) / 2 : 0);
-    u32 mark_y = y + (bar_h > mark_size ? (bar_h - mark_size) / 2 : 0);
-    fb_fill_rect(mark_x, mark_y, mark_size, mark_size, CHARIS_UI_ACCENT);
-    fb_fill_rect(mark_x + ui_px(5), mark_y + ui_px(5), ui_px(14), ui_px(14), T_START_BTN);
-    fb_fill_rect(mark_x + ui_px(5), mark_y + ui_px(5), ui_px(4), ui_px(14), CHARIS_UI_ACCENT);
-    fb_fill_rect(mark_x + ui_px(5), mark_y + ui_px(5), ui_px(14), ui_px(4), CHARIS_UI_ACCENT);
-    fb_fill_rect(mark_x + ui_px(5), mark_y + ui_px(15), ui_px(14), ui_px(4), CHARIS_UI_ACCENT);
-    desktop_surface_draw_taskbar_icons(y);
-    static const shell_app_id_t taskbar_apps[4] = {
-        SHELL_APP_FILES, SHELL_APP_TERMINAL,
-        SHELL_APP_SETTINGS, SHELL_APP_BROWSER
-    };
-    static const u32 taskbar_x[4] = { 112u, 156u, 200u, 244u };
-    for (u32 i = 0; i < 4; i++) {
-        window_t* win = shell_app_windows[taskbar_apps[i]];
-        if (!win) continue;
-        u32 mark = win->minimized ? CHARIS_UI_MUTED :
-                   win->focused ? CHARIS_UI_ACCENT : CHARIS_UI_BORDER_STRONG;
-        fb_fill_rect(ui_px(taskbar_x[i] + 4u),
-                     y + ui_px(44u) - ui_px(3u),
-                     ui_px(20u), ui_px(2u), mark);
-    }
-
-    draw_taskbar_clock(y, bar_h, w);
 }
 
 /* Every launcher entry gets a small, high-contrast icon drawn from
@@ -746,6 +661,122 @@ static void draw_app_icon(u32 app, u32 x, u32 y) {
         fb_draw_rect(x + 5, y + 2, 10, 16, ink);
         gfx_draw_string(x + 9, y + 4, "i", ink, FB_TRANSPARENT);
     }
+}
+
+static const shell_app_id_t TASKBAR_APPS[] = {
+    SHELL_APP_FILES, SHELL_APP_TERMINAL, SHELL_APP_CALCULATOR,
+    SHELL_APP_SETTINGS, SHELL_APP_BROWSER
+};
+static const u32 TASKBAR_ICON_IDS[] = { 2u, 1u, 3u, 4u, 5u };
+#define TASKBAR_APP_COUNT ((u32)(sizeof(TASKBAR_APPS) / sizeof(TASKBAR_APPS[0])))
+
+static u32 taskbar_running_count(void) {
+    u32 count = 0;
+    for (u32 i = 0; i < TASKBAR_APP_COUNT; i++)
+        if (shell_app_windows[TASKBAR_APPS[i]]) count++;
+    return count;
+}
+
+static u32 taskbar_slot_width(u32 screen_width, u32 count) {
+    if (!count) return 0;
+    u32 start = START_BTN_W + ui_px(8u);
+    u32 clock_lane = ui_px(64u), right_pad = ui_px(18u);
+    u32 gaps = ui_px(4u) * (count - 1u);
+    u32 available = screen_width > start + clock_lane + right_pad + gaps
+                  ? screen_width - start - clock_lane - right_pad - gaps : 0u;
+    u32 slot = available / count;
+    u32 maximum = ui_px(156u);
+    if (slot > maximum) slot = maximum;
+    return slot;
+}
+
+static int taskbar_app_hit_test(int mx, int my, u32 taskbar_y) {
+    if (my < (int)taskbar_y) return -1;
+    u32 count = taskbar_running_count();
+    if (!count) return -1;
+    u32 slot = taskbar_slot_width(g_framebuffer.width, count);
+    u32 gap = ui_px(4u), seen = 0;
+    u32 start = START_BTN_W + ui_px(8u);
+    for (u32 i = 0; i < TASKBAR_APP_COUNT; i++) {
+        shell_app_id_t id = TASKBAR_APPS[i];
+        if (!shell_app_windows[id]) continue;
+        u32 x = start + seen * (slot + gap);
+        if (mx >= (int)x && mx < (int)(x + slot)) return (int)id;
+        seen++;
+    }
+    return -1;
+}
+
+static void draw_taskbar(void) {
+    u32 width = g_framebuffer.width, height = g_framebuffer.height;
+    u32 bar_h = taskbar_height();
+    u32 y = height > bar_h ? height - bar_h : 0u;
+    fb_fill_rect(0, y, width, bar_h, T_TASKBAR);
+    fb_fill_rect(0, y, width, ui_px(1u), T_BORDER);
+
+    int mx = input_get_mouse_x(), my = input_get_mouse_y();
+    bool start_hover = my >= (int)y && mx >= 0 && mx < (int)START_BTN_W;
+    u32 start_bg = ui.menu_open ? T_MENU_HOVER
+                    : start_hover ? T_START_HOVER : T_START_BTN;
+    fb_fill_rect(0, y, START_BTN_W, bar_h, start_bg);
+    fb_draw_rect(0, y, START_BTN_W, bar_h, T_BORDER);
+
+    /* Clean C logo mark, without the nested blue placeholder tile. */
+    u32 mark_size = ui_px(24u);
+    u32 mark_x = START_BTN_W > mark_size ? (START_BTN_W - mark_size) / 2u : 0u;
+    u32 mark_y = y + (bar_h > mark_size ? (bar_h - mark_size) / 2u : 0u);
+    fb_fill_rect(mark_x + ui_px(3u), mark_y + ui_px(3u),
+                 ui_px(18u), ui_px(18u), CHARIS_UI_ACCENT);
+    fb_fill_rect(mark_x + ui_px(8u), mark_y + ui_px(7u),
+                 ui_px(13u), ui_px(10u), start_bg);
+    fb_fill_rect(mark_x + ui_px(15u), mark_y + ui_px(9u),
+                 ui_px(7u), ui_px(6u), start_bg);
+
+    u32 count = taskbar_running_count();
+    u32 slot = taskbar_slot_width(width, count);
+    u32 gap = ui_px(4u), seen = 0;
+    u32 button_h = bar_h > ui_px(8u) ? bar_h - ui_px(8u) : bar_h;
+    u32 button_y = y + (bar_h > button_h ? (bar_h - button_h) / 2u : 0u);
+    u32 start = START_BTN_W + ui_px(8u);
+    for (u32 i = 0; i < TASKBAR_APP_COUNT; i++) {
+        shell_app_id_t id = TASKBAR_APPS[i];
+        window_t* win = shell_app_windows[id];
+        if (!win) continue;
+        u32 x = start + seen * (slot + gap);
+        bool focused = win->focused && !win->minimized;
+        bool hover = mx >= (int)x && mx < (int)(x + slot) &&
+                     my >= (int)y && my < (int)(y + bar_h);
+        if (focused || hover) {
+            fb_fill_rect(x, button_y, slot, button_h,
+                         focused ? CHARIS_UI_ACCENT_SURFACE : T_START_HOVER);
+            fb_draw_rect(x, button_y, slot, button_h,
+                         focused ? CHARIS_UI_BORDER_STRONG : T_BORDER);
+        }
+        u32 icon_size = ui_px(20u);
+        u32 icon_y = y + (bar_h > icon_size ? (bar_h - icon_size) / 2u : 0u);
+        if (slot >= ui_px(88u)) {
+            draw_app_icon(TASKBAR_ICON_IDS[i], x + ui_px(7u), icon_y);
+            u32 title_x = x + ui_px(34u);
+            u32 title_width = slot > ui_px(42u) ? slot - ui_px(42u) : 1u;
+            fb_set_clip(title_x, button_y, title_width, button_h);
+            gfx_draw_string(title_x,
+                            button_y + (button_h > text_height()
+                                     ? (button_h - text_height()) / 2u : 0u),
+                            shell_app_title(id),
+                            focused ? CHARIS_UI_TEXT : CHARIS_UI_MUTED,
+                            FB_TRANSPARENT);
+            fb_reset_clip();
+        } else {
+            draw_app_icon(TASKBAR_ICON_IDS[i],
+                          x + (slot > icon_size ? (slot - icon_size) / 2u : 0u),
+                          icon_y);
+        }
+        fb_fill_rect(x + ui_px(6u), y + bar_h - ui_px(3u),
+                     slot > ui_px(12u) ? slot - ui_px(12u) : slot,
+                     ui_px(2u), win->minimized ? CHARIS_UI_MUTED : CHARIS_UI_ACCENT);
+        seen++;
+    }
+    draw_taskbar_clock(y, bar_h, width);
 }
 
 static void draw_menu(void) {
@@ -1893,6 +1924,11 @@ static void handle_event(const input_event_t* e) {
                                              e->mouse.y - shell_drag_offset_y);
         }
         int hover = hit_menu_item(e->mouse.x, e->mouse.y);
+        int shortcut_hover = desktop_surface_hit_test(e->mouse.x, e->mouse.y);
+        if (shortcut_hover != desktop_hover_shortcut) {
+            desktop_hover_shortcut = shortcut_hover;
+            content_changed = true;
+        }
         if (hover != ui.hover_item) {
             ui.hover_item = hover;
             content_changed = true;
@@ -1960,32 +1996,14 @@ static void handle_event(const input_event_t* e) {
         bool on_taskbar = my >= (int)bar_top;
 
         if (on_taskbar) {
-            int pinned = desktop_surface_taskbar_hit_test(mx, my, bar_top);
-            if (pinned == 1) {
+            int running_app = taskbar_app_hit_test(mx, my, bar_top);
+            if (running_app >= 0) {
                 ui.menu_open = false;
-                shell_toggle_app(SHELL_APP_FILES);
+                shell_toggle_app((shell_app_id_t)running_app);
                 ui.needs_redraw = true;
                 return;
             }
-            if (pinned == 2) {
-                ui.menu_open = false;
-                shell_toggle_app(SHELL_APP_TERMINAL);
-                ui.needs_redraw = true;
-                return;
-            }
-            if (pinned == 3) {
-                ui.menu_open = false;
-                shell_toggle_app(SHELL_APP_SETTINGS);
-                ui.needs_redraw = true;
-                return;
-            }
-            if (pinned == 4) {
-                ui.menu_open = false;
-                shell_toggle_app(SHELL_APP_BROWSER);
-                ui.needs_redraw = true;
-                return;
-            }
-        }
+        }        }
 
         if (on_taskbar && mx < (int)START_BTN_W) {
             ui.menu_open = !ui.menu_open;
@@ -2079,7 +2097,7 @@ void shell_ui_main(void* arg) {
             ui.next_blink_ms = now + CURSOR_BLINK;
         }
         if (now >= next_clock_refresh_ms) {
-            next_clock_refresh_ms = now + 1000u;
+            next_clock_refresh_ms = now + 60000u;
             /* Restore the pointer before a partial taskbar paint. The cursor
              * will be composited again at the end of this frame, with a fresh
              * save-under snapshot for pixels the clock may have changed. */

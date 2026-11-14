@@ -27,6 +27,7 @@ static char term_input[TERM_INPUT_MAX];
 static u32 term_input_len;
 static char term_lines[TERM_HISTORY][TERM_LINE_MAX];
 static u32 term_line_count;
+static bool term_intro_shown;
 static bool term_bounds_valid;
 static u32 term_bounds_x, term_bounds_y, term_bounds_w, term_bounds_h;
 
@@ -180,14 +181,25 @@ static void term_execute(void) {
 void terminal_open(void) {
     char discard;
     while (keyboard_get_key(&discard)) { }
-    if (!term_line_count) {
-        for (u32 i = 0; i < CHARISOS_ASCII_ROWS; i++)
-            term_add_line(CHARISOS_ASCII_MARK[i]);
-        term_add_line("CHARISOS  /  x86_64");
-        term_add_line("SECURITY BY ARCHITECTURE");
-        term_add_line("INTELLIGENCE BY DESIGN");
-        term_add_line("OWNERSHIP BY DEFAULT");
+
+    if (!term_intro_shown) {
+        u32 available_width = term_bounds_valid
+                            ? term_bounds_w : g_framebuffer.width;
+        u32 mark_width = CHARISOS_ASCII_COLUMNS *
+                         (u32)font_cell_w * TERM_FONT_SCALE;
+        if (available_width > mark_width + term_px(64u)) {
+            for (u32 i = 0; i < CHARISOS_ASCII_ROWS; i++)
+                term_add_line(CHARISOS_ASCII_MARK[i]);
+        }
+        term_add_line("CharisOS / x86_64");
+        term_add_line("Security by architecture");
+        term_add_line("Intelligence by design");
+        term_add_line("Ownership by default");
+        term_intro_shown = true;
+    } else {
+        term_add_line("CharisOS shell session. Type help.");
     }
+
     term_visible = true;
     serial_puts("TERMINAL_OPEN");
 }
@@ -279,9 +291,9 @@ static u32 terminal_line_color(const char* line) {
     if (kstrncmp(line, "charisos> ", 10) == 0) return CHARIS_UI_SUCCESS;
     if (kstrncmp(line, "Command not found", 17) == 0) return CHARIS_UI_WARNING;
     if (terminal_ascii_mark_row(line) ||
-        kstrncmp(line, "SECURITY BY", 11) == 0 ||
-        kstrncmp(line, "INTELLIGENCE BY", 15) == 0 ||
-        kstrncmp(line, "OWNERSHIP BY", 12) == 0 ||
+        kstrncmp(line, "Security by", 11) == 0 ||
+        kstrncmp(line, "Intelligence by", 15) == 0 ||
+        kstrncmp(line, "Ownership by", 12) == 0 ||
         kstrncmp(line, "CHARISOS", 8) == 0 ||
         kstrncmp(line, "CharisOS", 8) == 0) return CHARIS_UI_ACCENT;
     if (kstrncmp(line, "Managed RAM", 11) == 0 ||
@@ -436,7 +448,7 @@ void terminal_render(void) {
     u32 status_y = y + h > text_h + term_px(10)
                   ? y + h - text_h - term_px(10) : y;
     term_draw(x + term_px(18), status_y,
-                    "READY", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
+                    "Ready", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
     const char* status_label = "Kernel command environment";
     u32 ready_width = term_measure("READY");
     u32 status_width = term_measure(status_label);
