@@ -205,7 +205,7 @@ The UI must not expose unsupported settings as enabled. For a device-dependent c
 - [ ] Add searchable settings, focus semantics, page history and host tests for schema validation, invalid values, apply failures and rollback.
 
 ### S1 — Real desktop preferences
-- Appearance styles and accent colors backed by the shared UI palette.
+- Appearance styles and accent colors backed by the shared UI palette; add live wallpaper preview and fit/fill/center modes.
 - [x] Expand the built-in background selector into four bundled CC0 photographs plus four procedural presets, with safe fallback.\n- [ ] Add live wallpaper preview and fit/fill/center modes.
 - Desktop/session switching controls, workspace primitives, app switching and screen-edge actions.
 - Accessibility controls that can be fully honored by the current renderer and input stack.
