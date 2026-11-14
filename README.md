@@ -277,12 +277,14 @@ sudo dnf install gcc nasm grub2-tools xorriso qemu-system-x86 curl python3-pillo
 
 The build uses the **host** GCC with `-ffreestanding`; a cross-compiler is not
 required. `nasm`, `grub-mkrescue`, `xorriso`, `curl`, Python Pillow, and the
-Inter font package are required. The image build fetches one pinned CC0 wallpaper
-from Wikimedia Commons, verifies its expected byte length and SHA-1, and converts
-it to a bounded RGB565 CWP1 Multiboot2 boot module. The kernel validates its
-signature, version, dimensions, stride and payload bounds before drawing. A
-network connection is therefore required for the first clean build; the running
-OS does not download or decode the JPEG in the privileged kernel.
+Inter font package are required. The image build fetches four pinned CC0
+photographs from Wikimedia Commons, verifies each original byte length and SHA-1,
+converts them to RGB565 CWP1 payloads and packs them into one bounded CWP2
+Multiboot2 module. The kernel validates the collection directory, stable IDs,
+image dimensions, strides and non-overlapping payload bounds before drawing.
+CWP1 remains supported for older modules. A network connection is required for
+the first clean build; the running OS does not download or decode JPEG in the
+privileged kernel.
 
 ### Build and run
 
