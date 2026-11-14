@@ -189,7 +189,8 @@ static bool wallpaper_draw_cwp2(u32 style, const u8* module,
 
 static bool wallpaper_draw_photo(u32 style) {
     if (!g_framebuffer.initialized || !boot_info.wallpaper_addr ||
-        boot_info.wallpaper_size < sizeof(cwp1_header_t))
+        boot_info.wallpaper_size < sizeof(cwp1_header_t) ||
+        boot_info.wallpaper_size > BOOTMEM_WALLPAPER_MAX_BYTES)
         return false;
 
     const u8* module = (const u8*)(uintptr_t)boot_info.wallpaper_addr;
