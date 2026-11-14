@@ -948,7 +948,8 @@ static u32 menu_build_results(int* results, u32 capacity) {
 
 static u32 menu_height_for_count(u32 count) {
     u32 rows = count ? count : 1u;
-    return ui_px(52u) + rows * MENU_ITEM_H + ui_px(50u);
+    u32 footer = text_height() * 2u + ui_px(16u);
+    return ui_px(52u) + rows * MENU_ITEM_H + footer;
 }
 
 static void shell_menu_open(void) {
@@ -1998,6 +1999,18 @@ static void redraw_all(void) {
 
 /* ── Hit testing ──────────────────────────────────────────────────── */
 
+static bool menu_contains(int mx, int my) {
+    if (!ui.menu_open) return false;
+    int results[MENU_ITEM_COUNT];
+    u32 count = menu_build_results(results, MENU_ITEM_COUNT);
+    u32 menu_h = menu_height_for_count(count);
+    u32 screen_h = g_framebuffer.height;
+    u32 bar_h = taskbar_height();
+    u32 top = screen_h > bar_h + menu_h ? screen_h - bar_h - menu_h : 0u;
+    return mx >= 0 && mx < (int)MENU_W &&
+           my >= (int)top && my < (int)(top + menu_h);
+}
+
 static int hit_menu_item(int mx, int my) {
     if (!ui.menu_open) return -1;
     int results[MENU_ITEM_COUNT];
@@ -2049,7 +2062,10 @@ static void shell_close_focused_app(void) {
         case SHELL_APP_FILES: files_close(); break;
         case SHELL_APP_CALCULATOR: calculator_ui_close(); break;
         case SHELL_APP_BROWSER: browser_close(); break;
-        case SHELL_APP_SETTINGS: settings_open = false; break;
+        case SHELL_APP_SETTINGS:
+            settings_open = false;
+            settings_font_menu_open = false;
+            break;
         case SHELL_APP_ABOUT:
             notice_open = false;
             notice_item = -1;
@@ -2251,6 +2267,7 @@ static void handle_event(const input_event_t* e) {
             }
         }
 
+        if (ui.menu_open) return;
         wm_dispatch_event(e->type, (void*)e);
         ui.needs_redraw = true;
         return;
@@ -2307,6 +2324,25 @@ static void handle_event(const input_event_t* e) {
 
     case INPUT_MOUSE_DOWN: {
         int mx = e->mouse.x, my = e->mouse.y;
+        if (ui.menu_open) {
+            if (menu_contains(mx, my)) {
+                int menu_hit = hit_menu_item(mx, my);
+                if (menu_hit >= 0) shell_menu_select_index(menu_hit);
+                else ui.needs_redraw = true;
+                return;
+            }
+
+            /* Clicking the Start button while the menu is open dismisses it;
+             * a second click is required to reopen it, as with a normal shell. */
+            ui.menu_open = false;
+            ui.hover_item = -1;
+            ui.needs_redraw = true;
+            u32 menu_bar_h = taskbar_height();
+            u32 menu_bar_top = g_framebuffer.height > menu_bar_h
+                             ? g_framebuffer.height - menu_bar_h : 0u;
+            if (my >= (int)menu_bar_top && mx >= 0 &&
+                mx < (int)START_BTN_W) return;
+        }
         window_t* hit = wm_get_window_at(mx, my);
         if (hit) {
             wm_focus_window(hit);
@@ -2379,8 +2415,6 @@ static void handle_event(const input_event_t* e) {
             return;
         }
 
-        int menu_hit = hit_menu_item(mx, my);
-        if (menu_hit >= 0) shell_menu_select_index(menu_hit);
         return;
     }
 
