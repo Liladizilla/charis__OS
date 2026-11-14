@@ -371,6 +371,25 @@ jobs:
             sleep 2
             printf 'screendump build/charisos-context-menu-display-preview.ppm\n'
             sleep 1
+            # F3 focuses Settings search; a unique query must filter to
+            # the Mouse & Touchpad page. The capture proves the live search UI.
+            printf 'sendkey f3\n'
+            sleep 0.5
+            for key in t o u c h p a d; do
+              printf 'sendkey %s\n' "$key"
+              sleep 0.2
+            done
+            sleep 1
+            printf 'screendump build/charisos-settings-search-preview.ppm\n'
+            sleep 1
+            printf 'sendkey esc\n'
+            sleep 0.5
+            # The query had selected Mouse & Touchpad. Return to Display so
+            # the existing wallpaper-persistence test begins from page 1.
+            for step in {1..5}; do
+              printf 'sendkey up\n'
+              sleep 0.2
+            done
             printf 'sendkey esc\n'
             sleep 1
             printf 'mouse_move -20 -91\n'
@@ -538,9 +557,13 @@ jobs:
           test -s build/charisos-pointer-start-preview.ppm
           test -s build/charisos-context-menu-preview.ppm
           test -s build/charisos-context-menu-display-preview.ppm
+          test -s build/charisos-settings-search-preview.ppm
           grep -q 'SHELL_CONTEXT_MENU_OPEN' build/desktop-capture-serial.log
           grep -q 'SHELL_CONTEXT_MENU_ACTION display-settings' build/desktop-capture-serial.log
           grep -q 'SHELL_APP_OPEN Settings' build/desktop-capture-serial.log
+          grep -q 'SHELL_SETTINGS_SEARCH query=touchpad count=1' build/desktop-capture-serial.log
+          grep -q 'SHELL_SETTINGS_PAGE 6' build/desktop-capture-serial.log
+          grep -q 'SHELL_SETTINGS_PAGE 1' build/desktop-capture-serial.log
           test -s build/charisos-pointer-moved-preview.ppm
           test -s build/charisos-pointer-restored-preview.ppm
           python3 tools/verify-pointer-capture.py \
@@ -710,6 +733,7 @@ jobs:
             build/charisos-pointer-restored-preview.ppm
             build/charisos-context-menu-preview.ppm
             build/charisos-context-menu-display-preview.ppm
+            build/charisos-settings-search-preview.ppm
             build/charisos-browser-preview.ppm
             build/charisos-files-preview.ppm
             build/charisos-multiwindow-preview.ppm

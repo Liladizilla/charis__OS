@@ -40,6 +40,7 @@ bool keyboard_has_key_hook(void);
 #define KEY_ESCAPE    0x01
 #define KEY_TAB       0x0F
 #define KEY_BACKSPACE 0x0E
+#define KEY_F3        0x3D
 #define KEY_LSUPER    0x5B
 #define KEY_RSUPER    0x5C
 #define KEY_LALT      0x38
