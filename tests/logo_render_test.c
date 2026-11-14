@@ -13,6 +13,7 @@ static unsigned int outline_calls;
 static unsigned int text_calls;
 static u32 first_x, first_y, first_w, first_h;
 static int bounds_ok = 1;
+static char serial_output[256];
 
 void fb_fill_rect(u32 x, u32 y, u32 w, u32 h, u32 colour) {
     (void)colour;
@@ -39,6 +40,12 @@ void gfx_draw_string_centered(u32 y, const char* value, u32 fg, u32 bg) {
 }
 
 void vga_puts(const char* value) { (void)value; }
+void serial_puts(const char* value) {
+    if (!value) return;
+    size_t used = strlen(serial_output);
+    if (used < sizeof(serial_output) - 1u)
+        strncat(serial_output, value, sizeof(serial_output) - used - 1u);
+}
 
 static int check(int condition, const char* message) {
     if (condition) return 0;
@@ -57,6 +64,9 @@ int main(void) {
     failures += check(fill_calls > 100, "emblem raster must produce visible pixel runs");
     failures += check(outline_calls == 1, "splash panel outline drawn exactly once");
     failures += check(text_calls == 3, "brand, tagline and real boot stage drawn");
+    failures += check(strstr(serial_output,
+                      "[BOOT_STAGE] TEST BOOT STAGE\\n") != NULL,
+                      "each on-screen boot stage is mirrored to serial");
     failures += check(bounds_ok, "all splash rectangles remain inside the framebuffer");
     failures += check(first_x == 348 && first_y == 193 &&
                       first_w == 328 && first_h == 382,
