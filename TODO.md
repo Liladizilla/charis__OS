@@ -86,18 +86,18 @@
 - [x] graphics_put_string() - PSF-based text rendering
 
 
-## Phase 7: Boot Identity & Installer (PLANNED)
-- [ ] Replace the text-art boot banner with the official calligraphic C+sword CharisOS emblem; provide monochrome, dark-background and compact variants
-- [ ] Render a centered framebuffer boot splash independent of the desktop compositor, with a real kernel/service progress state
-- [ ] Expose truthful serial and on-screen boot milestones, failure codes and recovery diagnostics
+## Phase 7: Boot Identity & Installer (PARTIAL)
+- [x] Replace the graphical text-art banner with the official embedded C+sword emblem; keep a text-only fallback for systems without a usable framebuffer
+- [x] Render a centered, framebuffer-scaled boot splash with truthful kernel stages and a timer-backed final handoff interval
+- [x] Show real startup stages on screen and preserve serial diagnostics; structured failure codes and graphical recovery diagnostics remain planned
 - [ ] Separate firmware splash, kernel startup, first boot and OS installation into explicit state machines
 - [ ] Design an installer that detects hardware/storage and supports safe dry-run partition planning before destructive operations
 - [ ] Implement transactional installation, filesystem creation, bootloader installation, verification and interrupted-install recovery only after storage support is ready
-- [ ] Keep text-only and unsupported-framebuffer fallback paths usable
+- [x] Keep text-only and unsupported-framebuffer fallback paths usable
 
 ## Phase 8: Display & Orientation (PARTIAL / PLACEHOLDER AUDIT REQUIRED)
 - [x] Remove the fake 640x480 monitor record, 0xA0000 pointer and unused multi-monitor placeholder API; expose only the validated boot framebuffer's address, dimensions, pitch and pixel format
-- [ ] Preserve actual framebuffer pitch, pixel format, dimensions and physical mapping throughout compositor and display APIs
+- [x] Expose validated framebuffer physical address, dimensions, pitch, bit depth and RGB layout through the display state; rendering continues through the pitch-aware framebuffer API
 - [ ] Enumerate and expose only modes reported by firmware/native display drivers
 - [ ] Add validated EDID monitor identity, native resolution and supported timing discovery
 - [ ] Implement transactional resolution changes with known-good fallback and timed confirmation/revert
