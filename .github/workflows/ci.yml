@@ -460,6 +460,18 @@ jobs:
             sleep 2
             printf 'screendump build/charisos-settings-preview.ppm\n'
             sleep 1
+            # Traverse the Settings catalog with real PS/2 arrow key events:
+            # Display -> Appearance -> Display -> Multitasking -> Display.
+            printf 'sendkey down\n'
+            sleep 1
+            printf 'screendump build/charisos-settings-appearance-preview.ppm\n'
+            sleep 1
+            printf 'sendkey up\n'
+            sleep 1
+            printf 'sendkey right\n'
+            sleep 1
+            printf 'sendkey left\n'
+            sleep 1
             printf 'sendkey f6\n'
             sleep 1
             printf 'sendkey f7\n'
@@ -544,7 +556,10 @@ jobs:
           test -s build/charisos-multiwindow-preview.ppm
           test -s build/charisos-resized-preview.ppm
           test -s build/charisos-settings-preview.ppm
+          test -s build/charisos-settings-appearance-preview.ppm
           test -s build/charisos-settings-adjusted-preview.ppm
+          grep -q 'SHELL_SETTINGS_PAGE 2' build/desktop-capture-serial.log
+          grep -q 'SHELL_SETTINGS_PAGE 5' build/desktop-capture-serial.log
           test -s build/charisos-desktop-scaled-preview.ppm
 
           # Read the actual FAT32 file back from the disk image. The two
@@ -660,6 +675,7 @@ jobs:
             build/charisos-maximized-preview.ppm
             build/charisos-resized-preview.ppm
             build/charisos-settings-preview.ppm
+            build/charisos-settings-appearance-preview.ppm
             build/charisos-settings-adjusted-preview.ppm
             build/charisos-desktop-scaled-preview.ppm
             build/charisos-calculator-preview.ppm
