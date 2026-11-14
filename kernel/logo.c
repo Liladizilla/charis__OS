@@ -11,12 +11,6 @@
 #include <kernel/gfx_text.h>
 #include <kernel/charis_logo_bitmap.h>
 
-/* Banner palette, chosen to stay legible on the desktop background. */
-#define LOGO_FG     FB_ARGB(0xFF, 0xE8, 0xEC, 0xF4)
-#define LOGO_ACCENT FB_ARGB(0xFF, 0x6F, 0xC3, 0xFF)
-#define LOGO_DIM    FB_ARGB(0xFF, 0x8A, 0x93, 0xA6)
-#define LOGO_PANEL  FB_ARGB(0xCC, 0x0D, 0x11, 0x17)
-
 #define H  "\xCD"   /* ═ */
 #define V  "\xBA"   /* ║ */
 #define B  "\xDB"   /* █ */
