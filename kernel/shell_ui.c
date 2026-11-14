@@ -888,7 +888,9 @@ static const settings_page_t* settings_active_page(void) {
     return settings_catalog_find(settings_active_page_id);
 }
 static void settings_select_page(settings_page_id_t id) {
-    if (settings_catalog_find(id)) settings_active_page_id = id;
+    if (!settings_catalog_find(id) || settings_active_page_id == id) return;
+    settings_active_page_id = id;
+    serial_printf("SHELL_SETTINGS_PAGE %u\n", (u32)id);
 }
 static void settings_select_group(settings_group_t group) {
     const settings_page_t* first = settings_catalog_group_at(group, 0);
