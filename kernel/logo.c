@@ -45,7 +45,7 @@ static const char* const LOGO_LINES[] = {
 
     V "  x86_64 kernel  //  built from scratch in C & NASM   " V,
 
-    V "               v1.0  -  Nairobi, Kenya                " V,
+    V "           v1.0  -  Security by Architecture           " V,
 
     "\xC8" H H H H H H H H H H H H H H H H H H H H H H H H H H H H H H H H
         H H H H H H H H H H H H H H H H H H H H H H H H H H H H H H H
