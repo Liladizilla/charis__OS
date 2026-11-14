@@ -168,7 +168,7 @@ This section is deliberately strict. The repository contains useful foundations,
 
 | Area | Current evidence | Status |
 |---|---|---|
-| Display modes | Bootloader-provided framebuffer; no mode enumeration, EDID pipeline, refresh-rate control or rotation service | Needs display driver/compositor work |
+| Display modes | Kernel exposes the active, validated Multiboot2 framebuffer as a read-only primary display state (physical address, dimensions, pitch, bit depth and RGB positions); no mode enumeration, EDID pipeline, refresh-rate control or rotation service | Active mode reporting implemented; mode-setting remains planned |
 | Multi-monitor | No monitor discovery, independent scanout or monitor arrangement API is implemented; the kernel reports only its validated boot framebuffer | Not implemented |
 | Settings catalog | 20 immutable pages; direct mouse and Up/Down navigation; F3/click-to-search, bounded case-insensitive filtering, Backspace editing, empty-result state and Escape reset | Implemented; QEMU verifies “touchpad” selects Mouse & Touchpad |
 | Font and UI scale | Font family (Inter, Monospace, Bitmap serif), text presets (100/200/300%) and UI scale presets (80/100/120%) are persisted; QEMU exercises the 200% and 300% layouts and preference restoration | Implemented foundation |
