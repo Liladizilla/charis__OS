@@ -2003,7 +2003,7 @@ static void handle_event(const input_event_t* e) {
                 ui.needs_redraw = true;
                 return;
             }
-        }        }
+        }
 
         if (on_taskbar && mx < (int)START_BTN_W) {
             ui.menu_open = !ui.menu_open;
