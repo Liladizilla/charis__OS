@@ -101,6 +101,12 @@ bool files_handle_mouse(int mx,int my) {
         if(mx>=(int)(x+w-px(48))) { files_close(); return true; }
         return false; /* window manager handles titlebar dragging */
     }
+    u32 ty=toolbar_y();
+    if(my>=(int)ty && my<(int)(ty+px(38)) &&
+       mx>=(int)(x+px(12)) && mx<(int)(x+px(170))) {
+        files_selected=-1; /* Root breadcrumb returns to the current root view. */
+        return true;
+    }
     u32 sy=list_y(), rh=row_h();
     if(my>=(int)sy && mx>=(int)(x+sidebar_w()+px(12))) {
         u32 row=(u32)(my-(int)sy)/rh;
@@ -117,7 +123,27 @@ static void draw_size(u32 x,u32 y,u32 value) {
     while(n) out[p++]=rev[--n];
     out[p]=0; gfx_draw_string(x,y,out,CHARIS_UI_TEXT,FB_TRANSPARENT);
 }
-static void card(u32 x,u32 y,u32 w,u32 h) {
+static void draw_display_name(u32 x,u32 y,const char* name,u32 colour) {
+    char display[13];
+    u32 n=0;
+    bool first_letter=true;
+    if (!name) name="";
+    while(name[n] && n < sizeof(display)-1u) {
+        char c=name[n];
+        if(c>='A' && c<='Z') {
+            c=(first_letter ? c : (char)(c+('a'-'A')));
+            first_letter=false;
+        } else if(c>='a' && c<='z') {
+            if(first_letter) c=(char)(c-('a'-'A'));
+            first_letter=false;
+        }
+        display[n++]=c;
+    }
+    display[n]=0;
+    gfx_draw_string(x,y,display,colour,FB_TRANSPARENT);
+}
+
+static void card(u32 x,u32 y,u32 w,u32 h) {static void card(u32 x,u32 y,u32 w,u32 h) {
     fb_fill_rect(x,y,w,h,CHARIS_UI_PANEL);
     fb_draw_rect(x,y,w,h,CHARIS_UI_BORDER);
 }
@@ -127,8 +153,15 @@ void files_render(void) {
     u32 x=wx(),y=wy(),w=ww(),h=wh(),th=text_h();
     u32 side=sidebar_w(), foot=y+h-px(34);
     u32 main_x=x+side+px(16), main_w=w-side-px(32);
-    u32 inspector_w=px(220), list_w=main_w-inspector_w-px(14);
-    u32 inspector_x=main_x+list_w+px(14);
+    bool has_selection=files_selected>=0 && files_selected<files_count;
+    u32 inspector_w=has_selection ? px(220) : 0u;
+    u32 inspector_gap=has_selection ? px(14) : 0u;
+    if(inspector_w && main_w<=inspector_w+inspector_gap+px(180))
+        inspector_w=main_w>px(200) ? main_w/3u : 0u;
+    if(!inspector_w) inspector_gap=0;
+    u32 list_w=main_w>inspector_w+inspector_gap
+             ? main_w-inspector_w-inspector_gap : main_w;
+    u32 inspector_x=main_x+list_w+inspector_gap;
 
     fb_fill_rect(x+px(5),y+px(6),w,h,CHARIS_UI_SHADOW);
     fb_fill_rect(x,y,w,h,CHARIS_UI_PANEL);
@@ -176,7 +209,7 @@ void files_render(void) {
     card(main_x,cy,list_w,foot-cy-px(12));
     gfx_draw_string(main_x+px(18),cy+px(16),"Root directory",
                     CHARIS_UI_TEXT,FB_TRANSPARENT);
-    gfx_draw_string(main_x+px(18),cy+px(16)+th+px(8),"FAT32  /  8.3 NAMES",
+    gfx_draw_string(main_x+px(18),cy+px(16)+th+px(8),"FAT32 short names",
                     CHARIS_UI_MUTED,FB_TRANSPARENT);
     u32 header_y=list_y()-th-px(12);
     fb_fill_rect(main_x+px(12),header_y+th+px(6),list_w-px(24),px(1),
@@ -211,8 +244,8 @@ void files_render(void) {
         fb_draw_rect(ix,iy,px(18),px(22),CHARIS_UI_BORDER_STRONG);
         fb_fill_rect(ix+px(4),iy+px(7),px(10),px(1),CHARIS_UI_MUTED);
         fb_fill_rect(ix+px(4),iy+px(12),px(8),px(1),CHARIS_UI_MUTED);
-        gfx_draw_string(main_x+px(48),ry+(row_h()-th)/2u,
-                        files_entries[i].name,CHARIS_UI_TEXT,FB_TRANSPARENT);
+        draw_display_name(main_x+px(48),ry+(row_h()-th)/2u,
+                          files_entries[i].name,CHARIS_UI_TEXT);
         if(files_entries[i].directory)
             gfx_draw_string(main_x+list_w-px(92),ry+(row_h()-th)/2u,
                             "Folder",CHARIS_UI_MUTED,FB_TRANSPARENT);
@@ -221,14 +254,14 @@ void files_render(void) {
                       files_entries[i].size);
     }
 
-    /* Inspector gives selection context without pretending to open files. */
-    card(inspector_x,cy,inspector_w,foot-cy-px(12));
-    gfx_draw_string(inspector_x+px(16),cy+px(18),"DETAILS",
-                    CHARIS_UI_MUTED,FB_TRANSPARENT);
-    if(files_selected>=0 && files_selected<files_count) {
-        gfx_draw_string(inspector_x+px(16),cy+px(58),
-                        files_entries[files_selected].name,
-                        CHARIS_UI_TEXT,FB_TRANSPARENT);
+    /* Details appear only after an item is selected. The list reclaims the
+     * entire content width when there is nothing to inspect. */
+    if(has_selection && inspector_w) {
+        card(inspector_x,cy,inspector_w,foot-cy-px(12));
+        gfx_draw_string(inspector_x+px(16),cy+px(18),"DETAILS",
+                        CHARIS_UI_MUTED,FB_TRANSPARENT);
+        draw_display_name(inspector_x+px(16),cy+px(58),
+                          files_entries[files_selected].name,CHARIS_UI_TEXT);
         gfx_draw_string(inspector_x+px(16),cy+px(92),
                         files_entries[files_selected].directory ? "Folder" : "File",
                         CHARIS_UI_ACCENT,FB_TRANSPARENT);
@@ -236,23 +269,20 @@ void files_render(void) {
                         CHARIS_UI_MUTED,FB_TRANSPARENT);
         draw_size(inspector_x+px(16),cy+px(148),
                   files_entries[files_selected].size);
-    } else {
-        gfx_draw_string(inspector_x+px(16),cy+px(58),
-                        "Select an item",CHARIS_UI_TEXT,FB_TRANSPARENT);
-        gfx_draw_string(inspector_x+px(16),cy+px(88),
-                        "to view its details.",CHARIS_UI_MUTED,FB_TRANSPARENT);
+        fb_fill_rect(inspector_x+px(14),cy+px(184),inspector_w-px(28),px(1),
+                     CHARIS_UI_BORDER);
+        gfx_draw_string(inspector_x+px(16),cy+px(204),"ACCESS",
+                        CHARIS_UI_MUTED,FB_TRANSPARENT);
+        gfx_draw_string(inspector_x+px(16),cy+px(230),"Read only",
+                        CHARIS_UI_WARNING,FB_TRANSPARENT);
     }
-    fb_fill_rect(inspector_x+px(14),cy+px(184),inspector_w-px(28),px(1),
-                 CHARIS_UI_BORDER);
-    gfx_draw_string(inspector_x+px(16),cy+px(204),"ACCESS",
-                    CHARIS_UI_MUTED,FB_TRANSPARENT);
-    gfx_draw_string(inspector_x+px(16),cy+px(230),"Read only",
-                    CHARIS_UI_WARNING,FB_TRANSPARENT);
 
     /* Footer. */
     fb_fill_rect(x+px(12),foot-px(8),w-px(24),px(1),CHARIS_UI_BORDER);
     gfx_draw_string(x+px(18),foot+px(4),
-                    files_available ? "FAT32 volume  |  Read-only" : "Storage unavailable",
+                    files_available
+                      ? "Read-only: FAT32 write support is not implemented."
+                      : "Storage unavailable",
                     CHARIS_UI_MUTED,FB_TRANSPARENT);
     gfx_draw_string(x+w-px(90),foot+px(4),"ESC  CLOSE",
                     CHARIS_UI_MUTED,FB_TRANSPARENT);
