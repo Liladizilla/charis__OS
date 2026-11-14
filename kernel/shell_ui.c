@@ -173,7 +173,7 @@ static void draw_settings_window(window_t* win);
 static bool settings_handle_window_click(window_t* win, int mx, int my);
 static void settings_move_page(int direction);
 static void settings_reveal_page(settings_page_id_t id);
-static void settings_adjust_wallpaper(int direction);
+static void settings_select_page(settings_page_id_t id);
 static void settings_adjust_wallpaper(int direction);
 static int settings_nav_hit_page(window_t* win, int mx, int my);
 static void draw_about_window(window_t* win);
