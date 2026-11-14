@@ -7,6 +7,7 @@
 typedef struct {
     int width, height;
     int bpp;
+    /* Direct pointer exists only for 32bpp; other formats use fb_put_pixel(). */
     u32* framebuffer;
     bool active;
 } monitor_t;
