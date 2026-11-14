@@ -378,12 +378,11 @@ normal bootloader in ways that matter on real hardware:
   required for interactive use.
 - **The firmware must hand off via GRUB2's `multiboot2` module.** Secure Boot
   will refuse the unsigned kernel unless GRUB's shim chain is trusted.
-- GRUB currently requests a 1024×768×32 framebuffer. The kernel parses the
-  Multiboot2 framebuffer tag and preserves its dimensions, pitch and pixel
-  layout, but the native display stack does not yet enumerate or change modes.
-  The current `display.c` multi-monitor abstraction is still a placeholder;
-  arbitrary resolution, rotation, refresh-rate and multi-monitor support are
-  not complete. See the [display and platform roadmap](./docs/charisos-platform-experience.md).
+- GRUB currently requests a 1024×768×32 framebuffer. The kernel now exposes a
+  single primary-display state copied from the validated Multiboot2 framebuffer,
+  including its physical address, dimensions, pitch and pixel layout. There is
+  no EDID/monitor discovery, native mode-setting, rotation, refresh-rate control
+  or multi-monitor scanout yet. See the [display and platform roadmap](./docs/charisos-platform-experience.md).
 
 ### Checking a boot without any of that
 
