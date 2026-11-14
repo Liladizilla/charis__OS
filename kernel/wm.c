@@ -454,11 +454,10 @@ void wm_render_surfaces(void) {
                     }
             }
         }
-        /* The active surface keeps the blue signature; inactive surfaces
-         * use a restrained edge so overlapping windows remain distinct. */
-        fb_fill_rect((u32)win->x, (u32)win->y,
-                     (u32)win->width, win->focused ? 3u : 1u,
-                     win->focused ? CHARIS_UI_ACCENT : CHARIS_UI_BORDER);
+        /* A thin top-edge rule makes Alt+Tab focus changes visible. */
+        if (win->focused)
+            fb_fill_rect((u32)win->x, (u32)win->y,
+                         (u32)win->width, 2u, COLOR_ACCENT);
         fb_reset_clip();
     }
 }

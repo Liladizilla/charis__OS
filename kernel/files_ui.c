@@ -31,14 +31,17 @@ static u32 wh(void) {
     u32 m=px(100);
     return g_framebuffer.height>m ? g_framebuffer.height-m : g_framebuffer.height;
 }
-u32 files_titlebar_height(void) { return px(42); }
+u32 files_titlebar_height(void) {
+    u32 base = px(32), readable = text_h() + px(8);
+    return base > readable ? base : readable;
+}
 void files_set_bounds(u32 x,u32 y,u32 width,u32 height) {
     if(!width || !height) { files_bounds_valid=false; return; }
     files_bounds_x=x; files_bounds_y=y; files_bounds_w=width; files_bounds_h=height;
     files_bounds_valid=true;
 }
 void files_reset_bounds(void) { files_bounds_valid=false; }
-static u32 title_h(void) { return px(42); }
+static u32 title_h(void) { return files_titlebar_height(); }
 static u32 toolbar_y(void) { return wy()+title_h()+px(10); }
 static u32 content_y(void) { return toolbar_y()+px(52); }
 static u32 list_y(void) {

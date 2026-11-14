@@ -302,6 +302,87 @@ static void shell_keyboard_resize_start(void) {
                   win->width, win->height);
 }
 
+static void shell_draw_chrome_button(u32 x, u32 y, u32 width,
+                                     u32 height, u32 kind, bool hovered,
+                                     u32 ink) {
+    fb_fill_rect(x, y, width, height,
+                 hovered ? CHARIS_UI_SURFACE_RAISED : CHARIS_UI_PANEL_RAISED);
+    fb_draw_rect(x, y, width, height,
+                 hovered ? CHARIS_UI_BORDER_STRONG : CHARIS_UI_BORDER);
+    u32 cx = x + width / 2u;
+    u32 cy = y + height / 2u;
+    u32 stroke = ui_px(1u);
+    if (kind == 0u) {
+        fb_fill_rect(cx - ui_px(6u), cy + ui_px(4u), ui_px(12u), stroke, ink);
+    } else if (kind == 1u) {
+        fb_draw_rect(cx - ui_px(6u), cy - ui_px(5u),
+                     ui_px(12u), ui_px(10u), ink);
+    } else {
+        for (u32 i = 0; i < ui_px(9u); i++) {
+            fb_fill_rect(cx - ui_px(4u) + i, cy - ui_px(4u) + i,
+                         stroke, stroke, ink);
+            fb_fill_rect(cx + ui_px(4u) - i, cy - ui_px(4u) + i,
+                         stroke, stroke, ink);
+        }
+    }
+}
+
+static void shell_draw_window_chrome(const window_t* win) {
+    if (!win || !win->visible || win->minimized || win->width <= 0 ||
+        !win->titlebar_height) return;
+
+    u32 x = (u32)win->x, y = (u32)win->y;
+    u32 width = (u32)win->width, height = win->titlebar_height;
+    u32 button_w = ui_px(36u), button_h = ui_px(28u);
+    u32 gap = ui_px(2u), margin = ui_px(6u);
+    if (width < button_w * 3u + gap * 2u + margin * 2u) return;
+    if (height < button_h) button_h = height;
+
+    bool focused = win->focused;
+    u32 title_color = focused ? CHARIS_UI_TEXT : CHARIS_UI_MUTED;
+    fb_fill_rect(x, y, width, height,
+                 focused ? CHARIS_UI_PANEL_RAISED : CHARIS_UI_PANEL);
+    if (focused)
+        fb_fill_rect(x, y, width, ui_px(2u), CHARIS_UI_ACCENT);
+    fb_fill_rect(x, y + height - ui_px(1u), width, ui_px(1u),
+                 CHARIS_UI_BORDER);
+
+    u32 close_x = x + width - margin - button_w;
+    u32 maximize_x = close_x - gap - button_w;
+    u32 minimize_x = maximize_x - gap - button_w;
+    u32 button_y = y + (height - button_h) / 2u;
+    int mx = input_get_mouse_x(), my = input_get_mouse_y();
+    bool over_min = mx >= (int)minimize_x &&
+                    mx < (int)(minimize_x + button_w) &&
+                    my >= (int)button_y && my < (int)(button_y + button_h);
+    bool over_max = mx >= (int)maximize_x &&
+                    mx < (int)(maximize_x + button_w) &&
+                    my >= (int)button_y && my < (int)(button_y + button_h);
+    bool over_close = mx >= (int)close_x &&
+                      mx < (int)(close_x + button_w) &&
+                      my >= (int)button_y && my < (int)(button_y + button_h);
+
+    u32 title_x = x + ui_px(14u);
+    u32 title_right = minimize_x > ui_px(10u)
+                    ? minimize_x - ui_px(10u) : title_x;
+    fb_set_clip(title_x, y,
+                title_right > title_x ? title_right - title_x : 1u,
+                height);
+    gfx_draw_string(title_x,
+                    y + (height > text_height()
+                       ? (height - text_height()) / 2u : 0u),
+                    win->title, title_color, FB_TRANSPARENT);
+    fb_reset_clip();
+
+    shell_draw_chrome_button(minimize_x, button_y, button_w, button_h,
+                             0u, over_min, title_color);
+    shell_draw_chrome_button(maximize_x, button_y, button_w, button_h,
+                             1u, over_max, title_color);
+    shell_draw_chrome_button(close_x, button_y, button_w, button_h,
+                             2u, over_close,
+                             focused ? CHARIS_UI_DANGER : CHARIS_UI_MUTED);
+}
+
 static void shell_app_paint(window_t* win) {
     int id = shell_app_id_for_window(win);
     if (id < 0 || !win || !win->visible || win->minimized) return;
@@ -323,8 +404,9 @@ static void shell_app_paint(window_t* win) {
             calculator_ui_render();
             break;
         case SHELL_APP_BROWSER:
-            browser_set_bounds((u32)win->x, (u32)win->y,
-                               (u32)win->width, full_height);
+            browser_set_bounds((u32)win->x,
+                               (u32)win->y + win->titlebar_height,
+                               (u32)win->width, (u32)win->height);
             browser_render();
             break;
         case SHELL_APP_SETTINGS:
@@ -335,6 +417,7 @@ static void shell_app_paint(window_t* win) {
             break;
         default: break;
     }
+    shell_draw_window_chrome(win);
     shell_draw_resize_grip(win);
 }
 
@@ -806,7 +889,12 @@ static void draw_menu(void) {
 /* A launcher item must not silently send output to an invisible VGA console.
  * Until each application has a real framebuffer UI, explain its current state
  * in a consistent, dismissible panel instead of pretending it launched. */
-static u32 about_titlebar_height(void) { return ui_px(42); }
+static u32 about_titlebar_height(void) {
+    u32 title_text_height = 0;
+    gfx_text_size("About CharisOS", NULL, &title_text_height);
+    u32 base = ui_px(32), readable = title_text_height + ui_px(8);
+    return base > readable ? base : readable;
+}
 
 static void draw_about_window(window_t* win) {
     if (!win || !notice_open || notice_item != 4) return;
@@ -864,8 +952,8 @@ static bool about_handle_window_click(window_t* win, int mx, int my) {
 
 /* Native Settings application: navigation rail plus a focused settings page. */
 static u32 settings_title_height(void) {
-    u32 minimum = ui_px(52);
-    u32 readable = text_height() + ui_px(16);
+    u32 minimum = ui_px(32);
+    u32 readable = text_height() + ui_px(8);
     return minimum > readable ? minimum : readable;
 }
 static u32 settings_row_height(void) {
@@ -1748,6 +1836,46 @@ static void shell_close_focused_app(void) {
     serial_puts("SHELL_WINDOW_CLOSED");
 }
 
+static bool shell_handle_window_chrome(window_t* win, int mx, int my) {
+    int id = shell_app_id_for_window(win);
+    if (id < 0 || !win) return false;
+    u32 x = (u32)win->x, y = (u32)win->y;
+    u32 width = (u32)win->width, height = win->titlebar_height;
+    if (mx < (int)x || mx >= (int)(x + width) ||
+        my < (int)y || my >= (int)(y + height)) return false;
+
+    u32 button_w = ui_px(36u), button_h = ui_px(28u);
+    u32 gap = ui_px(2u), margin = ui_px(6u);
+    if (width < button_w * 3u + gap * 2u + margin * 2u) return false;
+    if (height < button_h) button_h = height;
+    u32 close_x = x + width - margin - button_w;
+    u32 maximize_x = close_x - gap - button_w;
+    u32 minimize_x = maximize_x - gap - button_w;
+    u32 button_y = y + (height - button_h) / 2u;
+    if (my < (int)button_y || my >= (int)(button_y + button_h)) return false;
+
+    if (mx >= (int)close_x && mx < (int)(close_x + button_w)) {
+        shell_close_focused_app();
+        return true;
+    }
+    if (mx >= (int)maximize_x && mx < (int)(maximize_x + button_w)) {
+        if (win->maximized) {
+            if (wm_restore_window_geometry(win))
+                serial_puts("SHELL_WINDOW_RESTORED");
+        } else if (wm_maximize_window(
+                       win, g_framebuffer.height - taskbar_height())) {
+            serial_puts("SHELL_WINDOW_MAXIMIZED");
+        }
+        return true;
+    }
+    if (mx >= (int)minimize_x && mx < (int)(minimize_x + button_w)) {
+        (void)wm_minimize_window(win);
+        serial_printf("SHELL_WINDOW_MINIMIZED %s", shell_app_title((shell_app_id_t)id));
+        return true;
+    }
+    return false;
+}
+
 static void handle_event(const input_event_t* e) {
     switch (e->type) {
     case INPUT_KEY_DOWN:
@@ -1968,12 +2096,12 @@ static void handle_event(const input_event_t* e) {
                 ui.needs_redraw = true;
                 return;
             }
-            shell_pointer_handled = false;
-            wm_dispatch_event(INPUT_MOUSE_DOWN, (void*)e);
             if (e->mouse.button == 1 && shell_app_id_for_window(hit) >= 0 &&
-                my >= hit->y &&
-                my < hit->y + (int)hit->titlebar_height &&
-                !shell_pointer_handled) {
+                my >= hit->y && my < hit->y + (int)hit->titlebar_height) {
+                if (shell_handle_window_chrome(hit, mx, my)) {
+                    ui.needs_redraw = true;
+                    return;
+                }
                 if (hit->maximized) {
                     (void)wm_restore_window_geometry(hit);
                     shell_drag_offset_x = hit->width / 2;
@@ -1983,9 +2111,12 @@ static void handle_event(const input_event_t* e) {
                     shell_drag_offset_y = my - hit->y;
                 }
                 shell_drag_window = hit;
-            } else {
-                shell_drag_window = NULL;
+                ui.needs_redraw = true;
+                return;
             }
+            shell_pointer_handled = false;
+            wm_dispatch_event(INPUT_MOUSE_DOWN, (void*)e);
+            shell_drag_window = NULL;
             ui.needs_redraw = true;
             return;
         }

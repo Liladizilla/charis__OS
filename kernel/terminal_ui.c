@@ -232,7 +232,7 @@ void terminal_handle_char(char ch) {
 }
 
 u32 terminal_titlebar_height(void) {
-    u32 base = term_px(36), needed = term_text_h() + term_px(12);
+    u32 base = term_px(32), needed = term_text_h() + term_px(8);
     return base > needed ? base : needed;
 }
 
