@@ -158,6 +158,7 @@ static void draw_settings_window(window_t* win);
 static bool settings_handle_window_click(window_t* win, int mx, int my);
 static void settings_move_page(int direction);
 static void settings_move_group(int direction);
+static void settings_adjust_wallpaper(int direction);
 static void draw_about_window(window_t* win);
 static bool about_handle_window_click(window_t* win, int mx, int my);
 
@@ -396,6 +397,12 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
                 settings_move_page(-1);
             } else if (pressed && extended && base == 0x50u) {
                 settings_move_page(1);
+            } else if (pressed && extended && base == 0x4Bu &&
+                       settings_active_page_id == SETTINGS_PAGE_APPEARANCE) {
+                settings_adjust_wallpaper(-1);
+            } else if (pressed && extended && base == 0x4Du &&
+                       settings_active_page_id == SETTINGS_PAGE_APPEARANCE) {
+                settings_adjust_wallpaper(1);
             } else if (pressed && extended && base == 0x4Bu) {
                 settings_move_group(-1);
             } else if (pressed && extended && base == 0x4Du) {
@@ -933,6 +940,22 @@ static void settings_move_group(int direction) {
 
     settings_select_group((settings_group_t)
         ((int)SETTINGS_GROUP_PERSONALIZATION + group));
+}
+
+static void settings_adjust_wallpaper(int direction) {
+    if (!direction) return;
+    u32 count = wallpaper_count();
+    if (!count) return;
+
+    int selected = config_get_int("wallpaper", (int)WALLPAPER_CHARIS);
+    if (selected < 0 || (u32)selected >= count)
+        selected = (int)WALLPAPER_CHARIS;
+
+    int step = direction < 0 ? -1 : 1;
+    selected = (selected + (int)count + step) % (int)count;
+    config_set_int("wallpaper", selected);
+    (void)config_save(CONFIG_FILE_PATH);
+    serial_printf("SHELL_WALLPAPER_SELECTED %d\n", selected);
 }
 static u32 settings_rail_width(void) {
     u32 width = ui_px(164), measured = 0;
@@ -1605,16 +1628,9 @@ static bool settings_handle_window_click(window_t* win, int mx, int my) {
     }
 
     if (active->id == SETTINGS_PAGE_APPEARANCE) {
-        int selected = config_get_int("wallpaper", (int)WALLPAPER_CHARIS);
-        if (selected < 0 || selected >= (int)wallpaper_count())
-            selected = (int)WALLPAPER_CHARIS;
         if (my >= (int)first_row_y &&
-            my < (int)(first_row_y + row_h) && direction) {
-            selected = (selected + (int)wallpaper_count() + direction) %
-                       (int)wallpaper_count();
-            config_set_int("wallpaper", selected);
-            (void)config_save(CONFIG_FILE_PATH);
-        }
+            my < (int)(first_row_y + row_h) && direction)
+            settings_adjust_wallpaper(direction);
         return true;
     }
 
