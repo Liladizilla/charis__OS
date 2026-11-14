@@ -85,6 +85,46 @@
 - [x] graphics_circle() - midpoint circle
 - [x] graphics_put_string() - PSF-based text rendering
 
+
+## Phase 7: Boot Identity & Installer (PLANNED)
+- [ ] Replace the text-art boot banner with the official calligraphic C+sword CharisOS emblem; provide monochrome, dark-background and compact variants
+- [ ] Render a centered framebuffer boot splash independent of the desktop compositor, with a real kernel/service progress state
+- [ ] Expose truthful serial and on-screen boot milestones, failure codes and recovery diagnostics
+- [ ] Separate firmware splash, kernel startup, first boot and OS installation into explicit state machines
+- [ ] Design an installer that detects hardware/storage and supports safe dry-run partition planning before destructive operations
+- [ ] Implement transactional installation, filesystem creation, bootloader installation, verification and interrupted-install recovery only after storage support is ready
+- [ ] Keep text-only and unsupported-framebuffer fallback paths usable
+
+## Phase 8: Display & Orientation (PARTIAL / PLACEHOLDER AUDIT REQUIRED)
+- [ ] Remove the fake 640x480 monitor record and 0xA0000 framebuffer pointer from display.c; use the validated boot framebuffer as the single source of truth
+- [ ] Preserve actual framebuffer pitch, pixel format, dimensions and physical mapping throughout compositor and display APIs
+- [ ] Enumerate and expose only modes reported by firmware/native display drivers
+- [ ] Add validated EDID monitor identity, native resolution and supported timing discovery
+- [ ] Implement transactional resolution changes with known-good fallback and timed confirmation/revert
+- [ ] Add automatic, landscape, portrait, square, ultrawide and custom orientation profiles
+- [ ] Add rotation transforms, per-monitor scaling, multi-monitor topology and workspace placement
+- [ ] Add refresh-rate selection only with a driver that can set and verify timings
+- [ ] Add QEMU fixtures for 1024x768, 1280x720, 1920x1080, portrait and square framebuffer geometry; unsupported modes must be rejected
+
+## Phase 9: Native Application Format & Packages (PLANNED)
+- [ ] Specify versioned CXE native executable header, architecture/ABI, segments, entry point and alignment
+- [ ] Specify strict CXE relocation, import/export, memory permission and stack-limit rules
+- [ ] Add capability/resource declarations, integrity metadata and signature policy to the executable/package contract
+- [ ] Build a host-side CXE parser with fuzzable malformed-input, overlap, overflow and unsupported-version tests
+- [ ] Implement transactional CXE loading and rollback while retaining ELF64 compatibility tests
+- [ ] Specify CAPP application bundle, manifest, dependencies, assets and versioning
+- [ ] Implement signed package verification, path traversal protection and bounded archive extraction
+- [ ] Implement capability approval/revocation and atomic package update/rollback
+
+## Phase 10: CharisOS SDK Ecosystem (PLANNED)
+- [ ] Ship a versioned core C ABI, headers, documentation and SDK conformance suite
+- [ ] Add CXE build/inspect/package/sign tooling and reproducible sample applications
+- [ ] Add developer SDK: debugger protocol, symbols, tracing, profiling, crash dumps and test VM
+- [ ] Add game/streaming SDK: surfaces, input/gamepads, audio, timers, graphics capability discovery, capture consent and frame telemetry
+- [ ] Add business/enterprise SDK: data/document APIs, identity integration, audit events, managed configuration and staged deployment
+- [ ] Add AI/automation SDK with local-first provider abstraction, scoped tools, explicit remote consent and resource budgets
+- [ ] Keep domain SDKs on one core ABI and capability model; do not promise unavailable GPU acceleration or unsupported hardware
+
 ## Phase 6: Window System (PARTIAL)
 - [x] Window/widget/input foundations exist; WM bounds window count, dimensions, allocation size, title strings, clipping and z-order
 - [x] PS/2 mouse input and pointer-driven shell interaction; QEMU verifies pointer movement and pixel-exact save-under restoration
