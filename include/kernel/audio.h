@@ -21,6 +21,8 @@ typedef struct {
 
 /* Initialize audio subsystem */
 int audio_init(void);
+/* True only when the HDA playback controller initialized successfully. */
+bool audio_hda_available(void);
 
 /* Open an audio stream for playback */
 audio_stream_t* audio_open(int sample_rate, int channels, int bits_per_sample);

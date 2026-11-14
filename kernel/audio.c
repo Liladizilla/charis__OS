@@ -10,18 +10,24 @@
 
 static audio_stream_t g_audio_streams[8];
 static int g_stream_count = 0;
+static bool g_audio_hda_ready;
 
 /* Export for syscall access */
 audio_stream_t* g_audio_streams_ptr = g_audio_streams;
 
 int audio_init(void) {
     int hda_result = hda_init();
+    g_audio_hda_ready = hda_result >= 0;
     if (hda_result < 0) {
         vga_puts("Audio: Using PC Speaker fallback\n");
     } else {
         vga_puts("Audio: HDA initialized\n");
     }
     return 0;
+}
+
+bool audio_hda_available(void) {
+    return g_audio_hda_ready;
 }
 
 audio_stream_t* audio_open(int sample_rate, int channels, int bits_per_sample) {

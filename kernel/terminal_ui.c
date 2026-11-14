@@ -27,6 +27,7 @@ static char term_input[TERM_INPUT_MAX];
 static u32 term_input_len;
 static char term_lines[TERM_HISTORY][TERM_LINE_MAX];
 static u32 term_line_count;
+static bool term_intro_shown;
 static bool term_bounds_valid;
 static u32 term_bounds_x, term_bounds_y, term_bounds_w, term_bounds_h;
 
@@ -180,14 +181,25 @@ static void term_execute(void) {
 void terminal_open(void) {
     char discard;
     while (keyboard_get_key(&discard)) { }
-    if (!term_line_count) {
-        for (u32 i = 0; i < CHARISOS_ASCII_ROWS; i++)
-            term_add_line(CHARISOS_ASCII_MARK[i]);
-        term_add_line("CHARISOS  /  x86_64");
-        term_add_line("SECURITY BY ARCHITECTURE");
-        term_add_line("INTELLIGENCE BY DESIGN");
-        term_add_line("OWNERSHIP BY DEFAULT");
+
+    if (!term_intro_shown) {
+        u32 available_width = term_bounds_valid
+                            ? term_bounds_w : g_framebuffer.width;
+        u32 mark_width = CHARISOS_ASCII_COLUMNS *
+                         (u32)font_cell_w * TERM_FONT_SCALE;
+        if (available_width > mark_width + term_px(64u)) {
+            for (u32 i = 0; i < CHARISOS_ASCII_ROWS; i++)
+                term_add_line(CHARISOS_ASCII_MARK[i]);
+        }
+        term_add_line("CharisOS / x86_64");
+        term_add_line("Security by architecture");
+        term_add_line("Intelligence by design");
+        term_add_line("Ownership by default");
+        term_intro_shown = true;
+    } else {
+        term_add_line("CharisOS shell session. Type help.");
     }
+
     term_visible = true;
     serial_puts("TERMINAL_OPEN");
 }
@@ -220,7 +232,7 @@ void terminal_handle_char(char ch) {
 }
 
 u32 terminal_titlebar_height(void) {
-    u32 base = term_px(36), needed = term_text_h() + term_px(12);
+    u32 base = term_px(32), needed = term_text_h() + term_px(8);
     return base > needed ? base : needed;
 }
 
@@ -279,9 +291,9 @@ static u32 terminal_line_color(const char* line) {
     if (kstrncmp(line, "charisos> ", 10) == 0) return CHARIS_UI_SUCCESS;
     if (kstrncmp(line, "Command not found", 17) == 0) return CHARIS_UI_WARNING;
     if (terminal_ascii_mark_row(line) ||
-        kstrncmp(line, "SECURITY BY", 11) == 0 ||
-        kstrncmp(line, "INTELLIGENCE BY", 15) == 0 ||
-        kstrncmp(line, "OWNERSHIP BY", 12) == 0 ||
+        kstrncmp(line, "Security by", 11) == 0 ||
+        kstrncmp(line, "Intelligence by", 15) == 0 ||
+        kstrncmp(line, "Ownership by", 12) == 0 ||
         kstrncmp(line, "CHARISOS", 8) == 0 ||
         kstrncmp(line, "CharisOS", 8) == 0) return CHARIS_UI_ACCENT;
     if (kstrncmp(line, "Managed RAM", 11) == 0 ||
@@ -315,33 +327,11 @@ void terminal_render(void) {
     u32 rows = content_bottom > content_top ? (content_bottom - content_top) / line_h : 1;
     if (!rows) rows = 1;
 
-    /* Window frame and application chrome. */
+    /* Shared shell draws the titlebar and its controls after this surface.
+     * Keep only the terminal canvas and its session strip here. */
     fb_fill_rect(x + term_px(5), y + term_px(6), w, h, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, w, h, 0xFF080B10u);
     fb_draw_rect(x, y, w, h, 0xFF27313Du);
-    fb_fill_rect(x, y, w, title_h, 0xFF10151Cu);
-    fb_fill_rect(x, y + title_h, w, term_px(1), CHARIS_UI_BORDER);
-
-    /* Three restrained window controls and a real session title. */
-    u32 dot_y = y + title_h / 2;
-    fb_fill_rect(x + term_px(16), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_DANGER);
-    fb_fill_rect(x + term_px(32), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_WARNING);
-    fb_fill_rect(x + term_px(48), dot_y - term_px(4), term_px(8), term_px(8), CHARIS_UI_SUCCESS);
-    term_draw(x + term_px(72), y + (title_h - text_h) / 2,
-                    "Terminal", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    const char* session_label = "LOCAL SESSION";
-    u32 session_width = term_measure(session_label);
-    u32 session_right = x + w > term_px(48) ? x + w - term_px(48) : x + w;
-    u32 session_x = session_right > session_width + term_px(16)
-                  ? session_right - session_width - term_px(16) : x + term_px(72);
-    term_draw(session_x, y + (title_h - text_h) / 2,
-              session_label, CHARIS_UI_MUTED, FB_TRANSPARENT);
-    u32 close_x = x + w - term_px(34);
-    u32 close_y = y + (title_h - term_px(24)) / 2u;
-    fb_fill_rect(close_x, close_y, term_px(26), term_px(24), CHARIS_UI_SURFACE);
-    fb_draw_rect(close_x, close_y, term_px(26), term_px(24), CHARIS_UI_BORDER);
-    term_draw(close_x + term_px(9), close_y + (term_px(24) - text_h) / 2u,
-              "x", CHARIS_UI_TEXT, FB_TRANSPARENT);
 
     /* Session strip separates app identity from command output. */
     u32 strip_y = y + title_h + term_px(1);
@@ -436,7 +426,7 @@ void terminal_render(void) {
     u32 status_y = y + h > text_h + term_px(10)
                   ? y + h - text_h - term_px(10) : y;
     term_draw(x + term_px(18), status_y,
-                    "READY", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
+                    "Ready", CHARIS_UI_SUCCESS, FB_TRANSPARENT);
     const char* status_label = "Kernel command environment";
     u32 ready_width = term_measure("READY");
     u32 status_width = term_measure(status_label);

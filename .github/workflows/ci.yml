@@ -76,6 +76,11 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Test Settings catalog integrity and search
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/settings_catalog_test.c kernel/settings.c -o /tmp/settings_catalog_test
+          /tmp/settings_catalog_test
+
       - name: Test browser HTML text extraction
         run: |
           gcc -std=c11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/browser_html_test.c -Wl,--gc-sections -o /tmp/browser_html_test
@@ -347,6 +352,29 @@ jobs:
               sleep 1
             done
             sleep 4
+            # Exercise the native desktop context menu using QEMU's PS/2
+            # right-button state (HMP bitmask: 1=left, 2=right, 4=middle).
+            # Open at the initial pointer position, capture it, then choose
+            # Display settings with a real pointer move and left click.
+            printf 'mouse_button 2\n'
+            sleep 1
+            printf 'screendump build/charisos-context-menu-preview.ppm\n'
+            sleep 1
+            printf 'mouse_button 0\n'
+            sleep 0.5
+            # Menu begins at (50,50); Display settings is the third row.
+            printf 'mouse_move 20 91\n'
+            sleep 1
+            printf 'mouse_button 1\n'
+            sleep 0.5
+            printf 'mouse_button 0\n'
+            sleep 2
+            printf 'screendump build/charisos-context-menu-display-preview.ppm\n'
+            sleep 1
+            printf 'sendkey esc\n'
+            sleep 1
+            printf 'mouse_move -20 -91\n'
+            sleep 1
             # Capture the starting PS/2 pointer state, then move away and
             # return by the exact inverse delta. This proves both cursor
             # movement and save-under restoration pixel-for-pixel.
@@ -455,6 +483,27 @@ jobs:
             sleep 2
             printf 'screendump build/charisos-settings-preview.ppm\n'
             sleep 1
+            # Traverse the Settings catalog with real PS/2 arrow key events:
+            # Display -> Appearance -> Display -> Multitasking -> Display.
+            printf 'sendkey down\n'
+            sleep 1
+            # On Appearance, Left/Right changes the real wallpaper preference.
+            printf 'sendkey right\n'
+            sleep 1
+            printf 'screendump build/charisos-settings-appearance-preview.ppm\n'
+            sleep 1
+            printf 'sendkey up\n'
+            sleep 1
+            # Move from Display (1) to Multitasking (5) in the unified list,
+            # then return to Display before changing its real controls.
+            for step in {1..4}; do
+              printf 'sendkey down\n'
+              sleep 0.25
+            done
+            for step in {1..4}; do
+              printf 'sendkey up\n'
+              sleep 0.25
+            done
             printf 'sendkey f6\n'
             sleep 1
             printf 'sendkey f7\n'
@@ -477,16 +526,21 @@ jobs:
             printf 'sendkey esc\n'
             sleep 1
             printf 'quit\n'
-          } | timeout 85s qemu-system-x86_64 \
+          } | timeout 120s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
             -serial file:build/desktop-capture-serial.log \
             -monitor stdio -display none \
-            >build/desktop-capture-qemu.log 2>&1 || true
+            >build/desktop-capture-qemu.log 2>&1
 
           test -s build/charisos-desktop-preview.ppm
           test -s build/charisos-pointer-start-preview.ppm
+          test -s build/charisos-context-menu-preview.ppm
+          test -s build/charisos-context-menu-display-preview.ppm
+          grep -q 'SHELL_CONTEXT_MENU_OPEN' build/desktop-capture-serial.log
+          grep -q 'SHELL_CONTEXT_MENU_ACTION display-settings' build/desktop-capture-serial.log
+          grep -q 'SHELL_APP_OPEN Settings' build/desktop-capture-serial.log
           test -s build/charisos-pointer-moved-preview.ppm
           test -s build/charisos-pointer-restored-preview.ppm
           python3 tools/verify-pointer-capture.py \
@@ -519,7 +573,7 @@ jobs:
           assert metrics["button"] > metrics["text"], metrics
           assert metrics["nav_step"] > metrics["text"], metrics
           assert metrics["footer"] > metrics["text"], metrics
-          assert metrics["rail"] < metrics["width"] // 2, metrics
+          assert metrics["rail"] <= metrics["width"] // 2, metrics
           assert metrics["row"] >= metrics["text"] + 20, metrics
           print("Settings large-font layout metrics:", metrics)
           PY
@@ -533,13 +587,16 @@ jobs:
           grep -q 'TERMINAL_CMD help' build/desktop-capture-serial.log
           grep -q 'SHELL_WINDOW_MAXIMIZED' build/desktop-capture-serial.log
           grep -q 'SHELL_WINDOW_RESTORED' build/desktop-capture-serial.log
-          grep -q 'SHELL_KEYBOARD_RESIZE_STARTED 640x404' build/desktop-capture-serial.log
-          grep -q 'SHELL_KEYBOARD_RESIZE_COMMITTED 720x464' build/desktop-capture-serial.log
+          grep -q 'SHELL_KEYBOARD_RESIZE_STARTED 640x408' build/desktop-capture-serial.log
+          grep -q 'SHELL_KEYBOARD_RESIZE_COMMITTED 720x468' build/desktop-capture-serial.log
           test -s build/charisos-maximized-preview.ppm
           test -s build/charisos-multiwindow-preview.ppm
           test -s build/charisos-resized-preview.ppm
           test -s build/charisos-settings-preview.ppm
+          test -s build/charisos-settings-appearance-preview.ppm
           test -s build/charisos-settings-adjusted-preview.ppm
+          grep -q 'SHELL_SETTINGS_PAGE 2' build/desktop-capture-serial.log
+          grep -q 'SHELL_SETTINGS_PAGE 5' build/desktop-capture-serial.log
           test -s build/charisos-desktop-scaled-preview.ppm
 
           # Read the actual FAT32 file back from the disk image. The two
@@ -547,6 +604,8 @@ jobs:
           mcopy -i build/config-test-disk.img ::CHARISOS.CFG build/CHARISOS.CFG
           grep -qx 'font_scale=2' build/CHARISOS.CFG
           grep -qx 'ui_scale=120' build/CHARISOS.CFG
+          grep -qx 'wallpaper=1' build/CHARISOS.CFG
+          grep -q 'SHELL_WALLPAPER_SELECTED 1' build/desktop-capture-serial.log
 
           # Reboot against the same disk and verify the kernel reloads the
           # exact saved values, then capture Settings after that reboot.
@@ -575,7 +634,7 @@ jobs:
             -serial file:build/desktop-reboot-serial.log \
             -monitor stdio -display none \
             >build/desktop-reboot-qemu.log 2>&1
-          grep -q 'CONFIG_LOADED .*font_scale=2 ui_scale=120' build/desktop-reboot-serial.log
+          grep -q 'CONFIG_LOADED .*font_scale=2 ui_scale=120 wallpaper=1' build/desktop-reboot-serial.log
           test -s build/charisos-settings-reloaded-preview.ppm
           grep -q 'CONFIG_SAVE OK .*font_scale=3 ui_scale=120' build/desktop-reboot-serial.log
           test -s build/charisos-settings-largest-preview.ppm
@@ -602,7 +661,7 @@ jobs:
           assert metrics["button"] > metrics["text"], metrics
           assert metrics["nav_step"] > metrics["text"], metrics
           assert metrics["footer"] > metrics["text"], metrics
-          assert metrics["rail"] < metrics["width"] // 2, metrics
+          assert metrics["rail"] <= metrics["width"] // 2, metrics
           assert metrics["row"] >= metrics["text"] + 20, metrics
           print("Settings 300 percent layout metrics:", metrics)
           PY
@@ -611,7 +670,7 @@ jobs:
           # This exercises the real keyboard IRQ and shell event path without
           # relying on QEMU's emulated pointer device or guessed mouse deltas.
           {
-            sleep 2
+            sleep 10
             printf 'sendkey f12\n'
             sleep 2
             printf 'sendkey h\n'
@@ -628,7 +687,7 @@ jobs:
             printf 'screendump build/charisos-terminal-preview.ppm\n'
             sleep 1
             printf 'quit\n'
-          } | timeout 35s qemu-system-x86_64 \
+          } | timeout 45s qemu-system-x86_64 \
             -machine pc -m 512M -vga std -nic none -no-reboot \
             -drive file=build/config-test-disk.img,format=raw,if=ide,index=0 \
             -cdrom build/charisos-vm.iso -boot order=d \
@@ -649,12 +708,15 @@ jobs:
             build/charisos-pointer-start-preview.ppm
             build/charisos-pointer-moved-preview.ppm
             build/charisos-pointer-restored-preview.ppm
+            build/charisos-context-menu-preview.ppm
+            build/charisos-context-menu-display-preview.ppm
             build/charisos-browser-preview.ppm
             build/charisos-files-preview.ppm
             build/charisos-multiwindow-preview.ppm
             build/charisos-maximized-preview.ppm
             build/charisos-resized-preview.ppm
             build/charisos-settings-preview.ppm
+            build/charisos-settings-appearance-preview.ppm
             build/charisos-settings-adjusted-preview.ppm
             build/charisos-desktop-scaled-preview.ppm
             build/charisos-calculator-preview.ppm

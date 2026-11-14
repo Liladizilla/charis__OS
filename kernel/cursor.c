@@ -32,8 +32,106 @@ static u32 cursor_saved_width;
 static u32 cursor_saved_height;
 static bool cursor_saved_valid;
 
+/* Framebuffer surfaces can be repainted independently of the pointer. The
+ * save-under is then still marked valid even though its pixels are gone.
+ * Check the painted shape before taking the same-position fast path. */
+static bool cursor_color_matches(u32 actual, u32 expected) {
+    for (u32 shift = 0; shift <= 16u; shift += 8u) {
+        u32 a = (actual >> shift) & 0xFFu;
+        u32 e = (expected >> shift) & 0xFFu;
+        if (a > e ? a - e > 8u : e - a > 8u) return false;
+    }
+    return true;
+}
+
+static bool cursor_overlay_intact(void) {
+    const u32 fill = FB_ARGB(0xFF, 0xF4, 0xF6, 0xF8);
+    const u32 outline = FB_ARGB(0xFF, 0x08, 0x0B, 0x10);
+
+    for (u32 y = 0; y < cursor_saved_height; y++) {
+        for (u32 x = 0; x < cursor_saved_width; x++) {
+            u32 expected = 0;
+            if (cursor_shape[y][x] == 'X') {
+                expected = fill;
+            } else if ((y + 1u < CURSOR_HEIGHT &&
+                        cursor_shape[y + 1u][x] == 'X') ||
+                       (x + 1u < CURSOR_WIDTH &&
+                        cursor_shape[y][x + 1u] == 'X')) {
+                expected = outline;
+            } else {
+                continue;
+            }
+
+            u32 actual = fb_get_pixel((u32)cursor_saved_x + x,
+                                      (u32)cursor_saved_y + y);
+            if (!cursor_color_matches(actual, expected)) return false;
+        }
+    }
+    return true;
+}
+
+/* Remove only cursor-colored pixels that survived a partial surface repaint.
+ * Pixels already replaced by the surface are left untouched. */
+static void cursor_remove_stale_pixels(void) {
+    const u32 fill = FB_ARGB(0xFF, 0xF4, 0xF6, 0xF8);
+    const u32 outline = FB_ARGB(0xFF, 0x08, 0x0B, 0x10);
+    fb_reset_clip();
+
+    for (u32 y = 0; y < cursor_saved_height; y++) {
+        for (u32 x = 0; x < cursor_saved_width; x++) {
+            u32 expected = 0;
+            if (cursor_shape[y][x] == 'X') {
+                expected = fill;
+            } else if ((y + 1u < CURSOR_HEIGHT &&
+                        cursor_shape[y + 1u][x] == 'X') ||
+                       (x + 1u < CURSOR_WIDTH &&
+                        cursor_shape[y][x + 1u] == 'X')) {
+                expected = outline;
+            } else {
+                continue;
+            }
+
+            u32 px = (u32)cursor_saved_x + x;
+            u32 py = (u32)cursor_saved_y + y;
+            if (cursor_color_matches(fb_get_pixel(px, py), expected))
+                fb_put_pixel(px, py, cursor_under[y][x]);
+        }
+    }
+}
+
+bool cursor_intersects_rect(u32 x, u32 y, u32 width, u32 height) {
+    if (!g_framebuffer.initialized || !width || !height ||
+        x >= g_framebuffer.width || y >= g_framebuffer.height)
+        return false;
+
+    if (width > g_framebuffer.width - x) width = g_framebuffer.width - x;
+    if (height > g_framebuffer.height - y) height = g_framebuffer.height - y;
+
+    mouse_state_t mouse;
+    mouse_get_snapshot(&mouse);
+    if (mouse.x < 0 || mouse.y < 0 ||
+        (u32)mouse.x >= g_framebuffer.width ||
+        (u32)mouse.y >= g_framebuffer.height)
+        return false;
+
+    u32 cursor_x = (u32)mouse.x;
+    u32 cursor_y = (u32)mouse.y;
+    u32 cursor_width = g_framebuffer.width - cursor_x;
+    u32 cursor_height = g_framebuffer.height - cursor_y;
+    if (cursor_width > CURSOR_WIDTH) cursor_width = CURSOR_WIDTH;
+    if (cursor_height > CURSOR_HEIGHT) cursor_height = CURSOR_HEIGHT;
+
+    return cursor_x < x + width && x < cursor_x + cursor_width &&
+           cursor_y < y + height && y < cursor_y + cursor_height;
+}
+
 void cursor_erase(void) {
     if (!cursor_saved_valid) return;
+#ifdef CURSOR_TRACE
+    serial_printf("CURSOR_TRACE erase pos=%d,%d size=%ux%u\n",
+                  cursor_saved_x, cursor_saved_y,
+                  cursor_saved_width, cursor_saved_height);
+#endif
     if (!g_framebuffer.initialized) {
         cursor_saved_valid = false;
         return;
@@ -62,13 +160,29 @@ void cursor_draw(void) {
     if (mouse.x < 0 || mouse.y < 0 ||
         (u32)mouse.x >= g_framebuffer.width ||
         (u32)mouse.y >= g_framebuffer.height) {
+#ifdef CURSOR_TRACE
+        serial_printf("CURSOR_TRACE outside x=%d y=%d screen=%ux%u\n",
+                      mouse.x, mouse.y, g_framebuffer.width,
+                      g_framebuffer.height);
+#endif
         cursor_erase();
         return;
     }
 
     if (cursor_saved_valid && mouse.x == cursor_saved_x &&
-        mouse.y == cursor_saved_y)
-        return;
+        mouse.y == cursor_saved_y) {
+        if (cursor_overlay_intact()) return;
+#ifdef CURSOR_TRACE
+        serial_printf("CURSOR_TRACE covered x=%d y=%d pixel=%08x\n",
+                      mouse.x, mouse.y,
+                      fb_get_pixel((u32)mouse.x, (u32)mouse.y));
+#endif
+        /* A surface repaint removed or partially covered the pointer without
+         * going through cursor_erase(). Reconcile surviving cursor pixels and
+         * take a fresh save-under from the newly painted desktop. */
+        cursor_remove_stale_pixels();
+        cursor_saved_valid = false;
+    }
 
     cursor_erase();
     fb_reset_clip();
@@ -109,4 +223,10 @@ void cursor_draw(void) {
                 fb_put_pixel((u32)mouse.x + x, (u32)mouse.y + y, outline);
         }
     }
+#ifdef CURSOR_TRACE
+    serial_printf("CURSOR_TRACE painted x=%d y=%d pixel=%08x valid=%u\n",
+                  mouse.x, mouse.y,
+                  fb_get_pixel((u32)mouse.x, (u32)mouse.y),
+                  cursor_saved_valid ? 1u : 0u);
+#endif
 }

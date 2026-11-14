@@ -64,11 +64,29 @@ static bool rect_matches(const u32* before, u32 x, u32 y, u32 w, u32 h) {
     return true;
 }
 
+static bool rect_is_color(u32 x, u32 y, u32 w, u32 h, u32 color) {
+    for (u32 row = 0; row < h; row++)
+        for (u32 col = 0; col < w; col++)
+            if (pixels[(usize)(y + row) * WIDTH + x + col] != color)
+                return false;
+    return true;
+}
+
 int main(void) {
     static u32 before[WIDTH * HEIGHT];
     fill_pattern();
     memcpy(before, pixels, sizeof(pixels));
 
+    test_mouse.x = 20;
+    test_mouse.y = 24;
+    expect(!cursor_intersects_rect(0, HEIGHT - 48u, WIDTH, 48u),
+           "taskbar redraw does not intersect a pointer in the workspace");
+    test_mouse.y = HEIGHT - 48u - 16u;
+    expect(!cursor_intersects_rect(0, HEIGHT - 48u, WIDTH, 48u),
+           "cursor edge-touching taskbar is not treated as overlap");
+    test_mouse.y++;
+    expect(cursor_intersects_rect(0, HEIGHT - 48u, WIDTH, 48u),
+           "taskbar redraw detects a pointer overlapping its top edge");
     test_mouse.x = 20;
     test_mouse.y = 24;
     cursor_draw();
@@ -113,6 +131,26 @@ int main(void) {
     cursor_erase();
     expect(rect_matches(before, 80, 90, 10, 16),
            "a desktop repaint can safely reuse the same cursor position");
+
+    /* A desktop surface may repaint beneath a stationary cursor without
+     * calling cursor_erase(). The pointer compositor must detect that its
+     * overlay was covered, repaint it, and save the new surface as its base. */
+    test_mouse.x = 110;
+    test_mouse.y = 120;
+    cursor_draw();
+    const u32 repainted_color = 0xFF123456u;
+    for (u32 row = 0; row < 16u; row++)
+        for (u32 col = 0; col < 10u; col++)
+            pixels[(usize)(test_mouse.y + (int)row) * WIDTH +
+                   (u32)test_mouse.x + col] = repainted_color;
+    cursor_draw();
+    expect(pixels[(usize)test_mouse.y * WIDTH + (u32)test_mouse.x] !=
+           repainted_color,
+           "same-position cursor is repainted after a surface covers it");
+    cursor_erase();
+    expect(rect_is_color((u32)test_mouse.x, (u32)test_mouse.y, 10, 16,
+                         repainted_color),
+           "repainted surface is preserved by the refreshed save-under");
 
     test_mouse.x = (int)WIDTH - 2;
     test_mouse.y = (int)HEIGHT - 2;

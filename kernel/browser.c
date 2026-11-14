@@ -102,7 +102,9 @@ static void browser_geometry(u32* x, u32* y, u32* w, u32* h) {
 }
 
 u32 browser_titlebar_height(void) {
-    return 42u;
+    /* Kept dependency-free for the standalone HTML/parser host test.
+     * The shell computes the shared text-aware height when creating windows. */
+    return 32u;
 }
 
 void browser_set_bounds(u32 x, u32 y, u32 width, u32 height) {
@@ -677,7 +679,11 @@ bool browser_is_open(void) {
 static void draw_button(u32 x, u32 y, u32 w, u32 h, const char* label, bool active) {
     fb_fill_rect(x, y, w, h, active ? C_ACCENT_BG : C_RAISED);
     fb_draw_rect(x, y, w, h, C_BORDER);
-    gfx_draw_string(x + 8, y + (h - 16) / 2, label, active ? C_ACCENT : C_TEXT, FB_TRANSPARENT);
+    u32 text_width=0,text_height=0;
+    gfx_text_size(label,&text_width,&text_height);
+    gfx_draw_string(x+(w>text_width ? (w-text_width)/2u : 0u),
+                    y+(h>text_height ? (h-text_height)/2u : 0u),
+                    label,active ? C_ACCENT : C_TEXT,FB_TRANSPARENT);
 }
 
 static void draw_card(u32 x, u32 y, u32 w, const char* eyebrow, const char* title, const char* detail) {
@@ -810,7 +816,7 @@ static void draw_page(browser_tab_t* tab, u32 x, u32 y, u32 w, u32 h) {
         u32 card_w = (w > 760) ? (w - 72) / 3 : (w - 48) / 2;
         if (card_w > 300) card_w = 300;
         draw_card(x + 24, y + 126, card_w, "START HERE", "About CharisOS", "System and browser details");
-        draw_card(x + 36 + card_w, y + 126, card_w, "QUICK GUIDE", "Browser help", "Navigation and keyboard controls");
+        draw_card(x + 36 + card_w, y + 126, card_w, "QUICK GUIDE", "Browser help", "Navigation and shortcuts");
         if (w > card_w * 2 + 120)
             draw_card(x + 48 + card_w * 2, y + 126, card_w, "PERSONAL", "Bookmarks", "Your saved local page");
         gfx_draw_string(x + 24, y + h - 32, "Tip: Ctrl+L focuses the address bar. Enter opens a local page or attempts a web URL.", C_MUTED, FB_TRANSPARENT);
@@ -921,13 +927,15 @@ void browser_render(void) {
 
     /* Navigation controls and address bar. */
     u32 nav_y = y + 42;
-    draw_button(x + 10, nav_y, 34, 30, "<", tab->history_index > 0);
-    draw_button(x + 50, nav_y, 34, 30, ">", tab->history_index + 1 < tab->history_count);
-    draw_button(x + 90, nav_y, 34, 30, "R", true);
-    draw_button(x + 130, nav_y, 34, 30, "H", true);
-    u32 addr_x = x + 174;
-    u32 star_x = x + w - 86;
-    u32 addr_w = star_x - addr_x - 8;
+    /* The Browser window enforces a 560 px minimum for readable action labels. */
+    draw_button(x + 10, nav_y, 50, 30, "Back", tab->history_index > 0);
+    draw_button(x + 64, nav_y, 68, 30, "Forward",
+                tab->history_index + 1 < tab->history_count);
+    draw_button(x + 136, nav_y, 58, 30, "Reload", true);
+    draw_button(x + 198, nav_y, 48, 30, "Home", true);
+    u32 addr_x = x + 254;
+    u32 star_x = x + w - 98;
+    u32 addr_w = star_x > addr_x + 8u ? star_x - addr_x - 8u : 1u;
     fb_fill_rect(addr_x, nav_y, addr_w, 30, tab->address_focus ? C_ACCENT_BG : C_SURFACE);
     fb_draw_rect(addr_x, nav_y, addr_w, 30, tab->address_focus ? C_ACCENT : C_BORDER);
     char address_display[BROWSER_URL_MAX];
@@ -949,7 +957,7 @@ void browser_render(void) {
     }
     gfx_draw_string(addr_x + 8, nav_y + 8, shown, tab->select_all ? C_MUTED : C_TEXT, FB_TRANSPARENT);
     tab->bookmarked = browser_has_bookmark && kstrcmp(tab->address, browser_bookmark) == 0;
-    draw_button(star_x, nav_y, 72, 30, tab->bookmarked ? "* Saved" : "* Save", tab->bookmarked);
+    draw_button(star_x, nav_y, 88, 30, "Bookmark", tab->bookmarked);
 
     /* Main page area and status bar. */
     u32 page_y = nav_y + 40;
@@ -958,7 +966,6 @@ void browser_render(void) {
     draw_page(tab, x + 10, page_y, w - 20, page_h);
     fb_fill_rect(x + 1, y + h - status_h - 1, w - 2, status_h, C_BG);
     gfx_draw_string(x + 12, y + h - status_h + 4, browser_status, C_MUTED, FB_TRANSPARENT);
-    gfx_draw_string(x + w - 210, y + h - status_h + 4, "LOCAL-FIRST  |  CHARISOS", C_ACCENT, FB_TRANSPARENT);
 }
 
 static void new_tab(void) {
@@ -1015,26 +1022,26 @@ bool browser_handle_mouse(int mx, int my) {
 
     u32 nav_y = y + 42;
     if (my >= (int)nav_y && my < (int)(nav_y + 30)) {
-        if (mx >= (int)(x + 10) && mx < (int)(x + 44)) {
+        if (mx >= (int)(x + 10) && mx < (int)(x + 60)) {
             if (tab->history_index > 0) {
                 tab->history_index--;
                 address_set(tab, tab->history[tab->history_index]);
                 navigate(tab->address, false);
                 set_status("Back");
             }
-        } else if (mx >= (int)(x + 50) && mx < (int)(x + 84)) {
+        } else if (mx >= (int)(x + 64) && mx < (int)(x + 132)) {
             if (tab->history_index + 1 < tab->history_count) {
                 tab->history_index++;
                 address_set(tab, tab->history[tab->history_index]);
                 navigate(tab->address, false);
                 set_status("Forward");
             }
-        } else if (mx >= (int)(x + 90) && mx < (int)(x + 124)) {
+        } else if (mx >= (int)(x + 136) && mx < (int)(x + 194)) {
             navigate(tab->address, false);
             set_status("Reloaded local page");
-        } else if (mx >= (int)(x + 130) && mx < (int)(x + 164)) {
+        } else if (mx >= (int)(x + 198) && mx < (int)(x + 246)) {
             navigate("charis://home", true);
-        } else if (mx >= (int)(x + w - 86)) {
+        } else if (mx >= (int)(x + w - 98)) {
             if (browser_has_bookmark && kstrcmp(browser_bookmark, tab->address) == 0) {
                 browser_has_bookmark = false;
                 browser_bookmark[0] = 0;
@@ -1048,7 +1055,7 @@ bool browser_handle_mouse(int mx, int my) {
                 tab->bookmarked = true;
                 set_status("Bookmark saved");
             }
-        } else if (mx >= (int)(x + 174)) {
+        } else if (mx >= (int)(x + 254)) {
             tab->address_focus = true;
             tab->select_all = true;
             set_status("Address selected");

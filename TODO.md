@@ -166,20 +166,26 @@ The shell still owns the framebuffer and application renderers, while the WM own
 
 ## Phase 9: Desktop Environment (PARTIAL, ACTIVE)
 
-### Settings v2 target scope — planned, not implemented
-The complete Settings information architecture and capability gates are defined in [docs/settings-architecture.md](./docs/settings-architecture.md). Do not ship decorative controls before their owning services exist.
+### Settings v2 — delivered surface and remaining work
+The current catalog and capability boundaries are documented in [docs/settings-architecture.md](./docs/settings-architecture.md). The catalog is a navigation surface, not a claim that every device/service backend exists.
 
-- [ ] Replace the current Display-only Settings page and three cosmetic navigation labels with real searchable category/page navigation and per-page keyboard focus.
-- [ ] Display: orientation, resolution, refresh rate, mode test/revert, per-display scaling, brightness when supported, night light, color profiles/calibration and monitor arrangement.
-- [ ] Appearance: dark/light/automatic style, accent palettes, multiple CC0 wallpapers with preview/fallback and per-workspace backgrounds.
-- [ ] Multitasking: named virtual workspaces, overview, snap/tiling, screen-edge actions, app switching preferences and multi-monitor workspace rules.
-- [ ] Devices: pointer speed/acceleration/buttons/scrolling; detected touchpad settings; keyboard input sources/layout switching, special-character entry, repeat behavior and configurable shortcuts.
-- [ ] Sound and power: real audio output/input inventory, per-device/app volume and alerts; power modes, screen-off timers, battery/lid telemetry and suspend/resume only where hardware support exists.
-- [ ] Apps and services: default applications, startup/background policy, per-app capabilities, notification permissions/history/quiet hours and scoped local/online search providers.
-- [ ] Accounts and sharing: local profiles, secure Google/Microsoft/Apple authorization flows, token revocation, authenticated file/media sharing and expiring share grants.
-- [ ] Wellbeing and accessibility: screen-time summaries/limits, break reminders, high contrast, pointer options, keyboard accessibility, magnifier and screen-reader service.
-- [ ] System: privacy/security status and per-app permissions, region/language/locale, timezone-aware date/time, users, authenticated remote desktop, secure SSH, About, signed software updates and rollback/recovery.
-- [ ] Build the settings registry, capability detection, validation, apply/read-back/rollback, versioned configuration migration and regression tests before expanding the page count.
+- [x] Stable 20-page catalog across Personalization, Desktop & Devices, Apps & Services and System, with explicit Available/Partially available/Unavailable explanations.
+- [x] One continuous Settings navigation list with group separators, direct pointer selection and keyboard Up/Down navigation.
+- [x] Display font-family selection, 100/200/300% text presets and 80/100/120% interface scaling.
+- [x] Appearance selection and FAT32 persistence for five built-in desktop backgrounds.
+- [x] Host-tested bounded catalog search helper; it is not yet exposed as a visible Settings search field.
+- [x] Desktop right-click context menu for Change wallpaper, Display settings and About; New folder remains disabled because Files is read-only.
+- [ ] Add a visible Settings search field, keyboard focus management and search-result navigation.
+- [ ] Turn catalog metadata into a typed control registry with value types, ranges/enums, owners, capability requirements and persistence policy.
+- [ ] Add capability discovery so hardware-dependent controls appear only when supported.
+- [ ] Add central apply/read-back/persist/rollback transactions and versioned, validated, atomic configuration migration.
+- [ ] Implement Display mode enumeration, resolution/refresh/orientation test-and-revert, night light and monitor arrangement only with a real display backend.
+- [ ] Implement dark/light styles, accent palettes, preview/fit/fill and additional bundled CC0 wallpapers.
+- [ ] Implement actual workspace, snap/tiling and screen-edge services before exposing their controls.
+- [ ] Implement device-backed mouse/touchpad, keyboard-layout, sound and power settings.
+- [ ] Implement application/default-handler registry, notification broker, local/online search providers and explicit per-app capabilities.
+- [ ] Implement secure identity, account/token storage, file/media sharing and wellbeing services.
+- [ ] Implement locale/time-zone, local user management, remote access, signed updates and rollback/recovery.
 
 - [x] Minimal workspace replaces the dashboard-style home surface; Files desktop shortcut, launcher and taskbar render in QEMU
 - [x] Native Files launcher and read-only FAT32 root browser (8.3 names only)
