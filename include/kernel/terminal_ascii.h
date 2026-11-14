@@ -4,15 +4,14 @@
 #include <kernel/types.h>
 
 #define CHARISOS_ASCII_COLUMNS 13u
-#define CHARISOS_ASCII_ROWS 7u
+#define CHARISOS_ASCII_ROWS 6u
 
-/* A compact C mark. Each row contains exactly thirteen fixed cells. */
+/* A heavier six-row C mark, sized for the terminal's fixed-width glyphs. */
 static const char* const CHARISOS_ASCII_MARK[CHARISOS_ASCII_ROWS] = {
-    "   #######   ",
     " ########### ",
     "##         ##",
     "##           ",
     "##           ",
-    " ########### ",
-    "   #######   "
+    "##         ##",
+    " ########### "
 };
