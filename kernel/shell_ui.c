@@ -2163,7 +2163,10 @@ static void draw_settings_window(window_t* win) {
             page->state_detail, CHARIS_UI_MUTED, 3);
     } else if (page->id == SETTINGS_PAGE_MOUSE_TOUCHPAD) {
         static const char* const speed_labels[] = {
-            "50%", "75%", "100%", "125%", "150%", "175%", "200%"
+            "Pointer speed: 50%", "Pointer speed: 75%",
+            "Pointer speed: 100%", "Pointer speed: 125%",
+            "Pointer speed: 150%", "Pointer speed: 175%",
+            "Pointer speed: 200%"
         };
         u32 row_y = first_row_y;
         u32 row_draw_h = row_h > ui_px(10) ? row_h - ui_px(10) : 1u;
@@ -2177,13 +2180,17 @@ static void draw_settings_window(window_t* win) {
         if (mouse_is_available()) {
             u32 label_x = content_x + ui_px(8);
             u32 label_y = row_y + ui_px(14);
-            fb_set_clip(label_x, row_y + ui_px(8),
-                        control_x > label_x + ui_px(12)
-                          ? control_x - label_x - ui_px(12) : 1u,
-                        row_draw_h > ui_px(16) ? row_draw_h - ui_px(16) : 1u);
-            gfx_draw_string(label_x, label_y, "Pointer speed",
-                            CHARIS_UI_TEXT, FB_TRANSPARENT);
-            fb_reset_clip();
+            u32 label_w = control_x > label_x + ui_px(12)
+                        ? control_x - label_x - ui_px(12) : 1u;
+            u32 speed = mouse_get_speed_percent();
+            if (speed < MOUSE_SPEED_MIN_PERCENT ||
+                speed > MOUSE_SPEED_MAX_PERCENT)
+                speed = 100u;
+            u32 speed_index = (speed - MOUSE_SPEED_MIN_PERCENT) /
+                              MOUSE_SPEED_STEP_PERCENT;
+            settings_draw_wrapped_text(label_x, label_y, label_w,
+                                       speed_labels[speed_index],
+                                       CHARIS_UI_TEXT, 2u);
 
             u32 by = row_y + (row_h - button_h) / 2u;
             fb_fill_rect(control_x, by, button_w, button_h,
@@ -2206,27 +2213,7 @@ static void draw_settings_window(window_t* win) {
                             ? (button_w - plus_w) / 2u : 0u),
                             glyph_y, "+", CHARIS_UI_TEXT, FB_TRANSPARENT);
 
-            u32 speed = mouse_get_speed_percent();
-            if (speed < MOUSE_SPEED_MIN_PERCENT ||
-                speed > MOUSE_SPEED_MAX_PERCENT)
-                speed = 100u;
-            u32 speed_index = (speed - MOUSE_SPEED_MIN_PERCENT) /
-                              MOUSE_SPEED_STEP_PERCENT;
-            u32 value_x = control_x + button_w + ui_px(8u);
-            u32 value_right = plus_x > ui_px(8u) ? plus_x - ui_px(8u) : plus_x;
-            u32 value_w = value_right > value_x ? value_right - value_x : 1u;
-            u32 value_text_w = 0, value_text_h = 0;
-            gfx_text_monospace_size(speed_labels[speed_index],
-                                    &value_text_w, &value_text_h, 1u);
-            fb_set_clip(value_x, by, value_w, button_h);
-            gfx_draw_monospace_string_scaled(
-                value_x + (value_w > value_text_w
-                           ? (value_w - value_text_w) / 2u : 0u),
-                by + (button_h > value_text_h
-                      ? (button_h - value_text_h) / 2u : 0u),
-                speed_labels[speed_index], CHARIS_UI_ACCENT,
-                FB_TRANSPARENT, 1u);
-            fb_reset_clip();
+
         } else {
             gfx_draw_string(content_x + ui_px(8u), row_y + ui_px(16u),
                             "No PS/2 mouse detected",
