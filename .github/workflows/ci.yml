@@ -384,6 +384,12 @@ jobs:
             sleep 1
             printf 'sendkey esc\n'
             sleep 0.5
+            # The query had selected Mouse & Touchpad. Return to Display so
+            # the existing wallpaper-persistence test begins from page 1.
+            for step in {1..5}; do
+              printf 'sendkey up\n'
+              sleep 0.2
+            done
             printf 'sendkey esc\n'
             sleep 1
             printf 'mouse_move -20 -91\n'
@@ -557,6 +563,7 @@ jobs:
           grep -q 'SHELL_APP_OPEN Settings' build/desktop-capture-serial.log
           grep -q 'SHELL_SETTINGS_SEARCH query=touchpad count=1' build/desktop-capture-serial.log
           grep -q 'SHELL_SETTINGS_PAGE 6' build/desktop-capture-serial.log
+          grep -q 'SHELL_SETTINGS_PAGE 1' build/desktop-capture-serial.log
           test -s build/charisos-pointer-moved-preview.ppm
           test -s build/charisos-pointer-restored-preview.ppm
           python3 tools/verify-pointer-capture.py \
