@@ -43,7 +43,7 @@ static const settings_page_t settings_pages[] = {
         "Mouse & Touchpad",
         "Pointer speed, buttons, scrolling, gestures and touchpad behavior.",
         SETTINGS_PAGE_PARTIAL,
-        "PS/2 mouse input and pointer bounds are implemented. Per-device sensitivity, button remapping, gesture settings and touchpad configuration are not available."
+        "A detected PS/2 mouse supports a saved 50-200% pointer-speed setting. Button remapping, wheel configuration, gestures and touchpad controls are not available."
     },
     {
         SETTINGS_PAGE_KEYBOARD, SETTINGS_GROUP_DESKTOP_DEVICES,

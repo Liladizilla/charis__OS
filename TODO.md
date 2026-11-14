@@ -183,7 +183,8 @@ The current catalog and capability boundaries are documented in [docs/settings-a
 - [ ] Implement Display mode enumeration, resolution/refresh/orientation test-and-revert, night light and monitor arrangement only with a real display backend.
 - [ ] Implement dark/light styles, accent palettes, preview/fit/fill and additional bundled CC0 wallpapers.
 - [ ] Implement actual workspace, snap/tiling and screen-edge services before exposing their controls.
-- [ ] Implement device-backed mouse/touchpad, keyboard-layout, sound and power settings.
+- [x] Add detected-PS/2 pointer speed (50-200%, 25% steps), fixed-point movement remainder, FAT32 persistence and QEMU reboot validation.
+- [ ] Implement mouse button remapping, wheel settings, touchpad, keyboard-layout, sound and power services.
 - [ ] Implement application/default-handler registry, notification broker, local/online search providers and explicit per-app capabilities.
 - [ ] Implement secure identity, account/token storage, file/media sharing and wellbeing services.
 - [ ] Implement locale/time-zone, local user management, remote access, signed updates and rollback/recovery.

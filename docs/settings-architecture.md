@@ -177,7 +177,7 @@ This section is deliberately strict. The repository contains useful foundations,
 | Sound | PC-speaker beep path; HDA discovery/initialization is incomplete; general PCM playback is not supported | Partial driver foundation, no general sound settings |
 | Power | CPU idle uses HLT; power state API reports states; hibernate is explicitly not implemented and full ACPI suspend/resume is absent | Partial |
 | Multitasking | Real window manager supports bounded windows, focus, movement, resize, minimize, maximize/restore, taskbar and Alt+Tab | Implemented foundation; no virtual workspaces, overview or snap/tiling |
-| Mouse/touchpad | PS/2 mouse and cursor input work; no touchpad/device settings service | Partial |
+| Mouse/touchpad | Detected PS/2 mouse accepts persistent 50-200% pointer speed in 25% steps. Fixed-point remainder preserves small motion at lower settings; button remapping, wheel, gestures and touchpad settings remain unavailable | Partial |
 | Keyboard | PS/2 Set-1 scancode input and a fixed character map; no input-source/layout manager or special-character UI | Partial |
 | Accessibility | Text/UI scale options exist | Partial; other services absent |
 | Notifications/search/default apps | No full notification center, provider-based search or default-handler registry identified | Not implemented |

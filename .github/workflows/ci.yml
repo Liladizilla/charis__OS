@@ -502,6 +502,22 @@ jobs:
             sleep 2
             printf 'screendump build/charisos-settings-preview.ppm\n'
             sleep 1
+            # Verify a real PS/2 pointer-speed change on Mouse & Touchpad.
+            # From Display (page 1), five Down keys select page 6. Right
+            # increases 100% to 125%; five Up keys restore Display for the
+            # existing wallpaper and typography tests below.
+            for step in {1..5}; do
+              printf 'sendkey down\n'
+              sleep 0.2
+            done
+            printf 'sendkey right\n'
+            sleep 1
+            printf 'screendump build/charisos-settings-mouse-speed-preview.ppm\n'
+            sleep 1
+            for step in {1..5}; do
+              printf 'sendkey up\n'
+              sleep 0.2
+            done
             # Traverse the Settings catalog with real PS/2 arrow key events:
             # Display -> Appearance -> Display -> Multitasking -> Display.
             printf 'sendkey down\n'
@@ -618,6 +634,10 @@ jobs:
           test -s build/charisos-settings-preview.ppm
           test -s build/charisos-settings-appearance-preview.ppm
           test -s build/charisos-settings-adjusted-preview.ppm
+          test -s build/charisos-settings-mouse-speed-preview.ppm
+          grep -q 'SHELL_SETTINGS_PAGE 6' build/desktop-capture-serial.log
+          grep -q 'SHELL_MOUSE_SPEED_SELECTED 125' build/desktop-capture-serial.log
+          grep -q 'SHELL_SETTINGS_PAGE 1' build/desktop-capture-serial.log
           grep -q 'SHELL_SETTINGS_PAGE 2' build/desktop-capture-serial.log
           grep -q 'SHELL_SETTINGS_PAGE 5' build/desktop-capture-serial.log
           test -s build/charisos-desktop-scaled-preview.ppm
@@ -628,6 +648,7 @@ jobs:
           grep -qx 'font_scale=2' build/CHARISOS.CFG
           grep -qx 'ui_scale=120' build/CHARISOS.CFG
           grep -qx 'wallpaper=1' build/CHARISOS.CFG
+          grep -qx 'pointer_speed=125' build/CHARISOS.CFG
           grep -q 'SHELL_WALLPAPER_SELECTED 1' build/desktop-capture-serial.log
 
           # Reboot against the same disk and verify the kernel reloads the
@@ -657,7 +678,7 @@ jobs:
             -serial file:build/desktop-reboot-serial.log \
             -monitor stdio -display none \
             >build/desktop-reboot-qemu.log 2>&1
-          grep -q 'CONFIG_LOADED .*font_scale=2 ui_scale=120 wallpaper=1' build/desktop-reboot-serial.log
+          grep -q 'CONFIG_LOADED .*font_scale=2 ui_scale=120 wallpaper=1 pointer_speed=125' build/desktop-reboot-serial.log
           test -s build/charisos-settings-reloaded-preview.ppm
           grep -q 'CONFIG_SAVE OK .*font_scale=3 ui_scale=120' build/desktop-reboot-serial.log
           test -s build/charisos-settings-largest-preview.ppm
@@ -742,6 +763,7 @@ jobs:
             build/charisos-settings-preview.ppm
             build/charisos-settings-appearance-preview.ppm
             build/charisos-settings-adjusted-preview.ppm
+            build/charisos-settings-mouse-speed-preview.ppm
             build/charisos-desktop-scaled-preview.ppm
             build/charisos-calculator-preview.ppm
             build/charisos-settings-reloaded-preview.ppm

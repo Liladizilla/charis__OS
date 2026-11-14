@@ -182,6 +182,7 @@ static void settings_move_page(int direction);
 static void settings_reveal_page(settings_page_id_t id);
 static void settings_select_page(settings_page_id_t id);
 static void settings_adjust_wallpaper(int direction);
+static void settings_adjust_mouse_speed(int direction);
 static int settings_nav_hit_page(window_t* win, int mx, int my);
 static void settings_reset_search(void);
 static bool settings_handle_search_key(u8 base, bool extended, bool pressed);
@@ -514,6 +515,12 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
             } else if (pressed && extended && base == 0x4Du &&
                        settings_active_page_id == SETTINGS_PAGE_APPEARANCE) {
                 settings_adjust_wallpaper(1);
+            } else if (pressed && extended && base == 0x4Bu &&
+                       settings_active_page_id == SETTINGS_PAGE_MOUSE_TOUCHPAD) {
+                settings_adjust_mouse_speed(-1);
+            } else if (pressed && extended && base == 0x4Du &&
+                       settings_active_page_id == SETTINGS_PAGE_MOUSE_TOUCHPAD) {
+                settings_adjust_mouse_speed(1);
             } else if (pressed && !extended && base == KEY_ESCAPE) {
                 if (settings_font_menu_open) settings_font_menu_open = false;
                 else {
@@ -1456,6 +1463,26 @@ static void settings_adjust_wallpaper(int direction) {
     (void)config_save(CONFIG_FILE_PATH);
     serial_printf("SHELL_WALLPAPER_SELECTED %d\n", selected);
 }
+static void settings_adjust_mouse_speed(int direction) {
+    if (!direction || !mouse_is_available()) return;
+
+    int current = (int)mouse_get_speed_percent();
+    int next = current +
+               (direction < 0 ? -(int)MOUSE_SPEED_STEP_PERCENT
+                              : (int)MOUSE_SPEED_STEP_PERCENT);
+    if (next < (int)MOUSE_SPEED_MIN_PERCENT)
+        next = (int)MOUSE_SPEED_MIN_PERCENT;
+    if (next > (int)MOUSE_SPEED_MAX_PERCENT)
+        next = (int)MOUSE_SPEED_MAX_PERCENT;
+    if (next == current) return;
+
+    mouse_set_speed_percent((u32)next);
+    int applied = (int)mouse_get_speed_percent();
+    config_set_int("pointer_speed", applied);
+    (void)config_save(CONFIG_FILE_PATH);
+    serial_printf("SHELL_MOUSE_SPEED_SELECTED %d\n", applied);
+}
+
 static u32 settings_rail_width(void) {
     u32 width = ui_px(164), measured = 0;
     gfx_text_size("Search settings", &measured, NULL);
@@ -2134,6 +2161,84 @@ static void draw_settings_window(window_t* win) {
         u32 note_y = first_row_y + row_h + ui_px(8);
         settings_draw_wrapped_text(content_x, note_y, content_w,
             page->state_detail, CHARIS_UI_MUTED, 3);
+    } else if (page->id == SETTINGS_PAGE_MOUSE_TOUCHPAD) {
+        static const char* const speed_labels[] = {
+            "50%", "75%", "100%", "125%", "150%", "175%", "200%"
+        };
+        u32 row_y = first_row_y;
+        u32 row_draw_h = row_h > ui_px(10) ? row_h - ui_px(10) : 1u;
+        u32 row_w = cw > rail_w + ui_px(30)
+                  ? cw - rail_w - ui_px(30) : 1u;
+        fb_fill_rect(content_x - ui_px(10), row_y, row_w,
+                     row_draw_h, CHARIS_UI_SURFACE);
+        fb_draw_rect(content_x - ui_px(10), row_y, row_w,
+                     row_draw_h, CHARIS_UI_BORDER);
+
+        if (mouse_is_available()) {
+            u32 label_x = content_x + ui_px(8);
+            u32 label_y = row_y + ui_px(14);
+            fb_set_clip(label_x, row_y + ui_px(8),
+                        control_x > label_x + ui_px(12)
+                          ? control_x - label_x - ui_px(12) : 1u,
+                        row_draw_h > ui_px(16) ? row_draw_h - ui_px(16) : 1u);
+            gfx_draw_string(label_x, label_y, "Pointer speed",
+                            CHARIS_UI_TEXT, FB_TRANSPARENT);
+            fb_reset_clip();
+
+            u32 by = row_y + (row_h - button_h) / 2u;
+            fb_fill_rect(control_x, by, button_w, button_h,
+                         CHARIS_UI_PANEL_RAISED);
+            fb_draw_rect(control_x, by, button_w, button_h, CHARIS_UI_BORDER);
+            fb_fill_rect(plus_x, by, button_w, button_h,
+                         CHARIS_UI_ACCENT_SURFACE);
+            fb_draw_rect(plus_x, by, button_w, button_h,
+                         CHARIS_UI_BORDER_STRONG);
+
+            u32 minus_w = 0, glyph_h = 0, plus_w = 0;
+            gfx_text_size("-", &minus_w, &glyph_h);
+            gfx_text_size("+", &plus_w, NULL);
+            u32 glyph_y = by + (button_h > glyph_h
+                          ? (button_h - glyph_h) / 2u : 0u);
+            gfx_draw_string(control_x + (button_w > minus_w
+                            ? (button_w - minus_w) / 2u : 0u),
+                            glyph_y, "-", CHARIS_UI_TEXT, FB_TRANSPARENT);
+            gfx_draw_string(plus_x + (button_w > plus_w
+                            ? (button_w - plus_w) / 2u : 0u),
+                            glyph_y, "+", CHARIS_UI_TEXT, FB_TRANSPARENT);
+
+            u32 speed = mouse_get_speed_percent();
+            if (speed < MOUSE_SPEED_MIN_PERCENT ||
+                speed > MOUSE_SPEED_MAX_PERCENT)
+                speed = 100u;
+            u32 speed_index = (speed - MOUSE_SPEED_MIN_PERCENT) /
+                              MOUSE_SPEED_STEP_PERCENT;
+            u32 value_x = control_x + button_w + ui_px(8u);
+            u32 value_right = plus_x > ui_px(8u) ? plus_x - ui_px(8u) : plus_x;
+            u32 value_w = value_right > value_x ? value_right - value_x : 1u;
+            u32 value_text_w = 0, value_text_h = 0;
+            gfx_text_monospace_size(speed_labels[speed_index],
+                                    &value_text_w, &value_text_h, 1u);
+            fb_set_clip(value_x, by, value_w, button_h);
+            gfx_draw_monospace_string_scaled(
+                value_x + (value_w > value_text_w
+                           ? (value_w - value_text_w) / 2u : 0u),
+                by + (button_h > value_text_h
+                      ? (button_h - value_text_h) / 2u : 0u),
+                speed_labels[speed_index], CHARIS_UI_ACCENT,
+                FB_TRANSPARENT, 1u);
+            fb_reset_clip();
+        } else {
+            gfx_draw_string(content_x + ui_px(8u), row_y + ui_px(16u),
+                            "No PS/2 mouse detected",
+                            CHARIS_UI_WARNING, FB_TRANSPARENT);
+        }
+
+        u32 note_y = first_row_y + row_h + ui_px(8u);
+        const char* detail = mouse_is_available()
+            ? page->state_detail
+            : "No supported PS/2 pointer is detected. Touchpad configuration is unavailable.";
+        settings_draw_wrapped_text(content_x, note_y, content_w,
+                                   detail, CHARIS_UI_MUTED, 4);
     } else {
         u32 card_y = first_row_y;
         u32 footer_top = y + ch - settings_footer_reserved() - ui_px(12);
@@ -2291,6 +2396,23 @@ static bool settings_handle_window_click(window_t* win, int mx, int my) {
         if (direction && my >= (int)first_y &&
             my < (int)(first_y + row_height))
             settings_adjust_wallpaper(direction);
+        return true;
+    }
+
+    if (active->id == SETTINGS_PAGE_MOUSE_TOUCHPAD) {
+        if (!mouse_is_available()) return true;
+        u32 button_w = settings_button_width();
+        u32 plus_x = x + cw - button_w - ui_px(24u);
+        u32 control_x = plus_x - button_w - ui_px(8u);
+        u32 first_y = y + settings_title_height() + ui_px(92u);
+        u32 row_height = settings_row_height_for(ch);
+        int direction = mx >= (int)plus_x &&
+                        mx < (int)(plus_x + button_w) ? 1 :
+                        mx >= (int)control_x &&
+                        mx < (int)(control_x + button_w) ? -1 : 0;
+        if (direction && my >= (int)first_y &&
+            my < (int)(first_y + row_height))
+            settings_adjust_mouse_speed(direction);
         return true;
     }
 
