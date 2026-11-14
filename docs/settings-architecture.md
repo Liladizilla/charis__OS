@@ -169,7 +169,7 @@ This section is deliberately strict. The repository contains useful foundations,
 | Area | Current evidence | Status |
 |---|---|---|
 | Display modes | Bootloader-provided framebuffer; no mode enumeration, EDID pipeline, refresh-rate control or rotation service | Needs display driver/compositor work |
-| Multi-monitor | A four-entry monitor data structure exists, but initialization uses a fixed fallback and there is no real monitor discovery/arrangement pipeline | Placeholder, not multi-monitor support |
+| Multi-monitor | No monitor discovery, independent scanout or monitor arrangement API is implemented; the kernel reports only its validated boot framebuffer | Not implemented |
 | Settings catalog | 20 immutable pages; direct mouse and Up/Down navigation; F3/click-to-search, bounded case-insensitive filtering, Backspace editing, empty-result state and Escape reset | Implemented; QEMU verifies “touchpad” selects Mouse & Touchpad |
 | Font and UI scale | Font family (Inter, Monospace, Bitmap serif), text presets (100/200/300%) and UI scale presets (80/100/120%) are persisted; QEMU exercises the 200% and 300% layouts and preference restoration | Implemented foundation |
 | Appearance and wallpaper | Eight built-in backgrounds are selectable and persisted: four procedural dark presets and four CC0 photographs. A bounded CWP2 Multiboot2 module carries stable IDs 0, 5, 6 and 7; CWP1 remains backward-compatible. The renderer validates every directory entry, ID, dimension, stride, payload bound and image overlap before drawing | Gallery and image rendering implemented; live preview, fit/fill/center, themes and accent palettes remain unfinished |
