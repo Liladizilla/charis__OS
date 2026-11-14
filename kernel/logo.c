@@ -70,6 +70,7 @@ static const char* boot_stage = "INITIALIZING KERNEL";
 
 void logo_set_stage(const char* stage) {
     if (stage && *stage) boot_stage = stage;
+    if (g_framebuffer.initialized) logo_draw_gfx_centered();
 }
 
 static u32 emblem_scale(void) {
