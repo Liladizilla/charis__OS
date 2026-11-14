@@ -1,23 +1,8 @@
-/* logo.c - CharisOS boot banner
+/* logo.c - CharisOS startup identity.
  *
- * One set of lines serves both consoles so they cannot drift apart:
- * logo_print() writes them to the VGA text console, logo_draw_gfx() renders
- * them to the linear framebuffer.
- *
- * ENCODING -- read before editing
- * ------------------------------
- * Both consoles take one byte per character. The text console writes straight
- * into the VGA text buffer, and the framebuffer renderer looks glyphs up in
- * the built-in font by byte value. So these strings carry the raw single-byte
- * CP437 code points, NOT the UTF-8 encodings of the same glyphs: a UTF-8 '╔'
- * is three bytes (E2 95 94) and would render as three unrelated characters.
- *
- * Every non-ASCII glyph is therefore written as an explicit \xNN escape, so
- * the output cannot be altered by the source file's encoding, line endings, or
- * an editor. The mapping:
- *
- *   ╔ 0xC9   ═ 0xCD   ╗ 0xBB   ║ 0xBA
- *   ╚ 0xC8   ╝ 0xBC   █ 0xDB
+ * Text-only systems retain the CP437 banner as a fallback. Graphical systems
+ * render the official transparent C-and-sword emblem from a small embedded
+ * RLE asset; startup never depends on a filesystem image decoder.
  */
 
 #include <kernel/logo.h>
@@ -73,8 +58,6 @@ static const char* const LOGO_LINES[] = {
 };
 
 #define LOGO_LINES_N ((u32)(sizeof(LOGO_LINES) / sizeof(LOGO_LINES[0])))
-#define LOGO_CELL_H  16
-#define LOGO_CELL_W  8
 
 /* Text console. */
 void logo_print(void) {
