@@ -90,6 +90,8 @@ static u32 menu_item_height(void) {
 
 /* Layout. */
 #define CURSOR_BLINK  400   /* ms */
+#define SETTINGS_SEARCH_QUERY_CAPACITY 40u
+#define SETTINGS_SEARCH_RESULT_CAPACITY 20u
 
 typedef struct {
     const char* label;
@@ -111,6 +113,11 @@ static settings_page_id_t settings_active_page_id = SETTINGS_PAGE_DISPLAY;
 static u32 settings_nav_offset;
 static int settings_hover_page_index = -1;
 static bool settings_font_menu_open;
+static char settings_search_query[SETTINGS_SEARCH_QUERY_CAPACITY];
+static u32 settings_search_length;
+static settings_page_id_t settings_search_results[SETTINGS_SEARCH_RESULT_CAPACITY];
+static usize settings_search_result_count;
+static bool settings_search_focused;
 
 static const char* const NOTICE_LINE_1[] = {
     "", "", "", "",
@@ -176,6 +183,8 @@ static void settings_reveal_page(settings_page_id_t id);
 static void settings_select_page(settings_page_id_t id);
 static void settings_adjust_wallpaper(int direction);
 static int settings_nav_hit_page(window_t* win, int mx, int my);
+static void settings_reset_search(void);
+static bool settings_handle_search_key(u8 base, bool extended, bool pressed);
 static void draw_about_window(window_t* win);
 static bool about_handle_window_click(window_t* win, int mx, int my);
 
@@ -490,7 +499,12 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
             (void)browser_handle_key(base, pressed);
             break;
         case SHELL_APP_SETTINGS:
-            if (pressed && extended && base == 0x48u) {
+            if (pressed && !extended && base == KEY_F3) {
+                settings_search_focused = !settings_search_focused;
+                settings_font_menu_open = false;
+            } else if (settings_search_focused) {
+                (void)settings_handle_search_key(base, extended, pressed);
+            } else if (pressed && extended && base == 0x48u) {
                 settings_move_page(-1);
             } else if (pressed && extended && base == 0x50u) {
                 settings_move_page(1);
@@ -502,7 +516,10 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
                 settings_adjust_wallpaper(1);
             } else if (pressed && !extended && base == KEY_ESCAPE) {
                 if (settings_font_menu_open) settings_font_menu_open = false;
-                else settings_open = false;
+                else {
+                    settings_reset_search();
+                    settings_open = false;
+                }
             } else if (pressed && !extended && base == 0x40u) {
                 int value = config_get_int("font_scale", 1) + 1;
                 if (value > 3) value = 3;
@@ -656,7 +673,10 @@ static void shell_open_app(shell_app_id_t id) {
         case SHELL_APP_FILES: files_open(); break;
         case SHELL_APP_CALCULATOR: calculator_ui_open(); break;
         case SHELL_APP_BROWSER: browser_open(); break;
-        case SHELL_APP_SETTINGS: settings_open = true; break;
+        case SHELL_APP_SETTINGS:
+            settings_reset_search();
+            settings_open = true;
+            break;
         case SHELL_APP_ABOUT:
             notice_item = 4;
             notice_open = true;
@@ -1313,14 +1333,100 @@ static void settings_select_page(settings_page_id_t id) {
     serial_printf("SHELL_SETTINGS_PAGE %u\n", (u32)id);
 }
 
+static usize settings_visible_page_count(void) {
+    return settings_search_length
+        ? settings_search_result_count : settings_catalog_count();
+}
+
+static const settings_page_t* settings_visible_page_at(usize index) {
+    if (!settings_search_length) return settings_catalog_at(index);
+    if (index >= settings_search_result_count) return NULL;
+    return settings_catalog_find(settings_search_results[index]);
+}
+
+static void settings_search_refresh(void) {
+    settings_search_result_count = settings_search_length
+        ? settings_catalog_search(settings_search_query, settings_search_results,
+                                  SETTINGS_SEARCH_RESULT_CAPACITY)
+        : 0u;
+    settings_nav_offset = 0;
+    settings_hover_page_index = -1;
+
+    usize count = settings_visible_page_count();
+    bool active_visible = false;
+    for (usize i = 0; i < count; i++) {
+        const settings_page_t* page = settings_visible_page_at(i);
+        if (page && page->id == settings_active_page_id) {
+            active_visible = true;
+            break;
+        }
+    }
+    if (count && !active_visible) {
+        const settings_page_t* first = settings_visible_page_at(0);
+        if (first) settings_select_page(first->id);
+    }
+    settings_reveal_page(settings_active_page_id);
+    serial_printf("SHELL_SETTINGS_SEARCH query=%s count=%u\\n",
+                  settings_search_query, (u32)count);
+}
+
+static void settings_reset_search(void) {
+    settings_search_query[0] = 0;
+    settings_search_length = 0;
+    settings_search_result_count = 0;
+    settings_search_focused = false;
+    settings_nav_offset = 0;
+    settings_hover_page_index = -1;
+    settings_reveal_page(settings_active_page_id);
+}
+
+static bool settings_handle_search_key(u8 base, bool extended, bool pressed) {
+    if (!pressed) return true;
+
+    if (extended && base == KEY_UP) {
+        settings_move_page(-1);
+        return true;
+    }
+    if (extended && base == KEY_DOWN) {
+        settings_move_page(1);
+        return true;
+    }
+    if (!extended && base == KEY_ESCAPE) {
+        settings_reset_search();
+        return true;
+    }
+    if (!extended && base == KEY_ENTER) {
+        settings_search_focused = false;
+        return true;
+    }
+    if (!extended && base == KEY_BACKSPACE) {
+        if (settings_search_length) {
+            settings_search_length--;
+            settings_search_query[settings_search_length] = 0;
+            settings_search_refresh();
+        }
+        return true;
+    }
+    if (!extended) {
+        char value = keyboard_scancode_set1[base];
+        if (value >= ' ' && value <= '~' &&
+            settings_search_length < SETTINGS_SEARCH_QUERY_CAPACITY - 1u) {
+            settings_search_query[settings_search_length++] = value;
+            settings_search_query[settings_search_length] = 0;
+            settings_search_refresh();
+        }
+    }
+    return true;
+}
+
 static void settings_move_page(int direction) {
-    usize count = settings_catalog_count();
+    usize count = settings_visible_page_count();
     if (!count || !direction) return;
 
     usize current = 0;
     bool found = false;
     for (usize i = 0; i < count; i++) {
-        const settings_page_t* page = settings_catalog_at(i);
+        const settings_page_t* page = settings_visible_page_at(i);
         if (page && page->id == settings_active_page_id) {
             current = i;
             found = true;
@@ -1331,7 +1437,7 @@ static void settings_move_page(int direction) {
     else if (direction < 0) current = current ? current - 1u : count - 1u;
     else current = (current + 1u) % count;
 
-    const settings_page_t* page = settings_catalog_at(current);
+    const settings_page_t* page = settings_visible_page_at(current);
     if (page) settings_select_page(page->id);
 }
 
@@ -1352,7 +1458,7 @@ static void settings_adjust_wallpaper(int direction) {
 }
 static u32 settings_rail_width(void) {
     u32 width = ui_px(164), measured = 0;
-    gfx_text_size("PREFERENCES", &measured, NULL);
+    gfx_text_size("Search settings", &measured, NULL);
     if (measured > width) width = measured;
     for (usize i = 0; i < settings_catalog_count(); i++) {
         const settings_page_t* page = settings_catalog_at(i);
@@ -1368,17 +1474,24 @@ static u32 settings_rail_width(void) {
 }
 
 static void settings_reveal_page(settings_page_id_t id) {
-    usize count = settings_catalog_count();
+    usize count = settings_visible_page_count();
     usize index = count;
     for (usize i = 0; i < count; i++) {
-        const settings_page_t* page = settings_catalog_at(i);
+        const settings_page_t* page = settings_visible_page_at(i);
         if (page && page->id == id) { index = i; break; }
     }
-    if (index >= count) return;
+    if (index >= count) {
+        settings_nav_offset = 0;
+        return;
+    }
 
     u32 visible = settings_nav_visible_rows(
         shell_app_windows[SHELL_APP_SETTINGS]);
     if (visible > count) visible = (u32)count;
+    if (!visible) {
+        settings_nav_offset = 0;
+        return;
+    }
     if (index < settings_nav_offset)
         settings_nav_offset = (u32)index;
     else if (index >= (usize)settings_nav_offset + visible)
@@ -1405,7 +1518,7 @@ static int settings_nav_hit_page(window_t* win, int mx, int my) {
     if (within >= settings_nav_height()) return -1;
 
     usize index = (usize)settings_nav_offset + relative / step;
-    if (index >= settings_catalog_count()) return -1;
+    if (index >= settings_visible_page_count()) return -1;
     return (int)index;
 }
 
@@ -1497,23 +1610,64 @@ static void settings_draw_navigation(u32 x, u32 y, u32 rail_width,
                ? total_height - title_height - ui_px(2) : 1u;
     fb_set_clip(rail_x, clip_y, rail_width, clip_h);
 
-    u32 heading_y = y + title_height + ui_px(10);
-    gfx_draw_string(x + ui_px(18), heading_y,
-                    "PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
+    u32 search_x = x + ui_px(8);
+    u32 search_y = y + title_height + ui_px(4);
+    u32 search_h = text_height() + ui_px(8);
+    u32 search_w = rail_width > ui_px(16) ? rail_width - ui_px(16) : 1u;
+    fb_fill_rect(search_x, search_y, search_w, search_h,
+                 settings_search_focused ? CHARIS_UI_ACCENT_SURFACE
+                                         : CHARIS_UI_PANEL);
+    fb_draw_rect(search_x, search_y, search_w, search_h,
+                 settings_search_focused ? CHARIS_UI_BORDER_STRONG
+                                         : CHARIS_UI_BORDER);
+    const char* placeholder = gfx_text_get_scale() >= 2u
+                            ? "Search..." : "Search settings";
+    const char* shown = settings_search_length
+                      ? settings_search_query : placeholder;
+    u32 search_text_x = search_x + ui_px(8);
+    u32 search_text_y = search_y + (search_h > text_height()
+                          ? (search_h - text_height()) / 2u : 0u);
+    fb_set_clip(search_text_x, search_y,
+                search_w > ui_px(12) ? search_w - ui_px(12) : 1u,
+                search_h);
+    gfx_draw_string(search_text_x, search_text_y, shown,
+                    settings_search_length ? CHARIS_UI_TEXT : CHARIS_UI_MUTED,
+                    FB_TRANSPARENT);
+    if (settings_search_focused) {
+        u32 caret_width = 0;
+        gfx_text_size(shown, &caret_width, NULL);
+        u32 caret_x = search_text_x + caret_width + ui_px(2);
+        if (caret_x < search_x + search_w - ui_px(4))
+            fb_fill_rect(caret_x, search_y + ui_px(5), ui_px(1),
+                         search_h > ui_px(10) ? search_h - ui_px(10) : 1u,
+                         CHARIS_UI_ACCENT);
+    }
+    fb_reset_clip();
 
     u32 nav_top = y + settings_nav_top_offset();
     u32 nav_height = settings_nav_height();
     u32 nav_step = settings_nav_step();
-    usize count = settings_catalog_count();
+    usize count = settings_visible_page_count();
     u32 visible = settings_nav_visible_rows(shell_app_windows[SHELL_APP_SETTINGS]);
     usize end = (usize)settings_nav_offset + visible;
     if (end > count) end = count;
 
+    if (!count && settings_search_length) {
+        const char* empty_label = gfx_text_get_scale() >= 2u
+                                ? "No matches" : "No matching settings";
+        fb_set_clip(x + ui_px(16), nav_top,
+                    rail_width > ui_px(32) ? rail_width - ui_px(32) : 1u,
+                    nav_height * 2u);
+        gfx_draw_string(x + ui_px(22), nav_top + ui_px(3), empty_label,
+                        CHARIS_UI_MUTED, FB_TRANSPARENT);
+        fb_reset_clip();
+    }
+
     const settings_page_t* previous = NULL;
     if (settings_nav_offset)
-        previous = settings_catalog_at(settings_nav_offset - 1u);
+        previous = settings_visible_page_at(settings_nav_offset - 1u);
     for (usize i = settings_nav_offset; i < end; i++) {
-        const settings_page_t* page = settings_catalog_at(i);
+        const settings_page_t* page = settings_visible_page_at(i);
         if (!page) continue;
         u32 row_y = nav_top + (u32)(i - settings_nav_offset) * nav_step;
         if (previous && previous->group != page->group)
@@ -2063,15 +2217,30 @@ static bool settings_handle_window_click(window_t* win, int mx, int my) {
     u32 rail_w = settings_rail_width();
     if (rail_w > cw / 2u) rail_w = cw / 2u;
     if (mx < (int)(x + rail_w)) {
+        u32 search_x = x + ui_px(8);
+        u32 search_y = y + settings_title_height() + ui_px(4);
+        u32 search_w = rail_w > ui_px(16) ? rail_w - ui_px(16) : 1u;
+        u32 search_h = text_height() + ui_px(8);
+        if (mx >= (int)search_x &&
+            mx < (int)(search_x + search_w) &&
+            my >= (int)search_y &&
+            my < (int)(search_y + search_h)) {
+            settings_search_focused = true;
+            settings_font_menu_open = false;
+            return true;
+        }
+
+        settings_search_focused = false;
         int page_index = settings_nav_hit_page(win, mx, my);
         if (page_index >= 0) {
             const settings_page_t* page =
-                settings_catalog_at((usize)page_index);
+                settings_visible_page_at((usize)page_index);
             if (page) settings_select_page(page->id);
         }
         return true;
     }
 
+    settings_search_focused = false;
     u32 first_row_y = y + settings_title_height() + ui_px(92u);
     u32 row_h = settings_row_height_for(ch);
     if (my < (int)first_row_y) return true;
@@ -2213,6 +2382,7 @@ static void shell_close_focused_app(void) {
         case SHELL_APP_CALCULATOR: calculator_ui_close(); break;
         case SHELL_APP_BROWSER: browser_close(); break;
         case SHELL_APP_SETTINGS:
+            settings_reset_search();
             settings_open = false;
             settings_font_menu_open = false;
             break;
