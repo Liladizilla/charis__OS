@@ -192,15 +192,12 @@ static const char* shell_app_title(shell_app_id_t id) {
 }
 
 static u32 shell_app_titlebar_height(shell_app_id_t id) {
-    switch (id) {
-        case SHELL_APP_TERMINAL: return terminal_titlebar_height();
-        case SHELL_APP_FILES: return files_titlebar_height();
-        case SHELL_APP_CALCULATOR: return calculator_ui_titlebar_height();
-        case SHELL_APP_BROWSER: return browser_titlebar_height();
-        case SHELL_APP_SETTINGS: return settings_title_height();
-        case SHELL_APP_ABOUT: return about_titlebar_height();
-        default: return WINDOW_TITLEBAR_HEIGHT;
-    }
+    (void)id;
+    u32 title_width = 0, title_height = 0;
+    gfx_text_size("CharisOS", &title_width, &title_height);
+    u32 base = ui_px(32u);
+    u32 readable = title_height + ui_px(8u);
+    return base > readable ? base : readable;
 }
 
 static void shell_draw_resize_grip(const window_t* win) {

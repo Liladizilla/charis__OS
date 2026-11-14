@@ -102,11 +102,9 @@ static void browser_geometry(u32* x, u32* y, u32* w, u32* h) {
 }
 
 u32 browser_titlebar_height(void) {
-    u32 text_height = 0;
-    gfx_text_size("Browser", NULL, &text_height);
-    u32 base = gfx_ui_scale(32u);
-    u32 readable = text_height + gfx_ui_scale(8u);
-    return base > readable ? base : readable;
+    /* Kept dependency-free for the standalone HTML/parser host test.
+     * The shell computes the shared text-aware height when creating windows. */
+    return 32u;
 }
 
 void browser_set_bounds(u32 x, u32 y, u32 width, u32 height) {
