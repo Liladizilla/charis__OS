@@ -172,7 +172,7 @@ This section is deliberately strict. The repository contains useful foundations,
 | Multi-monitor | A four-entry monitor data structure exists, but initialization uses a fixed fallback and there is no real monitor discovery/arrangement pipeline | Placeholder, not multi-monitor support |
 | Settings catalog | 20 immutable pages; direct mouse and Up/Down navigation; F3/click-to-search, bounded case-insensitive filtering, Backspace editing, empty-result state and Escape reset | Implemented; QEMU verifies “touchpad” selects Mouse & Touchpad |
 | Font and UI scale | Font family (Inter, Monospace, Bitmap serif), text presets (100/200/300%) and UI scale presets (80/100/120%) are persisted; QEMU exercises the 200% and 300% layouts and preference restoration | Implemented foundation |
-| Appearance and wallpaper | Five built-in backgrounds can be selected with pointer or keyboard and persisted. Only the Charis default currently uses the CC0 Lake Mountain Landscape photograph; Ember, Forest, Dusk and Mono are procedural dark styles. A validated CWP1 Multiboot2 RGB565 wallpaper module is available | Partial; a multi-photo CC0 gallery, visual preview, fit/fill/center, themes and accent palettes remain unfinished |
+| Appearance and wallpaper | Eight built-in backgrounds are selectable and persisted: four procedural dark presets and four CC0 photographs. A bounded CWP2 Multiboot2 module carries stable IDs 0, 5, 6 and 7; CWP1 remains backward-compatible. The renderer validates every directory entry, ID, dimension, stride, payload bound and image overlap before drawing | Gallery and image rendering implemented; live preview, fit/fill/center, themes and accent palettes remain unfinished |
 | Night light/color profiles | No display color-transform or calibration service identified | Not implemented |
 | Sound | PC-speaker beep path; HDA discovery/initialization is incomplete; general PCM playback is not supported | Partial driver foundation, no general sound settings |
 | Power | CPU idle uses HLT; power state API reports states; hibernate is explicitly not implemented and full ACPI suspend/resume is absent | Partial |
@@ -197,7 +197,7 @@ The UI must not expose unsupported settings as enabled. For a device-dependent c
 - [x] Render one continuous selection list with direct pointer page selection and keyboard Up/Down navigation.
 - [x] Add real Display typography controls and persistent built-in Appearance background selection.
 - [x] Add a visible search field with F3/click focus, printable input, Backspace, filtered Up/Down navigation, no-results state and Escape reset; QEMU verifies a unique “touchpad” search result.
-- [ ] Add a multi-photo CC0 wallpaper collection with per-image metadata and bounded CWP2 boot-module validation; the current module carries one photograph.
+- [x] Add a multi-photo CC0 wallpaper collection with source/license metadata, pinned source hashes, stable IDs and bounded CWP2 boot-module validation.
 - [ ] Extend the catalog into a typed control registry with type, range/enum, default, owner, capability requirement and persistence policy.
 - [ ] Add a capability query path so device pages render only controls supported by detected hardware and services.
 - [ ] Add a central apply/read-back/persist/rollback transaction for mutable settings.
@@ -206,7 +206,7 @@ The UI must not expose unsupported settings as enabled. For a device-dependent c
 
 ### S1 — Real desktop preferences
 - Appearance styles and accent colors backed by the shared UI palette.
-- Expand the current built-in background selector into multiple bundled CC0 photographic wallpapers, with preview, fit/fill/center and safe fallback.
+- [x] Expand the built-in background selector into four bundled CC0 photographs plus four procedural presets, with safe fallback.\n- [ ] Add live wallpaper preview and fit/fill/center modes.
 - Desktop/session switching controls, workspace primitives, app switching and screen-edge actions.
 - Accessibility controls that can be fully honored by the current renderer and input stack.
 - QEMU screenshots at each supported font/UI scale and framebuffer size.
