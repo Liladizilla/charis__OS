@@ -1453,15 +1453,19 @@ static void draw_settings_window(window_t* win) {
                         state_y + text_height() + ui_px(8),
                         settings_page_state_label(page->state),
                         state_color, FB_TRANSPARENT);
-        settings_draw_wrapped_text(content_x + ui_px(8),
-            state_y + text_height() * 2u + ui_px(20),
-            content_w > ui_px(20) ? content_w - ui_px(20) : 1u,
-            page->state_detail, CHARIS_UI_TEXT, 5);
-        settings_draw_wrapped_text(content_x + ui_px(8),
-            card_y + card_h - text_height() - ui_px(10),
-            content_w > ui_px(20) ? content_w - ui_px(20) : 1u,
-            "Only controls backed by a working OS service are enabled.",
-            CHARIS_UI_MUTED, 1);
+        u32 detail_x = content_x + ui_px(8);
+        u32 detail_y = state_y + text_height() * 2u + ui_px(20);
+        u32 detail_bottom = card_y + card_h - ui_px(10);
+        u32 detail_available = detail_bottom > detail_y
+                             ? detail_bottom - detail_y : 0u;
+        u32 detail_line_step = text_height() + ui_px(4);
+        if (detail_line_step && detail_available >= detail_line_step) {
+            u32 detail_lines = detail_available / detail_line_step;
+            if (detail_lines > 5u) detail_lines = 5u;
+            settings_draw_wrapped_text(detail_x, detail_y,
+                content_w > ui_px(20) ? content_w - ui_px(20) : 1u,
+                page->state_detail, CHARIS_UI_TEXT, detail_lines);
+        }
     }
 
     u32 footer_y = y + ch - ui_px(12) - text_height();
