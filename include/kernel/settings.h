@@ -63,6 +63,11 @@ usize settings_catalog_count(void);
 const settings_page_t* settings_catalog_at(usize index);
 const settings_page_t* settings_catalog_find(settings_page_id_t id);
 
+/* Group-aware iteration keeps navigation in canonical catalog order. */
+usize settings_catalog_group_count(settings_group_t group);
+const settings_page_t* settings_catalog_group_at(settings_group_t group,
+                                                  usize index);
+
 /* Returns the number of matching IDs written, capped at capacity.
  * A NULL query, result buffer or zero capacity returns zero. */
 usize settings_catalog_search(const char* query,
