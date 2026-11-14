@@ -53,7 +53,6 @@ int main(void) {
     g_framebuffer.width = 1024;
     g_framebuffer.height = 768;
     logo_set_stage("TEST BOOT STAGE");
-    logo_draw_gfx_centered();
 
     failures += check(fill_calls > 100, "emblem raster must produce visible pixel runs");
     failures += check(outline_calls == 1, "splash panel outline drawn exactly once");
