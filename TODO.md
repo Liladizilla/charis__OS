@@ -96,7 +96,7 @@
 - [ ] Keep text-only and unsupported-framebuffer fallback paths usable
 
 ## Phase 8: Display & Orientation (PARTIAL / PLACEHOLDER AUDIT REQUIRED)
-- [ ] Remove the fake 640x480 monitor record and 0xA0000 framebuffer pointer from display.c; use the validated boot framebuffer as the single source of truth
+- [x] Remove the fake 640x480 monitor record, 0xA0000 pointer and unused multi-monitor placeholder API; expose only the validated boot framebuffer's address, dimensions, pitch and pixel format
 - [ ] Preserve actual framebuffer pitch, pixel format, dimensions and physical mapping throughout compositor and display APIs
 - [ ] Enumerate and expose only modes reported by firmware/native display drivers
 - [ ] Add validated EDID monitor identity, native resolution and supported timing discovery
@@ -425,7 +425,7 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 - `kernel/irq.c`: `pic_init`, `pic_send_eoi`, `pic_mask_irq`, `pic_unmask_irq`; EOI added to timer and keyboard handlers
 - `kernel/input.c`: mouse button state tracking; `wm_process_mouse` for window dragging
 - `kernel/services.c`: background service manager (not yet reflected in a TODO phase)
-- `kernel/display.c`: multi-monitor support (up to 4 displays; not yet in TODO)
+- `kernel/display.c`: validated primary boot-framebuffer metadata only; EDID discovery, mode-setting and multi-monitor scanout remain planned
 - `kernel/power.c`: power state management (idle, sleep, shutdown; not yet in TODO)
 
 > PROGRESS.md was removed on 2026-10-05. TODO.md is the single source of truth.
