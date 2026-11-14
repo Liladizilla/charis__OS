@@ -151,6 +151,9 @@ static window_t* shell_app_windows[SHELL_APP_COUNT];
 static int desktop_hover_shortcut = -1;
 static char menu_search_query[40];
 static u32 menu_search_length;
+static bool desktop_context_menu_open;
+static u32 desktop_context_menu_x, desktop_context_menu_y;
+static int desktop_context_hover = -1;
 static window_t* shell_drag_window;
 static int shell_drag_offset_x, shell_drag_offset_y;
 static window_t* shell_resize_window;
@@ -996,6 +999,124 @@ static void shell_menu_handle_character(char key) {
         menu_search_query[menu_search_length++] = key;
         menu_search_query[menu_search_length] = 0;
         ui.needs_redraw = true;
+    }
+}
+
+static const char* const DESKTOP_CONTEXT_ITEMS[] = {
+    "New folder (read-only)",
+    "Change wallpaper",
+    "Display settings",
+    "About CharisOS"
+};
+#define DESKTOP_CONTEXT_COUNT ((u32)(sizeof(DESKTOP_CONTEXT_ITEMS) / sizeof(DESKTOP_CONTEXT_ITEMS[0])))
+
+static u32 desktop_context_menu_width(void) {
+    u32 width = 0, measured = 0;
+    for (u32 i = 0; i < DESKTOP_CONTEXT_COUNT; i++) {
+        gfx_text_size(DESKTOP_CONTEXT_ITEMS[i], &measured, NULL);
+        if (measured > width) width = measured;
+    }
+    return width + ui_px(34u);
+}
+
+static u32 desktop_context_menu_height(void) {
+    return DESKTOP_CONTEXT_COUNT * MENU_ITEM_H + ui_px(12u);
+}
+
+static void desktop_context_menu_open_at(int mx, int my) {
+    u32 width = desktop_context_menu_width();
+    u32 height = desktop_context_menu_height();
+    u32 screen_w = g_framebuffer.width;
+    u32 work_bottom = g_framebuffer.height > taskbar_height()
+                    ? g_framebuffer.height - taskbar_height()
+                    : g_framebuffer.height;
+    desktop_context_menu_x = mx < 0 ? 0u : (u32)mx;
+    desktop_context_menu_y = my < 0 ? 0u : (u32)my;
+    if (desktop_context_menu_x + width > screen_w)
+        desktop_context_menu_x = screen_w > width ? screen_w - width : 0u;
+    if (desktop_context_menu_y + height > work_bottom)
+        desktop_context_menu_y = work_bottom > height
+                               ? work_bottom - height : 0u;
+    desktop_context_hover = -1;
+    desktop_context_menu_open = true;
+    ui.menu_open = false;
+    ui.hover_item = -1;
+    ui.needs_redraw = true;
+}
+
+static bool desktop_context_menu_contains(int mx, int my) {
+    if (!desktop_context_menu_open) return false;
+    u32 width = desktop_context_menu_width();
+    u32 height = desktop_context_menu_height();
+    return mx >= (int)desktop_context_menu_x &&
+           mx < (int)(desktop_context_menu_x + width) &&
+           my >= (int)desktop_context_menu_y &&
+           my < (int)(desktop_context_menu_y + height);
+}
+
+static int desktop_context_menu_hit(int mx, int my) {
+    if (!desktop_context_menu_contains(mx, my)) return -1;
+    u32 row = (u32)(my - (int)desktop_context_menu_y) / MENU_ITEM_H;
+    return row < DESKTOP_CONTEXT_COUNT ? (int)row : -1;
+}
+
+static void desktop_context_menu_select(int index) {
+    if (index < 0 || (u32)index >= DESKTOP_CONTEXT_COUNT) return;
+    switch (index) {
+        case 0:
+            /* Visible as disabled: filesystem write support is not present. */
+            serial_puts("SHELL_CONTEXT_NEW_FOLDER_UNAVAILABLE_READ_ONLY");
+            return;
+        case 1:
+            shell_open_app(SHELL_APP_SETTINGS);
+            settings_select_page(SETTINGS_PAGE_APPEARANCE);
+            break;
+        case 2:
+            shell_open_app(SHELL_APP_SETTINGS);
+            settings_select_page(SETTINGS_PAGE_DISPLAY);
+            break;
+        case 3:
+            shell_open_app(SHELL_APP_ABOUT);
+            break;
+        default:
+            return;
+    }
+    desktop_context_menu_open = false;
+    desktop_context_hover = -1;
+    ui.needs_redraw = true;
+}
+
+static void draw_desktop_context_menu(void) {
+    if (!desktop_context_menu_open) return;
+    u32 x = desktop_context_menu_x;
+    u32 y = desktop_context_menu_y;
+    u32 width = desktop_context_menu_width();
+    u32 height = desktop_context_menu_height();
+
+    fb_fill_rect(x + ui_px(4u), y + ui_px(4u), width, height,
+                 CHARIS_UI_SHADOW);
+    fb_fill_rect(x, y, width, height, CHARIS_UI_PANEL_RAISED);
+    fb_draw_rect(x, y, width, height, CHARIS_UI_BORDER_STRONG);
+    for (u32 i = 0; i < DESKTOP_CONTEXT_COUNT; i++) {
+        u32 row_y = y + ui_px(6u) + i * MENU_ITEM_H;
+        bool disabled = i == 0u;
+        bool hovered = desktop_context_hover == (int)i && !disabled;
+        fb_fill_rect(x + ui_px(2u), row_y, width - ui_px(4u), MENU_ITEM_H,
+                     hovered ? CHARIS_UI_ACCENT_SURFACE : CHARIS_UI_PANEL_RAISED);
+        if (hovered)
+            fb_fill_rect(x + ui_px(2u), row_y, ui_px(2u), MENU_ITEM_H,
+                         CHARIS_UI_ACCENT);
+        fb_set_clip(x + ui_px(12u), row_y,
+                    width > ui_px(24u) ? width - ui_px(24u) : 1u,
+                    MENU_ITEM_H);
+        gfx_draw_string(x + ui_px(14u),
+                        row_y + (MENU_ITEM_H > text_height()
+                               ? (MENU_ITEM_H - text_height()) / 2u : 0u),
+                        DESKTOP_CONTEXT_ITEMS[i],
+                        disabled ? CHARIS_UI_MUTED :
+                        hovered ? CHARIS_UI_TEXT : CHARIS_UI_TEXT,
+                        FB_TRANSPARENT);
+        fb_reset_clip();
     }
 }
 
@@ -1994,6 +2115,7 @@ static void redraw_all(void) {
     draw_taskbar();
     wm_render_surfaces();
     draw_menu();
+    draw_desktop_context_menu();
     ui_draw_cursor();
 }
 
@@ -2259,6 +2381,12 @@ static void handle_event(const input_event_t* e) {
         /* Escape dismisses shell overlays first. Otherwise the focused app
          * receives it, so Browser can leave address editing without closing. */
         if (pressed && !extended && base == KEY_ESCAPE) {
+            if (desktop_context_menu_open) {
+                desktop_context_menu_open = false;
+                desktop_context_hover = -1;
+                ui.needs_redraw = true;
+                return;
+            }
             if (ui.menu_open) {
                 ui.menu_open = false;
                 ui.hover_item = -1;
@@ -2275,6 +2403,11 @@ static void handle_event(const input_event_t* e) {
 
     case INPUT_MOUSE_MOVE: {
         bool content_changed = false;
+        int context_hover = desktop_context_menu_hit(e->mouse.x, e->mouse.y);
+        if (context_hover != desktop_context_hover) {
+            desktop_context_hover = context_hover;
+            content_changed = true;
+        }
         if (shell_resize_window) {
             int requested_w = shell_resize_start_width +
                               e->mouse.x - shell_resize_origin_x;
@@ -2324,6 +2457,18 @@ static void handle_event(const input_event_t* e) {
 
     case INPUT_MOUSE_DOWN: {
         int mx = e->mouse.x, my = e->mouse.y;
+        if (desktop_context_menu_open) {
+            if (desktop_context_menu_contains(mx, my)) {
+                if (e->mouse.button == 1) {
+                    int context_hit = desktop_context_menu_hit(mx, my);
+                    if (context_hit >= 0) desktop_context_menu_select(context_hit);
+                }
+                return;
+            }
+            desktop_context_menu_open = false;
+            desktop_context_hover = -1;
+            ui.needs_redraw = true;
+        }
         if (ui.menu_open) {
             if (menu_contains(mx, my)) {
                 int menu_hit = hit_menu_item(mx, my);
@@ -2344,6 +2489,15 @@ static void handle_event(const input_event_t* e) {
                 mx < (int)START_BTN_W) return;
         }
         window_t* hit = wm_get_window_at(mx, my);
+        if (e->mouse.button == 2 && !hit) {
+            u32 right_click_bar = g_framebuffer.height > taskbar_height()
+                                ? g_framebuffer.height - taskbar_height()
+                                : g_framebuffer.height;
+            if (my < (int)right_click_bar) {
+                desktop_context_menu_open_at(mx, my);
+                return;
+            }
+        }
         if (hit) {
             wm_focus_window(hit);
             if (e->mouse.button == 1 && shell_app_id_for_window(hit) >= 0 &&
@@ -2399,12 +2553,16 @@ static void handle_event(const input_event_t* e) {
         }
 
         if (on_taskbar && mx < (int)START_BTN_W) {
+            desktop_context_menu_open = false;
+            desktop_context_hover = -1;
             shell_menu_toggle();
             return;
         }
 
         int shortcut = desktop_surface_hit_test(mx, my);
         if (shortcut >= 0 && shortcut < 4) {
+            desktop_context_menu_open = false;
+            desktop_context_hover = -1;
             static const shell_app_id_t shortcut_apps[4] = {
                 SHELL_APP_FILES, SHELL_APP_TERMINAL,
                 SHELL_APP_SETTINGS, SHELL_APP_BROWSER
