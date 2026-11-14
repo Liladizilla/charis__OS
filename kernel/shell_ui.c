@@ -101,6 +101,7 @@ static bool settings_open = false;
 static settings_page_id_t settings_active_page_id = SETTINGS_PAGE_DISPLAY;
 static u32 settings_nav_offset;
 static int settings_hover_page_index = -1;
+static bool settings_font_menu_open;
 
 static const char* const NOTICE_LINE_1[] = {
     "", "", "", "",
@@ -486,7 +487,8 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
                        settings_active_page_id == SETTINGS_PAGE_APPEARANCE) {
                 settings_adjust_wallpaper(1);
             } else if (pressed && !extended && base == KEY_ESCAPE) {
-                settings_open = false;
+                if (settings_font_menu_open) settings_font_menu_open = false;
+                else settings_open = false;
             } else if (pressed && !extended && base == 0x40u) {
                 int value = config_get_int("font_scale", 1) + 1;
                 if (value > 3) value = 3;
@@ -994,6 +996,7 @@ static const settings_page_t* settings_active_page(void) {
 }
 static void settings_select_page(settings_page_id_t id) {
     if (!settings_catalog_find(id) || settings_active_page_id == id) return;
+    settings_font_menu_open = false;
     settings_active_page_id = id;
     settings_reveal_page(id);
     serial_printf("SHELL_SETTINGS_PAGE %u\n", (u32)id);
@@ -1237,12 +1240,100 @@ static u32 settings_row_height_for(u32 full_height) {
     u32 desired = settings_row_height();
     /* Reserve title, row lead-in and the complete dynamic footer before
      * dividing the remaining space between the three settings rows. */
-    u32 fixed = settings_title_height() + ui_px(82) +
+    u32 fixed = settings_title_height() + ui_px(92) +
                 settings_footer_reserved();
     if (full_height <= fixed) return ui_px(64);
     u32 available = (full_height - fixed) / 3u;
     return desired < available ? desired : available;
 }
+typedef struct {
+    u32 row_x, row_y, row_w, row_h;
+    u32 label_x, label_y, label_w;
+    u32 control_x, control_y, control_w, control_h;
+} settings_display_row_layout_t;
+
+static bool settings_display_row_layout(window_t* win, u32 row_index,
+                                        settings_display_row_layout_t* out) {
+    if (!win || !out || row_index >= 3u) return false;
+
+    u32 x = (u32)win->x, y = (u32)win->y;
+    u32 cw = (u32)win->width;
+    u32 ch = (u32)win->height + win->titlebar_height;
+    u32 rail_w = settings_rail_width();
+    if (rail_w > cw / 2u) rail_w = cw / 2u;
+    u32 content_x = x + rail_w + ui_px(28u);
+    u32 row_h = settings_row_height_for(ch);
+    u32 row_y = y + settings_title_height() + ui_px(92u) +
+                row_index * row_h;
+    u32 row_w = cw > rail_w + ui_px(30u)
+              ? cw - rail_w - ui_px(30u) : 1u;
+
+    int font_scale = config_get_int("font_scale", 1);
+    if (font_scale < 1 || font_scale > 3) font_scale = 1;
+    const char* labels[3] = {
+        font_scale >= 3 ? "F" : font_scale > 1 ? "Font" : "Font family",
+        font_scale >= 3 ? "T" : font_scale > 1 ? "Text" : "Text size (%)",
+        font_scale >= 3 ? "UI" : font_scale > 1 ? "UI" : "UI scale (%)"
+    };
+    u32 label_column_w = 0, measured = 0;
+    for (u32 i = 0; i < 3u; i++) {
+        gfx_text_size(labels[i], &measured, NULL);
+        if (measured > label_column_w) label_column_w = measured;
+    }
+
+    u32 label_x = content_x + ui_px(8u);
+    u32 value_x = label_x + label_column_w + ui_px(16u);
+    u32 control_right = x + cw > ui_px(24u) ? x + cw - ui_px(24u) : x + cw;
+    if (value_x >= control_right) value_x = content_x;
+
+    u32 button_h = settings_button_height();
+    u32 control_y = row_y + (row_h > button_h ? (row_h - button_h) / 2u : 0u);
+    *out = (settings_display_row_layout_t) {
+        .row_x = content_x - ui_px(10u),
+        .row_y = row_y,
+        .row_w = row_w,
+        .row_h = row_h,
+        .label_x = label_x,
+        .label_y = row_y + (row_h > text_height() + ui_px(8u)
+                          ? ui_px(8u) : 0u),
+        .label_w = value_x > label_x + ui_px(12u)
+                 ? value_x - label_x - ui_px(12u) : 1u,
+        .control_x = value_x,
+        .control_y = control_y,
+        .control_w = control_right > value_x + ui_px(4u)
+                   ? control_right - value_x - ui_px(4u) : 1u,
+        .control_h = button_h
+    };
+    return true;
+}
+
+static void settings_font_popup_bounds(window_t* win, u32* x, u32* y,
+                                       u32* width, u32* height,
+                                       u32* option_height) {
+    settings_display_row_layout_t layout;
+    if (!settings_display_row_layout(win, 0u, &layout)) {
+        if (x) *x = 0;
+        if (y) *y = 0;
+        if (width) *width = 1;
+        if (height) *height = 1;
+        if (option_height) *option_height = 1;
+        return;
+    }
+    u32 option_h = settings_button_height();
+    u32 popup_h = option_h * 3u;
+    u32 popup_y = layout.row_y + layout.row_h - ui_px(2u);
+    u32 bottom = (u32)win->y + win->titlebar_height + (u32)win->height
+               - settings_footer_reserved() - ui_px(10u);
+    if (popup_y + popup_h > bottom)
+        popup_y = bottom > popup_h ? bottom - popup_h : (u32)win->y;
+
+    if (x) *x = layout.control_x;
+    if (y) *y = popup_y;
+    if (width) *width = layout.control_w;
+    if (height) *height = popup_h;
+    if (option_height) *option_height = option_h;
+}
+
 static u32 settings_panel_width(void) {
     u32 desired = ui_px(760);
     u32 available = g_framebuffer.width > ui_px(24)
@@ -1250,7 +1341,7 @@ static u32 settings_panel_width(void) {
     return desired > available ? available : desired;
 }
 static u32 settings_panel_height(void) {
-    u32 content_height = settings_title_height() + ui_px(82) +
+    u32 content_height = settings_title_height() + ui_px(92) +
                          (3 * settings_row_height()) +
                          settings_footer_reserved();
     u32 navigation_height = settings_nav_top_offset() +
@@ -1326,7 +1417,7 @@ static void draw_settings_window(window_t* win) {
     u32 button_h = settings_button_height();
     u32 plus_x = x + cw - button_w - ui_px(24);
     u32 control_x = plus_x - button_w - ui_px(8);
-    u32 first_row_y = y + title_h + ui_px(82);
+    u32 first_row_y = y + title_h + ui_px(92);
 
     fb_fill_rect(x + ui_px(7), y + ui_px(8), cw, ch, CHARIS_UI_SHADOW);
     fb_fill_rect(x, y, cw, ch, CHARIS_UI_PANEL);
@@ -1350,35 +1441,16 @@ static void draw_settings_window(window_t* win) {
     if (gfx_text_get_scale() == 1u) {
         settings_draw_wrapped_text(content_x,
             heading_y + text_height() + ui_px(6), content_w,
-            page->summary, CHARIS_UI_MUTED, 1);
+            page->summary, CHARIS_UI_MUTED, 2);
     }
 
     if (page->id == SETTINGS_PAGE_DISPLAY) {
-        static const char* const styles[] = {
-            "Proportional", "Monospace", "Bitmap serif"
+        static const char* const font_names[] = {
+            "Inter", "Monospace", "Bitmap serif"
         };
-        static const char* const scales[] = { "100%", "200%", "300%" };
-        static const char* const ui_scales[] = { "80%", "100%", "120%" };
-
-        int configured_font_scale = config_get_int("font_scale", 1);
-        if (configured_font_scale < 1 || configured_font_scale > 3)
-            configured_font_scale = 1;
-        const char* measured_labels[] = {
-            configured_font_scale >= 3 ? "F" :
-                (configured_font_scale > 1 ? "Font" : "Font family"),
-            configured_font_scale >= 3 ? "T" :
-                (configured_font_scale > 1 ? "Text" : "Text size"),
-            configured_font_scale >= 3 ? "UI" :
-                (configured_font_scale > 1 ? "UI" : "UI scale")
-        };
-        u32 label_column_w = 0, measured_label_w = 0;
-        for (u32 i = 0; i < 3; i++) {
-            gfx_text_size(measured_labels[i], &measured_label_w, NULL);
-            if (measured_label_w > label_column_w)
-                label_column_w = measured_label_w;
-        }
-        u32 value_x = content_x + ui_px(8) + label_column_w + ui_px(16);
-        if (value_x >= control_x) value_x = content_x;
+        static const char* const font_compact[] = { "Inter", "Mono", "Serif" };
+        static const char* const text_sizes[] = { "100", "200", "300" };
+        static const char* const ui_scales[] = { "80", "100", "120" };
 
         int style = config_get_int("font_style", 0);
         int font_scale = config_get_int("font_scale", 1);
@@ -1386,79 +1458,153 @@ static void draw_settings_window(window_t* win) {
         if (style < 0 || style > 2) style = 0;
         if (font_scale < 1 || font_scale > 3) font_scale = 1;
         int scale_index = global_scale <= 80 ? 0 : global_scale >= 120 ? 2 : 1;
-        const char* compact_styles[] = { "Inter", "Mono", "Serif" };
-        const char* values[3] = {
-            font_scale > 1 ? compact_styles[style] : styles[style],
-            scales[font_scale - 1], ui_scales[scale_index]
-        };
-        const char* labels[3] = {
-            font_scale >= 3 ? "F" :
-                (font_scale > 1 ? "Font" : "Font family"),
-            font_scale >= 3 ? "T" :
-                (font_scale > 1 ? "Text" : "Text size"),
-            font_scale >= 3 ? "UI" :
-                (font_scale > 1 ? "UI" : "UI scale")
-        };
-        const char* hints[3] = { "Typeface", "Glyph size", "Controls" };
 
-        for (u32 i = 0; i < 3; i++) {
-            u32 row_y = first_row_y + i * row_h;
-            u32 row_w = cw > rail_w + ui_px(30)
-                      ? cw - rail_w - ui_px(30) : 1u;
-            u32 row_draw_h = row_h > ui_px(10) ? row_h - ui_px(10) : 1u;
-            fb_fill_rect(content_x - ui_px(10), row_y, row_w,
+        for (u32 i = 0; i < 3u; i++) {
+            settings_display_row_layout_t layout;
+            if (!settings_display_row_layout(win, i, &layout)) continue;
+            u32 row_draw_h = layout.row_h > ui_px(10u)
+                           ? layout.row_h - ui_px(10u) : 1u;
+            fb_fill_rect(layout.row_x, layout.row_y, layout.row_w,
                          row_draw_h, CHARIS_UI_SURFACE);
-            fb_draw_rect(content_x - ui_px(10), row_y, row_w,
+            fb_draw_rect(layout.row_x, layout.row_y, layout.row_w,
                          row_draw_h, CHARIS_UI_BORDER);
 
-            u32 label_x = content_x + ui_px(8);
-            u32 label_w = value_x > label_x + ui_px(12)
-                        ? value_x - label_x - ui_px(12) : 1u;
-            fb_set_clip(label_x, row_y, label_w, row_draw_h);
-            u32 label_y = row_y + (row_draw_h > text_height()
-                         ? (row_draw_h - text_height()) / 2u : 0u);
-            gfx_draw_string(label_x, label_y, labels[i],
+            const char* label = i == 0u ? "Font family" :
+                                i == 1u ? "Text size (%)" : "UI scale (%)";
+            if (font_scale >= 3) label = i == 0u ? "F" : i == 1u ? "T" : "UI";
+            else if (font_scale > 1)
+                label = i == 0u ? "Font" : i == 1u ? "Text" : "UI";
+
+            fb_set_clip(layout.label_x, layout.row_y,
+                        layout.label_w, row_draw_h);
+            gfx_draw_string(layout.label_x, layout.label_y, label,
                             CHARIS_UI_TEXT, FB_TRANSPARENT);
             if (font_scale == 1) {
-                u32 hint_y = label_y + text_height() + ui_px(6);
-                fb_set_clip(label_x, hint_y, label_w,
-                    row_draw_h > hint_y - row_y
-                        ? row_draw_h - (hint_y - row_y) : 1u);
-                gfx_draw_string(label_x, hint_y, hints[i],
-                                CHARIS_UI_MUTED, FB_TRANSPARENT);
-                fb_reset_clip();
+                const char* preview = i == 0u ? "Aa Bb Cc 0123" :
+                                      i == 1u ? "The quick brown fox" : "";
+                if (i < 2u) {
+                    u32 preview_y = layout.label_y + text_height() + ui_px(4u);
+                    fb_set_clip(layout.label_x, preview_y,
+                                layout.label_w,
+                                row_draw_h > preview_y - layout.row_y
+                                  ? row_draw_h - (preview_y - layout.row_y) : 1u);
+                    gfx_draw_string(layout.label_x, preview_y, preview,
+                                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+                } else {
+                    /* A miniature control sample follows the live UI scale. */
+                    u32 preview_y = layout.label_y + text_height() + ui_px(5u);
+                    u32 sample_h = ui_px(14u);
+                    u32 sample_w = ui_px(34u);
+                    fb_fill_rect(layout.label_x, preview_y, sample_w, sample_h,
+                                 CHARIS_UI_PANEL_RAISED);
+                    fb_draw_rect(layout.label_x, preview_y, sample_w, sample_h,
+                                 CHARIS_UI_BORDER);
+                    fb_fill_rect(layout.label_x + sample_w + ui_px(8u), preview_y,
+                                 sample_w + ui_px(8u), sample_h,
+                                 CHARIS_UI_ACCENT_SURFACE);
+                    fb_draw_rect(layout.label_x + sample_w + ui_px(8u), preview_y,
+                                 sample_w + ui_px(8u), sample_h,
+                                 CHARIS_UI_BORDER_STRONG);
+                }
             }
             fb_reset_clip();
 
-            u32 by = row_y + (row_h - button_h) / 2u;
-            fb_fill_rect(control_x, by, button_w, button_h,
-                         CHARIS_UI_PANEL_RAISED);
-            fb_draw_rect(control_x, by, button_w, button_h, CHARIS_UI_BORDER);
-            fb_fill_rect(plus_x, by, button_w, button_h,
-                         CHARIS_UI_ACCENT_SURFACE);
-            fb_draw_rect(plus_x, by, button_w, button_h,
-                         CHARIS_UI_BORDER_STRONG);
-            u32 minus_w = 0, glyph_h = 0, plus_w = 0;
-            gfx_text_size("-", &minus_w, &glyph_h);
-            gfx_text_size("+", &plus_w, NULL);
-            u32 glyph_y = by + (button_h > glyph_h
-                          ? (button_h - glyph_h) / 2u : 0u);
-            gfx_draw_string(control_x + (button_w > minus_w
-                            ? (button_w - minus_w) / 2u : 0u),
-                            glyph_y, "-", CHARIS_UI_TEXT, FB_TRANSPARENT);
-            gfx_draw_string(plus_x + (button_w > plus_w
-                            ? (button_w - plus_w) / 2u : 0u),
-                            glyph_y, "+", CHARIS_UI_TEXT, FB_TRANSPARENT);
+            int mx = input_get_mouse_x(), my = input_get_mouse_y();
+            bool over_control = mx >= (int)layout.control_x &&
+                                mx < (int)(layout.control_x + layout.control_w) &&
+                                my >= (int)layout.control_y &&
+                                my < (int)(layout.control_y + layout.control_h);
 
-            u32 value_w = control_x > value_x + ui_px(8)
-                        ? control_x - value_x - ui_px(8) : 1u;
-            fb_set_clip(value_x, by, value_w, button_h);
-            u32 value_h = 0;
-            gfx_text_size(values[i], NULL, &value_h);
-            gfx_draw_string(value_x, by + (button_h > value_h
-                            ? (button_h - value_h) / 2u : 0u),
-                            values[i], CHARIS_UI_ACCENT, FB_TRANSPARENT);
-            fb_reset_clip();
+            if (i == 0u) {
+                fb_fill_rect(layout.control_x, layout.control_y,
+                             layout.control_w, layout.control_h,
+                             settings_font_menu_open ? CHARIS_UI_ACCENT_SURFACE :
+                             over_control ? CHARIS_UI_SURFACE_RAISED :
+                                            CHARIS_UI_PANEL_RAISED);
+                fb_draw_rect(layout.control_x, layout.control_y,
+                             layout.control_w, layout.control_h,
+                             settings_font_menu_open ? CHARIS_UI_BORDER_STRONG :
+                             over_control ? CHARIS_UI_BORDER_STRONG : CHARIS_UI_BORDER);
+                u32 name_w = 0, name_h = 0;
+                gfx_text_monospace_size(font_compact[style], &name_w, &name_h, 1u);
+                gfx_draw_monospace_string_scaled(
+                    layout.control_x + ui_px(10u),
+                    layout.control_y + (layout.control_h > name_h
+                                       ? (layout.control_h - name_h) / 2u : 0u),
+                    font_compact[style], CHARIS_UI_ACCENT, FB_TRANSPARENT, 1u);
+                gfx_draw_monospace_string_scaled(
+                    layout.control_x + layout.control_w - ui_px(24u),
+                    layout.control_y + (layout.control_h > name_h
+                                       ? (layout.control_h - name_h) / 2u : 0u),
+                    "v", CHARIS_UI_TEXT, FB_TRANSPARENT, 1u);
+            } else {
+                const char* const* choices = i == 1u ? text_sizes : ui_scales;
+                int selected = i == 1u ? font_scale - 1 : scale_index;
+                u32 segment_base = layout.control_w / 3u;
+                for (u32 k = 0; k < 3u; k++) {
+                    u32 sx = layout.control_x + k * segment_base;
+                    u32 sw = k == 2u ? layout.control_w - segment_base * 2u
+                                     : segment_base;
+                    bool selected_segment = (int)k == selected;
+                    bool hovered = mx >= (int)sx && mx < (int)(sx + sw) &&
+                                   my >= (int)layout.control_y &&
+                                   my < (int)(layout.control_y + layout.control_h);
+                    fb_fill_rect(sx, layout.control_y, sw, layout.control_h,
+                                 selected_segment ? CHARIS_UI_ACCENT_SURFACE :
+                                 hovered ? CHARIS_UI_SURFACE_RAISED :
+                                           CHARIS_UI_PANEL_RAISED);
+                    fb_draw_rect(sx, layout.control_y, sw, layout.control_h,
+                                 selected_segment ? CHARIS_UI_BORDER_STRONG :
+                                 CHARIS_UI_BORDER);
+
+                    u32 value_w = 0, value_h = 0;
+                    gfx_text_monospace_size(choices[k], &value_w, &value_h, 1u);
+                    gfx_draw_monospace_string_scaled(
+                        sx + (sw > value_w ? (sw - value_w) / 2u : 0u),
+                        layout.control_y + (layout.control_h > value_h
+                                           ? (layout.control_h - value_h) / 2u : 0u),
+                        choices[k],
+                        selected_segment ? CHARIS_UI_TEXT : CHARIS_UI_MUTED,
+                        FB_TRANSPARENT, 1u);
+                }
+            }
+        }
+
+        if (settings_font_menu_open) {
+            u32 popup_x = 0, popup_y = 0, popup_w = 0, popup_h = 0, option_h = 0;
+            settings_font_popup_bounds(win, &popup_x, &popup_y, &popup_w,
+                                       &popup_h, &option_h);
+            fb_fill_rect(popup_x + ui_px(3u), popup_y + ui_px(3u),
+                         popup_w, popup_h, CHARIS_UI_SHADOW);
+            fb_fill_rect(popup_x, popup_y, popup_w, popup_h,
+                         CHARIS_UI_PANEL_RAISED);
+            fb_draw_rect(popup_x, popup_y, popup_w, popup_h,
+                         CHARIS_UI_BORDER_STRONG);
+            int mx = input_get_mouse_x(), my = input_get_mouse_y();
+            for (u32 i = 0; i < 3u; i++) {
+                u32 option_y = popup_y + i * option_h;
+                bool selected = (int)i == style;
+                bool hovered = mx >= (int)popup_x && mx < (int)(popup_x + popup_w) &&
+                               my >= (int)option_y && my < (int)(option_y + option_h);
+                fb_fill_rect(popup_x + ui_px(2u), option_y + ui_px(1u),
+                             popup_w - ui_px(4u), option_h - ui_px(2u),
+                             selected ? CHARIS_UI_ACCENT_SURFACE :
+                             hovered ? CHARIS_UI_SURFACE_RAISED :
+                                       CHARIS_UI_PANEL_RAISED);
+                u32 option_w = 0, option_text_h = 0;
+                gfx_text_monospace_size(font_names[i], &option_w,
+                                        &option_text_h, 1u);
+                fb_draw_rect(popup_x + ui_px(2u), option_y + ui_px(1u),
+                             popup_w - ui_px(4u), option_h - ui_px(2u),
+                             CHARIS_UI_BORDER);
+                gfx_draw_monospace_string_scaled(
+                    popup_x + ui_px(12u),
+                    option_y + (option_h > option_text_h
+                              ? (option_h - option_text_h) / 2u : 0u),
+                    font_names[i],
+                    selected ? CHARIS_UI_TEXT : CHARIS_UI_MUTED,
+                    FB_TRANSPARENT, 1u);
+            }
         }
     } else if (page->id == SETTINGS_PAGE_APPEARANCE) {
         int selected = config_get_int("wallpaper", (int)WALLPAPER_CHARIS);
@@ -1581,6 +1727,28 @@ static bool settings_handle_window_click(window_t* win, int mx, int my) {
     if (mx < (int)x || mx >= (int)(x + cw) ||
         my < (int)y || my >= (int)(y + ch)) return false;
 
+    const settings_page_t* active = settings_active_page();
+    if (!active) return true;
+
+    if (settings_font_menu_open && active->id == SETTINGS_PAGE_DISPLAY) {
+        u32 popup_x = 0, popup_y = 0, popup_w = 0, popup_h = 0, option_h = 0;
+        settings_font_popup_bounds(win, &popup_x, &popup_y, &popup_w,
+                                   &popup_h, &option_h);
+        if (mx >= (int)popup_x && mx < (int)(popup_x + popup_w) &&
+            my >= (int)popup_y && my < (int)(popup_y + popup_h)) {
+            u32 choice = (u32)(my - (int)popup_y) / option_h;
+            if (choice < 3u) {
+                config_set_int("font_style", (int)choice);
+                gfx_text_apply_preferences();
+                (void)settings_reflow_window(win);
+                (void)config_save(CONFIG_FILE_PATH);
+            }
+            settings_font_menu_open = false;
+            return true;
+        }
+        settings_font_menu_open = false;
+    }
+
     u32 rail_w = settings_rail_width();
     if (rail_w > cw / 2u) rail_w = cw / 2u;
     if (mx < (int)(x + rail_w)) {
@@ -1593,49 +1761,55 @@ static bool settings_handle_window_click(window_t* win, int mx, int my) {
         return true;
     }
 
-    u32 button_w = settings_button_width();
-    u32 plus_x = x + cw - button_w - ui_px(24);
-    u32 control_x = plus_x - button_w - ui_px(8);
-    u32 first_row_y = y + settings_title_height() + ui_px(82);
+    u32 first_row_y = y + settings_title_height() + ui_px(92u);
     u32 row_h = settings_row_height_for(ch);
     if (my < (int)first_row_y) return true;
 
-    int direction = mx >= (int)plus_x &&
-                    mx < (int)(plus_x + button_w) ? 1 :
-                    mx >= (int)control_x &&
-                    mx < (int)(control_x + button_w) ? -1 : 0;
-    const settings_page_t* active = settings_active_page();
-    if (!active) return true;
-
     if (active->id == SETTINGS_PAGE_DISPLAY) {
         u32 row = (u32)(my - (int)first_row_y) / row_h;
-        if (row >= 3u || !direction) return true;
+        if (row >= 3u) return true;
+        settings_display_row_layout_t layout;
+        if (!settings_display_row_layout(win, row, &layout)) return true;
+        if (mx < (int)layout.control_x ||
+            mx >= (int)(layout.control_x + layout.control_w) ||
+            my < (int)layout.control_y ||
+            my >= (int)(layout.control_y + layout.control_h))
+            return true;
 
         if (row == 0u) {
-            int value = config_get_int("font_style", 0) + direction;
-            if (value < 0) value = 2;
-            if (value > 2) value = 0;
-            config_set_int("font_style", value);
-        } else if (row == 1u) {
-            int value = config_get_int("font_scale", 1) + direction;
-            if (value < 1) value = 1;
-            if (value > 3) value = 3;
-            config_set_int("font_scale", value);
-        } else {
-            int value = config_get_int("ui_scale", 100) + direction * 20;
-            if (value < 80) value = 80;
-            if (value > 120) value = 120;
-            config_set_int("ui_scale", value);
+            settings_font_menu_open = !settings_font_menu_open;
+            return true;
         }
+
+        u32 segment_width = layout.control_w / 3u;
+        if (!segment_width) return true;
+        u32 choice = (u32)(mx - (int)layout.control_x) / segment_width;
+        if (choice > 2u) choice = 2u;
+        if (row == 1u) {
+            config_set_int("font_scale", (int)choice + 1);
+        } else {
+            static const int values[] = { 80, 100, 120 };
+            config_set_int("ui_scale", values[choice]);
+        }
+
         gfx_text_apply_preferences();
         (void)settings_reflow_window(win);
-        config_save(CONFIG_FILE_PATH);
+        (void)config_save(CONFIG_FILE_PATH);
         return true;
     }
 
     if (active->id == SETTINGS_PAGE_APPEARANCE) {
-        if (my >= (int)first_row_y &&
-            my < (int)(first_row_y + row_h) && direction)
+        u32 button_w = settings_button_width();
+        u32 plus_x = x + cw - button_w - ui_px(24u);
+        u32 control_x = plus_x - button_w - ui_px(8u);
+        u32 first_y = y + settings_title_height() + ui_px(92u);
+        u32 row_height = settings_row_height_for(ch);
+        int direction = mx >= (int)plus_x &&
+                        mx < (int)(plus_x + button_w) ? 1 :
+                        mx >= (int)control_x &&
+                        mx < (int)(control_x + button_w) ? -1 : 0;
+        if (direction && my >= (int)first_y &&
+            my < (int)(first_y + row_height))
             settings_adjust_wallpaper(direction);
         return true;
     }
