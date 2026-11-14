@@ -99,6 +99,8 @@ static bool notice_open = false;
 static int notice_item = -1;
 static bool settings_open = false;
 static settings_page_id_t settings_active_page_id = SETTINGS_PAGE_DISPLAY;
+static u32 settings_nav_offset;
+static int settings_hover_page_index = -1;
 
 static const char* const NOTICE_LINE_1[] = {
     "", "", "", "",
@@ -155,8 +157,10 @@ static bool settings_reflow_window(window_t* win);
 static void draw_settings_window(window_t* win);
 static bool settings_handle_window_click(window_t* win, int mx, int my);
 static void settings_move_page(int direction);
-static void settings_move_group(int direction);
+static void settings_reveal_page(settings_page_id_t id);
 static void settings_adjust_wallpaper(int direction);
+static void settings_adjust_wallpaper(int direction);
+static int settings_nav_hit_page(window_t* win, int mx, int my);
 static void draw_about_window(window_t* win);
 static bool about_handle_window_click(window_t* win, int mx, int my);
 
@@ -481,10 +485,6 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
             } else if (pressed && extended && base == 0x4Du &&
                        settings_active_page_id == SETTINGS_PAGE_APPEARANCE) {
                 settings_adjust_wallpaper(1);
-            } else if (pressed && extended && base == 0x4Bu) {
-                settings_move_group(-1);
-            } else if (pressed && extended && base == 0x4Du) {
-                settings_move_group(1);
             } else if (pressed && !extended && base == KEY_ESCAPE) {
                 settings_open = false;
             } else if (pressed && !extended && base == 0x40u) {
@@ -964,38 +964,27 @@ static u32 settings_button_height(void) {
     u32 height = ui_px(34), readable = text_height() + ui_px(8);
     return height > readable ? height : readable;
 }
-static u32 settings_close_size(void) {
-    u32 size = ui_px(26), glyph_height = 0;
-    gfx_text_size("x", NULL, &glyph_height);
-    u32 readable = glyph_height + ui_px(8);
-    return size > readable ? size : readable;
-}
 static u32 settings_nav_height(void) {
-    u32 height = text_height() + ui_px(8);
+    u32 height = text_height() + ui_px(2);
     u32 minimum = ui_px(24);
     return height > minimum ? height : minimum;
 }
 static u32 settings_nav_step(void) {
-    u32 step = settings_nav_height() + ui_px(2);
-    return step;
+    return settings_nav_height() + ui_px(2);
 }
-static settings_group_t settings_group_at_index(u32 index) {
-    switch (index) {
-        case 0: return SETTINGS_GROUP_PERSONALIZATION;
-        case 1: return SETTINGS_GROUP_DESKTOP_DEVICES;
-        case 2: return SETTINGS_GROUP_APPS_SERVICES;
-        case 3: return SETTINGS_GROUP_SYSTEM;
-        default: return 0;
-    }
+static u32 settings_nav_top_offset(void) {
+    return settings_title_height() + text_height() + ui_px(18);
 }
-static const char* settings_group_short_name(settings_group_t group) {
-    switch (group) {
-        case SETTINGS_GROUP_PERSONALIZATION: return "Personal";
-        case SETTINGS_GROUP_DESKTOP_DEVICES: return "Devices";
-        case SETTINGS_GROUP_APPS_SERVICES: return "Apps";
-        case SETTINGS_GROUP_SYSTEM: return "System";
-        default: return "Other";
-    }
+static u32 settings_nav_bottom_offset(void) {
+    return settings_footer_reserved() + ui_px(12);
+}
+static u32 settings_nav_visible_rows(const window_t* win) {
+    if (!win) return (u32)settings_catalog_count();
+    u32 total = (u32)win->height + win->titlebar_height;
+    u32 fixed = settings_nav_top_offset() + settings_nav_bottom_offset();
+    if (total <= fixed) return 1u;
+    u32 rows = (total - fixed) / settings_nav_step();
+    return rows ? rows : 1u;
 }
 static const settings_page_t* settings_active_page(void) {
     const settings_page_t* page = settings_catalog_find(settings_active_page_id);
@@ -1006,11 +995,8 @@ static const settings_page_t* settings_active_page(void) {
 static void settings_select_page(settings_page_id_t id) {
     if (!settings_catalog_find(id) || settings_active_page_id == id) return;
     settings_active_page_id = id;
+    settings_reveal_page(id);
     serial_printf("SHELL_SETTINGS_PAGE %u\n", (u32)id);
-}
-static void settings_select_group(settings_group_t group) {
-    const settings_page_t* first = settings_catalog_group_at(group, 0);
-    if (first) settings_select_page(first->id);
 }
 
 static void settings_move_page(int direction) {
@@ -1035,22 +1021,6 @@ static void settings_move_page(int direction) {
     if (page) settings_select_page(page->id);
 }
 
-static void settings_move_group(int direction) {
-    const settings_page_t* active = settings_active_page();
-    if (!active || !direction) return;
-
-    int group = (int)active->group - (int)SETTINGS_GROUP_PERSONALIZATION;
-    int group_count = (int)SETTINGS_GROUP_LIMIT -
-                      (int)SETTINGS_GROUP_PERSONALIZATION;
-    if (group_count <= 0) return;
-
-    if (direction < 0) group = group > 0 ? group - 1 : group_count - 1;
-    else group = (group + 1) % group_count;
-
-    settings_select_group((settings_group_t)
-        ((int)SETTINGS_GROUP_PERSONALIZATION + group));
-}
-
 static void settings_adjust_wallpaper(int direction) {
     if (!direction) return;
     u32 count = wallpaper_count();
@@ -1070,14 +1040,59 @@ static u32 settings_rail_width(void) {
     u32 width = ui_px(164), measured = 0;
     gfx_text_size("PREFERENCES", &measured, NULL);
     if (measured > width) width = measured;
-    for (u32 i = 0; i < 4; i++) {
-        gfx_text_size(settings_group_short_name(settings_group_at_index(i)),
-                      &measured, NULL);
+    for (usize i = 0; i < settings_catalog_count(); i++) {
+        const settings_page_t* page = settings_catalog_at(i);
+        if (!page) continue;
+        gfx_text_size(page->title, &measured, NULL);
+        if (measured > width) width = measured;
+        gfx_text_size(settings_group_label(page->group), &measured, NULL);
         if (measured > width) width = measured;
     }
-    width += ui_px(32);
+    width += ui_px(28);
     u32 maximum = settings_panel_width() / 2u;
     return width > maximum ? maximum : width;
+}
+
+static void settings_reveal_page(settings_page_id_t id) {
+    usize count = settings_catalog_count();
+    usize index = count;
+    for (usize i = 0; i < count; i++) {
+        const settings_page_t* page = settings_catalog_at(i);
+        if (page && page->id == id) { index = i; break; }
+    }
+    if (index >= count) return;
+
+    u32 visible = settings_nav_visible_rows(
+        shell_app_windows[SHELL_APP_SETTINGS]);
+    if (visible > count) visible = (u32)count;
+    if (index < settings_nav_offset)
+        settings_nav_offset = (u32)index;
+    else if (index >= (usize)settings_nav_offset + visible)
+        settings_nav_offset = (u32)index - visible + 1u;
+
+    u32 maximum = count > visible ? (u32)count - visible : 0u;
+    if (settings_nav_offset > maximum) settings_nav_offset = maximum;
+}
+
+static int settings_nav_hit_page(window_t* win, int mx, int my) {
+    if (!settings_open || !win || !win->visible || win->minimized)
+        return -1;
+    u32 x = (u32)win->x, y = (u32)win->y;
+    u32 width = (u32)win->width;
+    u32 rail = settings_rail_width();
+    if (rail > width / 2u) rail = width / 2u;
+    if (mx < (int)x || mx >= (int)(x + rail)) return -1;
+
+    u32 top = y + settings_nav_top_offset();
+    if (my < (int)top) return -1;
+    u32 relative = (u32)(my - (int)top);
+    u32 step = settings_nav_step();
+    u32 within = relative % step;
+    if (within >= settings_nav_height()) return -1;
+
+    usize index = (usize)settings_nav_offset + relative / step;
+    if (index >= settings_catalog_count()) return -1;
+    return (int)index;
 }
 
 static void settings_draw_wrapped_text(u32 x, u32 y, u32 width,
@@ -1168,68 +1183,56 @@ static void settings_draw_navigation(u32 x, u32 y, u32 rail_width,
                ? total_height - title_height - ui_px(2) : 1u;
     fb_set_clip(rail_x, clip_y, rail_width, clip_h);
 
-    u32 heading_y = y + title_height + ui_px(18);
+    u32 heading_y = y + title_height + ui_px(10);
     gfx_draw_string(x + ui_px(18), heading_y,
-                    gfx_text_get_scale() >= 3u ? "MENU" : "PREFERENCES",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
+                    "PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
 
+    u32 nav_top = y + settings_nav_top_offset();
     u32 nav_height = settings_nav_height();
     u32 nav_step = settings_nav_step();
-    u32 group_top = heading_y + text_height() + ui_px(10);
-    for (u32 i = 0; i < 4; i++) {
-        settings_group_t group = settings_group_at_index(i);
-        u32 row_y = group_top + i * nav_step;
-        bool selected = active && active->group == group;
-        if (selected) {
+    usize count = settings_catalog_count();
+    u32 visible = settings_nav_visible_rows(shell_app_windows[SHELL_APP_SETTINGS]);
+    usize end = (usize)settings_nav_offset + visible;
+    if (end > count) end = count;
+
+    const settings_page_t* previous = NULL;
+    if (settings_nav_offset)
+        previous = settings_catalog_at(settings_nav_offset - 1u);
+    for (usize i = settings_nav_offset; i < end; i++) {
+        const settings_page_t* page = settings_catalog_at(i);
+        if (!page) continue;
+        u32 row_y = nav_top + (u32)(i - settings_nav_offset) * nav_step;
+        if (previous && previous->group != page->group)
+            fb_fill_rect(x + ui_px(16), row_y, rail_width - ui_px(32),
+                         ui_px(1), CHARIS_UI_BORDER);
+
+        bool selected = active && active->id == page->id;
+        bool hovered = settings_hover_page_index == (int)i;
+        if (selected || hovered) {
             fb_fill_rect(x + ui_px(8), row_y, rail_width - ui_px(16),
-                         nav_height, CHARIS_UI_ACCENT_SURFACE);
-            fb_fill_rect(x + ui_px(8), row_y, ui_px(3), nav_height,
-                         CHARIS_UI_ACCENT);
+                         nav_height,
+                         selected ? CHARIS_UI_ACCENT_SURFACE
+                                  : CHARIS_UI_SURFACE_RAISED);
+            if (selected)
+                fb_fill_rect(x + ui_px(8), row_y, ui_px(3), nav_height,
+                             CHARIS_UI_ACCENT);
         }
+
         fb_set_clip(x + ui_px(18), row_y,
                     rail_width > ui_px(30) ? rail_width - ui_px(30) : 1u,
                     nav_height);
         u32 label_y = row_y + (nav_height > text_height()
                       ? (nav_height - text_height()) / 2u : 0u);
-        gfx_draw_string(x + ui_px(22), label_y,
-                        settings_group_short_name(group),
-                        selected ? CHARIS_UI_TEXT : CHARIS_UI_MUTED,
+        gfx_draw_string(x + ui_px(22), label_y, page->title,
+                        selected ? CHARIS_UI_TEXT :
+                        hovered ? CHARIS_UI_TEXT : CHARIS_UI_MUTED,
                         FB_TRANSPARENT);
         fb_reset_clip();
-    }
-
-    u32 pages_heading_y = group_top + 4u * nav_step + ui_px(6);
-    gfx_draw_string(x + ui_px(18), pages_heading_y,
-                    gfx_text_get_scale() >= 3u ? "PAGES" : "SETTINGS PAGES",
-                    CHARIS_UI_MUTED, FB_TRANSPARENT);
-    u32 pages_top = pages_heading_y + text_height() + ui_px(6);
-    if (active) {
-        usize count = settings_catalog_group_count(active->group);
-        for (usize i = 0; i < count; i++) {
-            const settings_page_t* page =
-                settings_catalog_group_at(active->group, i);
-            if (!page) continue;
-            u32 row_y = pages_top + (u32)i * nav_step;
-            bool selected = page->id == active->id;
-            if (selected) {
-                fb_fill_rect(x + ui_px(8), row_y, rail_width - ui_px(16),
-                             nav_height, CHARIS_UI_ACCENT_SURFACE);
-                fb_fill_rect(x + ui_px(8), row_y, ui_px(3), nav_height,
-                             CHARIS_UI_ACCENT);
-            }
-            fb_set_clip(x + ui_px(18), row_y,
-                        rail_width > ui_px(30) ? rail_width - ui_px(30) : 1u,
-                        nav_height);
-            u32 label_y = row_y + (nav_height > text_height()
-                          ? (nav_height - text_height()) / 2u : 0u);
-            gfx_draw_string(x + ui_px(22), label_y, page->title,
-                            selected ? CHARIS_UI_TEXT : CHARIS_UI_MUTED,
-                            FB_TRANSPARENT);
-            fb_reset_clip();
-        }
+        previous = page;
     }
     fb_reset_clip();
 }
+
 static u32 settings_row_height_for(u32 full_height) {
     u32 desired = settings_row_height();
     /* Reserve title, row lead-in and the complete dynamic footer before
@@ -1247,8 +1250,14 @@ static u32 settings_panel_width(void) {
     return desired > available ? available : desired;
 }
 static u32 settings_panel_height(void) {
-    return settings_title_height() + ui_px(82) +
-           (3 * settings_row_height()) + settings_footer_reserved();
+    u32 content_height = settings_title_height() + ui_px(82) +
+                         (3 * settings_row_height()) +
+                         settings_footer_reserved();
+    u32 navigation_height = settings_nav_top_offset() +
+                            (u32)settings_catalog_count() * settings_nav_step() +
+                            settings_nav_bottom_offset();
+    return content_height > navigation_height
+         ? content_height : navigation_height;
 }
 
 /* Recompute the Settings surface after a live font/UI-scale change. Its
@@ -1324,30 +1333,6 @@ static void draw_settings_window(window_t* win) {
     fb_draw_rect(x, y, cw, ch, CHARIS_UI_BORDER_STRONG);
     fb_fill_rect(x, y, cw, title_h, CHARIS_UI_PANEL_RAISED);
     fb_fill_rect(x, y + title_h, cw, ui_px(1), CHARIS_UI_BORDER);
-    gfx_draw_string(x + ui_px(22), y + (title_h - text_height()) / 2u,
-                    "Settings", CHARIS_UI_TEXT, FB_TRANSPARENT);
-
-    if (text_height() <= ui_px(16)) {
-        fb_set_clip(x + ui_px(104), y,
-                    cw > ui_px(168) ? cw - ui_px(168) : 1u, title_h);
-        gfx_draw_string(x + ui_px(104), y + (title_h - text_height()) / 2u,
-                        "SYSTEM PREFERENCES", CHARIS_UI_MUTED, FB_TRANSPARENT);
-        fb_reset_clip();
-    }
-
-    u32 close_size = settings_close_size();
-    u32 close_text_w = 0, close_text_h = 0;
-    gfx_text_size("x", &close_text_w, &close_text_h);
-    u32 close_x = x + cw - close_size - ui_px(16);
-    u32 close_y = y + (title_h > close_size ? (title_h - close_size) / 2u : 0u);
-    fb_fill_rect(close_x, close_y, close_size, close_size, CHARIS_UI_SURFACE);
-    fb_draw_rect(close_x, close_y, close_size, close_size, CHARIS_UI_BORDER);
-    gfx_draw_string(close_x + (close_size > close_text_w
-                    ? (close_size - close_text_w) / 2u : 0u),
-                    close_y + (close_size > close_text_h
-                    ? (close_size - close_text_h) / 2u : 0u),
-                    "x", CHARIS_UI_TEXT, FB_TRANSPARENT);
-
     fb_fill_rect(x + ui_px(1), y + title_h + ui_px(1), rail_w,
                  ch > title_h + ui_px(2) ? ch - title_h - ui_px(2) : 1u,
                  CHARIS_UI_PANEL_RAISED);
@@ -1361,34 +1346,6 @@ static void draw_settings_window(window_t* win) {
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
     fb_reset_clip();
 
-    u32 page_nav_y = heading_y;
-    if (button_h > text_height())
-        page_nav_y -= (button_h - text_height()) / 2u;
-    else
-        page_nav_y += (text_height() - button_h) / 2u;
-
-    fb_fill_rect(control_x, page_nav_y, button_w, button_h,
-                 CHARIS_UI_PANEL_RAISED);
-    fb_draw_rect(control_x, page_nav_y, button_w, button_h,
-                 CHARIS_UI_BORDER);
-    fb_fill_rect(plus_x, page_nav_y, button_w, button_h,
-                 CHARIS_UI_ACCENT_SURFACE);
-    fb_draw_rect(plus_x, page_nav_y, button_w, button_h,
-                 CHARIS_UI_BORDER_STRONG);
-
-    u32 previous_w = 0, next_w = 0, arrow_h = 0;
-    gfx_text_size("<", &previous_w, &arrow_h);
-    gfx_text_size(">", &next_w, NULL);
-    gfx_draw_string(control_x + (button_w > previous_w
-                    ? (button_w - previous_w) / 2u : 0u),
-                    page_nav_y + (button_h > arrow_h
-                    ? (button_h - arrow_h) / 2u : 0u),
-                    "<", CHARIS_UI_TEXT, FB_TRANSPARENT);
-    gfx_draw_string(plus_x + (button_w > next_w
-                    ? (button_w - next_w) / 2u : 0u),
-                    page_nav_y + (button_h > arrow_h
-                    ? (button_h - arrow_h) / 2u : 0u),
-                    ">", CHARIS_UI_TEXT, FB_TRANSPARENT);
 
     if (gfx_text_get_scale() == 1u) {
         settings_draw_wrapped_text(content_x,
@@ -1621,85 +1578,25 @@ static bool settings_handle_window_click(window_t* win, int mx, int my) {
     if (!win) return false;
     u32 x = (u32)win->x, y = (u32)win->y;
     u32 cw = (u32)win->width, ch = (u32)win->height + win->titlebar_height;
-    u32 title_h = settings_title_height();
     if (mx < (int)x || mx >= (int)(x + cw) ||
         my < (int)y || my >= (int)(y + ch)) return false;
 
-    if (my < (int)(y + title_h)) {
-        u32 close_size = settings_close_size();
-        u32 close_x = x + cw - close_size - ui_px(16);
-        u32 close_y = y + (title_h > close_size
-                      ? (title_h - close_size) / 2u : 0u);
-        if (mx >= (int)close_x && mx < (int)(close_x + close_size) &&
-            my >= (int)close_y && my < (int)(close_y + close_size)) {
-            settings_open = false;
-            return true;
-        }
-        return false;
-    }
-
     u32 rail_w = settings_rail_width();
     if (rail_w > cw / 2u) rail_w = cw / 2u;
-    u32 nav_height = settings_nav_height();
-    u32 nav_step = settings_nav_step();
-    u32 heading_y = y + title_h + ui_px(18);
-    u32 group_top = heading_y + text_height() + ui_px(10);
-
     if (mx < (int)(x + rail_w)) {
-        for (u32 i = 0; i < 4; i++) {
-            u32 row_y = group_top + i * nav_step;
-            if (my >= (int)row_y &&
-                my < (int)(row_y + nav_height)) {
-                settings_select_group(settings_group_at_index(i));
-                return true;
-            }
-        }
-
-        u32 pages_heading_y = group_top + 4u * nav_step + ui_px(6);
-        u32 pages_top = pages_heading_y + text_height() + ui_px(6);
-        const settings_page_t* active = settings_active_page();
-        if (active) {
-            usize count = settings_catalog_group_count(active->group);
-            for (usize i = 0; i < count; i++) {
-                u32 row_y = pages_top + (u32)i * nav_step;
-                if (my >= (int)row_y &&
-                    my < (int)(row_y + nav_height)) {
-                    const settings_page_t* page =
-                        settings_catalog_group_at(active->group, i);
-                    if (page) settings_select_page(page->id);
-                    return true;
-                }
-            }
+        int page_index = settings_nav_hit_page(win, mx, my);
+        if (page_index >= 0) {
+            const settings_page_t* page =
+                settings_catalog_at((usize)page_index);
+            if (page) settings_select_page(page->id);
         }
         return true;
     }
 
     u32 button_w = settings_button_width();
-    u32 button_h = settings_button_height();
     u32 plus_x = x + cw - button_w - ui_px(24);
     u32 control_x = plus_x - button_w - ui_px(8);
-
-    u32 page_heading_y = y + title_h + ui_px(6);
-    u32 page_nav_y = page_heading_y;
-    if (button_h > text_height())
-        page_nav_y -= (button_h - text_height()) / 2u;
-    else
-        page_nav_y += (text_height() - button_h) / 2u;
-    if (my >= (int)page_nav_y &&
-        my < (int)(page_nav_y + button_h)) {
-        if (mx >= (int)control_x &&
-            mx < (int)(control_x + button_w)) {
-            settings_move_page(-1);
-            return true;
-        }
-        if (mx >= (int)plus_x &&
-            mx < (int)(plus_x + button_w)) {
-            settings_move_page(1);
-            return true;
-        }
-    }
-
-    u32 first_row_y = y + title_h + ui_px(82);
+    u32 first_row_y = y + settings_title_height() + ui_px(82);
     u32 row_h = settings_row_height_for(ch);
     if (my < (int)first_row_y) return true;
 
@@ -1745,7 +1642,6 @@ static bool settings_handle_window_click(window_t* win, int mx, int my) {
 
     return true;
 }
-
 
 /* Software cursor. The PS/2 mouse has no hardware cursor once the display is
  * in graphics mode, so the pointer is drawn into the framebuffer. */
@@ -2045,6 +1941,12 @@ static void handle_event(const input_event_t* e) {
         int shortcut_hover = desktop_surface_hit_test(e->mouse.x, e->mouse.y);
         if (shortcut_hover != desktop_hover_shortcut) {
             desktop_hover_shortcut = shortcut_hover;
+            content_changed = true;
+        }
+        int settings_hover = settings_nav_hit_page(
+            shell_app_windows[SHELL_APP_SETTINGS], e->mouse.x, e->mouse.y);
+        if (settings_hover != settings_hover_page_index) {
+            settings_hover_page_index = settings_hover;
             content_changed = true;
         }
         if (hover != ui.hover_item) {
