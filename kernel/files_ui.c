@@ -143,7 +143,7 @@ static void draw_display_name(u32 x,u32 y,const char* name,u32 colour) {
     gfx_draw_string(x,y,display,colour,FB_TRANSPARENT);
 }
 
-static void card(u32 x,u32 y,u32 w,u32 h) {static void card(u32 x,u32 y,u32 w,u32 h) {
+static void card(u32 x,u32 y,u32 w,u32 h) {
     fb_fill_rect(x,y,w,h,CHARIS_UI_PANEL);
     fb_draw_rect(x,y,w,h,CHARIS_UI_BORDER);
 }

@@ -207,8 +207,8 @@ static void test_browser_window_manager_bounds_contract(void) {
     u32 x = 0, y = 0, width = 0, height = 0;
     g_framebuffer.width = 1024u;
     g_framebuffer.height = 768u;
-    expect(browser_titlebar_height() == 42u,
-           "browser publishes the titlebar height expected by the window manager");
+    expect(browser_titlebar_height() == 32u,
+           "browser publishes the shared 32px titlebar height");
 
     browser_set_bounds(120u, 84u, 640u, 480u);
     browser_geometry(&x, &y, &width, &height);
