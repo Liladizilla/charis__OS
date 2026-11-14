@@ -156,6 +156,8 @@ static bool settings_reflow_window(window_t* win);
 static u32 about_titlebar_height(void);
 static void draw_settings_window(window_t* win);
 static bool settings_handle_window_click(window_t* win, int mx, int my);
+static void settings_move_page(int direction);
+static void settings_move_group(int direction);
 static void draw_about_window(window_t* win);
 static bool about_handle_window_click(window_t* win, int mx, int my);
 
@@ -390,7 +392,15 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
             (void)browser_handle_key(base, pressed);
             break;
         case SHELL_APP_SETTINGS:
-            if (pressed && !extended && base == KEY_ESCAPE) {
+            if (pressed && extended && base == 0x48u) {
+                settings_move_page(-1);
+            } else if (pressed && extended && base == 0x50u) {
+                settings_move_page(1);
+            } else if (pressed && extended && base == 0x4Bu) {
+                settings_move_group(-1);
+            } else if (pressed && extended && base == 0x4Du) {
+                settings_move_group(1);
+            } else if (pressed && !extended && base == KEY_ESCAPE) {
                 settings_open = false;
             } else if (pressed && !extended && base == 0x40u) {
                 int value = config_get_int("font_scale", 1) + 1;
@@ -884,6 +894,44 @@ static void settings_select_group(settings_group_t group) {
     const settings_page_t* first = settings_catalog_group_at(group, 0);
     if (first) settings_select_page(first->id);
 }
+
+static void settings_move_page(int direction) {
+    usize count = settings_catalog_count();
+    if (!count || !direction) return;
+
+    usize current = 0;
+    bool found = false;
+    for (usize i = 0; i < count; i++) {
+        const settings_page_t* page = settings_catalog_at(i);
+        if (page && page->id == settings_active_page_id) {
+            current = i;
+            found = true;
+            break;
+        }
+    }
+    if (!found) current = 0;
+    else if (direction < 0) current = current ? current - 1u : count - 1u;
+    else current = (current + 1u) % count;
+
+    const settings_page_t* page = settings_catalog_at(current);
+    if (page) settings_select_page(page->id);
+}
+
+static void settings_move_group(int direction) {
+    const settings_page_t* active = settings_active_page();
+    if (!active || !direction) return;
+
+    int group = (int)active->group - (int)SETTINGS_GROUP_PERSONALIZATION;
+    int group_count = (int)SETTINGS_GROUP_LIMIT -
+                      (int)SETTINGS_GROUP_PERSONALIZATION;
+    if (group_count <= 0) return;
+
+    if (direction < 0) group = group > 0 ? group - 1 : group_count - 1;
+    else group = (group + 1) % group_count;
+
+    settings_select_group((settings_group_t)
+        ((int)SETTINGS_GROUP_PERSONALIZATION + group));
+}
 static u32 settings_rail_width(void) {
     u32 width = ui_px(164), measured = 0;
     gfx_text_size("PREFERENCES", &measured, NULL);
@@ -924,12 +972,15 @@ static void settings_draw_wrapped_text(u32 x, u32 y, u32 width,
             if (word_length >= sizeof(line)) word_length = sizeof(line) - 1u;
 
             char candidate[128];
+            if ((usize)line_length + (line_length ? 1u : 0u) +
+                (usize)word_length >= sizeof(candidate) && line_length)
+                break;
+
             u32 candidate_length = 0;
             for (u32 i = 0; i < line_length; i++)
                 candidate[candidate_length++] = line[i];
             if (candidate_length) candidate[candidate_length++] = ' ';
-            for (u32 i = 0; i < word_length &&
-                 candidate_length < sizeof(candidate) - 1u; i++)
+            for (u32 i = 0; i < word_length; i++)
                 candidate[candidate_length++] = word[i];
             candidate[candidate_length] = 0;
 
@@ -1168,13 +1219,47 @@ static void draw_settings_window(window_t* win) {
                  CHARIS_UI_PANEL_RAISED);
     settings_draw_navigation(x, y, rail_w, ch, title_h, page);
 
-    u32 heading_y = y + title_h + ui_px(18);
+    u32 heading_y = y + title_h + ui_px(6);
+    u32 heading_clip_w = control_x > content_x + ui_px(12)
+                       ? control_x - content_x - ui_px(12) : 1u;
+    fb_set_clip(content_x, heading_y, heading_clip_w, text_height());
     gfx_draw_string(content_x, heading_y, page->title,
                     CHARIS_UI_TEXT, FB_TRANSPARENT);
+    fb_reset_clip();
+
+    u32 page_nav_y = heading_y;
+    if (button_h > text_height())
+        page_nav_y -= (button_h - text_height()) / 2u;
+    else
+        page_nav_y += (text_height() - button_h) / 2u;
+
+    fb_fill_rect(control_x, page_nav_y, button_w, button_h,
+                 CHARIS_UI_PANEL_RAISED);
+    fb_draw_rect(control_x, page_nav_y, button_w, button_h,
+                 CHARIS_UI_BORDER);
+    fb_fill_rect(plus_x, page_nav_y, button_w, button_h,
+                 CHARIS_UI_ACCENT_SURFACE);
+    fb_draw_rect(plus_x, page_nav_y, button_w, button_h,
+                 CHARIS_UI_BORDER_STRONG);
+
+    u32 previous_w = 0, next_w = 0, arrow_h = 0;
+    gfx_text_size("<", &previous_w, &arrow_h);
+    gfx_text_size(">", &next_w, NULL);
+    gfx_draw_string(control_x + (button_w > previous_w
+                    ? (button_w - previous_w) / 2u : 0u),
+                    page_nav_y + (button_h > arrow_h
+                    ? (button_h - arrow_h) / 2u : 0u),
+                    "<", CHARIS_UI_TEXT, FB_TRANSPARENT);
+    gfx_draw_string(plus_x + (button_w > next_w
+                    ? (button_w - next_w) / 2u : 0u),
+                    page_nav_y + (button_h > arrow_h
+                    ? (button_h - arrow_h) / 2u : 0u),
+                    ">", CHARIS_UI_TEXT, FB_TRANSPARENT);
+
     if (gfx_text_get_scale() == 1u) {
         settings_draw_wrapped_text(content_x,
             heading_y + text_height() + ui_px(6), content_w,
-            page->summary, CHARIS_UI_MUTED, 2);
+            page->summary, CHARIS_UI_MUTED, 1);
     }
 
     if (page->id == SETTINGS_PAGE_DISPLAY) {
@@ -1452,8 +1537,30 @@ static bool settings_handle_window_click(window_t* win, int mx, int my) {
     }
 
     u32 button_w = settings_button_width();
+    u32 button_h = settings_button_height();
     u32 plus_x = x + cw - button_w - ui_px(24);
     u32 control_x = plus_x - button_w - ui_px(8);
+
+    u32 page_heading_y = y + title_h + ui_px(6);
+    u32 page_nav_y = page_heading_y;
+    if (button_h > text_height())
+        page_nav_y -= (button_h - text_height()) / 2u;
+    else
+        page_nav_y += (text_height() - button_h) / 2u;
+    if (my >= (int)page_nav_y &&
+        my < (int)(page_nav_y + button_h)) {
+        if (mx >= (int)control_x &&
+            mx < (int)(control_x + button_w)) {
+            settings_move_page(-1);
+            return true;
+        }
+        if (mx >= (int)plus_x &&
+            mx < (int)(plus_x + button_w)) {
+            settings_move_page(1);
+            return true;
+        }
+    }
+
     u32 first_row_y = y + title_h + ui_px(82);
     u32 row_h = settings_row_height_for(ch);
     if (my < (int)first_row_y) return true;
