@@ -152,7 +152,6 @@ static u32 settings_title_height(void);
 static u32 settings_panel_width(void);
 static u32 settings_panel_height(void);
 static bool settings_reflow_window(window_t* win);
-static u32 about_titlebar_height(void);
 static void draw_settings_window(window_t* win);
 static bool settings_handle_window_click(window_t* win, int mx, int my);
 static void settings_move_page(int direction);
@@ -886,12 +885,6 @@ static void draw_menu(void) {
 /* A launcher item must not silently send output to an invisible VGA console.
  * Until each application has a real framebuffer UI, explain its current state
  * in a consistent, dismissible panel instead of pretending it launched. */
-static u32 about_titlebar_height(void) {
-    u32 title_text_height = 0;
-    gfx_text_size("About CharisOS", NULL, &title_text_height);
-    u32 base = ui_px(32), readable = title_text_height + ui_px(8);
-    return base > readable ? base : readable;
-}
 
 static void draw_about_window(window_t* win) {
     if (!win || !notice_open || notice_item != 4) return;
