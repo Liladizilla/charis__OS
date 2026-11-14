@@ -71,7 +71,7 @@ Examples for UI testing include 1024x768 safe fallback, 1280x720, 1920x1080, 256
 5. Add rotation/compositor transforms, per-monitor scaling, workspace placement and multi-monitor topology after single-display correctness is established.
 6. Add refresh-rate selection only when timing data and a driver can actually set and verify it. Do not infer a refresh rate from resolution.
 
-Current limitation: the GRUB configuration requests 1024x768x32. The existing kernel consumes a Multiboot2 framebuffer handoff, but the display.c monitor list is a placeholder and there is no complete native GPU/display mode-setting stack. Therefore orientation, arbitrary resolution switching, refresh-rate switching and multi-monitor rendering are not yet complete features.
+Current limitation: the GRUB configuration requests 1024x768x32. The kernel now exposes a primary display-state record copied from the validated Multiboot2 framebuffer, including physical address, dimensions, pitch and pixel format. It does not yet have EDID/monitor discovery, a native GPU/mode-setting stack, orientation transforms, refresh-rate control or multi-monitor scanout. Therefore arbitrary resolution switching, orientation, refresh-rate switching and multi-monitor rendering remain incomplete features.
 
 ## 3. Native application and package formats
 
