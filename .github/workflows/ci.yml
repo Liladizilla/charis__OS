@@ -371,8 +371,6 @@ jobs:
             sleep 2
             printf 'screendump build/charisos-context-menu-display-preview.ppm\n'
             sleep 1
-            printf 'sendkey esc\n'
-            sleep 1
             # F3 focuses Settings search; a unique query must filter to
             # the Mouse & Touchpad page. The capture proves the live search UI.
             printf 'sendkey f3\n'
