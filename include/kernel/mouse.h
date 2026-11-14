@@ -10,7 +10,14 @@ typedef struct {
 
 extern mouse_state_t g_mouse;
 
+#define MOUSE_SPEED_MIN_PERCENT 50u
+#define MOUSE_SPEED_MAX_PERCENT 200u
+#define MOUSE_SPEED_STEP_PERCENT 25u
+
 void mouse_init(void);
+bool mouse_is_available(void);
+u32 mouse_get_speed_percent(void);
+void mouse_set_speed_percent(u32 percent);
 
 /* Diagnostics: live state and a packet counter, so a stuck pointer can be
  * told apart from a dead IRQ. */

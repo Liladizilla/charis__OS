@@ -8,6 +8,10 @@
 mouse_state_t g_mouse = {50, 50, 0, 0, 0};
 static uint32_t mouse_screen_width = 800;
 static uint32_t mouse_screen_height = 600;
+static volatile bool mouse_device_ready;
+static volatile u32 mouse_speed_percent = 100u;
+static s32 mouse_speed_remainder_x;
+static s32 mouse_speed_remainder_y;
 
 #ifdef MOUSE_HOST_TEST
 static u64 mouse_host_irq_state;
@@ -30,6 +34,35 @@ static inline void mouse_irq_restore(u64 flags) {
     asm volatile("pushq %0; popfq" :: "r"(flags) : "memory", "cc");
 }
 #endif
+
+static u32 mouse_normalize_speed_percent(u32 percent) {
+    if (percent < MOUSE_SPEED_MIN_PERCENT)
+        percent = MOUSE_SPEED_MIN_PERCENT;
+    if (percent > MOUSE_SPEED_MAX_PERCENT)
+        percent = MOUSE_SPEED_MAX_PERCENT;
+    u32 offset = percent - MOUSE_SPEED_MIN_PERCENT;
+    u32 steps = (offset + MOUSE_SPEED_STEP_PERCENT / 2u) /
+                MOUSE_SPEED_STEP_PERCENT;
+    return MOUSE_SPEED_MIN_PERCENT + steps * MOUSE_SPEED_STEP_PERCENT;
+}
+
+bool mouse_is_available(void) { return mouse_device_ready; }
+
+u32 mouse_get_speed_percent(void) {
+    u64 irq_flags = mouse_irq_save();
+    u32 percent = mouse_speed_percent;
+    mouse_irq_restore(irq_flags);
+    return percent;
+}
+
+void mouse_set_speed_percent(u32 percent) {
+    u32 normalized = mouse_normalize_speed_percent(percent);
+    u64 irq_flags = mouse_irq_save();
+    mouse_speed_percent = normalized;
+    mouse_speed_remainder_x = 0;
+    mouse_speed_remainder_y = 0;
+    mouse_irq_restore(irq_flags);
+}
 
 void mouse_set_bounds(uint32_t width, uint32_t height) {
     /* Coordinates are signed 32-bit values. Do not store a bound that cannot
@@ -143,6 +176,7 @@ static bool ps2_write_aux_data(u8 value) {
 }
 
 void mouse_init(void) {
+    mouse_device_ready = false;
     /* IRQ12 must stay masked until both the controller and device have
      * acknowledged setup. The handler is already registered by irq_init(). */
     pic_mask_irq(IRQ_MOUSE);
@@ -201,6 +235,7 @@ void mouse_init(void) {
         return;
     }
 
+    mouse_device_ready = true;
     pic_unmask_irq(IRQ_MOUSE);
     kprintf("Mouse: PS/2 enabled, config=0x%02x ACK(F6,F4)=yes\n", config);
 }
@@ -238,8 +273,22 @@ static void mouse_process_byte(u8 status, u8 byte) {
     u8 flags = mouse_packet[0];
     g_mouse_packets++;
     g_mouse.buttons = flags & 0x07u;
-    g_mouse.dx = (s32)(s8)mouse_packet[1];
-    g_mouse.dy = (s32)(s8)mouse_packet[2];
+    s32 raw_dx = (s32)(s8)mouse_packet[1];
+    s32 raw_dy = (s32)(s8)mouse_packet[2];
+    u32 speed = mouse_speed_percent;
+    if (speed < MOUSE_SPEED_MIN_PERCENT || speed > MOUSE_SPEED_MAX_PERCENT)
+        speed = 100u;
+
+    /* Preserve fractional motion between packets so lower speeds do not
+     * discard small movements. Signed remainders cancel on direction changes. */
+    s64 scaled_x = (s64)raw_dx * (s64)speed + mouse_speed_remainder_x;
+    s64 scaled_y = (s64)raw_dy * (s64)speed + mouse_speed_remainder_y;
+    s64 adjusted_dx = scaled_x / 100;
+    s64 adjusted_dy = scaled_y / 100;
+    mouse_speed_remainder_x = (s32)(scaled_x - adjusted_dx * 100);
+    mouse_speed_remainder_y = (s32)(scaled_y - adjusted_dy * 100);
+    g_mouse.dx = (s32)adjusted_dx;
+    g_mouse.dy = (s32)adjusted_dy;
 
     s64 next_x = (s64)g_mouse.x + (s64)g_mouse.dx;
     s64 next_y = (s64)g_mouse.y - (s64)g_mouse.dy;

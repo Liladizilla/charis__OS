@@ -71,6 +71,7 @@ void config_load(const char* path) {
     config_set_int("font_scale", 1);
     config_set_int("ui_scale", 100);
     config_set_int("wallpaper", 0);
+    config_set_int("pointer_speed", 100);
 
     config_persistent = false;
     vfs_node_t* node = vfs_resolve(path);
@@ -135,10 +136,10 @@ next_line:
     }
 
     vga_printf("Config: Loaded %d entries from %s\n", config_count, path);
-    serial_printf("CONFIG_LOADED entries=%d font_style=%d font_scale=%d ui_scale=%d wallpaper=%d\n",
+    serial_printf("CONFIG_LOADED entries=%d font_style=%d font_scale=%d ui_scale=%d wallpaper=%d pointer_speed=%d\n",
                   config_count, config_get_int("font_style", 0),
                   config_get_int("font_scale", 1), config_get_int("ui_scale", 100),
-                  config_get_int("wallpaper", 0));
+                  config_get_int("wallpaper", 0), config_get_int("pointer_speed", 100));
 }
 
 bool config_save(const char* path) {
@@ -186,11 +187,11 @@ bool config_save(const char* path) {
     if (node && node->close) node->close(node);
 
     config_persistent = saved;
-    serial_printf("CONFIG_SAVE %s font_style=%d font_scale=%d ui_scale=%d wallpaper=%d\n",
+    serial_printf("CONFIG_SAVE %s font_style=%d font_scale=%d ui_scale=%d wallpaper=%d pointer_speed=%d\n",
                   saved ? "OK" : "UNAVAILABLE",
                   config_get_int("font_style", 0),
                   config_get_int("font_scale", 1), config_get_int("ui_scale", 100),
-                  config_get_int("wallpaper", 0));
+                  config_get_int("wallpaper", 0), config_get_int("pointer_speed", 100));
     if (saved) {
         vga_printf("Config: Saved %d entries to %s\n", config_count, path);
     } else {
