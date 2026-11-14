@@ -468,6 +468,13 @@ void wm_dispatch_event(int event_type, void* data) {
         focused->on_event(focused, event_type, data);
 }
 
+bool wm_dispatch_event_to(window_t* target, int event_type, void* data) {
+    if (!wm_contains(target) || !target->visible || target->minimized ||
+        !target->on_event) return false;
+    target->on_event(target, event_type, data);
+    return true;
+}
+
 window_t* wm_get_focused(void) {
     window_t* windows[MAX_WINDOWS];
     u32 count = wm_collect_windows(windows);

@@ -8,6 +8,7 @@ void terminal_close(void);
 bool terminal_is_open(void);
 void terminal_handle_char(char ch);
 bool terminal_handle_mouse(int x, int y);
+bool terminal_handle_scroll(int delta);
 void terminal_render(void);
 void terminal_set_bounds(u32 x, u32 y, u32 width, u32 height);
 void terminal_reset_bounds(void);

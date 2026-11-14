@@ -80,7 +80,7 @@ void mouse_take_scroll_deltas(s32* horizontal, s32* vertical) {
     mouse_irq_restore(irq_flags);
 }
 
-static void mouse_accumulate_scroll(s32* pending, s32 delta) {
+static void mouse_accumulate_scroll(volatile s32* pending, s32 delta) {
     s64 next = (s64)*pending + (s64)delta;
     if (next > 0x7FFFFFFFLL) next = 0x7FFFFFFFLL;
     if (next < (-0x7FFFFFFFLL - 1LL)) next = -0x7FFFFFFFLL - 1LL;
@@ -405,6 +405,7 @@ void mouse_test_process_byte(u8 status, u8 byte) {
 void mouse_test_set_device_id(u8 id) {
     u64 flags = mouse_irq_save();
     mouse_device_id = id;
+    mouse_device_ready = true;
     mouse_packet_size = (id == 3u || id == 4u) ? 4u : 3u;
     mouse_wheel_ready = id >= 3u;
     mouse_packet_index = 0u;

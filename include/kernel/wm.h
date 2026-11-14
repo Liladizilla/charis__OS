@@ -59,6 +59,7 @@ void wm_render(void);
 /* Composite WM-owned surfaces over an already painted desktop background. */
 void wm_render_surfaces(void);
 void wm_dispatch_event(int event_type, void* data);
+bool wm_dispatch_event_to(window_t* target, int event_type, void* data);
 window_t* wm_get_focused(void);
 window_t* wm_get_window_at(int x, int y);
 void wm_draw_decorations(window_t* win);

@@ -27,6 +27,7 @@ static char term_input[TERM_INPUT_MAX];
 static u32 term_input_len;
 static char term_lines[TERM_HISTORY][TERM_LINE_MAX];
 static u32 term_line_count;
+static u32 term_scroll_offset_rows;
 static bool term_intro_shown;
 static bool term_bounds_valid;
 static u32 term_bounds_x, term_bounds_y, term_bounds_w, term_bounds_h;
@@ -141,6 +142,7 @@ static void term_execute(void) {
         term_add_line("mem  tasks  settings  version");
     } else if (kstrcmp(term_input, "clear") == 0) {
         term_line_count = 0;
+        term_scroll_offset_rows = 0;
     } else if (kstrcmp(term_input, "uname") == 0 ||
                kstrcmp(term_input, "version") == 0) {
         term_add_line("CharisOS 1.0 x86_64");
@@ -208,6 +210,7 @@ void terminal_close(void) {
     term_visible = false;
     term_input_len = 0;
     term_input[0] = 0;
+    term_scroll_offset_rows = 0;
 }
 
 bool terminal_is_open(void) {
@@ -273,6 +276,44 @@ bool terminal_handle_mouse(int mx, int my) {
         }
         return false; /* unclaimed titlebar space is the drag handle */
     }
+    return true;
+}
+
+static void terminal_scroll_metrics(u32* total_rows_out, u32* visible_rows_out) {
+    u32 x, y, w, h, title_h;
+    term_geometry(&x, &y, &w, &h, &title_h);
+    u32 text_h = term_text_h();
+    u32 line_h = text_h + term_px(8);
+    u32 prompt_h = text_h + term_px(22);
+    u32 footer_gap = text_h + term_px(20);
+    u32 content_top = y + title_h + term_px(44);
+    u32 reserved_bottom = prompt_h + footer_gap;
+    u32 content_bottom = y + h > reserved_bottom
+                       ? y + h - reserved_bottom : content_top;
+    u32 visible = content_bottom > content_top
+                ? (content_bottom - content_top) / line_h : 1u;
+    if (!visible) visible = 1u;
+    u32 text_x = x + term_px(24);
+    u32 text_right = x + w > term_px(24) ? x + w - term_px(24) : x;
+    u32 text_width = text_right > text_x ? text_right - text_x : 1u;
+    u32 total = 0;
+    for (u32 i = 0; i < term_line_count; i++)
+        total += term_wrapped_rows(term_lines[i], text_width);
+    if (total_rows_out) *total_rows_out = total;
+    if (visible_rows_out) *visible_rows_out = visible;
+}
+
+bool terminal_handle_scroll(int delta) {
+    if (!term_visible || !delta) return false;
+    u32 total_rows = 0, visible_rows = 0;
+    terminal_scroll_metrics(&total_rows, &visible_rows);
+    u32 maximum = total_rows > visible_rows ? total_rows - visible_rows : 0u;
+    s64 next = (s64)term_scroll_offset_rows - (s64)delta * 3;
+    if (next < 0) next = 0;
+    if (next > (s64)maximum) next = maximum;
+    term_scroll_offset_rows = (u32)next;
+    serial_printf("TERMINAL_SCROLL delta=%d offset=%u max=%u\n",
+                  delta, term_scroll_offset_rows, maximum);
     return true;
 }
 
@@ -360,7 +401,10 @@ void terminal_render(void) {
     u32 total_rows = 0;
     for (u32 i = 0; i < term_line_count; i++)
         total_rows += term_wrapped_rows(term_lines[i], text_width);
-    u32 skip_rows = total_rows > rows ? total_rows - rows : 0;
+    u32 max_scroll = total_rows > rows ? total_rows - rows : 0u;
+    if (term_scroll_offset_rows > max_scroll)
+        term_scroll_offset_rows = max_scroll;
+    u32 skip_rows = max_scroll - term_scroll_offset_rows;
     fb_set_clip(text_x, canvas_y, text_width, canvas_h);
     u32 drawn_rows = 0;
     for (u32 i = 0; i < term_line_count; i++) {

@@ -13,6 +13,7 @@
 static bool files_visible;
 static fs_dirent_t files_entries[FILES_CAPACITY];
 static int files_count, files_selected=-1;
+static u32 files_scroll_offset;
 static bool files_available;
 static bool files_bounds_valid;
 static u32 files_bounds_x, files_bounds_y, files_bounds_w, files_bounds_h;
@@ -58,20 +59,49 @@ static u32 sidebar_w(void) {
     return needed>minimum ? needed : minimum;
 }
 
+static u32 files_visible_rows(void) {
+    u32 end = wy() + wh();
+    end = end > px(34) ? end - px(34) : 0u;
+    end = end > px(18) ? end - px(18) : 0u;
+    u32 start = list_y(), height = end > start ? end - start : 0u;
+    return height / row_h();
+}
+
+static void files_clamp_scroll(void) {
+    u32 visible = files_visible_rows();
+    u32 maximum = files_count > (int)visible
+                 ? (u32)files_count - visible : 0u;
+    if (files_scroll_offset > maximum) files_scroll_offset = maximum;
+}
+
+static void files_keep_selection_visible(void) {
+    if (files_selected < 0) return;
+    u32 visible = files_visible_rows();
+    if (!visible) return;
+    if ((u32)files_selected < files_scroll_offset)
+        files_scroll_offset = (u32)files_selected;
+    else if ((u32)files_selected >= files_scroll_offset + visible)
+        files_scroll_offset = (u32)files_selected - visible + 1u;
+    files_clamp_scroll();
+}
+
 static void files_refresh(void) {
     files_count=fs_list_root(files_entries,FILES_CAPACITY);
     files_available=files_count>=0;
     if(files_count<0) files_count=0;
     if(files_count>(int)FILES_CAPACITY) files_count=FILES_CAPACITY;
     if(files_selected>=files_count) files_selected=files_count-1;
+    files_clamp_scroll();
 }
 void files_open(void) {
+    files_scroll_offset=0;
     files_refresh(); files_visible=true;
     serial_puts("FILES_OPEN");
     serial_printf("FILES_ROOT_COUNT=%d",files_count);
 }
 void files_close(void) {
-    files_visible=false; files_selected=-1; serial_puts("FILES_CLOSE");
+    files_visible=false; files_selected=-1; files_scroll_offset=0;
+    serial_puts("FILES_CLOSE");
 }
 bool files_is_open(void) { return files_visible; }
 
@@ -86,9 +116,25 @@ bool files_handle_key(u8 scancode,bool pressed) {
     if(code==0x48u && files_count>0) {
         if(files_selected>0) files_selected--;
         else if(files_selected<0) files_selected=0;
+        files_keep_selection_visible();
     } else if(code==0x50u && files_count>0) {
         if(files_selected+1<files_count) files_selected++;
+        files_keep_selection_visible();
     }
+    return true;
+}
+
+bool files_handle_scroll(int delta) {
+    if (!files_visible || !delta) return false;
+    u32 visible = files_visible_rows();
+    u32 maximum = files_count > (int)visible
+                ? (u32)files_count - visible : 0u;
+    s64 next = (s64)files_scroll_offset + (s64)delta * 3;
+    if (next < 0) next = 0;
+    if (next > (s64)maximum) next = maximum;
+    files_scroll_offset = (u32)next;
+    serial_printf("FILES_SCROLL delta=%d offset=%u visible=%u count=%d\n",
+                  delta, files_scroll_offset, visible, files_count);
     return true;
 }
 
@@ -107,11 +153,14 @@ bool files_handle_mouse(int mx,int my) {
         files_selected=-1; /* Root breadcrumb returns to the current root view. */
         return true;
     }
-    u32 sy=list_y(), rh=row_h();
+    u32 sy=list_y(), rh=row_h(), visible=files_visible_rows();
     if(my>=(int)sy && mx>=(int)(x+sidebar_w()+px(12))) {
         u32 row=(u32)(my-(int)sy)/rh;
-        if(row<(u32)files_count && row<FILES_CAPACITY)
-            files_selected=(int)row;
+        u32 index=files_scroll_offset+row;
+        if(row<visible && index<(u32)files_count && index<FILES_CAPACITY) {
+            files_selected=(int)index;
+            files_keep_selection_visible();
+        }
     }
     return true;
 }
@@ -153,6 +202,7 @@ void files_render(void) {
     u32 x=wx(),y=wy(),w=ww(),h=wh(),th=text_h();
     u32 side=sidebar_w(), foot=y+h-px(34);
     u32 main_x=x+side+px(16), main_w=w-side-px(32);
+    files_clamp_scroll();
     bool has_selection=files_selected>=0 && files_selected<files_count;
     u32 inspector_w=has_selection ? px(220) : 0u;
     u32 inspector_gap=has_selection ? px(14) : 0u;
@@ -222,26 +272,29 @@ void files_render(void) {
                         CHARIS_UI_MUTED,FB_TRANSPARENT);
     }
 
-    for(int i=0;i<files_count && i<(int)FILES_CAPACITY;i++) {
-        u32 ry=list_y()+(u32)i*row_h();
+    u32 visible_rows = files_visible_rows();
+    for (u32 row=0; row<visible_rows; row++) {
+        u32 index=files_scroll_offset+row;
+        if (index >= (u32)files_count || index >= FILES_CAPACITY) break;
+        u32 ry=list_y()+row*row_h();
         if(ry+row_h()>foot-px(18)) break;
-        if(i==files_selected)
+        if((int)index==files_selected)
             fb_fill_rect(main_x+px(8),ry,list_w-px(16),row_h(),
                          CHARIS_UI_ACCENT_SURFACE);
         u32 ix=main_x+px(18),iy=ry+px(10);
         fb_fill_rect(ix,iy,px(18),px(22),
-                     files_entries[i].directory ? 0xFF4A3B24u : CHARIS_UI_SURFACE);
+                     files_entries[index].directory ? 0xFF4A3B24u : CHARIS_UI_SURFACE);
         fb_draw_rect(ix,iy,px(18),px(22),CHARIS_UI_BORDER_STRONG);
         fb_fill_rect(ix+px(4),iy+px(7),px(10),px(1),CHARIS_UI_MUTED);
         fb_fill_rect(ix+px(4),iy+px(12),px(8),px(1),CHARIS_UI_MUTED);
         draw_display_name(main_x+px(48),ry+(row_h()-th)/2u,
-                          files_entries[i].name,CHARIS_UI_TEXT);
-        if(files_entries[i].directory)
+                          files_entries[index].name,CHARIS_UI_TEXT);
+        if(files_entries[index].directory)
             gfx_draw_string(main_x+list_w-px(92),ry+(row_h()-th)/2u,
                             "Folder",CHARIS_UI_MUTED,FB_TRANSPARENT);
         else
             draw_size(main_x+list_w-px(92),ry+(row_h()-th)/2u,
-                      files_entries[i].size);
+                      files_entries[index].size);
     }
 
     /* Details appear only after an item is selected. The list reclaims the

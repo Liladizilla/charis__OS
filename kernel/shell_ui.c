@@ -450,6 +450,17 @@ static void shell_app_event(window_t* win, int event_type, void* data) {
     int id = shell_app_id_for_window(win);
     if (id < 0 || !data) return;
 
+    if (event_type == INPUT_MOUSE_SCROLL) {
+        const input_event_t* evt = (const input_event_t*)data;
+        if (evt->mouse.scroll_y) {
+            if ((shell_app_id_t)id == SHELL_APP_FILES)
+                shell_pointer_handled = files_handle_scroll(evt->mouse.scroll_y);
+            else if ((shell_app_id_t)id == SHELL_APP_TERMINAL)
+                shell_pointer_handled = terminal_handle_scroll(evt->mouse.scroll_y);
+        }
+        return;
+    }
+
     if (event_type == INPUT_MOUSE_DOWN) {
         const input_event_t* evt = (const input_event_t*)data;
         switch ((shell_app_id_t)id) {
@@ -2759,6 +2770,15 @@ static void handle_event(const input_event_t* e) {
         /* Ordinary pointer movement is handled by the save-under cursor.
          * Only repaint the desktop when a real surface or hover state changed. */
         if (content_changed) ui.needs_redraw = true;
+        return;
+    }
+
+    case INPUT_MOUSE_SCROLL: {
+        /* Scroll follows the window under the pointer, not keyboard focus. */
+        window_t* target = wm_get_window_at(e->mouse.x, e->mouse.y);
+        if (target)
+            (void)wm_dispatch_event_to(target, INPUT_MOUSE_SCROLL, (void*)e);
+        ui.needs_redraw = true;
         return;
     }
 
