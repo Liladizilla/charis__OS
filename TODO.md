@@ -173,9 +173,10 @@ The current catalog and capability boundaries are documented in [docs/settings-a
 - [x] One continuous Settings navigation list with group separators, direct pointer selection and keyboard Up/Down navigation.
 - [x] Display font-family selection, 100/200/300% text presets and 80/100/120% interface scaling.
 - [x] Appearance selection and FAT32 persistence for five built-in desktop backgrounds.
-- [x] Host-tested bounded catalog search helper; it is not yet exposed as a visible Settings search field.
+- [x] Bounded, case-insensitive catalog search with a visible F3/click-to-focus field, printable input, Backspace, filtered Up/Down navigation, no-results state and Escape reset; QEMU verifies “touchpad” selects Mouse & Touchpad.
 - [x] Desktop right-click context menu for Change wallpaper, Display settings and About; New folder remains disabled because Files is read-only.
-- [ ] Add a visible Settings search field, keyboard focus management and search-result navigation.
+- [x] Add visible Settings search, keyboard focus management and search-result navigation.
+- [ ] Add a multi-photo CC0 wallpaper gallery; current Charis photo is CC0 and other four presets are procedural.
 - [ ] Turn catalog metadata into a typed control registry with value types, ranges/enums, owners, capability requirements and persistence policy.
 - [ ] Add capability discovery so hardware-dependent controls appear only when supported.
 - [ ] Add central apply/read-back/persist/rollback transactions and versioned, validated, atomic configuration migration.
