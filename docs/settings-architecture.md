@@ -19,7 +19,7 @@ The intended experience is a complete, searchable, keyboard-accessible settings 
 
 ## Target navigation and coverage
 
-The native Settings application now uses four grouped categories, a stable 20-page catalog, page titles/descriptions, explicit capability status, keyboard page/group navigation, and mouse-accessible previous/next controls. The catalog is not yet a typed control registry, and provider search, page history and most device/service controls remain future work. Categories below describe the intended long-term coverage.
+The native Settings application currently renders a stable 20-page catalog as one continuous, scrollable selection list. Four group headings separate Personalization, Desktop & Devices, Apps & Services, and System; they are separators, not nested tabs. A pointer selects a page directly, and Up/Down moves through the page sequence. Each page has a readiness state and an explanation of missing backends. The catalog has bounded, case-insensitive search logic covered by host tests, but a visible search field, page history, typed control registry and most device/service controls remain future work. Categories below describe the intended long-term coverage; the actual controls are summarized under Current implementation reality.
 
 ### Personalization
 
@@ -170,7 +170,7 @@ This section is deliberately strict. The repository contains useful foundations,
 |---|---|---|
 | Display modes | Bootloader-provided framebuffer; no mode enumeration, EDID pipeline, refresh-rate control or rotation service | Needs display driver/compositor work |
 | Multi-monitor | A four-entry monitor data structure exists, but initialization uses a fixed fallback and there is no real monitor discovery/arrangement pipeline | Placeholder, not multi-monitor support |
-| Font and UI scale | Font family, text scale and UI scale are persisted; QEMU verifies 200%/300% layouts, grouped page navigation and preference restoration | Implemented foundation |
+| Font and UI scale | Font family (Inter, Monospace, Bitmap serif), text presets (100/200/300%) and UI scale presets (80/100/120%) are persisted; QEMU exercises the 200% and 300% layouts and preference restoration | Implemented foundation |
 | Appearance and wallpaper | Five built-in desktop backgrounds can be selected with pointer or keyboard and persisted; a validated CWP1 Multiboot2 RGB565 wallpaper module is also available | Partial; visual preview, CC0 photo gallery, fit/fill/center, themes and accent palettes remain unfinished |
 | Night light/color profiles | No display color-transform or calibration service identified | Not implemented |
 | Sound | PC-speaker beep path; HDA discovery/initialization is incomplete; general PCM playback is not supported | Partial driver foundation, no general sound settings |
@@ -191,9 +191,11 @@ The UI must not expose unsupported settings as enabled. For a device-dependent c
 ## Engineering sequence
 
 ### S0 — Settings platform
-- [x] Replace the three-item mock navigation with a stable 20-page catalog and four grouped categories.
+- [x] Replace the three-item mock navigation with a stable 20-page catalog and four group separators.
 - [x] Add explicit page readiness states and descriptions; unsupported controls remain status-only.
-- [x] Add pointer previous/next navigation and keyboard page/group navigation.
+- [x] Render one continuous selection list with direct pointer page selection and keyboard Up/Down navigation.
+- [x] Add real Display typography controls and persistent built-in Appearance background selection.
+- [ ] Add a visible search field over the bounded catalog search helper, including keyboard focus and result navigation.
 - [ ] Extend the catalog into a typed control registry with type, range/enum, default, owner, capability requirement and persistence policy.
 - [ ] Add a capability query path so device pages render only controls supported by detected hardware and services.
 - [ ] Add a central apply/read-back/persist/rollback transaction for mutable settings.

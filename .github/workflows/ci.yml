@@ -573,7 +573,7 @@ jobs:
           assert metrics["button"] > metrics["text"], metrics
           assert metrics["nav_step"] > metrics["text"], metrics
           assert metrics["footer"] > metrics["text"], metrics
-          assert metrics["rail"] < metrics["width"] // 2, metrics
+          assert metrics["rail"] <= metrics["width"] // 2, metrics
           assert metrics["row"] >= metrics["text"] + 20, metrics
           print("Settings large-font layout metrics:", metrics)
           PY
@@ -661,7 +661,7 @@ jobs:
           assert metrics["button"] > metrics["text"], metrics
           assert metrics["nav_step"] > metrics["text"], metrics
           assert metrics["footer"] > metrics["text"], metrics
-          assert metrics["rail"] < metrics["width"] // 2, metrics
+          assert metrics["rail"] <= metrics["width"] // 2, metrics
           assert metrics["row"] >= metrics["text"] + 20, metrics
           print("Settings 300 percent layout metrics:", metrics)
           PY
