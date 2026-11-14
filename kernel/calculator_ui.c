@@ -68,10 +68,9 @@ static u32 calc_window_h(void) {
 }
 
 u32 calculator_ui_titlebar_height(void) {
-    u32 text_height = 0;
-    gfx_text_size("Calculator", NULL, &text_height);
-    u32 base = calc_px(32), readable = text_height + calc_px(8);
-    return base > readable ? base : readable;
+    /* The shell owns text-aware shared titlebar sizing. Keep this API
+     * dependency-free for the standalone calculator host tests. */
+    return calc_px(32);
 }
 
 void calculator_ui_set_bounds(u32 x, u32 y, u32 width, u32 height) {
