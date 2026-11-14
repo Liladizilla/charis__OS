@@ -956,6 +956,8 @@ static u32 menu_height_for_count(u32 count) {
 }
 
 static void shell_menu_open(void) {
+    desktop_context_menu_open = false;
+    desktop_context_hover = -1;
     ui.menu_open = true;
     ui.hover_item = -1;
     menu_search_query[0] = 0;
@@ -1056,8 +1058,28 @@ static bool desktop_context_menu_contains(int mx, int my) {
 
 static int desktop_context_menu_hit(int mx, int my) {
     if (!desktop_context_menu_contains(mx, my)) return -1;
-    u32 row = (u32)(my - (int)desktop_context_menu_y) / MENU_ITEM_H;
-    return row < DESKTOP_CONTEXT_COUNT ? (int)row : -1;
+    u32 rows_top = desktop_context_menu_y + ui_px(6u);
+    if (my < (int)rows_top) return -1;
+    u32 relative_y = (u32)(my - (int)rows_top);
+    if (relative_y >= DESKTOP_CONTEXT_COUNT * MENU_ITEM_H) return -1;
+    return (int)(relative_y / MENU_ITEM_H);
+}
+
+static void desktop_context_menu_move(int direction) {
+    if (!direction) return;
+    int index = desktop_context_hover;
+    if (index < 1 || index >= (int)DESKTOP_CONTEXT_COUNT)
+        index = direction > 0 ? 0 : 4;
+    for (u32 attempt = 0; attempt < DESKTOP_CONTEXT_COUNT; attempt++) {
+        index += direction > 0 ? 1 : -1;
+        if (index < 1) index = (int)DESKTOP_CONTEXT_COUNT - 1;
+        if (index >= (int)DESKTOP_CONTEXT_COUNT) index = 1;
+        if (index > 0 && index < (int)DESKTOP_CONTEXT_COUNT) {
+            desktop_context_hover = index;
+            ui.needs_redraw = true;
+            return;
+        }
+    }
 }
 
 static void desktop_context_menu_select(int index) {
@@ -2395,6 +2417,18 @@ static void handle_event(const input_event_t* e) {
             }
         }
 
+        if (desktop_context_menu_open) {
+            if (!pressed) return;
+            if (extended && base == 0x48u) {
+                desktop_context_menu_move(-1);
+            } else if (extended && base == 0x50u) {
+                desktop_context_menu_move(1);
+            } else if (!extended && base == 0x1Cu) {
+                if (desktop_context_hover > 0)
+                    desktop_context_menu_select(desktop_context_hover);
+            }
+            return;
+        }
         if (ui.menu_open) return;
         wm_dispatch_event(e->type, (void*)e);
         ui.needs_redraw = true;
@@ -2613,7 +2647,9 @@ void shell_ui_main(void* arg) {
             wm_get_focused() == shell_app_windows[SHELL_APP_TERMINAL] &&
             !shell_app_windows[SHELL_APP_TERMINAL]->minimized;
         while (keyboard_get_key(&key)) {
-            if (ui.menu_open) {
+            if (desktop_context_menu_open) {
+                continue;
+            } else if (ui.menu_open) {
                 shell_menu_handle_character(key);
             } else if (terminal_has_focus) {
                 terminal_handle_char(key);
