@@ -378,8 +378,12 @@ normal bootloader in ways that matter on real hardware:
   required for interactive use.
 - **The firmware must hand off via GRUB2's `multiboot2` module.** Secure Boot
   will refuse the unsigned kernel unless GRUB's shim chain is trusted.
-- The graphics stack drives a fixed 640×480 framebuffer; the Multiboot2 GFX
-  tag is not yet parsed, so resolution is not negotiated with the firmware.
+- GRUB currently requests a 1024×768×32 framebuffer. The kernel parses the
+  Multiboot2 framebuffer tag and preserves its dimensions, pitch and pixel
+  layout, but the native display stack does not yet enumerate or change modes.
+  The current `display.c` multi-monitor abstraction is still a placeholder;
+  arbitrary resolution, rotation, refresh-rate and multi-monitor support are
+  not complete. See the [display and platform roadmap](./docs/charisos-platform-experience.md).
 
 ### Checking a boot without any of that
 
@@ -616,6 +620,10 @@ a large collection of unfinished applications.
 The exact Working / Partial / Planned status is maintained in [`TODO.md`](./TODO.md).
 The design rules and current UI limitations are documented in
 [`docs/charis-design-language.md`](./docs/charis-design-language.md).
+The boot identity, truthful installer flow, display/orientation architecture,
+native CXE executable and CAPP package formats, and globally scoped SDK roadmap
+are specified in [`docs/charisos-platform-experience.md`](./docs/charisos-platform-experience.md).
+These are roadmap targets, not claims of already-shipped functionality.
 
 ---
 
