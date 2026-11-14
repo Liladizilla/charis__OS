@@ -165,7 +165,7 @@ jobs:
       - name: Test CharisOS emblem RLE asset integrity
         run: python3 tests/logo_asset_test.py
 
-      - name: Test firmware framebuffer display inventory
+      - name: Test validated primary display state
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/display_state_test.c kernel/display.c -o /tmp/display_state_test
           /tmp/display_state_test
