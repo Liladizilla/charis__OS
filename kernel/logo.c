@@ -7,6 +7,7 @@
 
 #include <kernel/logo.h>
 #include <kernel/vga.h>
+#include <kernel/serial.h>
 #include <kernel/fb.h>
 #include <kernel/gfx_text.h>
 #include <kernel/charis_logo_bitmap.h>
@@ -69,7 +70,13 @@ void logo_print(void) {
 static const char* boot_stage = "INITIALIZING KERNEL";
 
 void logo_set_stage(const char* stage) {
-    if (stage && *stage) boot_stage = stage;
+    if (!stage || !*stage) return;
+
+    boot_stage = stage;
+    serial_puts("[BOOT_STAGE] ");
+    serial_puts(stage);
+    serial_puts("\n");
+
     if (g_framebuffer.initialized) logo_draw_gfx_centered();
 }
 
