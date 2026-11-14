@@ -15,7 +15,7 @@ static const settings_page_t settings_pages[] = {
         "Appearance",
         "Themes, accent colors, desktop backgrounds and visual style.",
         SETTINGS_PAGE_PARTIAL,
-        "A built-in desktop theme and bundled default wallpaper are active. User-selectable themes, accent colors and a wallpaper gallery are not available yet."
+        "Built-in desktop backgrounds are selectable and saved. User-selectable themes, accent colors and importing a custom wallpaper are not available yet."
     },
     {
         SETTINGS_PAGE_ACCESSIBILITY, SETTINGS_GROUP_PERSONALIZATION,
@@ -183,6 +183,29 @@ const settings_page_t* settings_catalog_find(settings_page_id_t id) {
     for (usize i = 0; i < settings_catalog_count(); i++) {
         if (settings_pages[i].id == id)
             return &settings_pages[i];
+    }
+    return NULL;
+}
+
+usize settings_catalog_group_count(settings_group_t group) {
+    if (group <= 0 || group >= SETTINGS_GROUP_LIMIT) return 0;
+
+    usize count = 0;
+    for (usize i = 0; i < settings_catalog_count(); i++) {
+        if (settings_pages[i].group == group) count++;
+    }
+    return count;
+}
+
+const settings_page_t* settings_catalog_group_at(settings_group_t group,
+                                                  usize index) {
+    if (group <= 0 || group >= SETTINGS_GROUP_LIMIT) return NULL;
+
+    usize current = 0;
+    for (usize i = 0; i < settings_catalog_count(); i++) {
+        if (settings_pages[i].group != group) continue;
+        if (current == index) return &settings_pages[i];
+        current++;
     }
     return NULL;
 }
