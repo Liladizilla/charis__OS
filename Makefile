@@ -56,21 +56,65 @@ ALL_OBJS = $(BOOT_OBJS) $(KERNEL_OBJS) $(ASM_OBJS) $(FONT_OBJ)
 # `all` stays the canonical build so CI and existing scripts keep working.
 all: $(BUILD_DIR)/charisos.iso
 
-WALLPAPER_SOURCE_URL = https://upload.wikimedia.org/wikipedia/commons/7/75/Lake_Mountain_Landscape.jpg
-WALLPAPER_SOURCE_SHA1 = 60eab74e7704db6375f1426fb11421ba29d7603e
-WALLPAPER_SOURCE = $(BUILD_DIR)/wallpaper-source.jpg
-WALLPAPER_MODULE = $(BUILD_DIR)/wallpaper.cwp
+# Wallpaper sources are individually pinned to CC0 originals. Only the
+# deterministic RGB565 collection is loaded by GRUB; JPEG decoding stays in
+# the build tools and the kernel validates the bounded CWP2 payload.
+WALLPAPER_CHARIS_SOURCE = $(BUILD_DIR)/wallpaper-charis-source.jpg
+WALLPAPER_ALPINE_SOURCE = $(BUILD_DIR)/wallpaper-alpine-source.jpg
+WALLPAPER_FOREST_SOURCE = $(BUILD_DIR)/wallpaper-forest-source.jpg
+WALLPAPER_CITY_SOURCE = $(BUILD_DIR)/wallpaper-city-source.jpg
 
-# The original is CC0 1.0. Download by a pinned source URL and verify the
-# published SHA-1 plus byte length before producing the deterministic RGB565
-# module. The kernel receives only the bounded CWP1 module, never a JPEG.
-$(WALLPAPER_MODULE): tools/prepare_wallpaper.py
+WALLPAPER_CHARIS = $(BUILD_DIR)/wallpaper-charis.cwp
+WALLPAPER_ALPINE = $(BUILD_DIR)/wallpaper-alpine.cwp
+WALLPAPER_FOREST = $(BUILD_DIR)/wallpaper-forest.cwp
+WALLPAPER_CITY = $(BUILD_DIR)/wallpaper-city.cwp
+WALLPAPER_IMAGES = $(WALLPAPER_CHARIS) $(WALLPAPER_ALPINE) $(WALLPAPER_FOREST) $(WALLPAPER_CITY)
+WALLPAPER_MODULE = $(BUILD_DIR)/wallpaper.cwp2
+
+$(WALLPAPER_CHARIS_SOURCE):
 	mkdir -p $(BUILD_DIR)
 	$(CURL) --fail --location --retry 3 --connect-timeout 20 --max-time 180 \
-		"$(WALLPAPER_SOURCE_URL)" -o "$(WALLPAPER_SOURCE)"
-	wc -c < "$(WALLPAPER_SOURCE)" | tr -d '[:space:]' | grep -qx '2915869'
-	echo "$(WALLPAPER_SOURCE_SHA1)  $(WALLPAPER_SOURCE)" | sha1sum -c -
-	$(PYTHON) tools/prepare_wallpaper.py "$(WALLPAPER_SOURCE)" "$@"
+		"https://upload.wikimedia.org/wikipedia/commons/7/75/Lake_Mountain_Landscape.jpg" -o "$@"
+	test "$$(wc -c < "$@")" -eq 2915869
+	echo "60eab74e7704db6375f1426fb11421ba29d7603e  $@" | sha1sum -c -
+
+$(WALLPAPER_ALPINE_SOURCE):
+	mkdir -p $(BUILD_DIR)
+	$(CURL) --fail --location --retry 3 --connect-timeout 20 --max-time 180 \
+		"https://upload.wikimedia.org/wikipedia/commons/4/47/Mountains_Landscape.jpg" -o "$@"
+	test "$$(wc -c < "$@")" -eq 3878306
+	echo "4992bece12e6923dc91031912b060b99f1a75a94  $@" | sha1sum -c -
+
+$(WALLPAPER_FOREST_SOURCE):
+	mkdir -p $(BUILD_DIR)
+	$(CURL) --fail --location --retry 3 --connect-timeout 20 --max-time 180 \
+		"https://upload.wikimedia.org/wikipedia/commons/1/16/Forest_sky.jpg" -o "$@"
+	test "$$(wc -c < "$@")" -eq 6267779
+	echo "4fa3700f75e8d53e3c331e0e22e5a73b966f78a2  $@" | sha1sum -c -
+
+$(WALLPAPER_CITY_SOURCE):
+	mkdir -p $(BUILD_DIR)
+	$(CURL) --fail --location --retry 3 --connect-timeout 20 --max-time 180 \
+		"https://upload.wikimedia.org/wikipedia/commons/f/f9/Cityscape_%28Unsplash%29.jpg" -o "$@"
+	test "$$(wc -c < "$@")" -eq 2501465
+	echo "9ee17e1fc528b49810205b1ac64aa694ad59f3fe  $@" | sha1sum -c -
+
+$(WALLPAPER_CHARIS): $(WALLPAPER_CHARIS_SOURCE) tools/prepare_wallpaper.py
+	$(PYTHON) tools/prepare_wallpaper.py "$<" "$@"
+
+$(WALLPAPER_ALPINE): $(WALLPAPER_ALPINE_SOURCE) tools/prepare_wallpaper.py
+	$(PYTHON) tools/prepare_wallpaper.py "$<" "$@" 1920 1080
+
+$(WALLPAPER_FOREST): $(WALLPAPER_FOREST_SOURCE) tools/prepare_wallpaper.py
+	$(PYTHON) tools/prepare_wallpaper.py "$<" "$@" 1920 1080
+
+$(WALLPAPER_CITY): $(WALLPAPER_CITY_SOURCE) tools/prepare_wallpaper.py
+	$(PYTHON) tools/prepare_wallpaper.py "$<" "$@" 1920 1080
+
+$(WALLPAPER_MODULE): $(WALLPAPER_IMAGES) tools/pack_wallpapers.py
+	$(PYTHON) tools/pack_wallpapers.py "$@" \
+		"0:$(WALLPAPER_CHARIS)" "5:$(WALLPAPER_ALPINE)" \
+		"6:$(WALLPAPER_FOREST)" "7:$(WALLPAPER_CITY)"
 
 $(BUILD_DIR)/charisos.iso: $(BUILD_DIR)/kernel.elf $(WALLPAPER_MODULE)
 	mkdir -p iso/boot/grub
