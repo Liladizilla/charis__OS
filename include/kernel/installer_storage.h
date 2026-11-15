@@ -29,6 +29,7 @@ typedef struct {
     ata_device_info_t device;
     partition_table_t partition_table;
     gpt_header_info_t gpt_header;
+    gpt_header_info_t gpt_backup_header;
     gpt_partition_table_t gpt_table;
 } installer_storage_inventory_t;
 
