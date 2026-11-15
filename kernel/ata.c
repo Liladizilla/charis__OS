@@ -200,7 +200,7 @@ void ata_init(void) {
             ata_primary_master.logical_sector_bytes);
 
     if (ata_primary_master.lba48_supported) {
-        serial_puts("ATA: LBA48 capable; current PIO access remains limited to LBA28\n");
+        serial_puts("ATA: LBA48 capable; single-sector reads use READ SECTORS EXT, writes remain LBA28\n");
     }
 
     if (!ata_primary_master.io_supported) {
@@ -209,6 +209,8 @@ void ata_init(void) {
         return;
     }
 
-    vga_puts("ATA initialized (primary-master LBA28 PIO)\n");
-    serial_puts("ATA: primary-master device ready for 512-byte LBA28 PIO\n");
+    vga_puts("ATA initialized (primary-master PIO)\n");
+    serial_puts(ata_primary_master.lba48_supported
+        ? "ATA: 512-byte PIO ready; LBA48 reads are single-sector and read-only\n"
+        : "ATA: primary-master device ready for 512-byte LBA28 PIO\n");
 }
