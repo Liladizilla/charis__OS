@@ -5,6 +5,7 @@
 #include <kernel/ata.h>
 
 #define MBR_PARTITION_COUNT 4u
+#define MBR_MAX_LOGICAL_PARTITIONS 32u
 #define MBR_SECTOR_BYTES 512u
 #define GPT_MAX_PARTITIONS 128u
 #define GPT_MAX_ENTRY_SIZE 512u
@@ -35,7 +36,17 @@ typedef struct {
     bool fully_enumerated;
     u32 partition_count;
     mbr_partition_t partitions[MBR_PARTITION_COUNT];
+    u32 extended_base_lba;
+    u64 extended_end_lba;
+    u32 logical_partition_count;
+    mbr_partition_t logical_partitions[MBR_MAX_LOGICAL_PARTITIONS];
 } partition_table_t;
+
+typedef struct {
+    bool has_next_ebr;
+    u64 next_ebr_lba;
+    mbr_partition_t logical_partition;
+} ebr_sector_info_t;
 
 typedef struct {
     u64 backup_lba;
@@ -74,6 +85,12 @@ typedef struct {
 bool partition_parse_mbr_sector(const u8 sector[MBR_SECTOR_BYTES],
                                 const ata_device_info_t* device,
                                 partition_table_t* output);
+bool partition_parse_ebr_sector(const u8 sector[MBR_SECTOR_BYTES],
+                                u64 ebr_lba,
+                                u64 extended_base_lba,
+                                u64 extended_end_lba,
+                                const ata_device_info_t* device,
+                                ebr_sector_info_t* output);
 bool partition_parse_gpt_header(const u8 sector[MBR_SECTOR_BYTES],
                                 const ata_device_info_t* device,
                                 gpt_header_info_t* output);
