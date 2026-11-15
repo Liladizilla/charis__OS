@@ -10,6 +10,14 @@ static u8 fake_sector_zero[512];
 static u32 read_calls;
 static u32 write_calls;
 
+void serial_puts(const char* text) {
+    (void)text;
+}
+
+void kprintf(const char* format, ...) {
+    (void)format;
+}
+
 bool ata_get_device_info(ata_device_info_t* output) {
     if (!output || !fake_device_present) return false;
     *output = fake_device;
