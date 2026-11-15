@@ -273,6 +273,26 @@ int main(void) {
            "read-only scan follows and enumerates a valid two-record EBR chain");
 
     prepare_device();
+    prepare_extended_mbr();
+    fake_device.addressable_sectors = 10000u;
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_EBR_METADATA_UNREADABLE &&
+           !inventory->partition_table.fully_enumerated,
+           "EBR metadata outside the current read window remains incomplete");
+
+    prepare_device();
+    prepare_extended_mbr();
+    prepare_ebr_record(fake_ebr_sectors[0],
+                       0x83u, 63u, 120000u,
+                       0x0Fu, 100000u, 400000u);
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_INVALID_EBR_CHAIN &&
+           inventory->partition_table.logical_partition_count == 0u,
+           "an EBR link inside its own logical data extent is rejected");
+
+    prepare_device();
     prepare_maximum_ebr_chain();
     installer_storage_init();
     expect((inventory = installer_storage_get()) != NULL &&
@@ -339,7 +359,7 @@ int main(void) {
 
     expect(write_calls == 0u,
            "storage discovery never invokes the disk write API");
-    expect(read_calls == 50u,
+    expect(read_calls == 53u,
            "only bounded MBR, GPT and EBR metadata sectors are read");
     expect(strcmp(installer_storage_status_label(
                INSTALLER_STORAGE_VALID_MBR),
