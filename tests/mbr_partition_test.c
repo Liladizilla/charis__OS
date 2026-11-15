@@ -471,6 +471,9 @@ static void test_gpt(void) {
            "GPT arrays smaller than the UEFI 16 KiB reservation are rejected");
 
     build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 136u, 2048u, 10000u);
+    put_le64(header_sector + 40u, 40u);
+    put_le32(header_sector + 16u, 0u);
+    put_le32(header_sector + 16u, crc32(header_sector, 92u));
     expect(!partition_parse_gpt_header(header_sector, &device, &header),
            "GPT entry sizes outside 128 times powers of two are rejected");
 
