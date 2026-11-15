@@ -76,8 +76,9 @@ larger LBA48 capacity. A GPT partition beyond that window remains visible as
 present but not accessible through this driver.
 
 The primary GPT parser accepts revision 1.0 headers with a bounded header
-size, a 16 KiB to 64 KiB partition-entry array, and entry sizes of 128, 256
-or 512 bytes (the supported 128 x 2^n sizes). CRC32 covers exactly the declared
+size, requires the reserved header tail to be zero, and accepts a 16 KiB to
+64 KiB partition-entry array with entry sizes of 128, 256 or 512 bytes (the
+supported 128 x 2^n sizes). CRC32 covers exactly the declared
 entry-array byte length; unused sector padding is not included in that CRC.
 The fixed upper bounds prevent untrusted metadata from driving unbounded
 allocation or iteration.
