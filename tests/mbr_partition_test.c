@@ -401,6 +401,34 @@ static void test_gpt(void) {
     build_backup_gpt(backup_header_sector, header_sector, 999998u,
                      entries, header.entry_array_bytes);
 
+    put_le32(backup_header_sector + 88u,
+             read_le32_test(backup_header_sector + 88u) ^ 1u);
+    put_le32(backup_header_sector + 16u, 0u);
+    put_le32(backup_header_sector + 16u, crc32(backup_header_sector, 92u));
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT array CRC must match the primary header");
+    build_backup_gpt(backup_header_sector, header_sector, 999998u,
+                     entries, header.entry_array_bytes);
+
+    put_le32(backup_header_sector + 80u, 8u);
+    put_le32(backup_header_sector + 16u, 0u);
+    put_le32(backup_header_sector + 16u, crc32(backup_header_sector, 92u));
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT entry count must match primary metadata");
+    build_backup_gpt(backup_header_sector, header_sector, 999998u,
+                     entries, header.entry_array_bytes);
+
+    put_le32(backup_header_sector + 84u, 256u);
+    put_le32(backup_header_sector + 16u, 0u);
+    put_le32(backup_header_sector + 16u, crc32(backup_header_sector, 92u));
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT entry size must match primary metadata");
+    build_backup_gpt(backup_header_sector, header_sector, 999998u,
+                     entries, header.entry_array_bytes);
+
     build_backup_gpt(backup_header_sector, header_sector, 999965u,
                      entries, header.entry_array_bytes);
     expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
