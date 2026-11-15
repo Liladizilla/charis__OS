@@ -360,6 +360,12 @@ static void test_gpt(void) {
            "GPT entry-array read plan is exact");
     expect(partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
            "valid GPT entry array passes CRC and range checks");
+    gpt_header_info_t malformed_entry_header = header;
+    malformed_entry_header.entry_size = 136u;
+    malformed_entry_header.entry_array_bytes = 136u * GPT_MAX_PARTITIONS;
+    expect(!partition_parse_gpt_entries(&malformed_entry_header, entries,
+                GPT_MAX_ARRAY_BYTES, &device, &table),
+           "standalone GPT array parser rejects non-UEFI entry sizes");
     expect(table.valid && table.fully_enumerated &&
            table.partition_count == 1u &&
            table.partitions[0].first_lba == 2048u &&
