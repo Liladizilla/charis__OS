@@ -534,6 +534,36 @@ static void test_gpt(void) {
     expect(!partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
            "used GPT entry with zero unique GUID is rejected");
 
+    build_gpt(header_sector, entries, 64u, 256u, 2048u, 10000u);
+    expect(partition_parse_gpt_header(header_sector, &device, &header) &&
+           header.entry_array_bytes == GPT_MIN_RESERVED_BYTES &&
+           header.entry_array_sectors == 32u,
+           "256-byte GPT entries fit the minimum reserved array");
+    expect(partition_parse_gpt_entries(&header, entries,
+               header.entry_array_bytes, &device, &table),
+           "256-byte GPT entries with zero reserved tails are accepted");
+
+    entries[128u] = 1u;
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "active-entry reserved-tail fixture has a valid header and CRC");
+    expect(!partition_parse_gpt_entries(&header, entries,
+                header.entry_array_bytes, &device, &table),
+           "nonzero reserved extension bytes in an active GPT entry are rejected");
+
+    entries[128u] = 0u;
+    entries[256u + 128u] = 1u;
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "unused-entry reserved-tail fixture has a valid header and CRC");
+    expect(!partition_parse_gpt_entries(&header, entries,
+                header.entry_array_bytes, &device, &table),
+           "nonzero reserved extension bytes in an unused GPT slot are rejected");
+
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "base-size GPT entries remain valid after extension-tail tests");
+
     build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "GPT header passes before limited-access test");
