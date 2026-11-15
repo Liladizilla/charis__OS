@@ -12,12 +12,6 @@ static void clear_bytes(void* destination, u32 length) {
     for (u32 i = 0; i < length; i++) bytes[i] = 0;
 }
 
-static void copy_bytes(void* destination, const void* source, u32 length) {
-    u8* out = (u8*)destination;
-    const u8* in = (const u8*)source;
-    for (u32 i = 0; i < length; i++) out[i] = in[i];
-}
-
 static u16 read_le16(const u8* bytes) {
     return (u16)((u16)bytes[0] | ((u16)bytes[1] << 8));
 }
@@ -202,12 +196,6 @@ const installer_storage_inventory_t* installer_storage_get(void) {
     return inventory.status == INSTALLER_STORAGE_NOT_SCANNED ? NULL : &inventory;
 }
 
-bool installer_storage_get_inventory(installer_storage_inventory_t* output) {
-    if (!output) return false;
-    copy_bytes(output, &inventory, (u32)sizeof(inventory));
-    return inventory.status != INSTALLER_STORAGE_NOT_SCANNED;
-}
-
 const char* installer_storage_status_label(installer_storage_status_t status) {
     switch (status) {
         case INSTALLER_STORAGE_NO_DEVICE:
@@ -222,8 +210,6 @@ const char* installer_storage_status_label(installer_storage_status_t status) {
             return "No recognized partition signature at LBA 0.";
         case INSTALLER_STORAGE_VALID_MBR:
             return "Valid legacy MBR partition table found.";
-        case INSTALLER_STORAGE_GPT_PROTECTIVE:
-            return "Protective GPT marker found; GPT entries are not yet enumerated.";
         case INSTALLER_STORAGE_VALID_GPT:
             return "Valid GPT header and partition array passed CRC and range validation.";
         case INSTALLER_STORAGE_GPT_METADATA_UNREADABLE:
