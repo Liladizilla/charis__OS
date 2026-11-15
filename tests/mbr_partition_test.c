@@ -367,14 +367,14 @@ static void test_gpt(void) {
 
     u8 backup_header_sector[512];
     gpt_header_info_t backup_header;
-    build_backup_gpt(backup_header_sector, header_sector, 999998u,
+    build_backup_gpt(backup_header_sector, header_sector, 999967u,
                      entries, header.entry_array_bytes);
     expect(partition_parse_gpt_backup_header(backup_header_sector, &device,
                                              &header, &backup_header),
            "reciprocal backup GPT header passes CRC and metadata comparison");
     expect(backup_header.current_lba == 999999u &&
            backup_header.backup_lba == 1u &&
-           backup_header.entry_array_lba == 999998u,
+           backup_header.entry_array_lba == 999967u,
            "backup GPT location and reciprocal LBA fields are preserved");
 
     backup_header_sector[16] ^= 1u;
@@ -389,7 +389,7 @@ static void test_gpt(void) {
     expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
                                               &header, &backup_header),
            "backup GPT must point back to primary LBA 1");
-    build_backup_gpt(backup_header_sector, header_sector, 999998u,
+    build_backup_gpt(backup_header_sector, header_sector, 999967u,
                      entries, header.entry_array_bytes);
 
     backup_header_sector[56] ^= 1u;
@@ -398,7 +398,7 @@ static void test_gpt(void) {
     expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
                                               &header, &backup_header),
            "backup GPT disk GUID must match the primary header");
-    build_backup_gpt(backup_header_sector, header_sector, 999998u,
+    build_backup_gpt(backup_header_sector, header_sector, 999967u,
                      entries, header.entry_array_bytes);
 
     put_le32(backup_header_sector + 88u,
@@ -408,7 +408,7 @@ static void test_gpt(void) {
     expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
                                               &header, &backup_header),
            "backup GPT array CRC must match the primary header");
-    build_backup_gpt(backup_header_sector, header_sector, 999998u,
+    build_backup_gpt(backup_header_sector, header_sector, 999967u,
                      entries, header.entry_array_bytes);
 
     put_le32(backup_header_sector + 80u, 8u);
@@ -417,7 +417,7 @@ static void test_gpt(void) {
     expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
                                               &header, &backup_header),
            "backup GPT entry count must match primary metadata");
-    build_backup_gpt(backup_header_sector, header_sector, 999998u,
+    build_backup_gpt(backup_header_sector, header_sector, 999967u,
                      entries, header.entry_array_bytes);
 
     put_le32(backup_header_sector + 84u, 256u);
@@ -426,7 +426,7 @@ static void test_gpt(void) {
     expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
                                               &header, &backup_header),
            "backup GPT entry size must match primary metadata");
-    build_backup_gpt(backup_header_sector, header_sector, 999998u,
+    build_backup_gpt(backup_header_sector, header_sector, 999967u,
                      entries, header.entry_array_bytes);
 
     build_backup_gpt(backup_header_sector, header_sector, 999965u,
@@ -442,7 +442,7 @@ static void test_gpt(void) {
            "backup GPT entry array cannot overlap its header");
 
     /* The primary header must identify the final LBA as its backup. */
-    put_le64(header_sector + 32u, 999998u);
+    put_le64(header_sector + 32u, 999967u);
     put_le32(header_sector + 16u, 0u);
     put_le32(header_sector + 16u, crc32(header_sector, 92u));
     expect(!partition_parse_gpt_header(header_sector, &device, &header),
