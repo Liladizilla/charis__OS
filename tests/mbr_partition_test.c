@@ -23,6 +23,24 @@ static void put_le64(u8* bytes, u64 value) {
     put_le32(bytes + 4u, (u32)(value >> 32));
 }
 
+static u32 read_le32_test(const u8* bytes) {
+    return (u32)bytes[0] |
+           ((u32)bytes[1] << 8) |
+           ((u32)bytes[2] << 16) |
+           ((u32)bytes[3] << 24);
+}
+
+static u64 read_le64_test(const u8* bytes) {
+    return (u64)bytes[0] |
+           ((u64)bytes[1] << 8) |
+           ((u64)bytes[2] << 16) |
+           ((u64)bytes[3] << 24) |
+           ((u64)bytes[4] << 32) |
+           ((u64)bytes[5] << 40) |
+           ((u64)bytes[6] << 48) |
+           ((u64)bytes[7] << 56);
+}
+
 static u32 crc32(const u8* bytes, u32 length) {
     u32 crc = 0xFFFFFFFFu;
     for (u32 i = 0; i < length; i++) {
@@ -203,6 +221,27 @@ static void refresh_gpt_crcs(u8 header[512], u8* entries, u32 array_bytes) {
     put_le32(header + 16u, crc32(header, 92u));
 }
 
+static void build_backup_gpt(u8 header[512],
+                               const u8 primary_header[512],
+                               u64 backup_array_lba,
+                               const u8* entries,
+                               u32 entry_bytes) {
+    memset(header, 0, 512u);
+    memcpy(header, "EFI PART", 8u);
+    put_le32(header + 8u, 0x00010000u);
+    put_le32(header + 12u, 92u);
+    put_le64(header + 24u, 999999u);
+    put_le64(header + 32u, 1u);
+    put_le64(header + 40u, read_le64_test(primary_header + 40u));
+    put_le64(header + 48u, read_le64_test(primary_header + 48u));
+    memcpy(header + 56u, primary_header + 56u, 16u);
+    put_le64(header + 72u, backup_array_lba);
+    put_le32(header + 80u, read_le32_test(primary_header + 80u));
+    put_le32(header + 84u, read_le32_test(primary_header + 84u));
+    put_le32(header + 88u, crc32(entries, entry_bytes));
+    put_le32(header + 16u, crc32(header, 92u));
+}
+
 static void test_ebr(void) {
     u8 sector[512];
     ata_device_info_t device = make_device();
@@ -312,48 +351,162 @@ static void test_gpt(void) {
     gpt_partition_table_t table;
     ata_device_info_t device = make_device();
 
-    build_gpt(header_sector, entries, 4u, 128u, 2048u, 10000u);
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "valid GPT primary header passes signature, bounds and CRC");
-    expect(header.entry_array_lba == 2u && header.entry_array_bytes == 512u &&
-           header.entry_array_sectors == 1u,
+    expect(header.entry_array_lba == 2u &&
+           header.entry_array_bytes == GPT_MIN_RESERVED_BYTES &&
+           header.entry_array_sectors == 32u,
            "GPT entry-array read plan is exact");
-    expect(partition_parse_gpt_entries(&header, entries, 512u, &device, &table),
+    expect(partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
            "valid GPT entry array passes CRC and range checks");
+    gpt_header_info_t malformed_entry_header = header;
+    gpt_partition_table_t rejected_table;
+    malformed_entry_header.entry_size = 136u;
+    malformed_entry_header.entry_array_bytes = 136u * GPT_MAX_PARTITIONS;
+    expect(!partition_parse_gpt_entries(&malformed_entry_header, entries,
+                GPT_MAX_ARRAY_BYTES, &device, &rejected_table),
+           "standalone GPT array parser rejects non-UEFI entry sizes");
     expect(table.valid && table.fully_enumerated &&
            table.partition_count == 1u &&
            table.partitions[0].first_lba == 2048u &&
            table.partitions[0].last_lba == 10000u,
            "GPT partition geometry is preserved");
 
+    u8 backup_header_sector[512];
+    gpt_header_info_t backup_header;
+    build_backup_gpt(backup_header_sector, header_sector, 999967u,
+                     entries, header.entry_array_bytes);
+    expect(partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                             &header, &backup_header),
+           "reciprocal backup GPT header passes CRC and metadata comparison");
+    expect(backup_header.current_lba == 999999u &&
+           backup_header.backup_lba == 1u &&
+           backup_header.entry_array_lba == 999967u,
+           "backup GPT location and reciprocal LBA fields are preserved");
+
+    backup_header_sector[16] ^= 1u;
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT header CRC corruption is rejected");
+    backup_header_sector[16] ^= 1u;
+
+    put_le64(backup_header_sector + 32u, 2u);
+    put_le32(backup_header_sector + 16u, 0u);
+    put_le32(backup_header_sector + 16u, crc32(backup_header_sector, 92u));
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT must point back to primary LBA 1");
+    build_backup_gpt(backup_header_sector, header_sector, 999967u,
+                     entries, header.entry_array_bytes);
+
+    backup_header_sector[56] ^= 1u;
+    put_le32(backup_header_sector + 16u, 0u);
+    put_le32(backup_header_sector + 16u, crc32(backup_header_sector, 92u));
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT disk GUID must match the primary header");
+    build_backup_gpt(backup_header_sector, header_sector, 999967u,
+                     entries, header.entry_array_bytes);
+
+    put_le32(backup_header_sector + 88u,
+             read_le32_test(backup_header_sector + 88u) ^ 1u);
+    put_le32(backup_header_sector + 16u, 0u);
+    put_le32(backup_header_sector + 16u, crc32(backup_header_sector, 92u));
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT array CRC must match the primary header");
+    build_backup_gpt(backup_header_sector, header_sector, 999967u,
+                     entries, header.entry_array_bytes);
+
+    put_le32(backup_header_sector + 80u, 8u);
+    put_le32(backup_header_sector + 16u, 0u);
+    put_le32(backup_header_sector + 16u, crc32(backup_header_sector, 92u));
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT entry count must match primary metadata");
+    build_backup_gpt(backup_header_sector, header_sector, 999967u,
+                     entries, header.entry_array_bytes);
+
+    put_le32(backup_header_sector + 84u, 256u);
+    put_le32(backup_header_sector + 16u, 0u);
+    put_le32(backup_header_sector + 16u, crc32(backup_header_sector, 92u));
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT entry size must match primary metadata");
+    build_backup_gpt(backup_header_sector, header_sector, 999967u,
+                     entries, header.entry_array_bytes);
+
+    build_backup_gpt(backup_header_sector, header_sector, 999965u,
+                     entries, header.entry_array_bytes);
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT entry array cannot overlap the usable region");
+
+    build_backup_gpt(backup_header_sector, header_sector, 999999u,
+                     entries, header.entry_array_bytes);
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT entry array cannot overlap its header");
+
+    /* The primary header must identify the final LBA as its backup. */
+    put_le64(header_sector + 32u, 999998u);
+    put_le32(header_sector + 16u, 0u);
+    put_le32(header_sector + 16u, crc32(header_sector, 92u));
+    expect(!partition_parse_gpt_header(header_sector, &device, &header),
+           "primary GPT alternate LBA must identify the disk's final sector");
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "valid primary GPT header is restored after alternate-LBA test");
+
     entries[200] ^= 1u;
-    expect(!partition_parse_gpt_entries(&header, entries, 512u, &device, &table),
+    expect(!partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
            "GPT partition-array CRC mismatch is rejected");
     entries[200] ^= 1u;
 
-    header_sector[92] ^= 1u;
+    header_sector[511] ^= 1u;
+    expect(!partition_parse_gpt_header(header_sector, &device, &header),
+           "nonzero bytes in the reserved GPT header tail are rejected");
+    header_sector[511] ^= 1u;
     expect(partition_parse_gpt_header(header_sector, &device, &header),
-           "bytes outside header_size do not affect header CRC");
+           "zeroed GPT reserved tail restores valid header parsing");
     header_sector[16] ^= 1u;
     expect(!partition_parse_gpt_header(header_sector, &device, &header),
            "GPT header CRC mismatch is rejected");
+
+    build_gpt(header_sector, entries, 4u, 128u, 2048u, 10000u);
+    expect(partition_parse_gpt_header(header_sector, &device, &header) &&
+           header.entry_array_bytes == 512u,
+           "small GPT payload is valid when its 16 KiB reservation is present");
+    put_le64(header_sector + 40u, 33u);
+    put_le32(header_sector + 16u, 0u);
+    put_le32(header_sector + 16u, crc32(header_sector, 92u));
+    expect(!partition_parse_gpt_header(header_sector, &device, &header),
+           "GPT primary reservation smaller than 16 KiB is rejected");
+
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 136u, 2048u, 10000u);
+    put_le64(header_sector + 40u, 40u);
+    put_le32(header_sector + 16u, 0u);
+    put_le32(header_sector + 16u, crc32(header_sector, 92u));
+    expect(!partition_parse_gpt_header(header_sector, &device, &header),
+           "GPT entry sizes outside 128 times powers of two are rejected");
 
     build_gpt(header_sector, entries, GPT_MAX_PARTITIONS + 1u, 128u, 2048u, 10000u);
     expect(!partition_parse_gpt_header(header_sector, &device, &header),
            "entry count above the hard cap is rejected");
 
-    build_gpt(header_sector, entries, 4u, 128u, 2048u, 10000u);
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "valid header reparses before partition edge cases");
 
     put_le64(entries + 40u, 1000001u);
-    refresh_gpt_crcs(header_sector, entries, 512u);
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "header CRC follows a rebuilt partition array checksum");
-    expect(!partition_parse_gpt_entries(&header, entries, 512u, &device, &table),
+    expect(!partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
            "partition beyond disk capacity is rejected");
 
-    build_gpt(header_sector, entries, 4u, 128u, 2048u, 10000u);
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
     u8* second = entries + 128u;
     for (u32 i = 0; i < 16u; i++) {
         second[i] = (u8)(0xB0u + i);
@@ -361,45 +514,75 @@ static void test_gpt(void) {
     }
     put_le64(second + 32u, 9000u);
     put_le64(second + 40u, 12000u);
-    refresh_gpt_crcs(header_sector, entries, 512u);
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "overlap fixture GPT header validates");
-    expect(!partition_parse_gpt_entries(&header, entries, 512u, &device, &table),
+    expect(!partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
            "overlapping GPT partition extents are rejected");
 
-    build_gpt(header_sector, entries, 4u, 128u, 2048u, 10000u);
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
     second = entries + 128u;
     for (u32 i = 0; i < 16u; i++) second[i] = (u8)(0xB0u + i);
     /* Keep the same unique GUID as entry zero to test GUID uniqueness. */
     for (u32 i = 0; i < 16u; i++) second[16u + i] = entries[16u + i];
     put_le64(second + 32u, 15000u);
     put_le64(second + 40u, 16000u);
-    refresh_gpt_crcs(header_sector, entries, 512u);
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "duplicate-GUID fixture header validates");
-    expect(!partition_parse_gpt_entries(&header, entries, 512u, &device, &table),
+    expect(!partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
            "duplicate GPT unique partition GUIDs are rejected");
 
-    build_gpt(header_sector, entries, 4u, 128u, 2048u, 10000u);
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
     memset(entries + 16u, 0, 16u);
-    refresh_gpt_crcs(header_sector, entries, 512u);
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "zero unique-GUID fixture header validates");
-    expect(!partition_parse_gpt_entries(&header, entries, 512u, &device, &table),
+    expect(!partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
            "used GPT entry with zero unique GUID is rejected");
 
-    build_gpt(header_sector, entries, 4u, 128u, 2048u, 10000u);
+    build_gpt(header_sector, entries, 64u, 256u, 2048u, 10000u);
+    expect(partition_parse_gpt_header(header_sector, &device, &header) &&
+           header.entry_array_bytes == GPT_MIN_RESERVED_BYTES &&
+           header.entry_array_sectors == 32u,
+           "256-byte GPT entries fit the minimum reserved array");
+    expect(partition_parse_gpt_entries(&header, entries,
+               header.entry_array_bytes, &device, &table),
+           "256-byte GPT entries with zero reserved tails are accepted");
+
+    entries[128u] = 1u;
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "active-entry reserved-tail fixture has a valid header and CRC");
+    expect(!partition_parse_gpt_entries(&header, entries,
+                header.entry_array_bytes, &device, &table),
+           "nonzero reserved extension bytes in an active GPT entry are rejected");
+
+    entries[128u] = 0u;
+    entries[256u + 128u] = 1u;
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "unused-entry reserved-tail fixture has a valid header and CRC");
+    expect(!partition_parse_gpt_entries(&header, entries,
+                header.entry_array_bytes, &device, &table),
+           "nonzero reserved extension bytes in an unused GPT slot are rejected");
+
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "base-size GPT entries remain valid after extension-tail tests");
+
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "GPT header passes before limited-access test");
     device.addressable_sectors = 4096u;
-    expect(partition_parse_gpt_entries(&header, entries, 512u, &device, &table) &&
+    expect(partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table) &&
            !table.partitions[0].accessible,
            "partition geometry is separated from current I/O access");
     device = make_device();
 
     expect(!partition_parse_gpt_header(NULL, &device, &header),
            "null GPT header is rejected");
-    expect(!partition_parse_gpt_entries(&header, entries, 512u, NULL, &table),
+    expect(!partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, NULL, &table),
            "null GPT device is rejected");
     expect(!partition_parse_gpt_entries(&header, NULL, 512u, &device, &table),
            "null GPT array is rejected");
