@@ -12,7 +12,6 @@ typedef enum {
     INSTALLER_STORAGE_FAT32_AT_LBA0,
     INSTALLER_STORAGE_NO_PARTITION_SIGNATURE,
     INSTALLER_STORAGE_VALID_MBR,
-    INSTALLER_STORAGE_GPT_PROTECTIVE,
     INSTALLER_STORAGE_VALID_GPT,
     INSTALLER_STORAGE_GPT_METADATA_UNREADABLE,
     INSTALLER_STORAGE_INVALID_PARTITION_METADATA
@@ -30,7 +29,6 @@ typedef struct {
 
 /* Scans the primary-master device once using read-only sector I/O. */
 void installer_storage_init(void);
-bool installer_storage_get_inventory(installer_storage_inventory_t* output);
 const installer_storage_inventory_t* installer_storage_get(void);
 const char* installer_storage_status_label(installer_storage_status_t status);
 
