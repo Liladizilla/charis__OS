@@ -91,6 +91,9 @@
 - [x] Render a centered, framebuffer-scaled boot splash with truthful kernel stages and a timer-backed final handoff interval
 - [x] Show real startup stages on screen and preserve serial diagnostics; structured failure codes and graphical recovery diagnostics remain planned
 - [ ] Separate firmware splash, kernel startup, first boot and OS installation into explicit state machines
+- [x] Decode ATA IDENTIFY model, serial, firmware, logical-sector size, capacity and LBA capabilities; distinguish detected from currently readable devices
+- [x] Clamp existing 512-byte PIO reads/writes to the validated LBA28 addressable capacity; never imply LBA48 I/O is implemented
+- [ ] Add bounded, host-tested MBR and GPT partition discovery over the read-only sector interface
 - [ ] Design an installer that detects hardware/storage and supports safe dry-run partition planning before destructive operations
 - [ ] Implement transactional installation, filesystem creation, bootloader installation, verification and interrupted-install recovery only after storage support is ready
 - [x] Keep text-only and unsupported-framebuffer fallback paths usable
