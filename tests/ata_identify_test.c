@@ -14,9 +14,10 @@ static void expect(bool condition, const char* name) {
 static void set_string(u16 identify[256], u32 first_word,
                        u32 word_count, const char* value) {
     u32 length = word_count * 2u;
+    u32 value_length = value ? (u32)strlen(value) : 0u;
     for (u32 i = 0; i < length; i += 2u) {
-        u8 high = value && value[i] ? (u8)value[i] : (u8)' ';
-        u8 low = value && value[i + 1u] ? (u8)value[i + 1u] : (u8)' ';
+        u8 high = i < value_length ? (u8)value[i] : (u8)' ';
+        u8 low = i + 1u < value_length ? (u8)value[i + 1u] : (u8)' ';
         identify[first_word + i / 2u] = (u16)(((u16)high << 8) | low);
     }
 }
