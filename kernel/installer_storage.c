@@ -175,6 +175,53 @@ static installer_storage_status_t scan_extended_chain(void) {
     return INSTALLER_STORAGE_EBR_CHAIN_LIMIT;
 }
 
+static installer_storage_status_t verify_gpt_backup(
+        const gpt_header_info_t* primary,
+        const u8* primary_entry_array) {
+    if (!primary || !primary_entry_array)
+        return INSTALLER_STORAGE_INVALID_GPT_BACKUP;
+
+    u64 backup_lba = primary->backup_lba;
+    if (backup_lba > 0xFFFFFFFFULL ||
+        !ata_device_lba28_is_addressable(&inventory.device,
+                                         (u32)backup_lba))
+        return INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE;
+
+    u8 backup_sector[MBR_SECTOR_BYTES];
+    if (!ata_read_sector((u32)backup_lba, backup_sector))
+        return INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE;
+
+    if (!partition_parse_gpt_backup_header(backup_sector,
+            &inventory.device, primary, &inventory.gpt_backup_header))
+        return INSTALLER_STORAGE_INVALID_GPT_BACKUP;
+
+    for (u32 sector_index = 0;
+         sector_index < inventory.gpt_backup_header.entry_array_sectors;
+         sector_index++) {
+        u64 lba_wide = inventory.gpt_backup_header.entry_array_lba +
+                       (u64)sector_index;
+        if (lba_wide > 0xFFFFFFFFULL ||
+            !ata_device_lba28_is_addressable(&inventory.device,
+                                             (u32)lba_wide))
+            return INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE;
+
+        u8 sector[MBR_SECTOR_BYTES];
+        if (!ata_read_sector((u32)lba_wide, sector))
+            return INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE;
+
+        u32 offset = sector_index * MBR_SECTOR_BYTES;
+        u32 remaining = primary->entry_array_bytes - offset;
+        u32 compare_bytes = remaining < MBR_SECTOR_BYTES
+                          ? remaining : MBR_SECTOR_BYTES;
+        for (u32 byte = 0; byte < compare_bytes; byte++) {
+            if (sector[byte] != primary_entry_array[offset + byte])
+                return INSTALLER_STORAGE_INVALID_GPT_BACKUP;
+        }
+    }
+
+    return INSTALLER_STORAGE_VALID_GPT;
+}
+
 void installer_storage_init(void) {
     clear_bytes(&inventory, (u32)sizeof(inventory));
 
@@ -279,18 +326,27 @@ void installer_storage_init(void) {
         bool parsed = partition_parse_gpt_entries(&inventory.gpt_header,
             entry_array, inventory.gpt_header.entry_array_bytes,
             &inventory.device, &inventory.gpt_table);
-        kfree(entry_array);
 
         if (!parsed) {
+            kfree(entry_array);
             inventory.status = INSTALLER_STORAGE_INVALID_PARTITION_METADATA;
-            serial_puts("[STORAGE] GPT entry-array CRC or partition geometry is invalid\n");
+            serial_puts("[STORAGE] primary GPT entry-array CRC or partition geometry is invalid\n");
             return;
         }
 
-        inventory.status = INSTALLER_STORAGE_VALID_GPT;
-        kprintf("[STORAGE] valid GPT: %u of %u bounded entries contain partitions\n",
-                inventory.gpt_table.partition_count,
-                inventory.gpt_table.entry_count);
+        inventory.status = verify_gpt_backup(&inventory.gpt_header, entry_array);
+        kfree(entry_array);
+
+        if (inventory.status == INSTALLER_STORAGE_VALID_GPT) {
+            inventory.gpt_table.backup_verified = true;
+            kprintf("[STORAGE] primary and backup GPT verified: %u of %u bounded entries contain partitions\n",
+                    inventory.gpt_table.partition_count,
+                    inventory.gpt_table.entry_count);
+        } else if (inventory.status == INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE) {
+            serial_puts("[STORAGE] primary GPT is valid, but backup metadata is outside the current LBA28 read window or could not be read\n");
+        } else {
+            serial_puts("[STORAGE] primary GPT is valid, but backup header or entry array does not match\n");
+        }
         return;
     }
 
@@ -337,9 +393,13 @@ const char* installer_storage_status_label(installer_storage_status_t status) {
         case INSTALLER_STORAGE_VALID_MBR:
             return "Valid legacy MBR partition table found.";
         case INSTALLER_STORAGE_VALID_GPT:
-            return "Valid GPT header and partition array passed CRC and range validation.";
+            return "Primary and backup GPT headers and partition arrays passed validation.";
         case INSTALLER_STORAGE_GPT_METADATA_UNREADABLE:
-            return "GPT metadata is outside the current read window or could not be read.";
+            return "Primary GPT metadata is outside the current read window or could not be read.";
+        case INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE:
+            return "Primary GPT is valid, but backup metadata is outside the current LBA28 window or could not be read.";
+        case INSTALLER_STORAGE_INVALID_GPT_BACKUP:
+            return "Primary GPT is valid, but the backup header or entry array is malformed or inconsistent.";
         case INSTALLER_STORAGE_EBR_METADATA_UNREADABLE:
             return "An extended partition record is outside the readable range or could not be read.";
         case INSTALLER_STORAGE_INVALID_EBR_CHAIN:

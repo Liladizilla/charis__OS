@@ -9,7 +9,11 @@ static bool fake_device_present;
 static bool fake_read_success;
 static u8 fake_sector_zero[512];
 static u8 fake_gpt_header[512];
-static u8 fake_gpt_entries[512];
+static u8 fake_gpt_entries[GPT_MAX_ARRAY_BYTES];
+static u8 fake_gpt_backup_header[512];
+static u8 fake_gpt_backup_entries[GPT_MAX_ARRAY_BYTES];
+static bool fake_backup_header_read_success;
+static bool fake_backup_array_read_success;
 #define FAKE_EBR_MAX 40u
 static u32 fake_ebr_lbas[FAKE_EBR_MAX];
 static u8 fake_ebr_sectors[FAKE_EBR_MAX][512];
@@ -46,7 +50,17 @@ bool ata_read_sector(u32 lba, void* buffer) {
     if (!fake_read_success) return false;
     if (lba == 0u) memcpy(buffer, fake_sector_zero, 512u);
     else if (lba == 1u) memcpy(buffer, fake_gpt_header, 512u);
-    else if (lba == 2u) memcpy(buffer, fake_gpt_entries, 512u);
+    else if (lba >= 2u && lba < 34u)
+        memcpy(buffer, fake_gpt_entries + (lba - 2u) * 512u, 512u);
+    else if (lba == 999999u) {
+        if (!fake_backup_header_read_success) return false;
+        memcpy(buffer, fake_gpt_backup_header, 512u);
+    }
+    else if (lba >= 999967u && lba < 999999u) {
+        if (!fake_backup_array_read_success) return false;
+        memcpy(buffer, fake_gpt_backup_entries +
+               (lba - 999967u) * 512u, 512u);
+    }
     else {
         bool found = false;
         for (u32 i = 0; i < fake_ebr_count; i++) {
@@ -107,6 +121,10 @@ static void prepare_device(void) {
     memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
     memset(fake_gpt_header, 0, sizeof(fake_gpt_header));
     memset(fake_gpt_entries, 0, sizeof(fake_gpt_entries));
+    memset(fake_gpt_backup_header, 0, sizeof(fake_gpt_backup_header));
+    memset(fake_gpt_backup_entries, 0, sizeof(fake_gpt_backup_entries));
+    fake_backup_header_read_success = true;
+    fake_backup_array_read_success = true;
     memset(fake_ebr_lbas, 0, sizeof(fake_ebr_lbas));
     memset(fake_ebr_sectors, 0, sizeof(fake_ebr_sectors));
     fake_ebr_count = 0u;
@@ -129,7 +147,7 @@ static void put_le64(u8* bytes, u64 value) {
 
 static void prepare_valid_gpt(void) {
     memset(fake_gpt_header, 0, 512u);
-    memset(fake_gpt_entries, 0, 512u);
+    memset(fake_gpt_entries, 0, sizeof(fake_gpt_entries));
     memcpy(fake_gpt_header, "EFI PART", 8u);
     put_le32(fake_gpt_header + 8u, 0x00010000u);
     put_le32(fake_gpt_header + 12u, 92u);
@@ -143,12 +161,39 @@ static void prepare_valid_gpt(void) {
         fake_gpt_entries[16u + i] = (u8)(0x10u + i);
     }
     put_le64(fake_gpt_header + 72u, 2u);
-    put_le32(fake_gpt_header + 80u, 4u);
+    put_le32(fake_gpt_header + 80u, GPT_MAX_PARTITIONS);
     put_le32(fake_gpt_header + 84u, 128u);
     put_le64(fake_gpt_entries + 32u, 2048u);
     put_le64(fake_gpt_entries + 40u, 10000u);
-    put_le32(fake_gpt_header + 88u, test_crc32(fake_gpt_entries, 512u));
+    put_le32(fake_gpt_header + 88u, test_crc32(fake_gpt_entries, GPT_MIN_RESERVED_BYTES));
     put_le32(fake_gpt_header + 16u, test_crc32(fake_gpt_header, 92u));
+
+    memcpy(fake_gpt_backup_entries, fake_gpt_entries, GPT_MIN_RESERVED_BYTES);
+    memcpy(fake_gpt_backup_header, "EFI PART", 8u);
+    put_le32(fake_gpt_backup_header + 8u, 0x00010000u);
+    put_le32(fake_gpt_backup_header + 12u, 92u);
+    put_le64(fake_gpt_backup_header + 24u, 999999u);
+    put_le64(fake_gpt_backup_header + 32u, 1u);
+    put_le64(fake_gpt_backup_header + 40u, 34u);
+    put_le64(fake_gpt_backup_header + 48u, 999966u);
+    for (u32 i = 0; i < 16u; i++)
+        fake_gpt_backup_header[56u + i] = (u8)(i + 1u);
+    put_le64(fake_gpt_backup_header + 72u, 999967u);
+    put_le32(fake_gpt_backup_header + 80u, GPT_MAX_PARTITIONS);
+    put_le32(fake_gpt_backup_header + 84u, 128u);
+    put_le32(fake_gpt_backup_header + 88u,
+             test_crc32(fake_gpt_backup_entries, GPT_MIN_RESERVED_BYTES));
+    put_le32(fake_gpt_backup_header + 16u,
+             test_crc32(fake_gpt_backup_header, 92u));
+}
+
+static void prepare_gpt_disk(void) {
+    prepare_device();
+    prepare_valid_gpt();
+    memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
+    fake_sector_zero[510] = 0x55u;
+    fake_sector_zero[511] = 0xAAu;
+    set_mbr_entry(fake_sector_zero, 0, 0xEEu, 1u, 999999u);
 }
 
 static void prepare_ebr_record(u8 sector[512],
@@ -400,8 +445,41 @@ int main(void) {
     expect((inventory = installer_storage_get()) != NULL &&
            inventory->status == INSTALLER_STORAGE_VALID_GPT &&
            inventory->gpt_table.valid &&
+           inventory->gpt_table.backup_verified &&
            inventory->gpt_table.partition_count == 1u,
-           "protective MBR leads to CRC-validated GPT inventory");
+           "protective MBR leads to primary and backup GPT CRC validation");
+
+    prepare_gpt_disk();
+    fake_gpt_backup_header[16] ^= 1u;
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_INVALID_GPT_BACKUP &&
+           inventory->gpt_table.valid && !inventory->gpt_table.backup_verified,
+           "backup GPT header CRC corruption is reported without discarding valid primary data");
+
+    prepare_gpt_disk();
+    fake_gpt_backup_entries[200] ^= 1u;
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_INVALID_GPT_BACKUP &&
+           inventory->gpt_table.valid && !inventory->gpt_table.backup_verified,
+           "backup entry-array mismatch is rejected while primary inventory remains available");
+
+    prepare_gpt_disk();
+    fake_device.addressable_sectors = 999999u;
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE &&
+           inventory->gpt_table.valid && !inventory->gpt_table.backup_verified,
+           "primary GPT remains available when backup header is outside the LBA28 window");
+
+    prepare_gpt_disk();
+    fake_backup_array_read_success = false;
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE &&
+           inventory->gpt_table.valid && !inventory->gpt_table.backup_verified,
+           "backup entry-array read failure is explicit and non-destructive");
 
     prepare_device();
     prepare_valid_gpt();
@@ -425,7 +503,8 @@ int main(void) {
 
     expect(write_calls == 0u,
            "storage discovery never invokes the disk write API");
-    expect(read_calls == 63u,
+    printf("Installer storage sector reads: %u\\n", read_calls);
+    expect(read_calls == 299u,
            "only bounded MBR, GPT and EBR metadata sectors are read");
     expect(strcmp(installer_storage_status_label(
                INSTALLER_STORAGE_VALID_MBR),

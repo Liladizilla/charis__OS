@@ -390,12 +390,15 @@ static void draw_disk(void) {
                                    " (MBR)");
             }
             text(cx + 40, cy + 244, partition_line, W_DIM);
-        } else if (inventory->status == INSTALLER_STORAGE_VALID_GPT) {
-            char partition_line[72] = {0};
+        } else if (inventory->gpt_table.valid) {
+            char partition_line[104] = {0};
             pos = wizard_append_text(partition_line, sizeof(partition_line),
                                      0, "GPT partitions: ");
             pos = wizard_append_u64(partition_line, sizeof(partition_line), pos,
                                     inventory->gpt_table.partition_count);
+            wizard_append_text(partition_line, sizeof(partition_line), pos,
+                inventory->gpt_table.backup_verified
+                    ? " (backup verified)" : " (primary only)");
             text(cx + 40, cy + 244, partition_line, W_DIM);
         } else if (inventory->status == INSTALLER_STORAGE_GPT_METADATA_UNREADABLE) {
             text(cx + 40, cy + 244,
