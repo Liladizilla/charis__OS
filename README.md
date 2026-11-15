@@ -369,7 +369,7 @@ first in the boot order if the machine also has an installed OS.
 **Bare-metal caveats — read before testing.** The kernel is narrower than a
 normal bootloader in ways that matter on real hardware:
 
-- **Storage is legacy primary-master ATA PIO only** (ports `0x1F0`–`0x1F7`). ATA IDENTIFY reports model, serial, firmware, logical-sector size and total capacity. Read/write access remains 512-byte LBA28, bounded to the reported addressable range. LBA48 capacity is recorded but LBA48 I/O, primary-slave/secondary-channel discovery, AHCI, NVMe and USB storage are not implemented. The installer has no partition writer; see the [storage discovery contract](./docs/installer-storage.md).
+- **Storage is legacy primary-master ATA PIO only** (ports `0x1F0`–`0x1F7`). ATA IDENTIFY reports model, serial, firmware, logical-sector size and total capacity. Read/write access remains 512-byte LBA28, bounded to the reported addressable range. LBA48 capacity is recorded but LBA48 I/O, primary-slave/secondary-channel discovery, AHCI, NVMe and USB storage are not implemented. The installer has no partition writer. Read-only MBR primary-entry parsing is available, while EBR/GPT enumeration is unfinished; see the [storage discovery contract](./docs/installer-storage.md).
   There is no AHCI or NVMe driver, so on a machine that only exposes AHCI there
   will be no filesystem and the kernel falls back to defaults. This is not a
   regression; it is simply unimplemented.
