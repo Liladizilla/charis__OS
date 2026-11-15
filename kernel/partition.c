@@ -439,6 +439,14 @@ bool partition_parse_gpt_entries(const gpt_header_info_t* header,
 
     for (u32 i = 0; i < header->entry_count; i++) {
         const u8* raw = entry_array + (u64)i * header->entry_size;
+
+        /* UEFI reserves every byte after the 128-byte base entry. This
+         * remains mandatory for unused slots as well as active partitions. */
+        if (header->entry_size > 128u &&
+            !all_zero(raw + 128u, header->entry_size - 128u)) {
+            clear_bytes(output, (u32)sizeof(*output));
+            return false;
+        }
         if (all_zero(raw, 16u)) continue;
 
         gpt_partition_t* entry = &output->partitions[output->partition_count];
