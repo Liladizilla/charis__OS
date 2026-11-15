@@ -141,7 +141,7 @@ int main(void) {
                  "write LBA bits 47:40 before low-order address bytes");
     expect_write(5u, ATA_TEST_SECTOR_COUNT, 1u,
                  "write low sector-count byte second");
-    expect_write(6u, ATA_TEST_LBA_LOW, 0xBCu,
+    expect_write(6u, ATA_TEST_LBA_LOW, 0xBBu,
                  "write LBA bits 7:0");
     expect_write(7u, ATA_TEST_LBA_MID, 0x9Au,
                  "write LBA bits 15:8");
