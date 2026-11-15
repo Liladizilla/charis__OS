@@ -68,7 +68,10 @@ The scanner follows a protective MBR with read-only reads of the primary GPT
 header and partition-entry array. It validates the GPT 1.0 signature, revision,
 header size and CRC32; checks LBA geometry and array size before allocation;
 then validates the array CRC32, unique partition GUIDs, usable-LBA bounds,
-disk capacity and overlap.
+disk capacity and overlap. Entry sizes are restricted to the UEFI-defined
+128-byte powers of two supported by this parser (128, 256 and 512 bytes);
+the reserved extension after the 128-byte base entry must be zero in every
+slot, including unused slots.
 
 The array is capped at 128 entries and 64 KiB. The scanner reads no metadata
 outside the current ATA LBA28 access window, even when IDENTIFY reports a
