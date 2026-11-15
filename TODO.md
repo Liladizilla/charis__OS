@@ -98,6 +98,7 @@
 - [x] Keep detected capacity distinct from the sectors addressable by the current PIO path; report zero addressable sectors for unsupported logical-sector sizes
 - [x] Enumerate up to 32 extended MBR logical partitions through a bounded EBR chain; validate relative-LBA bases, nested link extents, container/disk bounds, reserved entries, overlap and cycle detection
 - [x] Validate reciprocal primary/backup GPT header locations, header CRCs, matching disk/usable-range metadata, and byte-identical backup entry arrays against the primary CRC-validated copy
+- [x] Reject nonzero UEFI-reserved extension bytes in 256-byte and 512-byte GPT entries, including unused slots
 - [ ] Design an installer that detects hardware/storage and supports safe dry-run partition planning before destructive operations
 - [ ] Implement transactional installation, filesystem creation, bootloader installation, verification and interrupted-install recovery only after storage support is ready
 - [x] Keep text-only and unsupported-framebuffer fallback paths usable
