@@ -81,6 +81,12 @@ int main(void) {
            "first LBA beyond reported capacity is rejected");
     expect(!ata_device_lba28_is_addressable(NULL, 0u),
            "null device record is rejected");
+    expect(ata_device_lba48_is_addressable(&info, 1999999999ULL),
+           "last reported LBA48 sector is addressable by the extended read path");
+    expect(!ata_device_lba48_is_addressable(&info, 2000000000ULL),
+           "first LBA beyond reported LBA48 capacity is rejected");
+    expect(!ata_device_lba48_is_addressable(&info, 1ULL << 48),
+           "LBA48 address width is enforced");
 
 
     /* Logical sectors larger than 512 bytes are detected but not exposed to
@@ -97,6 +103,8 @@ int main(void) {
            "unsupported sector sizes expose no addressable PIO sectors");
     expect(!ata_device_lba28_is_addressable(&info, 0u),
            "unsupported sector sizes reject every LBA28 read");
+    expect(!ata_device_lba48_is_addressable(&info, 0u),
+           "unsupported sector sizes reject LBA48 reads too");
 
     make_lba28(identify, 1000u);
     identify[49] = 0;
