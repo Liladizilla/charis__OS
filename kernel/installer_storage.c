@@ -87,9 +87,14 @@ static installer_storage_status_t scan_extended_chain(void) {
     u64 current_ebr = table->extended_base_lba;
     u64 container_start = table->extended_base_lba;
     u64 container_end = table->extended_end_lba;
+    /* Each EBR link also carries a size. The next record must remain within
+     * the exact range declared by its parent link, not merely the outer
+     * extended partition. */
+    u64 current_chain_end = container_end;
 
     for (u32 hop = 0; hop < MBR_MAX_LOGICAL_PARTITIONS; hop++) {
         if (current_ebr < container_start || current_ebr >= container_end ||
+            current_ebr >= current_chain_end ||
             current_ebr >= inventory.device.addressable_sectors ||
             current_ebr >= ATA_LBA28_SECTOR_LIMIT ||
             current_ebr > 0xFFFFFFFFULL)
@@ -113,7 +118,7 @@ static installer_storage_status_t scan_extended_chain(void) {
 
         ebr_sector_info_t decoded;
         if (!partition_parse_ebr_sector(sector, current_ebr,
-                container_start, container_end, &inventory.device, &decoded))
+                container_start, current_chain_end, &inventory.device, &decoded))
             return INSTALLER_STORAGE_INVALID_EBR_CHAIN;
 
         const mbr_partition_t* logical = &decoded.logical_partition;
@@ -164,6 +169,7 @@ static installer_storage_status_t scan_extended_chain(void) {
         if (hop + 1u == MBR_MAX_LOGICAL_PARTITIONS)
             return INSTALLER_STORAGE_EBR_CHAIN_LIMIT;
         current_ebr = decoded.next_ebr_lba;
+        current_chain_end = decoded.next_ebr_end_lba;
     }
 
     return INSTALLER_STORAGE_EBR_CHAIN_LIMIT;
