@@ -181,11 +181,9 @@ static installer_storage_status_t scan_extended_chain(void) {
 static bool read_backup_metadata_sector(u64 lba, u8* sector) {
     if (!sector) return false;
 
-    if (lba < ATA_LBA28_SECTOR_LIMIT) {
-        if (!ata_device_lba28_is_addressable(&inventory.device, (u32)lba))
-            return false;
+    if (lba <= 0xFFFFFFFFULL &&
+        ata_device_lba28_is_addressable(&inventory.device, (u32)lba))
         return ata_read_sector((u32)lba, sector);
-    }
 
     if (!ata_device_lba48_is_addressable(&inventory.device, lba))
         return false;
