@@ -175,20 +175,29 @@ static installer_storage_status_t scan_extended_chain(void) {
     return INSTALLER_STORAGE_EBR_CHAIN_LIMIT;
 }
 
+/* Use the ordinary LBA28 command whenever the address fits. LBA48
+ * devices must still verify small-disk backup metadata when their legacy
+ * address window is sufficient; the extended command is only needed above it. */
+static bool read_backup_metadata_sector(u64 lba, u8* sector) {
+    if (!sector) return false;
+
+    if (lba <= 0xFFFFFFFFULL &&
+        ata_device_lba28_is_addressable(&inventory.device, (u32)lba))
+        return ata_read_sector((u32)lba, sector);
+
+    if (!ata_device_lba48_is_addressable(&inventory.device, lba))
+        return false;
+    return ata_read_sector64(lba, sector);
+}
+
 static installer_storage_status_t verify_gpt_backup(
         const gpt_header_info_t* primary,
         const u8* primary_entry_array) {
     if (!primary || !primary_entry_array)
         return INSTALLER_STORAGE_INVALID_GPT_BACKUP;
 
-    u64 backup_lba = primary->backup_lba;
-    if (backup_lba > 0xFFFFFFFFULL ||
-        !ata_device_lba28_is_addressable(&inventory.device,
-                                         (u32)backup_lba))
-        return INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE;
-
     u8 backup_sector[MBR_SECTOR_BYTES];
-    if (!ata_read_sector((u32)backup_lba, backup_sector))
+    if (!read_backup_metadata_sector(primary->backup_lba, backup_sector))
         return INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE;
 
     if (!partition_parse_gpt_backup_header(backup_sector,
@@ -200,13 +209,8 @@ static installer_storage_status_t verify_gpt_backup(
          sector_index++) {
         u64 lba_wide = inventory.gpt_backup_header.entry_array_lba +
                        (u64)sector_index;
-        if (lba_wide > 0xFFFFFFFFULL ||
-            !ata_device_lba28_is_addressable(&inventory.device,
-                                             (u32)lba_wide))
-            return INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE;
-
         u8 sector[MBR_SECTOR_BYTES];
-        if (!ata_read_sector((u32)lba_wide, sector))
+        if (!read_backup_metadata_sector(lba_wide, sector))
             return INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE;
 
         u32 offset = sector_index * MBR_SECTOR_BYTES;
@@ -343,7 +347,7 @@ void installer_storage_init(void) {
                     inventory.gpt_table.partition_count,
                     inventory.gpt_table.entry_count);
         } else if (inventory.status == INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE) {
-            serial_puts("[STORAGE] primary GPT is valid, but backup metadata is outside the current LBA28 read window or could not be read\n");
+            serial_puts("[STORAGE] primary GPT is valid, but backup metadata is outside the supported read range or could not be read\n");
         } else {
             serial_puts("[STORAGE] primary GPT is valid, but backup header or entry array does not match\n");
         }

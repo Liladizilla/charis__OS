@@ -135,3 +135,12 @@ bool ata_device_lba28_is_addressable(const ata_device_info_t* device, u32 lba) {
            (u64)lba < device->addressable_sectors &&
            (u64)lba < ATA_LBA28_SECTOR_LIMIT;
 }
+
+
+bool ata_device_lba48_is_addressable(const ata_device_info_t* device, u64 lba) {
+    return device && device->detected && device->io_supported &&
+           device->lba48_supported &&
+           device->logical_sector_bytes == ATA_SECTOR_BYTES &&
+           lba < device->capacity_sectors &&
+           lba < (1ULL << 48);
+}
