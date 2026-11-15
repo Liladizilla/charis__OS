@@ -393,19 +393,19 @@ const char* installer_storage_status_label(installer_storage_status_t status) {
         case INSTALLER_STORAGE_VALID_MBR:
             return "Valid legacy MBR partition table found.";
         case INSTALLER_STORAGE_VALID_GPT:
-            return "Primary and backup GPT headers and partition arrays passed validation.";
+            return "Primary and backup GPT copies verified.";
         case INSTALLER_STORAGE_GPT_METADATA_UNREADABLE:
-            return "Primary GPT metadata is outside the current read window or could not be read.";
+            return "Primary GPT metadata could not be read by this driver.";
         case INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE:
-            return "Primary GPT is valid, but backup metadata is outside the current LBA28 window or could not be read.";
+            return "Primary GPT valid; backup is outside this driver\'s read range.";
         case INSTALLER_STORAGE_INVALID_GPT_BACKUP:
-            return "Primary GPT is valid, but the backup header or entry array is malformed or inconsistent.";
+            return "Primary GPT valid; backup GPT is malformed or inconsistent.";
         case INSTALLER_STORAGE_EBR_METADATA_UNREADABLE:
-            return "An extended partition record is outside the readable range or could not be read.";
+            return "An EBR record is outside this driver\'s read range.";
         case INSTALLER_STORAGE_INVALID_EBR_CHAIN:
-            return "The extended partition chain is malformed, cyclic or overlapping.";
+            return "The EBR chain is malformed, cyclic or overlapping.";
         case INSTALLER_STORAGE_EBR_CHAIN_LIMIT:
-            return "The extended partition chain exceeds the safe scan limit.";
+            return "The EBR chain exceeds the 32-record scan limit.";
         case INSTALLER_STORAGE_INVALID_PARTITION_METADATA:
             return "Partition metadata is malformed or outside disk bounds.";
         default:
