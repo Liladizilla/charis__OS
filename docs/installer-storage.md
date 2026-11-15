@@ -68,14 +68,44 @@ The scanner follows a protective MBR with read-only reads of the primary GPT
 header and partition-entry array. It validates the GPT 1.0 signature, revision,
 header size and CRC32; checks LBA geometry and array size before allocation;
 then validates the array CRC32, unique partition GUIDs, usable-LBA bounds,
-disk capacity and overlap.
+disk capacity and overlap. Entry sizes are restricted to the UEFI-defined
+128-byte powers of two supported by this parser (128, 256 and 512 bytes);
+the reserved extension after the 128-byte base entry must be zero in every
+slot, including unused slots.
 
 The array is capped at 128 entries and 64 KiB. The scanner reads no metadata
 outside the current ATA LBA28 access window, even when IDENTIFY reports a
 larger LBA48 capacity. A GPT partition beyond that window remains visible as
 present but not accessible through this driver.
 
-Only the primary GPT metadata is read in this milestone. Backup GPT validation,
-repair, hybrid MBR support, partition formatting and all disk writes remain
-out of scope. EBR discovery is read-only and does not make any partition an
-installation target.
+The primary GPT parser accepts revision 1.0 headers with a bounded header
+size, requires the reserved header tail to be zero, and accepts a declared
+entry-array payload up to 64 KiB with entry sizes of 128, 256 or 512 bytes (the
+supported 128 x 2^n sizes). For 512-byte logical sectors it also verifies the
+UEFI-required 16 KiB reserved region before the usable partition range on both
+sides of the disk. The declared array payload itself may be smaller than that
+reservation. CRC32 covers exactly the declared
+entry-array byte length; unused sector padding is not included in that CRC.
+The fixed upper bounds prevent untrusted metadata from driving unbounded
+allocation or iteration.
+
+The scanner now validates both GPT copies without writing to disk. The
+primary header must identify LBA 1 and point to the device's final LBA; the
+backup header must be at that final LBA and point back to LBA 1. Both headers
+must agree on disk GUID, usable-LBA bounds, entry count, entry size, header size
+and entry-array CRC. The backup entry array is read in bounded sectors and
+compared byte-for-byte over the declared array length with the already
+CRC-validated primary array.
+
+If the primary GPT is valid but the backup header or array falls outside the
+current LBA28 access window or cannot be read, the inventory retains the
+primary partition table and reports that backup verification is unavailable.
+A malformed or inconsistent backup receives a separate failure status. The
+first-run screen distinguishes a fully verified backup from primary-only
+inventory; it never presents primary-only as complete redundancy validation.
+
+Backup repair, hybrid MBR support, partition formatting and all disk writes
+remain out of scope. EBR and GPT discovery are read-only and do not make any
+partition an installation target. The disk layout rules follow the UEFI
+Specification's GPT definition (see the [GPT disk-layout and header fields
+sections in UEFI Specification 2.11](https://uefi.org/specs/UEFI/2.11/05_GUID_Partition_Table_Format.html)).
