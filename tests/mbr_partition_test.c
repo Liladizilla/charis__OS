@@ -224,6 +224,23 @@ static void test_ebr(void) {
     expect(decoded.has_next_ebr && decoded.next_ebr_lba == 110000u,
            "next EBR pointer is relative to the extended partition base");
 
+    expect(decoded.next_ebr_end_lba == 510000u,
+           "the next EBR link's declared extent is preserved");
+
+    /* The next EBR and its data must fit inside the previous link's range. */
+    prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x83u, 63u, 1000u);
+    set_mbr_entry(sector, 1, 0, 0x0Fu, 100000u, 5000u);
+    expect(partition_parse_ebr_sector(sector, base, base, end,
+                                      &device, &decoded),
+           "bounded parent link decodes");
+    prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x07u, 1000u, 5000u);
+    expect(!partition_parse_ebr_sector(sector, decoded.next_ebr_lba,
+                                       base, decoded.next_ebr_end_lba,
+                                       &device, &decoded),
+           "logical data beyond the parent link extent is rejected");
+
     prepare_mbr(sector);
     set_mbr_entry(sector, 0, 0, 0x07u, 63u, 1000u);
     expect(partition_parse_ebr_sector(sector, 110000u, base, end,
