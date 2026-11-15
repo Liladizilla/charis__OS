@@ -25,6 +25,7 @@ typedef struct {
 
 /* Decode the 256-word ATA IDENTIFY DEVICE payload without hardware I/O. */
 bool ata_identify_decode(const u16 identify[256], ata_device_info_t* output);
+bool ata_device_lba28_is_addressable(const ata_device_info_t* device, u32 lba);
 
 void ata_init(void);
 bool ata_is_present(void);
