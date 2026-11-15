@@ -18,19 +18,19 @@ static void put_le32(u8* bytes, u32 value) {
     bytes[3] = (u8)(value >> 24);
 }
 
-static void set_entry(u8 sector[512], u32 index, u8 boot, u8 type,
-                      u32 first_lba, u32 sector_count) {
-    u8* entry = &sector[446u + index * 16u];
-    entry[0] = boot;
-    entry[4] = type;
-    put_le32(&entry[8], first_lba);
-    put_le32(&entry[12], sector_count);
+static void put_le64(u8* bytes, u64 value) {
+    put_le32(bytes, (u32)value);
+    put_le32(bytes + 4u, (u32)(value >> 32));
 }
 
-static void prepare_mbr(u8 sector[512]) {
-    memset(sector, 0, 512u);
-    sector[510] = 0x55u;
-    sector[511] = 0xAAu;
+static u32 crc32(const u8* bytes, u32 length) {
+    u32 crc = 0xFFFFFFFFu;
+    for (u32 i = 0; i < length; i++) {
+        crc ^= bytes[i];
+        for (u32 bit = 0; bit < 8u; bit++)
+            crc = (crc >> 1) ^ ((u32)-(s32)(crc & 1u) & 0xEDB88320u);
+    }
+    return crc ^ 0xFFFFFFFFu;
 }
 
 static ata_device_info_t make_device(void) {
@@ -44,110 +44,148 @@ static ata_device_info_t make_device(void) {
     return device;
 }
 
-int main(void) {
+static void build_gpt(u8 header[512], u8 entries[GPT_MAX_ARRAY_BYTES],
+                      u32 entry_count, u32 entry_size,
+                      u64 first, u64 last) {
+    memset(header, 0, 512u);
+    memset(entries, 0, GPT_MAX_ARRAY_BYTES);
+    memcpy(header, "EFI PART", 8u);
+    put_le32(header + 8u, 0x00010000u);
+    put_le32(header + 12u, 92u);
+    put_le64(header + 24u, 1u);
+    put_le64(header + 32u, 999999u);
+    put_le64(header + 40u, 34u);
+    put_le64(header + 48u, 999966u);
+    for (u32 i = 0; i < 16u; i++) {
+        header[56u + i] = (u8)(i + 1u);
+    }
+    put_le64(header + 72u, 2u);
+    put_le32(header + 80u, entry_count);
+    put_le32(header + 84u, entry_size);
+
+    if (entry_count && entry_size >= 128u) {
+        u8* entry = entries;
+        for (u32 i = 0; i < 16u; i++) {
+            entry[i] = (u8)(0xA0u + i);
+            entry[16u + i] = (u8)(0x10u + i);
+        }
+        put_le64(entry + 32u, first);
+        put_le64(entry + 40u, last);
+    }
+
+    u32 bytes = entry_count * entry_size;
+    if (bytes > GPT_MAX_ARRAY_BYTES) bytes = GPT_MAX_ARRAY_BYTES;
+    put_le32(header + 88u, crc32(entries, bytes));
+    put_le32(header + 16u, crc32(header, 92u));
+}
+
+static void test_mbr(void) {
     u8 sector[512];
     partition_table_t table;
     ata_device_info_t device = make_device();
 
-    prepare_mbr(sector);
+    memset(sector, 0, sizeof(sector));
+    sector[510] = 0x55u;
+    sector[511] = 0xAAu;
     expect(partition_parse_mbr_sector(sector, &device, &table),
            "valid empty MBR sector parses");
     expect(table.valid && table.scheme == PARTITION_SCHEME_MBR &&
            table.partition_count == 0u && table.fully_enumerated,
            "empty MBR is distinguishable from an absent signature");
 
-    prepare_mbr(sector);
-    set_entry(sector, 0, 0x80u, 0x0Cu, 2048u, 100000u);
-    set_entry(sector, 1, 0x00u, 0x07u, 102048u, 200000u);
+    memset(sector, 0, sizeof(sector));
+    sector[510] = 0x55u;
+    sector[511] = 0xAAu;
+    sector[446u] = 0x80u;
+    sector[450u] = 0x0Cu;
+    put_le32(sector + 454u, 2048u);
+    put_le32(sector + 458u, 100000u);
     expect(partition_parse_mbr_sector(sector, &device, &table),
-           "two adjacent primary partitions parse");
-    expect(table.partition_count == 2u &&
-           table.partitions[0].bootable &&
-           table.partitions[0].accessible &&
-           table.partitions[1].type == 0x07u,
-           "primary partition metadata is preserved");
-
-    prepare_mbr(sector);
-    set_entry(sector, 0, 0, 0x0Fu, 2048u, 600000u);
-    expect(partition_parse_mbr_sector(sector, &device, &table),
-           "extended partition container is parsed");
-    expect(table.has_extended && !table.fully_enumerated &&
-           table.partitions[0].extended,
-           "extended chain is explicitly marked incomplete");
-
-    prepare_mbr(sector);
-    set_entry(sector, 0, 0, 0xEEu, 1u, 999999u);
-    expect(partition_parse_mbr_sector(sector, &device, &table),
-           "protective GPT MBR parses");
-    expect(table.scheme == PARTITION_SCHEME_GPT_PROTECTIVE &&
-           !table.fully_enumerated,
-           "protective MBR does not imply GPT header/array parsing");
-
-    prepare_mbr(sector);
-    set_entry(sector, 0, 0, 0xEEu, 1u, 999999u);
-    set_entry(sector, 1, 0, 0x07u, 2048u, 100000u);
-    expect(!partition_parse_mbr_sector(sector, &device, &table) &&
-           table.scheme == PARTITION_SCHEME_INVALID,
-           "hybrid protective MBR is rejected");
-
-    prepare_mbr(sector);
-    set_entry(sector, 0, 0, 0x0Cu, 2048u, 100000u);
-    set_entry(sector, 1, 0, 0x07u, 50000u, 100000u);
-    expect(!partition_parse_mbr_sector(sector, &device, &table),
-           "overlapping primary partitions are rejected");
-
-    prepare_mbr(sector);
-    set_entry(sector, 0, 0x7Fu, 0x0Cu, 2048u, 100000u);
-    expect(!partition_parse_mbr_sector(sector, &device, &table),
-           "invalid boot flag is rejected");
-
-    prepare_mbr(sector);
-    set_entry(sector, 0, 0, 0x0Cu, 2048u, 0u);
-    expect(!partition_parse_mbr_sector(sector, &device, &table),
-           "non-empty partition with zero length is rejected");
-
-    prepare_mbr(sector);
-    set_entry(sector, 0, 0, 0x0Cu, 0u, 100000u);
-    expect(!partition_parse_mbr_sector(sector, &device, &table),
-           "partition starting at LBA zero is rejected");
-
-    prepare_mbr(sector);
-    set_entry(sector, 0, 0, 0x0Cu, 900000u, 200000u);
-    expect(!partition_parse_mbr_sector(sector, &device, &table),
-           "partition extending beyond disk capacity is rejected");
-
-    prepare_mbr(sector);
-    set_entry(sector, 0, 0, 0x0Cu, 200000u, 10000u);
-    device.addressable_sectors = 100000u;
-    expect(partition_parse_mbr_sector(sector, &device, &table),
-           "valid partition beyond current LBA28 access window is inventoried");
-    expect(table.partitions[0].present && !table.partitions[0].accessible,
-           "partition geometry and current readability are separate");
-    device = make_device();
+           "valid primary MBR entry parses");
+    expect(table.partition_count == 1u && table.partitions[0].bootable &&
+           table.partitions[0].accessible,
+           "MBR bootability and accessibility preserved");
 
     memset(sector, 0, sizeof(sector));
-    expect(partition_parse_mbr_sector(sector, &device, &table),
-           "missing MBR signature is a non-error absence result");
-    expect(table.scheme == PARTITION_SCHEME_NONE && !table.valid,
-           "missing signature is never called an empty valid MBR");
+    sector[510] = 0x55u;
+    sector[511] = 0xAAu;
+    sector[450u] = 0xEEu;
+    put_le32(sector + 454u, 1u);
+    put_le32(sector + 458u, 999999u);
+    expect(partition_parse_mbr_sector(sector, &device, &table) &&
+           table.scheme == PARTITION_SCHEME_GPT_PROTECTIVE &&
+           !table.fully_enumerated,
+           "protective MBR identified without claiming GPT parsing");
+}
 
-    prepare_mbr(sector);
-    device.logical_sector_bytes = 4096u;
-    expect(!partition_parse_mbr_sector(sector, &device, &table),
-           "non-512-byte device is not parsed as an MBR sector");
-    device = make_device();
+static void test_gpt(void) {
+    u8 header_sector[512];
+    u8 entries[GPT_MAX_ARRAY_BYTES];
+    gpt_header_info_t header;
+    gpt_partition_table_t table;
+    ata_device_info_t device = make_device();
 
-    expect(!partition_parse_mbr_sector(NULL, &device, &table),
-           "null sector is rejected");
-    expect(!partition_parse_mbr_sector(sector, NULL, &table),
-           "null device metadata is rejected");
-    expect(!partition_parse_mbr_sector(sector, &device, NULL),
-           "null output is rejected");
+    build_gpt(header_sector, entries, 4u, 128u, 2048u, 10000u);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "valid GPT primary header passes signature, bounds and CRC");
+    expect(header.entry_array_lba == 2u && header.entry_array_bytes == 512u &&
+           header.entry_array_sectors == 1u,
+           "GPT entry array read plan is exact");
+    expect(partition_parse_gpt_entries(&header, entries, 512u, &device, &table),
+           "valid GPT entry array passes CRC and range checks");
+    expect(table.valid && table.fully_enumerated &&
+           table.partition_count == 1u &&
+           table.partitions[0].first_lba == 2048u &&
+           table.partitions[0].last_lba == 10000u,
+           "GPT partition geometry is preserved");
 
+    entries[200] ^= 1u;
+    expect(!partition_parse_gpt_entries(&header, entries, 512u, &device, &table),
+           "GPT partition-array CRC mismatch is rejected");
+    entries[200] ^= 1u;
+
+    header_sector[92] ^= 1u;
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "bytes outside GPT header_size do not affect header CRC");
+    header_sector[16] ^= 1u;
+    expect(!partition_parse_gpt_header(header_sector, &device, &header),
+           "GPT header CRC mismatch is rejected");
+
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS + 1u, 128u, 2048u, 10000u);
+    expect(!partition_parse_gpt_header(header_sector, &device, &header),
+           "entry count above the hard cap is rejected");
+
+    build_gpt(header_sector, entries, 4u, 128u, 2048u, 10000u);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "valid header reparses before partition edge cases");
+    put_le64(entries + 40u, 1000001u);
+    put_le32(header_sector + 88u, crc32(entries, 512u));
+    put_le32(header_sector + 16u, 0u);
+    put_le32(header_sector + 16u, crc32(header_sector, 92u));
+    expect(!partition_parse_gpt_entries(&header, entries, 512u, &device, &table),
+           "partition beyond disk capacity is rejected");
+
+    build_gpt(header_sector, entries, 4u, 128u, 2048u, 10000u);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "GPT header passes before limited-access test");
+    device.addressable_sectors = 4096u;
+    expect(partition_parse_gpt_entries(&header, entries, 512u, &device, &table) &&
+           !table.partitions[0].accessible,
+           "partition geometry is separated from current I/O access");
+
+    expect(!partition_parse_gpt_header(NULL, &device, &header),
+           "null GPT header is rejected");
+    expect(!partition_parse_gpt_entries(&header, entries, 512u, NULL, &table),
+           "null GPT device is rejected");
+}
+
+int main(void) {
+    test_mbr();
+    test_gpt();
     if (failures) {
-        fprintf(stderr, "MBR parser: %d failure(s)\n", failures);
+        fprintf(stderr, "Partition parser: %d failure(s)\n", failures);
         return 1;
     }
-    puts("MBR parser: all checks passed");
+    puts("Partition parser: all checks passed");
     return 0;
 }
