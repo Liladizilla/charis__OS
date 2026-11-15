@@ -258,6 +258,13 @@ static void test_ebr(void) {
            "next EBR cannot point inside the current logical partition");
 
     prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x83u, 2000u, 1000u);
+    set_mbr_entry(sector, 1, 0, 0x0Fu, 1000u, 3000u);
+    expect(!partition_parse_ebr_sector(sector, base, base, end,
+                                       &device, &decoded),
+           "the full next-EBR link extent cannot overlap logical data");
+
+    prepare_mbr(sector);
     set_mbr_entry(sector, 0, 0, 0x83u, 63u, 1000u);
     set_mbr_entry(sector, 2, 0, 0x83u, 2000u, 1000u);
     expect(!partition_parse_ebr_sector(sector, base, base, end,
