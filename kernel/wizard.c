@@ -287,30 +287,95 @@ static void draw_timezone(void) {
     draw_list(cx + 40, cy + 100, cw - 80, TIMEZONES, TIMEZONE_COUNT, w.sel[STEP_TIMEZONE]);
 }
 
+static u32 wizard_append_text(char* output, u32 capacity,
+                              u32 position, const char* value) {
+    if (!output || !capacity || !value) return position;
+    while (*value && position + 1u < capacity)
+        output[position++] = *value++;
+    output[position] = '\0';
+    return position;
+}
+
+static u32 wizard_append_u64(char* output, u32 capacity,
+                             u32 position, u64 value) {
+    char reversed[20];
+    u32 digits = 0;
+    do {
+        reversed[digits++] = (char)('0' + (value % 10u));
+        value /= 10u;
+    } while (value && digits < sizeof(reversed));
+
+    while (digits && position + 1u < capacity)
+        output[position++] = reversed[--digits];
+    output[position] = '\0';
+    return position;
+}
+
 static void draw_disk(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    u32 cw = 640, ch = 320;
+    u32 cw = 640, ch = 350;
     u32 cx = (sw > cw) ? (sw - cw) / 2 : 0;
     u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
     card(cx, cy, cw, ch);
 
-    draw_step_header("Target drive", "Where the system would be installed.",
+    draw_step_header("Target drive", "Read-only storage inventory. No installation writes are available.",
                      cx, cy);
 
-    text(cx + 40, cy + 110,
-         ata_is_present() ? "Primary ATA device detected." : "No primary ATA device detected.",
-         W_ACCENT);
-    text(cx + 40, cy + 140,
-         "The driver supports legacy ATA PIO on the primary channel only.",
-         W_DIM);
-    text(cx + 40, cy + 160,
-         "It does not provide SATA/AHCI or NVMe support.",
-         W_DIM);
-    text(cx + 40, cy + 190,
-         "Disk installation is not implemented; this step is informational.",
+    ata_device_info_t device;
+    if (!ata_get_device_info(&device)) {
+        text(cx + 40, cy + 110,
+             "No primary-master ATA device detected.",
+             W_ACCENT);
+        text(cx + 40, cy + 142,
+             "AHCI, NVMe, USB storage and secondary ATA devices",
+             W_DIM);
+        text(cx + 40, cy + 162,
+             "are not discovered by the current storage driver.",
+             W_DIM);
+    } else {
+        text(cx + 40, cy + 108,
+             device.model[0] ? device.model : "ATA model not reported",
+             W_ACCENT);
+
+        char capacity_line[80] = {0};
+        u32 pos = wizard_append_text(capacity_line, sizeof(capacity_line),
+                                     0, "Capacity: ");
+        pos = wizard_append_u64(capacity_line, sizeof(capacity_line), pos,
+                                device.capacity_sectors);
+        wizard_append_text(capacity_line, sizeof(capacity_line), pos,
+                           " sectors");
+        text(cx + 40, cy + 132, capacity_line, W_DIM);
+
+        char sector_line[64] = {0};
+        pos = wizard_append_text(sector_line, sizeof(sector_line),
+                                 0, "Logical sector: ");
+        pos = wizard_append_u64(sector_line, sizeof(sector_line), pos,
+                                device.logical_sector_bytes);
+        wizard_append_text(sector_line, sizeof(sector_line), pos, " bytes");
+        text(cx + 40, cy + 154, sector_line, W_DIM);
+
+        text(cx + 40, cy + 176,
+             device.io_supported
+                ? "Current driver: 512-byte LBA28 PIO read/write."
+                : "Detected, but unsupported by the current PIO path.",
+             device.io_supported ? W_DIM : W_ACCENT);
+
+        if (device.lba48_supported) {
+            text(cx + 40, cy + 198,
+                 "LBA48 capacity reported; sector I/O remains LBA28.",
+                 W_DIM);
+        } else {
+            text(cx + 40, cy + 198,
+                 "LBA48 sector I/O is not implemented.",
+                 W_DIM);
+        }
+    }
+
+    text(cx + 40, cy + 244,
+         "The installer and partition writer are not implemented yet.",
          W_HINT);
-    text(cx + 40, cy + 210,
-         "This screen reports detection only and will not modify a disk.",
+    text(cx + 40, cy + 266,
+         "This inventory is read-only. No disk sectors are modified.",
          W_HINT);
 }
 
