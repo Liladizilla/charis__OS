@@ -572,6 +572,31 @@ static void test_gpt(void) {
            "base-size GPT entries remain valid after extension-tail tests");
 
     build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
+    put_le64(entries + 48u, 1ULL << 48);
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
+    expect(partition_parse_gpt_header(header_sector, &device, &header) &&
+           partition_parse_gpt_entries(&header, entries,
+               header.entry_array_bytes, &device, &table),
+           "type-specific GPT attribute bits 48 through 63 are preserved");
+
+    put_le64(entries + 48u, 1ULL << 3);
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "reserved-attribute fixture has valid CRCs");
+    expect(!partition_parse_gpt_entries(&header, entries,
+                header.entry_array_bytes, &device, &table),
+           "reserved GPT attribute bits 3 through 47 must be zero");
+
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
+    put_le64(entries + 128u + 40u, 1u);
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "nonzero unused-entry fixture has valid CRCs");
+    expect(!partition_parse_gpt_entries(&header, entries,
+                header.entry_array_bytes, &device, &table),
+           "unused GPT entry with a nonzero field is rejected");
+
+    build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "GPT header passes before limited-access test");
     device.addressable_sectors = 4096u;
