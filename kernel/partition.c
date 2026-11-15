@@ -267,8 +267,10 @@ bool partition_parse_ebr_sector(const u8 sector[MBR_SECTOR_BYTES],
     return true;
 }
 
-bool partition_parse_gpt_header(const u8 sector[MBR_SECTOR_BYTES],
+static bool partition_parse_gpt_header_at(
+                                const u8 sector[MBR_SECTOR_BYTES],
                                 const ata_device_info_t* device,
+                                bool backup,
                                 gpt_header_info_t* output) {
     if (!sector || !device || !output) return false;
     clear_bytes(output, (u32)sizeof(*output));
@@ -281,7 +283,7 @@ bool partition_parse_gpt_header(const u8 sector[MBR_SECTOR_BYTES],
     u32 header_crc = read_le32(&sector[16]);
     u32 reserved = read_le32(&sector[20]);
     u64 current_lba = read_le64(&sector[24]);
-    u64 backup_lba = read_le64(&sector[32]);
+    u64 alternate_lba = read_le64(&sector[32]);
     u64 first_usable = read_le64(&sector[40]);
     u64 last_usable = read_le64(&sector[48]);
     u64 entry_array_lba = read_le64(&sector[72]);
@@ -289,40 +291,69 @@ bool partition_parse_gpt_header(const u8 sector[MBR_SECTOR_BYTES],
     u32 entry_size = read_le32(&sector[84]);
     u32 entry_crc = read_le32(&sector[88]);
 
-    if (!device->detected || !device->capacity_sectors ||
+    if (!device->detected || device->capacity_sectors < 3u ||
         device->logical_sector_bytes != MBR_SECTOR_BYTES)
         return false;
 
+    u64 expected_current = backup ? device->capacity_sectors - 1u : 1u;
+    u64 expected_alternate = backup ? 1u : device->capacity_sectors - 1u;
     if (revision != 0x00010000u ||
         header_size < GPT_HEADER_MIN_SIZE ||
         header_size > MBR_SECTOR_BYTES ||
-        reserved != 0u || current_lba != 1u ||
-        backup_lba >= device->capacity_sectors || backup_lba == current_lba ||
-        first_usable < 2u || first_usable > last_usable ||
-        last_usable >= device->capacity_sectors ||
-        backup_lba <= last_usable ||
-        entry_array_lba < 2u ||
+        reserved != 0u ||
+        current_lba != expected_current ||
+        alternate_lba != expected_alternate ||
+        first_usable < 2u ||
+        first_usable > last_usable ||
+        ((last_usable >= expected_alternate) && !backup) ||
+        ((last_usable >= expected_current) && backup) ||
         entry_count == 0u || entry_count > GPT_MAX_PARTITIONS ||
-        entry_size < 128u || entry_size > GPT_MAX_ENTRY_SIZE ||
-        (entry_size & 7u) != 0u)
+        (entry_size != 128u && entry_size != 256u &&
+         entry_size != 512u))
         return false;
 
     if (crc32_gpt_header(sector, header_size) != header_crc)
         return false;
 
+    /* UEFI reserves bytes 92 through the end of the logical block. They
+     * must remain zero even when a larger header-size value is reported. */
+    if (!all_zero(&sector[GPT_HEADER_MIN_SIZE],
+                  MBR_SECTOR_BYTES - GPT_HEADER_MIN_SIZE))
+        return false;
+
     u64 array_bytes_wide = (u64)entry_count * (u64)entry_size;
-    if (!array_bytes_wide || array_bytes_wide > GPT_MAX_ARRAY_BYTES)
+    if (array_bytes_wide > GPT_MAX_ARRAY_BYTES)
         return false;
 
     u64 array_sectors_wide = (array_bytes_wide + 511u) / 512u;
     u64 array_end = entry_array_lba + array_sectors_wide;
+    u64 minimum_reserved_end =
+        entry_array_lba + (GPT_MIN_RESERVED_BYTES / MBR_SECTOR_BYTES);
     if (array_end <= entry_array_lba ||
+        minimum_reserved_end <= entry_array_lba ||
         array_end > device->capacity_sectors ||
-        array_end > first_usable ||
-        (backup_lba >= entry_array_lba && backup_lba < array_end))
+        minimum_reserved_end > device->capacity_sectors)
         return false;
 
-    output->backup_lba = backup_lba;
+    if (!backup) {
+        /* The primary array and its 16 KiB reservation follow LBA 1 and
+         * finish before FirstUsableLBA. */
+        if (entry_array_lba <= current_lba ||
+            array_end > first_usable ||
+            minimum_reserved_end > first_usable)
+            return false;
+    } else {
+        /* The backup array and its 16 KiB reservation sit after LastUsableLBA
+         * and finish before the backup header. */
+        if (entry_array_lba <= last_usable ||
+            array_end > current_lba ||
+            minimum_reserved_end > current_lba)
+            return false;
+    }
+
+    output->current_lba = current_lba;
+    output->backup_lba = alternate_lba;
+    output->header_size = header_size;
     output->first_usable_lba = first_usable;
     output->last_usable_lba = last_usable;
     output->entry_array_lba = entry_array_lba;
@@ -331,9 +362,44 @@ bool partition_parse_gpt_header(const u8 sector[MBR_SECTOR_BYTES],
     output->entry_array_bytes = (u32)array_bytes_wide;
     output->entry_array_sectors = (u32)array_sectors_wide;
     output->entry_array_crc32 = entry_crc;
-    for (u32 i = 0; i < 16u; i++) output->disk_guid[i] = sector[56u + i];
+    for (u32 i = 0; i < 16u; i++)
+        output->disk_guid[i] = sector[56u + i];
 
     if (all_zero(output->disk_guid, 16u)) {
+        clear_bytes(output, (u32)sizeof(*output));
+        return false;
+    }
+
+    return true;
+}
+
+bool partition_parse_gpt_header(const u8 sector[MBR_SECTOR_BYTES],
+                                const ata_device_info_t* device,
+                                gpt_header_info_t* output) {
+    return partition_parse_gpt_header_at(sector, device, false, output);
+}
+
+bool partition_parse_gpt_backup_header(
+                                const u8 sector[MBR_SECTOR_BYTES],
+                                const ata_device_info_t* device,
+                                const gpt_header_info_t* primary,
+                                gpt_header_info_t* output) {
+    if (!primary || !output) return false;
+    if (!partition_parse_gpt_header_at(sector, device, true, output))
+        return false;
+
+    if (primary->current_lba != 1u ||
+        output->current_lba != primary->backup_lba ||
+        output->backup_lba != primary->current_lba ||
+        output->header_size != primary->header_size ||
+        output->first_usable_lba != primary->first_usable_lba ||
+        output->last_usable_lba != primary->last_usable_lba ||
+        output->entry_count != primary->entry_count ||
+        output->entry_size != primary->entry_size ||
+        output->entry_array_bytes != primary->entry_array_bytes ||
+        output->entry_array_sectors != primary->entry_array_sectors ||
+        output->entry_array_crc32 != primary->entry_array_crc32 ||
+        !bytes_equal(output->disk_guid, primary->disk_guid, 16u)) {
         clear_bytes(output, (u32)sizeof(*output));
         return false;
     }
@@ -351,8 +417,9 @@ bool partition_parse_gpt_entries(const gpt_header_info_t* header,
 
     if (!device->detected || !device->capacity_sectors ||
         header->entry_count == 0u || header->entry_count > GPT_MAX_PARTITIONS ||
-        header->entry_size < 128u || header->entry_size > GPT_MAX_ENTRY_SIZE ||
-        (header->entry_size & 7u) != 0u)
+        (header->entry_size != 128u &&
+         header->entry_size != 256u &&
+         header->entry_size != 512u))
         return false;
 
     u64 required_bytes = (u64)header->entry_count * header->entry_size;
@@ -373,6 +440,14 @@ bool partition_parse_gpt_entries(const gpt_header_info_t* header,
 
     for (u32 i = 0; i < header->entry_count; i++) {
         const u8* raw = entry_array + (u64)i * header->entry_size;
+
+        /* UEFI reserves every byte after the 128-byte base entry. This
+         * remains mandatory for unused slots as well as active partitions. */
+        if (header->entry_size > 128u &&
+            !all_zero(raw + 128u, header->entry_size - 128u)) {
+            clear_bytes(output, (u32)sizeof(*output));
+            return false;
+        }
         if (all_zero(raw, 16u)) continue;
 
         gpt_partition_t* entry = &output->partitions[output->partition_count];
