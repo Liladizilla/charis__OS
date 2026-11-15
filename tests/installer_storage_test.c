@@ -2,13 +2,19 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 static ata_device_info_t fake_device;
 static bool fake_device_present;
 static bool fake_read_success;
 static u8 fake_sector_zero[512];
+static u8 fake_gpt_header[512];
+static u8 fake_gpt_entries[512];
 static u32 read_calls;
 static u32 write_calls;
+
+void* kmalloc(usize size) { return malloc((size_t)size); }
+void kfree(void* pointer) { free(pointer); }
 
 void serial_puts(const char* text) {
     (void)text;
@@ -31,10 +37,13 @@ bool ata_device_lba28_is_addressable(const ata_device_info_t* device, u32 lba) {
 }
 
 bool ata_read_sector(u32 lba, void* buffer) {
-    if (lba != 0u || !buffer) return false;
+    if (!buffer) return false;
     read_calls++;
     if (!fake_read_success) return false;
-    memcpy(buffer, fake_sector_zero, sizeof(fake_sector_zero));
+    if (lba == 0u) memcpy(buffer, fake_sector_zero, 512u);
+    else if (lba == 1u) memcpy(buffer, fake_gpt_header, 512u);
+    else if (lba == 2u) memcpy(buffer, fake_gpt_entries, 512u);
+    else return false;
     return true;
 }
 
@@ -82,6 +91,45 @@ static void prepare_device(void) {
     fake_device_present = true;
     fake_read_success = true;
     memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
+}
+
+static u32 test_crc32(const u8* bytes, u32 length) {
+    u32 crc = 0xFFFFFFFFu;
+    for (u32 i = 0; i < length; i++) {
+        crc ^= bytes[i];
+        for (u32 bit = 0; bit < 8u; bit++)
+            crc = (crc >> 1) ^ ((u32)-(s32)(crc & 1u) & 0xEDB88320u);
+    }
+    return crc ^ 0xFFFFFFFFu;
+}
+
+static void put_le64(u8* bytes, u64 value) {
+    put_le32(bytes, (u32)value);
+    put_le32(bytes + 4u, (u32)(value >> 32));
+}
+
+static void prepare_valid_gpt(void) {
+    memset(fake_gpt_header, 0, 512u);
+    memset(fake_gpt_entries, 0, 512u);
+    memcpy(fake_gpt_header, "EFI PART", 8u);
+    put_le32(fake_gpt_header + 8u, 0x00010000u);
+    put_le32(fake_gpt_header + 12u, 92u);
+    put_le64(fake_gpt_header + 24u, 1u);
+    put_le64(fake_gpt_header + 32u, 999999u);
+    put_le64(fake_gpt_header + 40u, 34u);
+    put_le64(fake_gpt_header + 48u, 999966u);
+    for (u32 i = 0; i < 16u; i++) {
+        fake_gpt_header[56u + i] = (u8)(i + 1u);
+        fake_gpt_entries[i] = (u8)(0xA0u + i);
+        fake_gpt_entries[16u + i] = (u8)(0x10u + i);
+    }
+    put_le64(fake_gpt_header + 72u, 2u);
+    put_le32(fake_gpt_header + 80u, 4u);
+    put_le32(fake_gpt_header + 84u, 128u);
+    put_le64(fake_gpt_entries + 32u, 2048u);
+    put_le64(fake_gpt_entries + 40u, 10000u);
+    put_le32(fake_gpt_header + 88u, test_crc32(fake_gpt_entries, 512u));
+    put_le32(fake_gpt_header + 16u, test_crc32(fake_gpt_header, 92u));
 }
 
 static void prepare_fat32_boot_sector(void) {
@@ -160,6 +208,20 @@ int main(void) {
            inventory.status == INSTALLER_STORAGE_GPT_PROTECTIVE,
            "protective GPT MBR is reported without claiming GPT enumeration");
 
+
+    prepare_device();
+    prepare_valid_gpt();
+    memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
+    fake_sector_zero[510] = 0x55u;
+    fake_sector_zero[511] = 0xAAu;
+    set_mbr_entry(fake_sector_zero, 0, 0xEEu, 1u, 999999u);
+    installer_storage_init();
+    expect(installer_storage_get_inventory(&inventory) &&
+           inventory.status == INSTALLER_STORAGE_VALID_GPT &&
+           inventory.gpt_table.valid &&
+           inventory.gpt_table.partition_count == 1u,
+           "protective MBR leads to CRC-validated GPT inventory");
+
     prepare_device();
     prepare_mbr();
     set_mbr_entry(fake_sector_zero, 1, 0x07u, 10000u, 500000u);
@@ -171,7 +233,7 @@ int main(void) {
     expect(write_calls == 0u,
            "storage discovery never invokes the disk write API");
     fprintf(stderr, "storage scan read attempts: %u\\n", read_calls);
-    expect(read_calls == 5u,
+    expect(read_calls == 8u,
            "only supported devices reach a single sector-zero read");
     expect(strcmp(installer_storage_status_label(
                INSTALLER_STORAGE_VALID_MBR),
