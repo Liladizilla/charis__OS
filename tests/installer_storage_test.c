@@ -185,6 +185,15 @@ static void prepare_valid_gpt(void) {
              test_crc32(fake_gpt_backup_header, 92u));
 }
 
+static void prepare_gpt_disk(void) {
+    prepare_device();
+    prepare_valid_gpt();
+    memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
+    fake_sector_zero[510] = 0x55u;
+    fake_sector_zero[511] = 0xAAu;
+    set_mbr_entry(fake_sector_zero, 0, 0xEEu, 1u, 999999u);
+}
+
 static void prepare_ebr_record(u8 sector[512],
                                 u8 logical_type, u32 logical_relative,
                                 u32 logical_count, u8 link_type,
@@ -438,8 +447,7 @@ int main(void) {
            inventory->gpt_table.partition_count == 1u,
            "protective MBR leads to primary and backup GPT CRC validation");
 
-    prepare_device();
-    prepare_valid_gpt();
+    prepare_gpt_disk();
     fake_gpt_backup_header[16] ^= 1u;
     installer_storage_init();
     expect((inventory = installer_storage_get()) != NULL &&
@@ -447,8 +455,7 @@ int main(void) {
            inventory->gpt_table.valid && !inventory->gpt_table.backup_verified,
            "backup GPT header CRC corruption is reported without discarding valid primary data");
 
-    prepare_device();
-    prepare_valid_gpt();
+    prepare_gpt_disk();
     fake_gpt_backup_entries[200] ^= 1u;
     installer_storage_init();
     expect((inventory = installer_storage_get()) != NULL &&
@@ -456,8 +463,7 @@ int main(void) {
            inventory->gpt_table.valid && !inventory->gpt_table.backup_verified,
            "backup entry-array mismatch is rejected while primary inventory remains available");
 
-    prepare_device();
-    prepare_valid_gpt();
+    prepare_gpt_disk();
     fake_device.addressable_sectors = 999999u;
     installer_storage_init();
     expect((inventory = installer_storage_get()) != NULL &&
@@ -465,8 +471,7 @@ int main(void) {
            inventory->gpt_table.valid && !inventory->gpt_table.backup_verified,
            "primary GPT remains available when backup header is outside the LBA28 window");
 
-    prepare_device();
-    prepare_valid_gpt();
+    prepare_gpt_disk();
     fake_backup_array_read_success = false;
     installer_storage_init();
     expect((inventory = installer_storage_get()) != NULL &&
