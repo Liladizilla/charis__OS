@@ -93,6 +93,10 @@ int main(void) {
     expect(info.detected && !info.io_supported &&
            info.logical_sector_bytes == 4096u,
            "unsupported 4K logical sectors are not presented as readable");
+    expect(info.addressable_sectors == 0u,
+           "unsupported sector sizes expose no addressable PIO sectors");
+    expect(!ata_device_lba28_is_addressable(&info, 0u),
+           "unsupported sector sizes reject every LBA28 read");
 
     make_lba28(identify, 1000u);
     identify[49] = 0;

@@ -106,18 +106,25 @@ bool ata_identify_decode(const u16 identify[256], ata_device_info_t* output) {
     if (!output->capacity_sectors)
         output->capacity_sectors = lba28_count;
 
-    /* The current PIO commands encode only LBA[27:0]. Never make an LBA48
-     * device appear fully accessible when the I/O path cannot address it. */
-    output->addressable_sectors = lba28_count;
-    if (output->addressable_sectors > output->capacity_sectors)
-        output->addressable_sectors = output->capacity_sectors;
-    if (output->addressable_sectors > ATA_LBA28_SECTOR_LIMIT)
-        output->addressable_sectors = ATA_LBA28_SECTOR_LIMIT;
-
     output->io_supported =
         output->capacity_sectors != 0u &&
-        output->addressable_sectors != 0u &&
+        lba28_count != 0u &&
         output->logical_sector_bytes == ATA_SECTOR_BYTES;
+
+    /* The current PIO commands encode only LBA[27:0]. Never make an LBA48
+     * device appear fully accessible when the I/O path cannot address it.
+     * Keep metadata capacity separate from usable I/O capacity: unsupported
+     * sector sizes and other non-I/O devices must expose zero addressable
+     * sectors, not a misleading count that callers might accidentally use. */
+    if (output->io_supported) {
+        output->addressable_sectors = lba28_count;
+        if (output->addressable_sectors > output->capacity_sectors)
+            output->addressable_sectors = output->capacity_sectors;
+        if (output->addressable_sectors > ATA_LBA28_SECTOR_LIMIT)
+            output->addressable_sectors = ATA_LBA28_SECTOR_LIMIT;
+    } else {
+        output->addressable_sectors = 0u;
+    }
 
     return true;
 }
