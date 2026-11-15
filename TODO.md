@@ -100,6 +100,7 @@
 - [x] Validate reciprocal primary/backup GPT header locations, header CRCs, matching disk/usable-range metadata, and byte-identical backup entry arrays against the primary CRC-validated copy
 - [x] Reject nonzero UEFI-reserved extension bytes in 256-byte and 512-byte GPT entries, including unused slots
 - [x] Require unused GPT entries to be entirely zero and reject reserved attribute bits 3 through 47
+- [x] Expose the read-only device and partition inventory in the first-run live-session flow and capture it in QEMU CI
 - [ ] Design an installer that detects hardware/storage and supports safe dry-run partition planning before destructive operations
 - [ ] Implement transactional installation, filesystem creation, bootloader installation, verification and interrupted-install recovery only after storage support is ready
 - [x] Keep text-only and unsupported-framebuffer fallback paths usable
