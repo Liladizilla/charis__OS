@@ -152,8 +152,12 @@ static installer_storage_status_t scan_extended_chain(void) {
         }
 
         for (u32 i = 0; i < table->logical_partition_count; i++) {
-            if (lba_inside_partition(decoded.next_ebr_lba,
-                                     &table->logical_partitions[i]))
+            const mbr_partition_t* prior = &table->logical_partitions[i];
+            u64 prior_start = prior->first_lba;
+            u64 prior_end = prior_start + prior->sector_count;
+            if (partition_ranges_overlap(decoded.next_ebr_lba,
+                                         decoded.next_ebr_end_lba,
+                                         prior_start, prior_end))
                 return INSTALLER_STORAGE_INVALID_EBR_CHAIN;
         }
 
