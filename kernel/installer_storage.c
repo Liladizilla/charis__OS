@@ -3,6 +3,7 @@
 #include <kernel/ata.h>
 #include <kernel/serial.h>
 #include <kernel/printf.h>
+#include <kernel/memory.h>
 
 static installer_storage_inventory_t inventory;
 
@@ -110,8 +111,76 @@ void installer_storage_init(void) {
     }
 
     if (inventory.partition_table.scheme == PARTITION_SCHEME_GPT_PROTECTIVE) {
-        inventory.status = INSTALLER_STORAGE_GPT_PROTECTIVE;
-        serial_puts("[STORAGE] protective GPT MBR found; GPT entries not yet enumerated\n");
+        u8 gpt_sector[512];
+        if (!ata_device_lba28_is_addressable(&inventory.device, 1u) ||
+            !ata_read_sector(1u, gpt_sector)) {
+            inventory.status = INSTALLER_STORAGE_GPT_METADATA_UNREADABLE;
+            serial_puts("[STORAGE] protective GPT marker found, but primary GPT header cannot be read\n");
+            return;
+        }
+
+        if (!partition_parse_gpt_header(gpt_sector, &inventory.device,
+                                        &inventory.gpt_header)) {
+            inventory.status = INSTALLER_STORAGE_INVALID_PARTITION_METADATA;
+            serial_puts("[STORAGE] primary GPT header signature/CRC/geometry is invalid\n");
+            return;
+        }
+
+        u64 array_end = inventory.gpt_header.entry_array_lba +
+                        inventory.gpt_header.entry_array_sectors;
+        if (array_end <= inventory.gpt_header.entry_array_lba ||
+            array_end > inventory.device.addressable_sectors ||
+            inventory.gpt_header.entry_array_lba >= ATA_LBA28_SECTOR_LIMIT) {
+            inventory.status = INSTALLER_STORAGE_GPT_METADATA_UNREADABLE;
+            serial_puts("[STORAGE] GPT entry array lies outside the current LBA28 read window\n");
+            return;
+        }
+
+        usize padded_bytes = (usize)inventory.gpt_header.entry_array_sectors * 512u;
+        u8* entry_array = (u8*)kmalloc(padded_bytes);
+        if (!entry_array) {
+            inventory.status = INSTALLER_STORAGE_GPT_METADATA_UNREADABLE;
+            serial_puts("[STORAGE] insufficient kernel heap for bounded GPT entry array\n");
+            return;
+        }
+
+        bool array_read = true;
+        for (u32 sector_index = 0;
+             sector_index < inventory.gpt_header.entry_array_sectors;
+             sector_index++) {
+            u64 lba_wide = inventory.gpt_header.entry_array_lba + sector_index;
+            if (lba_wide > 0xFFFFFFFFULL ||
+                !ata_device_lba28_is_addressable(&inventory.device,
+                                                (u32)lba_wide) ||
+                !ata_read_sector((u32)lba_wide,
+                                 entry_array + sector_index * 512u)) {
+                array_read = false;
+                break;
+            }
+        }
+
+        if (!array_read) {
+            kfree(entry_array);
+            inventory.status = INSTALLER_STORAGE_GPT_METADATA_UNREADABLE;
+            serial_puts("[STORAGE] one or more GPT entry-array sectors could not be read\n");
+            return;
+        }
+
+        bool parsed = partition_parse_gpt_entries(&inventory.gpt_header,
+            entry_array, inventory.gpt_header.entry_array_bytes,
+            &inventory.device, &inventory.gpt_table);
+        kfree(entry_array);
+
+        if (!parsed) {
+            inventory.status = INSTALLER_STORAGE_INVALID_PARTITION_METADATA;
+            serial_puts("[STORAGE] GPT entry-array CRC or partition geometry is invalid\n");
+            return;
+        }
+
+        inventory.status = INSTALLER_STORAGE_VALID_GPT;
+        kprintf("[STORAGE] valid GPT: %u of %u bounded entries contain partitions\n",
+                inventory.gpt_table.partition_count,
+                inventory.gpt_table.entry_count);
         return;
     }
 
@@ -151,6 +220,10 @@ const char* installer_storage_status_label(installer_storage_status_t status) {
             return "Valid legacy MBR partition table found.";
         case INSTALLER_STORAGE_GPT_PROTECTIVE:
             return "Protective GPT marker found; GPT entries are not yet enumerated.";
+        case INSTALLER_STORAGE_VALID_GPT:
+            return "Valid GPT header and partition array passed CRC and range validation.";
+        case INSTALLER_STORAGE_GPT_METADATA_UNREADABLE:
+            return "GPT metadata is outside the current read window or could not be read.";
         case INSTALLER_STORAGE_INVALID_PARTITION_METADATA:
             return "Partition metadata is malformed or outside disk bounds.";
         default:
