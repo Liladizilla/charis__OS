@@ -376,7 +376,18 @@ jobs:
           # The kernel's framebuffer is captured directly from the guest.
           {
             sleep 8
-            for step in {1..7}; do
+            # Enter Welcome, Live session, Language and Time zone. The next
+            # page is the read-only storage inventory, now reachable for live
+            # sessions even though the installer itself is still unavailable.
+            for step in {1..4}; do
+              printf 'sendkey ret\n'
+              sleep 1
+            done
+            sleep 1
+            printf 'screendump build/charisos-storage-inventory-preview.ppm\n'
+            sleep 1
+            # Continue through Network, Wallpaper, Summary and Finish.
+            for step in {1..4}; do
               printf 'sendkey ret\n'
               sleep 1
             done
@@ -609,6 +620,8 @@ jobs:
             -monitor stdio -display none \
             >build/desktop-capture-qemu.log 2>&1
 
+          test -s build/charisos-storage-inventory-preview.ppm
+          grep -q '\[WIZ\] storage inventory page status=' build/desktop-capture-serial.log
           test -s build/charisos-desktop-preview.ppm
           test -s build/charisos-pointer-start-preview.ppm
           test -s build/charisos-context-menu-preview.ppm
@@ -791,6 +804,7 @@ jobs:
         with:
           name: charisos-desktop-preview
           path: |
+            build/charisos-storage-inventory-preview.ppm
             build/charisos-desktop-preview.ppm
             build/charisos-pointer-start-preview.ppm
             build/charisos-pointer-moved-preview.ppm

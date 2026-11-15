@@ -319,7 +319,7 @@ static void draw_disk(void) {
     u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
     card(cx, cy, cw, ch);
 
-    draw_step_header("Target drive", "Read-only storage inventory. No installation writes are available.",
+    draw_step_header("Storage inventory", "Read-only device and partition discovery. No installation writes are available.",
                      cx, cy);
 
     const installer_storage_inventory_t* inventory = installer_storage_get();
@@ -390,12 +390,15 @@ static void draw_disk(void) {
                                    " (MBR)");
             }
             text(cx + 40, cy + 244, partition_line, W_DIM);
-        } else if (inventory->status == INSTALLER_STORAGE_VALID_GPT) {
-            char partition_line[72] = {0};
+        } else if (inventory->gpt_table.valid) {
+            char partition_line[104] = {0};
             pos = wizard_append_text(partition_line, sizeof(partition_line),
                                      0, "GPT partitions: ");
             pos = wizard_append_u64(partition_line, sizeof(partition_line), pos,
                                     inventory->gpt_table.partition_count);
+            wizard_append_text(partition_line, sizeof(partition_line), pos,
+                inventory->gpt_table.backup_verified
+                    ? " (backup verified)" : " (primary only)");
             text(cx + 40, cy + 244, partition_line, W_DIM);
         } else if (inventory->status == INSTALLER_STORAGE_GPT_METADATA_UNREADABLE) {
             text(cx + 40, cy + 244,
@@ -550,8 +553,9 @@ static void advance(void) {
     } else {
         step_leave(w.step);
         wizard_step_t next = (wizard_step_t)(w.step + 1);
-        /* The disk step only makes sense when installing. */
-        if (next == STEP_DISK && !w.install) next = STEP_NETWORK;
+        /* Storage inventory is informational and available in live
+         * sessions too. The installer remains disabled, but users should be
+         * able to inspect exactly what this build can and cannot access. */
         w.step = next;
     }
 }
@@ -560,9 +564,8 @@ static void go_back(void) {
     if (w.step == STEP_WELCOME) return;
     if (w.step == STEP_DONE) { w.step = STEP_WALLPAPER; return; }
     wizard_step_t prev = (wizard_step_t)(w.step - 1);
-    /* The install-only disk step is skipped in both directions. Returning
-     * from Network should land on Time zone, not jump back to Mode. */
-    if (w.step == STEP_NETWORK && !w.install) prev = STEP_TIMEZONE;
+    /* Storage inventory is part of the live-session setup path, so the
+     * previous step is always the immediately preceding page. */
     w.step = prev;
 }
 
@@ -752,12 +755,22 @@ bool wizard_run(void) {
         int mx = input_get_mouse_x();
         int my = input_get_mouse_y();
         u32 sel_now = w.sel[w.step];
+        bool step_changed = first || w.step != last_step;
         bool dirty = first
-                  || w.step != last_step
+                  || step_changed
                   || sel_now != last_sel
                   || mx != last_mx || my != last_my
                   || g_framebuffer.width  != last_w
                   || g_framebuffer.height != last_h;
+
+        if (step_changed && w.step == STEP_DISK) {
+            const installer_storage_inventory_t* inventory =
+                installer_storage_get();
+            kprintf("[WIZ] storage inventory page status=%u device=%u\n",
+                    inventory ? (u32)inventory->status
+                              : (u32)INSTALLER_STORAGE_NOT_SCANNED,
+                    inventory && inventory->device_detected ? 1u : 0u);
+        }
 
         last_step = w.step;
         last_sel  = sel_now;

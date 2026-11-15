@@ -14,6 +14,8 @@ typedef enum {
     INSTALLER_STORAGE_VALID_MBR,
     INSTALLER_STORAGE_VALID_GPT,
     INSTALLER_STORAGE_GPT_METADATA_UNREADABLE,
+    INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE,
+    INSTALLER_STORAGE_INVALID_GPT_BACKUP,
     INSTALLER_STORAGE_EBR_METADATA_UNREADABLE,
     INSTALLER_STORAGE_INVALID_EBR_CHAIN,
     INSTALLER_STORAGE_EBR_CHAIN_LIMIT,
@@ -27,6 +29,7 @@ typedef struct {
     ata_device_info_t device;
     partition_table_t partition_table;
     gpt_header_info_t gpt_header;
+    gpt_header_info_t gpt_backup_header;
     gpt_partition_table_t gpt_table;
 } installer_storage_inventory_t;
 
