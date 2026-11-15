@@ -9,9 +9,9 @@ static bool fake_device_present;
 static bool fake_read_success;
 static u8 fake_sector_zero[512];
 static u8 fake_gpt_header[512];
-static u8 fake_gpt_entries[512];
+static u8 fake_gpt_entries[GPT_MAX_ARRAY_BYTES];
 static u8 fake_gpt_backup_header[512];
-static u8 fake_gpt_backup_entries[512];
+static u8 fake_gpt_backup_entries[GPT_MAX_ARRAY_BYTES];
 static bool fake_backup_header_read_success;
 static bool fake_backup_array_read_success;
 #define FAKE_EBR_MAX 40u
@@ -50,14 +50,16 @@ bool ata_read_sector(u32 lba, void* buffer) {
     if (!fake_read_success) return false;
     if (lba == 0u) memcpy(buffer, fake_sector_zero, 512u);
     else if (lba == 1u) memcpy(buffer, fake_gpt_header, 512u);
-    else if (lba == 2u) memcpy(buffer, fake_gpt_entries, 512u);
+    else if (lba >= 2u && lba < 34u)
+        memcpy(buffer, fake_gpt_entries + (lba - 2u) * 512u, 512u);
     else if (lba == 999999u) {
         if (!fake_backup_header_read_success) return false;
         memcpy(buffer, fake_gpt_backup_header, 512u);
     }
-    else if (lba == 999998u) {
+    else if (lba >= 999967u && lba < 999999u) {
         if (!fake_backup_array_read_success) return false;
-        memcpy(buffer, fake_gpt_backup_entries, 512u);
+        memcpy(buffer, fake_gpt_backup_entries +
+               (lba - 999967u) * 512u, 512u);
     }
     else {
         bool found = false;
@@ -145,7 +147,7 @@ static void put_le64(u8* bytes, u64 value) {
 
 static void prepare_valid_gpt(void) {
     memset(fake_gpt_header, 0, 512u);
-    memset(fake_gpt_entries, 0, 512u);
+    memset(fake_gpt_entries, 0, sizeof(fake_gpt_entries));
     memcpy(fake_gpt_header, "EFI PART", 8u);
     put_le32(fake_gpt_header + 8u, 0x00010000u);
     put_le32(fake_gpt_header + 12u, 92u);
@@ -159,14 +161,14 @@ static void prepare_valid_gpt(void) {
         fake_gpt_entries[16u + i] = (u8)(0x10u + i);
     }
     put_le64(fake_gpt_header + 72u, 2u);
-    put_le32(fake_gpt_header + 80u, 4u);
+    put_le32(fake_gpt_header + 80u, GPT_MAX_PARTITIONS);
     put_le32(fake_gpt_header + 84u, 128u);
     put_le64(fake_gpt_entries + 32u, 2048u);
     put_le64(fake_gpt_entries + 40u, 10000u);
-    put_le32(fake_gpt_header + 88u, test_crc32(fake_gpt_entries, 512u));
+    put_le32(fake_gpt_header + 88u, test_crc32(fake_gpt_entries, GPT_MIN_ARRAY_BYTES));
     put_le32(fake_gpt_header + 16u, test_crc32(fake_gpt_header, 92u));
 
-    memcpy(fake_gpt_backup_entries, fake_gpt_entries, 512u);
+    memcpy(fake_gpt_backup_entries, fake_gpt_entries, GPT_MIN_ARRAY_BYTES);
     memcpy(fake_gpt_backup_header, "EFI PART", 8u);
     put_le32(fake_gpt_backup_header + 8u, 0x00010000u);
     put_le32(fake_gpt_backup_header + 12u, 92u);
@@ -176,11 +178,11 @@ static void prepare_valid_gpt(void) {
     put_le64(fake_gpt_backup_header + 48u, 999966u);
     for (u32 i = 0; i < 16u; i++)
         fake_gpt_backup_header[56u + i] = (u8)(i + 1u);
-    put_le64(fake_gpt_backup_header + 72u, 999998u);
-    put_le32(fake_gpt_backup_header + 80u, 4u);
+    put_le64(fake_gpt_backup_header + 72u, 999967u);
+    put_le32(fake_gpt_backup_header + 80u, GPT_MAX_PARTITIONS);
     put_le32(fake_gpt_backup_header + 84u, 128u);
     put_le32(fake_gpt_backup_header + 88u,
-             test_crc32(fake_gpt_backup_entries, 512u));
+             test_crc32(fake_gpt_backup_entries, GPT_MIN_ARRAY_BYTES));
     put_le32(fake_gpt_backup_header + 16u,
              test_crc32(fake_gpt_backup_header, 92u));
 }
@@ -501,7 +503,7 @@ int main(void) {
 
     expect(write_calls == 0u,
            "storage discovery never invokes the disk write API");
-    expect(read_calls == 82u,
+    expect(read_calls == 330u,
            "only bounded MBR, GPT and EBR metadata sectors are read");
     expect(strcmp(installer_storage_status_label(
                INSTALLER_STORAGE_VALID_MBR),
