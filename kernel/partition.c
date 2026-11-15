@@ -305,8 +305,8 @@ static bool partition_parse_gpt_header_at(
         alternate_lba != expected_alternate ||
         first_usable < 2u ||
         first_usable > last_usable ||
-        last_usable >= expected_alternate && !backup ||
-        last_usable >= expected_current && backup ||
+        ((last_usable >= expected_alternate) && !backup) ||
+        ((last_usable >= expected_current) && backup) ||
         entry_count == 0u || entry_count > GPT_MAX_PARTITIONS ||
         entry_size < 128u || entry_size > GPT_MAX_ENTRY_SIZE ||
         (entry_size & 7u) != 0u)
