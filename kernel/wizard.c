@@ -755,12 +755,22 @@ bool wizard_run(void) {
         int mx = input_get_mouse_x();
         int my = input_get_mouse_y();
         u32 sel_now = w.sel[w.step];
+        bool step_changed = first || w.step != last_step;
         bool dirty = first
-                  || w.step != last_step
+                  || step_changed
                   || sel_now != last_sel
                   || mx != last_mx || my != last_my
                   || g_framebuffer.width  != last_w
                   || g_framebuffer.height != last_h;
+
+        if (step_changed && w.step == STEP_DISK) {
+            const installer_storage_inventory_t* inventory =
+                installer_storage_get();
+            kprintf("[WIZ] storage inventory page status=%u device=%u\\n",
+                    inventory ? (u32)inventory->status
+                              : (u32)INSTALLER_STORAGE_NOT_SCANNED,
+                    inventory && inventory->device_detected ? 1u : 0u);
+        }
 
         last_step = w.step;
         last_sel  = sel_now;
