@@ -66,10 +66,21 @@ int main(void) {
            "valid LBA48 IDENTIFY payload is accepted");
     expect(info.lba48_supported && info.capacity_sectors == 2000000000ULL,
            "LBA48 capacity is reported without truncation");
-    expect(info.addressable_sectors == ATA_LBA28_SECTOR_LIMIT,
+    expect(info.addressable_sectors == 0x0FFFFFFFu,
            "current LBA28 path is explicitly clamped");
     expect(info.io_supported,
            "LBA48 device remains usable inside the LBA28 address window");
+    expect(ata_device_lba28_is_addressable(&info, 0u),
+           "first LBA is addressable");
+    expect(ata_device_lba28_is_addressable(&info,
+               (u32)(info.addressable_sectors - 1u)),
+           "last in-capacity LBA is addressable");
+    expect(!ata_device_lba28_is_addressable(&info,
+                (u32)info.addressable_sectors),
+           "first LBA beyond reported capacity is rejected");
+    expect(!ata_device_lba28_is_addressable(NULL, 0u),
+           "null device record is rejected");
+
 
     /* Logical sectors larger than 512 bytes are detected but not exposed to
      * the fixed 512-byte sector I/O functions. */
