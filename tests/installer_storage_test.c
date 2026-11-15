@@ -179,6 +179,27 @@ static void prepare_extended_mbr(void) {
                        0u, 0u, 0u);
 }
 
+static void prepare_cyclic_ebr_chain(void) {
+    memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
+    fake_sector_zero[510] = 0x55u;
+    fake_sector_zero[511] = 0xAAu;
+    set_mbr_entry(fake_sector_zero, 0, 0x0Fu, 10000u, 500000u);
+
+    fake_ebr_count = 3u;
+    fake_ebr_lbas[0] = 10000u;
+    fake_ebr_lbas[1] = 110000u;
+    fake_ebr_lbas[2] = 120000u;
+    prepare_ebr_record(fake_ebr_sectors[0],
+                       0x83u, 63u, 5000u,
+                       0x0Fu, 100000u, 400000u);
+    prepare_ebr_record(fake_ebr_sectors[1],
+                       0x07u, 63u, 5000u,
+                       0x0Fu, 110000u, 390000u);
+    prepare_ebr_record(fake_ebr_sectors[2],
+                       0x83u, 63u, 5000u,
+                       0x0Fu, 100000u, 400000u);
+}
+
 static void prepare_maximum_ebr_chain(void) {
     memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
     fake_sector_zero[510] = 0x55u;
@@ -293,6 +314,25 @@ int main(void) {
            "an EBR link inside its own logical data extent is rejected");
 
     prepare_device();
+    prepare_extended_mbr();
+    fake_ebr_count = 1u; /* Second EBR is intentionally missing. */
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_EBR_METADATA_UNREADABLE &&
+           inventory->partition_table.logical_partition_count == 1u &&
+           !inventory->partition_table.fully_enumerated,
+           "unreadable later EBR preserves the partial logical inventory");
+
+    prepare_device();
+    prepare_cyclic_ebr_chain();
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_INVALID_EBR_CHAIN &&
+           inventory->partition_table.logical_partition_count == 3u &&
+           !inventory->partition_table.fully_enumerated,
+           "multi-record EBR cycle is caught by the visited-LBA set");
+
+    prepare_device();
     prepare_maximum_ebr_chain();
     installer_storage_init();
     expect((inventory = installer_storage_get()) != NULL &&
@@ -359,7 +399,7 @@ int main(void) {
 
     expect(write_calls == 0u,
            "storage discovery never invokes the disk write API");
-    expect(read_calls == 53u,
+    expect(read_calls == 59u,
            "only bounded MBR, GPT and EBR metadata sectors are read");
     expect(strcmp(installer_storage_status_label(
                INSTALLER_STORAGE_VALID_MBR),
