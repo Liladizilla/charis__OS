@@ -19,7 +19,10 @@ static u32 fake_ebr_lbas[FAKE_EBR_MAX];
 static u8 fake_ebr_sectors[FAKE_EBR_MAX][512];
 static u32 fake_ebr_count;
 static u32 read_calls;
+static u32 lba48_read_calls;
 static u32 write_calls;
+static u64 fake_backup_header_lba;
+static u64 fake_backup_array_lba;
 
 void* kmalloc(usize size) { return malloc((size_t)size); }
 void kfree(void* pointer) { free(pointer); }
@@ -44,27 +47,34 @@ bool ata_device_lba28_is_addressable(const ata_device_info_t* device, u32 lba) {
            (u64)lba < ATA_LBA28_SECTOR_LIMIT;
 }
 
-bool ata_read_sector(u32 lba, void* buffer) {
-    if (!buffer) return false;
-    read_calls++;
-    if (!fake_read_success) return false;
+bool ata_device_lba48_is_addressable(const ata_device_info_t* device,
+                                        u64 lba) {
+    return device && device->detected && device->io_supported &&
+           device->lba48_supported &&
+           device->logical_sector_bytes == ATA_SECTOR_BYTES &&
+           lba < device->capacity_sectors && lba < (1ULL << 48);
+}
+
+static bool fake_read_sector(u64 lba, void* buffer) {
+    if (!buffer || !fake_read_success) return false;
     if (lba == 0u) memcpy(buffer, fake_sector_zero, 512u);
     else if (lba == 1u) memcpy(buffer, fake_gpt_header, 512u);
     else if (lba >= 2u && lba < 34u)
         memcpy(buffer, fake_gpt_entries + (lba - 2u) * 512u, 512u);
-    else if (lba == 999999u) {
+    else if (lba == fake_backup_header_lba) {
         if (!fake_backup_header_read_success) return false;
         memcpy(buffer, fake_gpt_backup_header, 512u);
     }
-    else if (lba >= 999967u && lba < 999999u) {
+    else if (lba >= fake_backup_array_lba &&
+             lba < fake_backup_header_lba) {
         if (!fake_backup_array_read_success) return false;
         memcpy(buffer, fake_gpt_backup_entries +
-               (lba - 999967u) * 512u, 512u);
+               (size_t)(lba - fake_backup_array_lba) * 512u, 512u);
     }
-    else {
+    else if (lba <= 0xFFFFFFFFULL) {
         bool found = false;
         for (u32 i = 0; i < fake_ebr_count; i++) {
-            if (fake_ebr_lbas[i] == lba) {
+            if (fake_ebr_lbas[i] == (u32)lba) {
                 memcpy(buffer, fake_ebr_sectors[i], 512u);
                 found = true;
                 break;
@@ -72,7 +82,19 @@ bool ata_read_sector(u32 lba, void* buffer) {
         }
         if (!found) return false;
     }
+    else return false;
     return true;
+}
+
+bool ata_read_sector(u32 lba, void* buffer) {
+    read_calls++;
+    return fake_read_sector(lba, buffer);
+}
+
+bool ata_read_sector64(u64 lba, void* buffer) {
+    lba48_read_calls++;
+    if (!ata_device_lba48_is_addressable(&fake_device, lba)) return false;
+    return fake_read_sector(lba, buffer);
 }
 
 bool ata_write_sector(u32 lba, const void* buffer) {
@@ -116,6 +138,9 @@ static void prepare_device(void) {
     fake_device.logical_sector_bytes = 512u;
     fake_device.capacity_sectors = 1000000u;
     fake_device.addressable_sectors = 1000000u;
+    fake_backup_header_lba = 999999u;
+    fake_backup_array_lba = 999967u;
+    lba48_read_calls = 0u;
     fake_device_present = true;
     fake_read_success = true;
     memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
@@ -152,9 +177,9 @@ static void prepare_valid_gpt(void) {
     put_le32(fake_gpt_header + 8u, 0x00010000u);
     put_le32(fake_gpt_header + 12u, 92u);
     put_le64(fake_gpt_header + 24u, 1u);
-    put_le64(fake_gpt_header + 32u, 999999u);
+    put_le64(fake_gpt_header + 32u, fake_backup_header_lba);
     put_le64(fake_gpt_header + 40u, 34u);
-    put_le64(fake_gpt_header + 48u, 999966u);
+    put_le64(fake_gpt_header + 48u, fake_backup_array_lba - 1u);
     for (u32 i = 0; i < 16u; i++) {
         fake_gpt_header[56u + i] = (u8)(i + 1u);
         fake_gpt_entries[i] = (u8)(0xA0u + i);
@@ -172,13 +197,13 @@ static void prepare_valid_gpt(void) {
     memcpy(fake_gpt_backup_header, "EFI PART", 8u);
     put_le32(fake_gpt_backup_header + 8u, 0x00010000u);
     put_le32(fake_gpt_backup_header + 12u, 92u);
-    put_le64(fake_gpt_backup_header + 24u, 999999u);
+    put_le64(fake_gpt_backup_header + 24u, fake_backup_header_lba);
     put_le64(fake_gpt_backup_header + 32u, 1u);
     put_le64(fake_gpt_backup_header + 40u, 34u);
-    put_le64(fake_gpt_backup_header + 48u, 999966u);
+    put_le64(fake_gpt_backup_header + 48u, fake_backup_array_lba - 1u);
     for (u32 i = 0; i < 16u; i++)
         fake_gpt_backup_header[56u + i] = (u8)(i + 1u);
-    put_le64(fake_gpt_backup_header + 72u, 999967u);
+    put_le64(fake_gpt_backup_header + 72u, fake_backup_array_lba);
     put_le32(fake_gpt_backup_header + 80u, GPT_MAX_PARTITIONS);
     put_le32(fake_gpt_backup_header + 84u, 128u);
     put_le32(fake_gpt_backup_header + 88u,
@@ -510,6 +535,39 @@ int main(void) {
                INSTALLER_STORAGE_VALID_MBR),
                "Valid legacy MBR partition table found.") == 0,
            "inventory status labels are stable");
+
+    /* Exercise a valid GPT disk whose backup copy is beyond both the LBA28
+     * window and 32-bit LBA range. Primary metadata remains in low sectors. */
+    prepare_gpt_disk();
+    const u64 high_backup_lba = (1ULL << 32) + 999999u;
+    fake_device.capacity_sectors = high_backup_lba + 1u;
+    fake_device.addressable_sectors = ATA_LBA28_SECTOR_LIMIT;
+    fake_device.lba48_supported = true;
+    fake_backup_header_lba = high_backup_lba;
+    fake_backup_array_lba = high_backup_lba - 32u;
+    put_le64(fake_gpt_header + 32u, fake_backup_header_lba);
+    put_le64(fake_gpt_header + 48u, fake_backup_array_lba - 1u);
+    put_le32(fake_gpt_header + 16u, 0u);
+    put_le32(fake_gpt_header + 16u, test_crc32(fake_gpt_header, 92u));
+    put_le64(fake_gpt_backup_header + 24u, fake_backup_header_lba);
+    put_le64(fake_gpt_backup_header + 48u, fake_backup_array_lba - 1u);
+    put_le64(fake_gpt_backup_header + 72u, fake_backup_array_lba);
+    put_le32(fake_gpt_backup_header + 16u, 0u);
+    put_le32(fake_gpt_backup_header + 16u,
+             test_crc32(fake_gpt_backup_header, 92u));
+    put_le32(&fake_sector_zero[446u + 12u], 0xFFFFFFFFu);
+    read_calls = 0u;
+    lba48_read_calls = 0u;
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_VALID_GPT &&
+           inventory->gpt_table.backup_verified &&
+           lba48_read_calls == 33u,
+           "backup GPT header and all 32 array sectors are verified above LBA32");
+    expect(read_calls == 34u,
+           "high-LBA GPT validation keeps primary metadata on LBA28 PIO");
+    expect(write_calls == 0u,
+           "high-LBA GPT verification remains strictly read-only");
 
     if (failures) {
         fprintf(stderr, "Installer storage: %d failure(s)\n", failures);
