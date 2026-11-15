@@ -88,7 +88,10 @@ static void test_mbr(void) {
            "extended partition container parses");
     expect(table.has_extended && !table.fully_enumerated &&
            table.partitions[0].extended,
-           "extended chain is never claimed as fully enumerated");
+           "extended chain is not marked complete before EBR traversal");
+    expect(table.extended_base_lba == 2048u &&
+           table.extended_end_lba == 602048u,
+           "extended container bounds are preserved for the EBR scanner");
 
     prepare_mbr(sector);
     set_mbr_entry(sector, 0, 0, 0xEEu, 1u, 999999u);
