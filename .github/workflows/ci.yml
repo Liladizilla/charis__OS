@@ -162,6 +162,11 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -ffunction-sections -fdata-sections -Iinclude tests/fb_blend_test.c kernel/fb.c -Wl,--gc-sections -o /tmp/fb_blend_test
           /tmp/fb_blend_test
 
+      - name: Test ATA IDENTIFY metadata and capacity decoding
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/ata_identify_test.c kernel/ata_identify.c -o /tmp/ata_identify_test
+          /tmp/ata_identify_test
+
       - name: Test CharisOS emblem RLE asset integrity
         run: python3 tests/logo_asset_test.py
 
