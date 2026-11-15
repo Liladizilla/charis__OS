@@ -766,7 +766,7 @@ bool wizard_run(void) {
         if (step_changed && w.step == STEP_DISK) {
             const installer_storage_inventory_t* inventory =
                 installer_storage_get();
-            kprintf("[WIZ] storage inventory page status=%u device=%u\\n",
+            kprintf("[WIZ] storage inventory page status=%u device=%u\n",
                     inventory ? (u32)inventory->status
                               : (u32)INSTALLER_STORAGE_NOT_SCANNED,
                     inventory && inventory->device_detected ? 1u : 0u);
