@@ -170,6 +170,7 @@ int main(void) {
 
     expect(write_calls == 0u,
            "storage discovery never invokes the disk write API");
+    fprintf(stderr, "storage scan read attempts: %u\\n", read_calls);
     expect(read_calls == 5u,
            "only supported devices reach a single sector-zero read");
     expect(strcmp(installer_storage_status_label(
