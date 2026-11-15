@@ -182,13 +182,11 @@ static installer_storage_status_t verify_gpt_backup(
         return INSTALLER_STORAGE_INVALID_GPT_BACKUP;
 
     u64 backup_lba = primary->backup_lba;
-    if (backup_lba > 0xFFFFFFFFULL ||
-        !ata_device_lba28_is_addressable(&inventory.device,
-                                         (u32)backup_lba))
+    if (!ata_device_lba48_is_addressable(&inventory.device, backup_lba))
         return INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE;
 
     u8 backup_sector[MBR_SECTOR_BYTES];
-    if (!ata_read_sector((u32)backup_lba, backup_sector))
+    if (!ata_read_sector64(backup_lba, backup_sector))
         return INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE;
 
     if (!partition_parse_gpt_backup_header(backup_sector,
@@ -200,13 +198,11 @@ static installer_storage_status_t verify_gpt_backup(
          sector_index++) {
         u64 lba_wide = inventory.gpt_backup_header.entry_array_lba +
                        (u64)sector_index;
-        if (lba_wide > 0xFFFFFFFFULL ||
-            !ata_device_lba28_is_addressable(&inventory.device,
-                                             (u32)lba_wide))
+        if (!ata_device_lba48_is_addressable(&inventory.device, lba_wide))
             return INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE;
 
         u8 sector[MBR_SECTOR_BYTES];
-        if (!ata_read_sector((u32)lba_wide, sector))
+        if (!ata_read_sector64(lba_wide, sector))
             return INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE;
 
         u32 offset = sector_index * MBR_SECTOR_BYTES;
