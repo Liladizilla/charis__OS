@@ -23,6 +23,17 @@ static void put_le64(u8* bytes, u64 value) {
     put_le32(bytes + 4u, (u32)(value >> 32));
 }
 
+static u64 read_le64_test(const u8* bytes) {
+    return (u64)bytes[0] |
+           ((u64)bytes[1] << 8) |
+           ((u64)bytes[2] << 16) |
+           ((u64)bytes[3] << 24) |
+           ((u64)bytes[4] << 32) |
+           ((u64)bytes[5] << 40) |
+           ((u64)bytes[6] << 48) |
+           ((u64)bytes[7] << 56);
+}
+
 static u32 crc32(const u8* bytes, u32 length) {
     u32 crc = 0xFFFFFFFFu;
     for (u32 i = 0; i < length; i++) {
@@ -214,8 +225,8 @@ static void build_backup_gpt(u8 header[512],
     put_le32(header + 12u, 92u);
     put_le64(header + 24u, 999999u);
     put_le64(header + 32u, 1u);
-    put_le64(header + 40u, read_le64(primary_header + 40u));
-    put_le64(header + 48u, read_le64(primary_header + 48u));
+    put_le64(header + 40u, read_le64_test(primary_header + 40u));
+    put_le64(header + 48u, read_le64_test(primary_header + 48u));
     memcpy(header + 56u, primary_header + 56u, 16u);
     put_le64(header + 72u, backup_array_lba);
     put_le32(header + 80u, read_le32(primary_header + 80u));
