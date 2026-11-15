@@ -308,15 +308,16 @@ static bool partition_parse_gpt_header_at(
         ((last_usable >= expected_alternate) && !backup) ||
         ((last_usable >= expected_current) && backup) ||
         entry_count == 0u || entry_count > GPT_MAX_PARTITIONS ||
-        entry_size < 128u || entry_size > GPT_MAX_ENTRY_SIZE ||
-        (entry_size & 7u) != 0u)
+        (entry_size != 128u && entry_size != 256u &&
+         entry_size != 512u))
         return false;
 
     if (crc32_gpt_header(sector, header_size) != header_crc)
         return false;
 
     u64 array_bytes_wide = (u64)entry_count * (u64)entry_size;
-    if (!array_bytes_wide || array_bytes_wide > GPT_MAX_ARRAY_BYTES)
+    if (array_bytes_wide < GPT_MIN_ARRAY_BYTES ||
+        array_bytes_wide > GPT_MAX_ARRAY_BYTES)
         return false;
 
     u64 array_sectors_wide = (array_bytes_wide + 511u) / 512u;
