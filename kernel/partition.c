@@ -256,13 +256,14 @@ bool partition_parse_ebr_sector(const u8 sector[MBR_SECTOR_BYTES],
         next_ebr > 0xFFFFFFFFULL || next_ebr == ebr_lba ||
         link_end <= next_ebr ||
         link_end > extended_end_lba || link_end > device->capacity_sectors ||
-        (next_ebr >= logical_first && next_ebr < logical_end)) {
+        ranges_overlap(next_ebr, link_end, logical_first, logical_end)) {
         clear_bytes(output, (u32)sizeof(*output));
         return false;
     }
 
     output->has_next_ebr = true;
     output->next_ebr_lba = next_ebr;
+    output->next_ebr_end_lba = link_end;
     return true;
 }
 
