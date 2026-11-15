@@ -448,7 +448,15 @@ bool partition_parse_gpt_entries(const gpt_header_info_t* header,
             clear_bytes(output, (u32)sizeof(*output));
             return false;
         }
-        if (all_zero(raw, 16u)) continue;
+        if (all_zero(raw, 16u)) {
+            /* An unused slot is the all-zero GPT entry, not merely a zero
+             * type GUID with stale geometry or attributes left behind. */
+            if (!all_zero(raw, header->entry_size)) {
+                clear_bytes(output, (u32)sizeof(*output));
+                return false;
+            }
+            continue;
+        }
 
         gpt_partition_t* entry = &output->partitions[output->partition_count];
         for (u32 byte = 0; byte < 16u; byte++) {
@@ -460,7 +468,11 @@ bool partition_parse_gpt_entries(const gpt_header_info_t* header,
         u64 last_lba = read_le64(raw + 40u);
         u64 attributes = read_le64(raw + 48u);
 
-        if (all_zero(entry->unique_guid, 16u) ||
+        /* UEFI reserves attribute bits 3..47. Preserve defined low bits and
+         * type-specific high bits, but reject any reserved bit that is set. */
+        const u64 reserved_attribute_mask = 0x0000FFFFFFFFFFF8ULL;
+        if ((attributes & reserved_attribute_mask) != 0u ||
+            all_zero(entry->unique_guid, 16u) ||
             first_lba < header->first_usable_lba ||
             first_lba > last_lba ||
             last_lba > header->last_usable_lba ||
