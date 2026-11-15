@@ -13,6 +13,8 @@ typedef enum {
     INSTALLER_STORAGE_NO_PARTITION_SIGNATURE,
     INSTALLER_STORAGE_VALID_MBR,
     INSTALLER_STORAGE_GPT_PROTECTIVE,
+    INSTALLER_STORAGE_VALID_GPT,
+    INSTALLER_STORAGE_GPT_METADATA_UNREADABLE,
     INSTALLER_STORAGE_INVALID_PARTITION_METADATA
 } installer_storage_status_t;
 
@@ -22,6 +24,8 @@ typedef struct {
     installer_storage_status_t status;
     ata_device_info_t device;
     partition_table_t partition_table;
+    gpt_header_info_t gpt_header;
+    gpt_partition_table_t gpt_table;
 } installer_storage_inventory_t;
 
 /* Scans the primary-master device once using read-only sector I/O. */
