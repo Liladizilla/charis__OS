@@ -442,7 +442,7 @@ static void test_gpt(void) {
            "backup GPT entry array cannot overlap its header");
 
     /* The primary header must identify the final LBA as its backup. */
-    put_le64(header_sector + 32u, 999967u);
+    put_le64(header_sector + 32u, 999998u);
     put_le32(header_sector + 16u, 0u);
     put_le32(header_sector + 16u, crc32(header_sector, 92u));
     expect(!partition_parse_gpt_header(header_sector, &device, &header),
@@ -492,7 +492,7 @@ static void test_gpt(void) {
            "valid header reparses before partition edge cases");
 
     put_le64(entries + 40u, 1000001u);
-    refresh_gpt_crcs(header_sector, entries, GPT_MIN_ARRAY_BYTES);
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "header CRC follows a rebuilt partition array checksum");
     expect(!partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
@@ -506,7 +506,7 @@ static void test_gpt(void) {
     }
     put_le64(second + 32u, 9000u);
     put_le64(second + 40u, 12000u);
-    refresh_gpt_crcs(header_sector, entries, GPT_MIN_ARRAY_BYTES);
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "overlap fixture GPT header validates");
     expect(!partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
@@ -519,7 +519,7 @@ static void test_gpt(void) {
     for (u32 i = 0; i < 16u; i++) second[16u + i] = entries[16u + i];
     put_le64(second + 32u, 15000u);
     put_le64(second + 40u, 16000u);
-    refresh_gpt_crcs(header_sector, entries, GPT_MIN_ARRAY_BYTES);
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "duplicate-GUID fixture header validates");
     expect(!partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
@@ -527,7 +527,7 @@ static void test_gpt(void) {
 
     build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
     memset(entries + 16u, 0, 16u);
-    refresh_gpt_crcs(header_sector, entries, GPT_MIN_ARRAY_BYTES);
+    refresh_gpt_crcs(header_sector, entries, GPT_MIN_RESERVED_BYTES);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "zero unique-GUID fixture header validates");
     expect(!partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
