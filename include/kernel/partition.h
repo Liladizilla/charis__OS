@@ -50,7 +50,9 @@ typedef struct {
 } ebr_sector_info_t;
 
 typedef struct {
+    u64 current_lba;
     u64 backup_lba;
+    u32 header_size;
     u64 first_usable_lba;
     u64 last_usable_lba;
     u64 entry_array_lba;
@@ -75,6 +77,7 @@ typedef struct {
 typedef struct {
     bool valid;
     bool fully_enumerated;
+    bool backup_verified;
     u32 partition_count;
     u32 entry_count;
     u64 first_usable_lba;
@@ -94,6 +97,11 @@ bool partition_parse_ebr_sector(const u8 sector[MBR_SECTOR_BYTES],
                                 ebr_sector_info_t* output);
 bool partition_parse_gpt_header(const u8 sector[MBR_SECTOR_BYTES],
                                 const ata_device_info_t* device,
+                                gpt_header_info_t* output);
+bool partition_parse_gpt_backup_header(
+                                const u8 sector[MBR_SECTOR_BYTES],
+                                const ata_device_info_t* device,
+                                const gpt_header_info_t* primary,
                                 gpt_header_info_t* output);
 bool partition_parse_gpt_entries(const gpt_header_info_t* header,
                                  const u8* entry_array,
