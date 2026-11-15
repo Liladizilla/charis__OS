@@ -93,8 +93,11 @@
 - [ ] Separate firmware splash, kernel startup, first boot and OS installation into explicit state machines
 - [x] Decode ATA IDENTIFY model, serial, firmware, logical-sector size, capacity and LBA capabilities; distinguish detected from currently readable devices
 - [x] Clamp existing 512-byte PIO reads/writes to the validated LBA28 addressable capacity; never imply LBA48 I/O is implemented
-- [x] Add bounded, host-tested MBR primary-entry parsing, capacity checks, overlap rejection and explicit extended/GPT-incomplete states
+- [x] Add bounded, host-tested MBR primary-entry parsing, capacity checks, overlap rejection and explicit extended-container/protective-MBR dispatch states
 - [x] Add primary GPT header/entry-array parsing with CRC32 validation, a 128-entry/64KiB hard limit and partition overlap/range checks
+- [x] Keep detected capacity distinct from the sectors addressable by the current PIO path; report zero addressable sectors for unsupported logical-sector sizes
+- [ ] Enumerate extended MBR logical partitions through a bounded EBR chain with cycle detection and strict container boundaries
+- [ ] Validate the backup GPT header and entry array, including reciprocal header locations, CRCs and consistency with the primary copy
 - [ ] Design an installer that detects hardware/storage and supports safe dry-run partition planning before destructive operations
 - [ ] Implement transactional installation, filesystem creation, bootloader installation, verification and interrupted-install recovery only after storage support is ready
 - [x] Keep text-only and unsupported-framebuffer fallback paths usable
