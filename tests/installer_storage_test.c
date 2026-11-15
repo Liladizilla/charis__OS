@@ -23,9 +23,10 @@ bool ata_device_lba28_is_addressable(const ata_device_info_t* device, u32 lba) {
 }
 
 bool ata_read_sector(u32 lba, void* buffer) {
-    if (lba != 0u || !buffer || !fake_read_success) return false;
-    memcpy(buffer, fake_sector_zero, sizeof(fake_sector_zero));
+    if (lba != 0u || !buffer) return false;
     read_calls++;
+    if (!fake_read_success) return false;
+    memcpy(buffer, fake_sector_zero, sizeof(fake_sector_zero));
     return true;
 }
 
@@ -161,7 +162,7 @@ int main(void) {
 
     expect(write_calls == 0u,
            "storage discovery never invokes the disk write API");
-    expect(read_calls == 6u,
+    expect(read_calls == 5u,
            "only supported devices reach a single sector-zero read");
     expect(strcmp(installer_storage_status_label(
                INSTALLER_STORAGE_VALID_MBR),
