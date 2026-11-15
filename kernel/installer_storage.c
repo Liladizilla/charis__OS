@@ -198,6 +198,10 @@ void installer_storage_init(void) {
     serial_puts("[STORAGE] unrecognized partition metadata rejected\n");
 }
 
+const installer_storage_inventory_t* installer_storage_get(void) {
+    return inventory.status == INSTALLER_STORAGE_NOT_SCANNED ? NULL : &inventory;
+}
+
 bool installer_storage_get_inventory(installer_storage_inventory_t* output) {
     if (!output) return false;
     copy_bytes(output, &inventory, (u32)sizeof(inventory));
