@@ -1,35 +1,16 @@
-/* logo.c - CharisOS boot banner
+/* logo.c - CharisOS startup identity.
  *
- * One set of lines serves both consoles so they cannot drift apart:
- * logo_print() writes them to the VGA text console, logo_draw_gfx() renders
- * them to the linear framebuffer.
- *
- * ENCODING -- read before editing
- * ------------------------------
- * Both consoles take one byte per character. The text console writes straight
- * into the VGA text buffer, and the framebuffer renderer looks glyphs up in
- * the built-in font by byte value. So these strings carry the raw single-byte
- * CP437 code points, NOT the UTF-8 encodings of the same glyphs: a UTF-8 '╔'
- * is three bytes (E2 95 94) and would render as three unrelated characters.
- *
- * Every non-ASCII glyph is therefore written as an explicit \xNN escape, so
- * the output cannot be altered by the source file's encoding, line endings, or
- * an editor. The mapping:
- *
- *   ╔ 0xC9   ═ 0xCD   ╗ 0xBB   ║ 0xBA
- *   ╚ 0xC8   ╝ 0xBC   █ 0xDB
+ * Text-only systems retain the CP437 banner as a fallback. Graphical systems
+ * render the official transparent C-and-sword emblem from a small embedded
+ * RLE asset; startup never depends on a filesystem image decoder.
  */
 
 #include <kernel/logo.h>
 #include <kernel/vga.h>
+#include <kernel/serial.h>
 #include <kernel/fb.h>
 #include <kernel/gfx_text.h>
-
-/* Banner palette, chosen to stay legible on the desktop background. */
-#define LOGO_FG     FB_ARGB(0xFF, 0xE8, 0xEC, 0xF4)
-#define LOGO_ACCENT FB_ARGB(0xFF, 0x6F, 0xC3, 0xFF)
-#define LOGO_DIM    FB_ARGB(0xFF, 0x8A, 0x93, 0xA6)
-#define LOGO_PANEL  FB_ARGB(0xCC, 0x0D, 0x11, 0x17)
+#include <kernel/charis_logo_bitmap.h>
 
 #define H  "\xCD"   /* ═ */
 #define V  "\xBA"   /* ║ */
@@ -64,7 +45,7 @@ static const char* const LOGO_LINES[] = {
 
     V "  x86_64 kernel  //  built from scratch in C & NASM   " V,
 
-    V "               v1.0  -  Nairobi, Kenya                " V,
+    V "           v1.0  -  Security by Architecture           " V,
 
     "\xC8" H H H H H H H H H H H H H H H H H H H H H H H H H H H H H H H H
         H H H H H H H H H H H H H H H H H H H H H H H H H H H H H H H
@@ -72,8 +53,6 @@ static const char* const LOGO_LINES[] = {
 };
 
 #define LOGO_LINES_N ((u32)(sizeof(LOGO_LINES) / sizeof(LOGO_LINES[0])))
-#define LOGO_CELL_H  16
-#define LOGO_CELL_W  8
 
 /* Text console. */
 void logo_print(void) {
@@ -83,43 +62,114 @@ void logo_print(void) {
     }
 }
 
-/* Framebuffer. Centred horizontally, on a translucent panel so the text stays
- * readable over any wallpaper. */
+/* Compact boot-safe palette sampled from the official emblem. */
+#define EMBLEM_SILVER FB_ARGB(0xFF, 0xD9, 0xD1, 0xC4)
+#define EMBLEM_GOLD   FB_ARGB(0xFF, 0xB8, 0x87, 0x43)
+#define EMBLEM_SHADE  FB_ARGB(0xFF, 0x3A, 0x2C, 0x1A)
+
+static const char* boot_stage = "INITIALIZING KERNEL";
+
+void logo_set_stage(const char* stage) {
+    if (!stage || !*stage) return;
+
+    boot_stage = stage;
+    serial_puts("[BOOT_STAGE] ");
+    serial_puts(stage);
+    serial_puts("\n");
+
+    if (g_framebuffer.initialized) logo_draw_gfx_centered();
+}
+
+static u32 emblem_scale(void) {
+    if (g_framebuffer.width >= 1600u && g_framebuffer.height >= 900u) return 3u;
+    if (g_framebuffer.width >= 820u && g_framebuffer.height >= 620u) return 2u;
+    return 1u;
+}
+
+static u32 splash_panel_height(u32 scale) {
+    return 24u + CHARIS_LOGO_HEIGHT * scale + 16u + 24u + 10u + 24u + 18u;
+}
+
+static void draw_emblem(u32 x, u32 y, u32 scale) {
+    const u32 total_pixels = CHARIS_LOGO_WIDTH * CHARIS_LOGO_HEIGHT;
+    u32 pixel = 0;
+
+    for (u32 i = 0; i < CHARIS_LOGO_RLE_SIZE; i++) {
+        u8 token = charis_logo_rle[i];
+        u32 run = token >> 2;
+        u32 palette = token & 3u;
+
+        if (!run || pixel >= total_pixels || run > total_pixels - pixel)
+            return;
+
+        while (run) {
+            u32 row = pixel / CHARIS_LOGO_WIDTH;
+            u32 col = pixel - row * CHARIS_LOGO_WIDTH;
+            u32 span = CHARIS_LOGO_WIDTH - col;
+            if (span > run) span = run;
+
+            u32 colour = FB_TRANSPARENT;
+            if (palette == 1u) colour = EMBLEM_SILVER;
+            else if (palette == 2u) colour = EMBLEM_GOLD;
+            else if (palette == 3u) colour = EMBLEM_SHADE;
+
+            if (colour != FB_TRANSPARENT) {
+                fb_fill_rect(x + col * scale, y + row * scale,
+                             span * scale, scale, colour);
+            }
+            pixel += span;
+            run -= span;
+        }
+    }
+}
+
 void logo_draw_gfx(u32 y) {
     if (!g_framebuffer.initialized) return;
 
-    const u32 pad_x = 28;
-    const u32 pad_y = 22;
+    u32 scale = emblem_scale();
+    u32 image_w = CHARIS_LOGO_WIDTH * scale;
+    u32 image_h = CHARIS_LOGO_HEIGHT * scale;
+    u32 panel_w = image_w + 72u;
+    u32 panel_h = splash_panel_height(scale);
 
-    u32 widest = 0;
-    for (u32 i = 0; i < LOGO_LINES_N; i++) {
-        u32 w = 0;
-        for (const char* p = LOGO_LINES[i]; *p; p++) w += LOGO_CELL_W;
-        if (w > widest) widest = w;
+    if (panel_w > g_framebuffer.width || panel_h > g_framebuffer.height) {
+        scale = 1u;
+        image_w = CHARIS_LOGO_WIDTH;
+        image_h = CHARIS_LOGO_HEIGHT;
+        panel_w = image_w + 72u;
+        panel_h = splash_panel_height(scale);
     }
 
-    u32 x = (g_framebuffer.width  > widest)
-          ? (g_framebuffer.width - widest) / 2
-          : pad_x;
+    u32 panel_x = (g_framebuffer.width > panel_w)
+        ? (g_framebuffer.width - panel_w) / 2u : 0u;
+    if (panel_w > g_framebuffer.width) panel_w = g_framebuffer.width;
+    if (y > g_framebuffer.height) y = g_framebuffer.height;
+    if (panel_h > g_framebuffer.height - y)
+        y = g_framebuffer.height > panel_h
+            ? (g_framebuffer.height - panel_h) / 2u : 0u;
 
-    u32 panel_x = (x > pad_x) ? x - pad_x : 0;
-    u32 panel_y = (y > pad_y) ? y - pad_y : 0;
-    u32 panel_w = widest + pad_x * 2;
-    u32 panel_h = LOGO_LINES_N * LOGO_CELL_H + pad_y * 2;
+    fb_fill_rect(panel_x, y, panel_w, panel_h,
+                 FB_ARGB(0xFF, 0x0D, 0x11, 0x17));
+    fb_draw_rect(panel_x, y, panel_w, panel_h,
+                 FB_ARGB(0xFF, 0x65, 0x53, 0x37));
 
-    if (panel_x + panel_w > g_framebuffer.width)
-        panel_w = g_framebuffer.width - panel_x;
-    if (panel_y + panel_h > g_framebuffer.height)
-        panel_h = g_framebuffer.height - panel_y;
+    u32 image_x = panel_x + (panel_w - image_w) / 2u;
+    u32 image_y = y + 24u;
+    draw_emblem(image_x, image_y, scale);
 
-    fb_fill_rect(panel_x, panel_y, panel_w, panel_h, LOGO_PANEL);
-    fb_draw_rect(panel_x, panel_y, panel_w, panel_h, LOGO_DIM);
+    u32 title_y = image_y + image_h + 16u;
+    gfx_draw_string_centered(title_y, "CHARISOS",
+        FB_ARGB(0xFF, 0xE7, 0xC0, 0x80), FB_TRANSPARENT);
+    gfx_draw_string_centered(title_y + 28u, "SECURITY FIRST",
+        FB_ARGB(0xFF, 0xA5, 0xAD, 0xBA), FB_TRANSPARENT);
+    gfx_draw_string_centered(title_y + 56u, boot_stage,
+        FB_ARGB(0xFF, 0x9C, 0xA5, 0xB3), FB_TRANSPARENT);
+}
 
-    for (u32 i = 0; i < LOGO_LINES_N; i++) {
-        u32 fg = LOGO_FG;
-        if (i == 8) fg = LOGO_DIM;
-        else if (i >= 9) fg = LOGO_ACCENT;
-        gfx_draw_string(panel_x + pad_x, panel_y + pad_y + i * LOGO_CELL_H,
-                        LOGO_LINES[i], fg, FB_TRANSPARENT);
-    }
+void logo_draw_gfx_centered(void) {
+    if (!g_framebuffer.initialized) return;
+    u32 panel_h = splash_panel_height(emblem_scale());
+    u32 y = g_framebuffer.height > panel_h
+        ? (g_framebuffer.height - panel_h) / 2u : 0u;
+    logo_draw_gfx(y);
 }

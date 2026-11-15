@@ -85,6 +85,46 @@
 - [x] graphics_circle() - midpoint circle
 - [x] graphics_put_string() - PSF-based text rendering
 
+
+## Phase 7: Boot Identity & Installer (PARTIAL)
+- [x] Replace the graphical text-art banner with the official embedded C+sword emblem; keep a text-only fallback for systems without a usable framebuffer
+- [x] Render a centered, framebuffer-scaled boot splash with truthful kernel stages and a timer-backed final handoff interval
+- [x] Show real startup stages on screen and preserve serial diagnostics; structured failure codes and graphical recovery diagnostics remain planned
+- [ ] Separate firmware splash, kernel startup, first boot and OS installation into explicit state machines
+- [ ] Design an installer that detects hardware/storage and supports safe dry-run partition planning before destructive operations
+- [ ] Implement transactional installation, filesystem creation, bootloader installation, verification and interrupted-install recovery only after storage support is ready
+- [x] Keep text-only and unsupported-framebuffer fallback paths usable
+
+## Phase 8: Display & Orientation (PARTIAL / PLACEHOLDER AUDIT REQUIRED)
+- [x] Remove the fake 640x480 monitor record, 0xA0000 pointer and unused multi-monitor placeholder API; expose only the validated boot framebuffer's address, dimensions, pitch and pixel format
+- [x] Expose validated framebuffer physical address, dimensions, pitch, bit depth and RGB layout through the display state; rendering continues through the pitch-aware framebuffer API
+- [ ] Enumerate and expose only modes reported by firmware/native display drivers
+- [ ] Add validated EDID monitor identity, native resolution and supported timing discovery
+- [ ] Implement transactional resolution changes with known-good fallback and timed confirmation/revert
+- [ ] Add automatic, landscape, portrait, square, ultrawide and custom orientation profiles
+- [ ] Add rotation transforms, per-monitor scaling, multi-monitor topology and workspace placement
+- [ ] Add refresh-rate selection only with a driver that can set and verify timings
+- [ ] Add QEMU fixtures for 1024x768, 1280x720, 1920x1080, portrait and square framebuffer geometry; unsupported modes must be rejected
+
+## Phase 9: Native Application Format & Packages (PLANNED)
+- [ ] Specify versioned CXE native executable header, architecture/ABI, segments, entry point and alignment
+- [ ] Specify strict CXE relocation, import/export, memory permission and stack-limit rules
+- [ ] Add capability/resource declarations, integrity metadata and signature policy to the executable/package contract
+- [ ] Build a host-side CXE parser with fuzzable malformed-input, overlap, overflow and unsupported-version tests
+- [ ] Implement transactional CXE loading and rollback while retaining ELF64 compatibility tests
+- [ ] Specify CAPP application bundle, manifest, dependencies, assets and versioning
+- [ ] Implement signed package verification, path traversal protection and bounded archive extraction
+- [ ] Implement capability approval/revocation and atomic package update/rollback
+
+## Phase 10: CharisOS SDK Ecosystem (PLANNED)
+- [ ] Ship a versioned core C ABI, headers, documentation and SDK conformance suite
+- [ ] Add CXE build/inspect/package/sign tooling and reproducible sample applications
+- [ ] Add developer SDK: debugger protocol, symbols, tracing, profiling, crash dumps and test VM
+- [ ] Add game/streaming SDK: surfaces, input/gamepads, audio, timers, graphics capability discovery, capture consent and frame telemetry
+- [ ] Add business/enterprise SDK: data/document APIs, identity integration, audit events, managed configuration and staged deployment
+- [ ] Add AI/automation SDK with local-first provider abstraction, scoped tools, explicit remote consent and resource budgets
+- [ ] Keep domain SDKs on one core ABI and capability model; do not promise unavailable GPU acceleration or unsupported hardware
+
 ## Phase 6: Window System (PARTIAL)
 - [x] Window/widget/input foundations exist; WM bounds window count, dimensions, allocation size, title strings, clipping and z-order
 - [x] PS/2 mouse input and pointer-driven shell interaction; QEMU verifies pointer movement and pixel-exact save-under restoration
@@ -385,7 +425,7 @@ pointer validation, and per-task kernel interrupt stacks remain incomplete.
 - `kernel/irq.c`: `pic_init`, `pic_send_eoi`, `pic_mask_irq`, `pic_unmask_irq`; EOI added to timer and keyboard handlers
 - `kernel/input.c`: mouse button state tracking; `wm_process_mouse` for window dragging
 - `kernel/services.c`: background service manager (not yet reflected in a TODO phase)
-- `kernel/display.c`: multi-monitor support (up to 4 displays; not yet in TODO)
+- `kernel/display.c`: validated primary boot-framebuffer metadata only; EDID discovery, mode-setting and multi-monitor scanout remain planned
 - `kernel/power.c`: power state management (idle, sleep, shutdown; not yet in TODO)
 
 > PROGRESS.md was removed on 2026-10-05. TODO.md is the single source of truth.

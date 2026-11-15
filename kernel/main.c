@@ -562,6 +562,7 @@ void kernel_main(u32 magic, u64 info_ptr) {
      * while security_init installs the randomized guard for later functions. */
     serial_puts("[BOOT] security initialization begin");
     security_init();
+    logo_set_stage("INITIALIZING MEMORY");
     BOOT_MARK('S');
     serial_puts("[BOOT] security initialization complete");
 
@@ -573,7 +574,11 @@ void kernel_main(u32 magic, u64 info_ptr) {
     // Set up the linear framebuffer the firmware advertised. Until this runs,
     // every drawing call in the window manager, desktop, widgets and apps is a
     // no-op, because g_framebuffer.initialized is false.
-    if (fb_init() == 0) BOOT_MARK('F');
+    if (fb_init() == 0) {
+        BOOT_MARK('F');
+        fb_clear(FB_ARGB(0xFF, 0x0D, 0x11, 0x17));
+        logo_set_stage("INITIALIZING HARDWARE");
+    }
 
     // Optional: VMM tests after VMM init (compile-time flag)
 #ifdef RUN_VMM_TESTS
@@ -582,6 +587,7 @@ void kernel_main(u32 magic, u64 info_ptr) {
 
     BOOT_MARK('m');
     idt_init();
+    logo_set_stage("INITIALIZING INTERRUPTS");
     BOOT_MARK('I');
 #ifdef TEST_KERNEL_STACK_GUARD
     /* Exercise a non-error-code vector on IST2. The dedicated #DF gate (8)
@@ -602,11 +608,16 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('T');
     (void)rtc_init();
     keyboard_init();
+    logo_set_stage("DISCOVERING DEVICES");
     BOOT_MARK('K');
     ata_init();
+    logo_set_stage("DISCOVERING STORAGE");
     BOOT_MARK('D');  // Disk
     fs_init();
     BOOT_MARK('F');  // Filesystem
+    if (g_framebuffer.initialized) {
+        logo_set_stage("INITIALIZING FILE SYSTEM");
+    }
     vfs_init();
     socket_init();
     BOOT_MARK('v');  // VFS and socket service
@@ -623,6 +634,9 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('C');
     graphics_init();
     BOOT_MARK('G');
+    if (g_framebuffer.initialized) {
+        logo_set_stage("PREPARING GRAPHICS");
+    }
 
     // A linear framebuffer means no hardware text cursor and no hardware mouse
     // pointer, so both are drawn by the shell. Start the mouse here and clamp
@@ -653,6 +667,7 @@ void kernel_main(u32 magic, u64 info_ptr) {
     config_init();
     BOOT_MARK('c');
     config_load(CONFIG_FILE_PATH);
+    logo_set_stage("LOADING SYSTEM SETTINGS");
     int saved_pointer_speed = config_get_int("pointer_speed", 100);
     if (saved_pointer_speed < (int)MOUSE_SPEED_MIN_PERCENT ||
         saved_pointer_speed > (int)MOUSE_SPEED_MAX_PERCENT)
@@ -662,10 +677,15 @@ void kernel_main(u32 magic, u64 info_ptr) {
     gfx_text_apply_preferences();
     BOOT_MARK('L');
     display_init();
+    logo_set_stage("ACTIVE DISPLAY READY");
     BOOT_MARK('D');
     desktop_init();
     BOOT_MARK('d');
+    if (g_framebuffer.initialized) {
+        logo_set_stage("STARTING DESKTOP");
+    }
     services_init();
+    logo_set_stage("STARTING SYSTEM SERVICES");
     BOOT_MARK('S');
     diag_init();
     BOOT_MARK('D');
@@ -677,6 +697,7 @@ void kernel_main(u32 magic, u64 info_ptr) {
     // calling it twice during boot is unnecessary and can disrupt the device.
     BOOT_MARK('n');
     if (config_get_bool("net_enabled", true)) {
+        logo_set_stage("STARTING NETWORK");
         BOOT_MARK('N');
         net_init();
         if (net_get_interface()->initialized) {
@@ -826,18 +847,12 @@ void kernel_main(u32 magic, u64 info_ptr) {
 #endif
 
     vga_puts_success("All systems go. Starting shell.");
+    logo_set_stage("SYSTEM READY");
 
-    // Banner goes last, deliberately. BOOT_MARK writes its progress characters
-    // to fixed row-0 addresses throughout init, and vga_puts scrolls from the
-    // cursor, so printing the banner earlier means the two overwrite each
-    // other and neither survives. The same applies to the framebuffer: wm_init
-    // and desktop_init blit a cleared backbuffer over the screen, so anything
-    // drawn before them is wiped.
-    logo_print();
-    if (g_framebuffer.initialized) {
-        fb_clear(FB_ARGB(0xFF, 0x0D, 0x11, 0x17));
-        logo_draw_gfx(300);
-    }
+    /* Keep the text banner for systems without a usable framebuffer. The
+     * graphical splash is visible during kernel startup and the desktop
+     * replaces it on its first complete frame. */
+    if (!g_framebuffer.initialized) logo_print();
 
     // Boot-completion sentinel.
     // Must go to the serial console (kprintf), not just VGA: CI runs QEMU with
@@ -845,8 +860,11 @@ void kernel_main(u32 magic, u64 info_ptr) {
     // whole init sequence ran rather than halting partway through.
     kprintf("[BOOT] init complete, entering scheduler\n");
 
-    // Enable interrupts and start scheduler
+    /* Let the completed startup identity remain visible long enough to avoid
+     * a one-frame flash. This wait follows completed initialization; it does
+     * not simulate work or advance a fake progress percentage. */
     asm volatile("sti");
+    if (g_framebuffer.initialized) timer_sleep_ms(450);
     scheduler_start();
 
     // Should never reach here - halt loop

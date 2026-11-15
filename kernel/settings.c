@@ -6,9 +6,9 @@ static const settings_page_t settings_pages[] = {
     {
         SETTINGS_PAGE_DISPLAY, SETTINGS_GROUP_PERSONALIZATION,
         "Display",
-        "Text size, interface scale, resolution, orientation, refresh rate and monitors.",
+        "Font family, text size and interface scale.",
         SETTINGS_PAGE_PARTIAL,
-        "Font family, text size and interface scale are adjustable. Hardware display modes, orientation, refresh rate and multi-monitor controls are not available."
+        "Font family, text size and interface scale are adjustable. The current boot framebuffer is read-only; hardware mode discovery, resolution and orientation changes, refresh-rate control and multi-monitor display are not implemented."
     },
     {
         SETTINGS_PAGE_APPEARANCE, SETTINGS_GROUP_PERSONALIZATION,

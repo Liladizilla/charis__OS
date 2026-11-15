@@ -14,6 +14,19 @@ static void check(bool condition, const char* name) {
 int main(void) {
     settings_page_id_t matches[SETTINGS_PAGE_ID_LIMIT];
 
+    const settings_page_t* display_page =
+        settings_catalog_find(SETTINGS_PAGE_DISPLAY);
+    check(display_page != NULL, "Display settings page exists");
+    if (display_page) {
+        check(strcmp(display_page->summary,
+                     "Font family, text size and interface scale.") == 0,
+              "Display summary names only available controls");
+        check(strstr(display_page->state_detail, "read-only") != NULL,
+              "active framebuffer is described as read-only");
+        check(strstr(display_page->state_detail, "multi-monitor display") != NULL,
+              "unsupported multi-monitor behavior is explicitly disclosed");
+    }
+
     check(settings_catalog_count() == 20u, "all Settings pages are registered");
     check(settings_catalog_count() ==
           (usize)(SETTINGS_PAGE_ID_LIMIT - 1), "stable page ID range matches catalog");

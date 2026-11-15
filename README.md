@@ -69,6 +69,7 @@ Older [run #724 desktop capture](docs/screenshots/charisos-desktop-run-724.png),
 - DPL3 `int 0x80` syscall dispatch and a bounded static ELF64 `ET_EXEC` loader. The loader builds a fresh process address space, loads segments and the initial stack there, switches CR3 only after success, then reclaims the previous image. A separate CI-only image now exercises successful authorized ELF entry; see the current CI gate for its result.
 - VFS abstractions with a limited FAT32 backend over primary ATA PIO.
 - Framebuffer drawing with a 16×22 antialiased Inter-derived UI font embedded in the kernel; text rendering does not require a runtime font file. PSF2 support remains available for modules that explicitly provide a PSF2 font.
+- A centered, framebuffer-native CharisOS C+sword boot splash with truthful [BOOT_STAGE] serial milestones, text-only fallback and a short timer-backed handoff before the desktop starts.
 - Native graphical workspace, launcher/taskbar, Terminal, Files, Browser, Settings and About. Each application is registered as an independent bufferless WM surface and painted inside its own clipped window rectangle.
 - Terminal-specific fixed-cell monospace rendering, a near-black console and a 19-column CharisOS ASCII C mark. The entire desktop, including Terminal, uses the same embedded Inter-derived 16×22 antialiased glyph set; Terminal selects fixed-cell spacing for command alignment. The terminal remains a bounded kernel command environment, not a full userspace shell.
 - Window-manager back-to-front composition, per-window focus and keyboard/pointer dispatch, titlebar dragging, a lower-right pointer resize grip, F8 Calculator launch, Alt+F8 keyboard resizing, maximize/restore, taskbar focus/minimize/restore, Alt+Tab cycling and visible focus rules. Host lifecycle, geometry, clipping, event-routing and allocation-failure tests cover the foundation; QEMU verifies simultaneous windows and keyboard maximize/restore.
@@ -378,8 +379,11 @@ normal bootloader in ways that matter on real hardware:
   required for interactive use.
 - **The firmware must hand off via GRUB2's `multiboot2` module.** Secure Boot
   will refuse the unsigned kernel unless GRUB's shim chain is trusted.
-- The graphics stack drives a fixed 640×480 framebuffer; the Multiboot2 GFX
-  tag is not yet parsed, so resolution is not negotiated with the firmware.
+- GRUB currently requests a 1024×768×32 framebuffer. The kernel now exposes a
+  single primary-display state copied from the validated Multiboot2 framebuffer,
+  including its physical address, dimensions, pitch and pixel layout. There is
+  no EDID/monitor discovery, native mode-setting, rotation, refresh-rate control
+  or multi-monitor scanout yet. See the [display and platform roadmap](./docs/charisos-platform-experience.md).
 
 ### Checking a boot without any of that
 
@@ -616,6 +620,10 @@ a large collection of unfinished applications.
 The exact Working / Partial / Planned status is maintained in [`TODO.md`](./TODO.md).
 The design rules and current UI limitations are documented in
 [`docs/charis-design-language.md`](./docs/charis-design-language.md).
+The boot identity, truthful installer flow, display/orientation architecture,
+native CXE executable and CAPP package formats, and globally scoped SDK roadmap
+are specified in [`docs/charisos-platform-experience.md`](./docs/charisos-platform-experience.md).
+These are roadmap targets, not claims of already-shipped functionality.
 
 ---
 

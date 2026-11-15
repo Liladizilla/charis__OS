@@ -1,21 +1,26 @@
-/* display.h - Multi-monitor display management */
-#pragma once
+/* display.h - Active display mode supplied by the boot protocol. */
+#ifndef KERNEL_DISPLAY_H
+#define KERNEL_DISPLAY_H
+
 #include <kernel/types.h>
 
-#define MAX_MONITORS 4
-
+/* This describes the single boot framebuffer currently available to the
+ * kernel. It is not a monitor-discovery or mode-setting API. */
 typedef struct {
-    int width, height;
-    int bpp;
-    u32* framebuffer;
-    bool active;
-} monitor_t;
+    bool available;
+    u64 framebuffer_physical;
+    u32 width;
+    u32 height;
+    u32 pitch;
+    u8 bpp;
+    u8 fb_type;
+    u8 red_pos;
+    u8 green_pos;
+    u8 blue_pos;
+} display_state_t;
 
-extern monitor_t g_monitors[MAX_MONITORS];
-extern int g_monitor_count;
+extern display_state_t g_display;
 
 void display_init(void);
-int display_add_monitor(int width, int height, int bpp, u32* fb);
-void display_set_primary(int index);
-int display_get_primary(void);
-void display_render_all(void);
+
+#endif
