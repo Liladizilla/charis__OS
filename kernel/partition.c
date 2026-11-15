@@ -322,25 +322,32 @@ static bool partition_parse_gpt_header_at(
         return false;
 
     u64 array_bytes_wide = (u64)entry_count * (u64)entry_size;
-    if (array_bytes_wide < GPT_MIN_ARRAY_BYTES ||
-        array_bytes_wide > GPT_MAX_ARRAY_BYTES)
+    if (array_bytes_wide > GPT_MAX_ARRAY_BYTES)
         return false;
 
     u64 array_sectors_wide = (array_bytes_wide + 511u) / 512u;
     u64 array_end = entry_array_lba + array_sectors_wide;
+    u64 minimum_reserved_end =
+        entry_array_lba + (GPT_MIN_RESERVED_BYTES / MBR_SECTOR_BYTES);
     if (array_end <= entry_array_lba ||
-        array_end > device->capacity_sectors)
+        minimum_reserved_end <= entry_array_lba ||
+        array_end > device->capacity_sectors ||
+        minimum_reserved_end > device->capacity_sectors)
         return false;
 
     if (!backup) {
-        /* The primary array follows LBA 1 and ends before FirstUsableLBA. */
+        /* The primary array and its 16 KiB reservation follow LBA 1 and
+         * finish before FirstUsableLBA. */
         if (entry_array_lba <= current_lba ||
-            array_end > first_usable)
+            array_end > first_usable ||
+            minimum_reserved_end > first_usable)
             return false;
     } else {
-        /* The backup array follows LastUsableLBA and ends before its header. */
+        /* The backup array and its 16 KiB reservation sit after LastUsableLBA
+         * and finish before the backup header. */
         if (entry_array_lba <= last_usable ||
-            array_end > current_lba)
+            array_end > current_lba ||
+            minimum_reserved_end > current_lba)
             return false;
     }
 
