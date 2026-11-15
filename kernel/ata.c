@@ -50,8 +50,7 @@ bool ata_get_device_info(ata_device_info_t* output) {
 
 static bool ata_lba_is_addressable(u32 lba) {
     return ata_present &&
-           (u64)lba < ata_primary_master.addressable_sectors &&
-           (u64)lba < ATA_LBA28_SECTOR_LIMIT;
+           ata_device_lba28_is_addressable(&ata_primary_master, lba);
 }
 
 static bool ata_status_is_absent(void) {
