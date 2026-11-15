@@ -45,12 +45,19 @@ It validates the 0xAA55 signature, boot indicators, empty-slot consistency,
 non-zero partition starts and lengths, overflow-safe end positions, disk
 capacity and overlap between primary entries.
 
-Extended partition containers are reported but their EBR chains are not
-followed, so the result is marked incomplete. A single protective 0xEE entry is
-classified as a GPT protective MBR, not as proof that GPT metadata has been
-validated. Hybrid protective MBRs are rejected. Partitions that fit the disk
-but extend beyond the current LBA28 access window are inventoried as present
-but inaccessible through this driver.
+Extended partition containers are traversed through a bounded EBR
+chain, up to 32 logical partitions. The first EBR entry is interpreted relative
+to its own EBR sector; the second link is interpreted relative to the extended
+partition base. Every logical extent and next-record link must remain inside
+the extended container and device. Cycles, overlaps with primary or logical
+partitions, self-links, non-empty reserved entries and malformed records are
+rejected. An unreadable link or a chain beyond the hard limit is reported as
+incomplete rather than being presented as fully enumerated.
+
+A single protective 0xEE entry is classified as a GPT protective MBR, not as
+proof that GPT metadata has been validated. Hybrid protective MBRs are
+rejected. Partitions that fit the disk but extend beyond the current LBA28
+access window are inventoried as present but inaccessible through this driver.
 
 
 ## GPT parser delivered
@@ -67,5 +74,6 @@ larger LBA48 capacity. A GPT partition beyond that window remains visible as
 present but not accessible through this driver.
 
 Only the primary GPT metadata is read in this milestone. Backup GPT validation,
-repair, hybrid MBR support, EBR logical partitions, partition formatting and
-all disk writes remain out of scope.
+repair, hybrid MBR support, partition formatting and all disk writes remain
+out of scope. EBR discovery is read-only and does not make any partition an
+installation target.
