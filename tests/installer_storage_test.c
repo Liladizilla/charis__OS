@@ -165,10 +165,10 @@ static void prepare_valid_gpt(void) {
     put_le32(fake_gpt_header + 84u, 128u);
     put_le64(fake_gpt_entries + 32u, 2048u);
     put_le64(fake_gpt_entries + 40u, 10000u);
-    put_le32(fake_gpt_header + 88u, test_crc32(fake_gpt_entries, GPT_MIN_ARRAY_BYTES));
+    put_le32(fake_gpt_header + 88u, test_crc32(fake_gpt_entries, GPT_MIN_RESERVED_BYTES));
     put_le32(fake_gpt_header + 16u, test_crc32(fake_gpt_header, 92u));
 
-    memcpy(fake_gpt_backup_entries, fake_gpt_entries, GPT_MIN_ARRAY_BYTES);
+    memcpy(fake_gpt_backup_entries, fake_gpt_entries, GPT_MIN_RESERVED_BYTES);
     memcpy(fake_gpt_backup_header, "EFI PART", 8u);
     put_le32(fake_gpt_backup_header + 8u, 0x00010000u);
     put_le32(fake_gpt_backup_header + 12u, 92u);
@@ -182,7 +182,7 @@ static void prepare_valid_gpt(void) {
     put_le32(fake_gpt_backup_header + 80u, GPT_MAX_PARTITIONS);
     put_le32(fake_gpt_backup_header + 84u, 128u);
     put_le32(fake_gpt_backup_header + 88u,
-             test_crc32(fake_gpt_backup_entries, GPT_MIN_ARRAY_BYTES));
+             test_crc32(fake_gpt_backup_entries, GPT_MIN_RESERVED_BYTES));
     put_le32(fake_gpt_backup_header + 16u,
              test_crc32(fake_gpt_backup_header, 92u));
 }
