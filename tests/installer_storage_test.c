@@ -191,13 +191,13 @@ static void prepare_cyclic_ebr_chain(void) {
     fake_ebr_lbas[2] = 120000u;
     prepare_ebr_record(fake_ebr_sectors[0],
                        0x83u, 63u, 5000u,
-                       0x0Fu, 100000u, 400000u);
+                       0x0Fu, 100000u, 1u);
     prepare_ebr_record(fake_ebr_sectors[1],
                        0x07u, 63u, 5000u,
-                       0x0Fu, 110000u, 390000u);
+                       0x0Fu, 110000u, 1u);
     prepare_ebr_record(fake_ebr_sectors[2],
                        0x83u, 63u, 5000u,
-                       0x0Fu, 100000u, 400000u);
+                       0x0Fu, 100000u, 1u);
 }
 
 static void prepare_maximum_ebr_chain(void) {
