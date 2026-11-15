@@ -393,9 +393,13 @@ const char* installer_storage_status_label(installer_storage_status_t status) {
         case INSTALLER_STORAGE_VALID_MBR:
             return "Valid legacy MBR partition table found.";
         case INSTALLER_STORAGE_VALID_GPT:
-            return "Valid GPT header and partition array passed CRC and range validation.";
+            return "Primary and backup GPT headers and partition arrays passed validation.";
         case INSTALLER_STORAGE_GPT_METADATA_UNREADABLE:
-            return "GPT metadata is outside the current read window or could not be read.";
+            return "Primary GPT metadata is outside the current read window or could not be read.";
+        case INSTALLER_STORAGE_GPT_BACKUP_UNREADABLE:
+            return "Primary GPT is valid, but backup metadata is outside the current LBA28 window or could not be read.";
+        case INSTALLER_STORAGE_INVALID_GPT_BACKUP:
+            return "Primary GPT is valid, but the backup header or entry array is malformed or inconsistent.";
         case INSTALLER_STORAGE_EBR_METADATA_UNREADABLE:
             return "An extended partition record is outside the readable range or could not be read.";
         case INSTALLER_STORAGE_INVALID_EBR_CHAIN:
