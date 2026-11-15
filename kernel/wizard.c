@@ -319,7 +319,7 @@ static void draw_disk(void) {
     u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
     card(cx, cy, cw, ch);
 
-    draw_step_header("Target drive", "Read-only storage inventory. No installation writes are available.",
+    draw_step_header("Storage inventory", "Read-only device and partition discovery. No installation writes are available.",
                      cx, cy);
 
     const installer_storage_inventory_t* inventory = installer_storage_get();
@@ -553,8 +553,9 @@ static void advance(void) {
     } else {
         step_leave(w.step);
         wizard_step_t next = (wizard_step_t)(w.step + 1);
-        /* The disk step only makes sense when installing. */
-        if (next == STEP_DISK && !w.install) next = STEP_NETWORK;
+        /* Storage inventory is informational and available in live
+         * sessions too. The installer remains disabled, but users should be
+         * able to inspect exactly what this build can and cannot access. */
         w.step = next;
     }
 }
@@ -563,9 +564,8 @@ static void go_back(void) {
     if (w.step == STEP_WELCOME) return;
     if (w.step == STEP_DONE) { w.step = STEP_WALLPAPER; return; }
     wizard_step_t prev = (wizard_step_t)(w.step - 1);
-    /* The install-only disk step is skipped in both directions. Returning
-     * from Network should land on Time zone, not jump back to Mode. */
-    if (w.step == STEP_NETWORK && !w.install) prev = STEP_TIMEZONE;
+    /* Storage inventory is part of the live-session setup path, so the
+     * previous step is always the immediately preceding page. */
     w.step = prev;
 }
 
