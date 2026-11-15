@@ -81,8 +81,6 @@ static void prepare_device(void) {
     fake_device.addressable_sectors = 1000000u;
     fake_device_present = true;
     fake_read_success = true;
-    read_calls = 0;
-    write_calls = 0;
     memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
 }
 
@@ -111,6 +109,8 @@ static void prepare_mbr(void) {
 
 int main(void) {
     installer_storage_inventory_t inventory;
+    read_calls = 0;
+    write_calls = 0;
 
     prepare_device();
     fake_device_present = false;
