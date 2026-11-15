@@ -26,6 +26,7 @@
 
 // Commands
 #define ATA_CMD_READ    0x20
+#define ATA_CMD_READ_EXT 0x24
 #define ATA_CMD_WRITE   0x30
 #define ATA_CMD_IDENTIFY 0xEC
 
@@ -103,6 +104,35 @@ bool ata_read_sector(u32 lba, void* buffer) {
         ((u16*)buffer)[i] = inw(ATA_DATA);
     }
 
+    return true;
+}
+
+bool ata_read_sector64(u64 lba, void* buffer) {
+    if (!buffer || !ata_device_lba48_is_addressable(&ata_primary_master, lba) ||
+        !ata_wait_bsy())
+        return false;
+
+    /* READ SECTORS EXT takes the high-order task-file bytes first, followed
+     * by the low-order bytes. Keep this API single-sector and read-only until
+     * write ordering, flush semantics and recovery have separate coverage. */
+    outb(ATA_SECTOR_COUNT, 0u);
+    outb(ATA_LBA_LOW, (u8)(lba >> 24));
+    outb(ATA_LBA_MID, (u8)(lba >> 32));
+    outb(ATA_LBA_HIGH, (u8)(lba >> 40));
+    outb(ATA_SECTOR_COUNT, 1u);
+    outb(ATA_LBA_LOW, (u8)lba);
+    outb(ATA_LBA_MID, (u8)(lba >> 8));
+    outb(ATA_LBA_HIGH, (u8)(lba >> 16));
+    outb(ATA_DRIVE, 0xE0u);
+    outb(ATA_COMMAND, ATA_CMD_READ_EXT);
+    io_delay();
+
+    if (!ata_wait_bsy() || ata_status_is_absent() ||
+        (inb(ATA_STATUS) & ATA_STATUS_ERR) || !ata_wait_drq())
+        return false;
+
+    for (u32 i = 0; i < ATA_SECTOR_SIZE / 2u; i++)
+        ((u16*)buffer)[i] = inw(ATA_DATA);
     return true;
 }
 
