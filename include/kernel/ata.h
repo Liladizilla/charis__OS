@@ -26,6 +26,7 @@ typedef struct {
 /* Decode the 256-word ATA IDENTIFY DEVICE payload without hardware I/O. */
 bool ata_identify_decode(const u16 identify[256], ata_device_info_t* output);
 bool ata_device_lba28_is_addressable(const ata_device_info_t* device, u32 lba);
+bool ata_device_lba48_is_addressable(const ata_device_info_t* device, u64 lba);
 
 void ata_init(void);
 bool ata_is_present(void);
@@ -33,6 +34,8 @@ bool ata_is_present(void);
  * return metadata with io_supported=false for inventory/diagnostics. */
 bool ata_get_device_info(ata_device_info_t* output);
 bool ata_read_sector(u32 lba, void* buffer);
+/* Read-only single-sector LBA48 PIO path; writes remain disabled above LBA28. */
+bool ata_read_sector64(u64 lba, void* buffer);
 bool ata_write_sector(u32 lba, const void* buffer);
 
 #endif
