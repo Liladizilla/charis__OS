@@ -319,7 +319,7 @@ static void draw_disk(void) {
     u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
     card(cx, cy, cw, ch);
 
-    draw_step_header("Target drive", "Read-only storage inventory-> No installation writes are available.",
+    draw_step_header("Target drive", "Read-only storage inventory. No installation writes are available.",
                      cx, cy);
 
     const installer_storage_inventory_t* inventory = installer_storage_get();
