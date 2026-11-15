@@ -319,30 +319,30 @@ static void draw_disk(void) {
     u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
     card(cx, cy, cw, ch);
 
-    draw_step_header("Target drive", "Read-only storage inventory. No installation writes are available.",
+    draw_step_header("Target drive", "Read-only storage inventory-> No installation writes are available.",
                      cx, cy);
 
-    installer_storage_inventory_t inventory;
-    if (!installer_storage_get_inventory(&inventory)) {
+    const installer_storage_inventory_t* inventory = installer_storage_get();
+    if (!inventory) {
         text(cx + 40, cy + 110, "Storage inventory has not been scanned.", W_ACCENT);
-    } else if (inventory.device_detected) {
+    } else if (inventory->device_detected) {
         text(cx + 40, cy + 108,
-             inventory.device.model[0] ? inventory.device.model : "ATA model not reported",
+             inventory->device.model[0] ? inventory->device.model : "ATA model not reported",
              W_ACCENT);
 
         char serial_line[72] = {0};
         u32 pos = wizard_append_text(serial_line, sizeof(serial_line),
                                      0, "Serial: ");
         wizard_append_text(serial_line, sizeof(serial_line), pos,
-                           inventory.device.serial[0]
-                               ? inventory.device.serial : "not reported");
+                           inventory->device.serial[0]
+                               ? inventory->device.serial : "not reported");
         text(cx + 40, cy + 130, serial_line, W_DIM);
 
         char capacity_line[80] = {0};
         pos = wizard_append_text(capacity_line, sizeof(capacity_line),
                                  0, "Capacity: ");
         pos = wizard_append_u64(capacity_line, sizeof(capacity_line), pos,
-                                inventory.device.capacity_sectors);
+                                inventory->device.capacity_sectors);
         wizard_append_text(capacity_line, sizeof(capacity_line), pos, " sectors");
         text(cx + 40, cy + 152, capacity_line, W_DIM);
 
@@ -350,53 +350,53 @@ static void draw_disk(void) {
         pos = wizard_append_text(sector_line, sizeof(sector_line),
                                  0, "Logical sector: ");
         pos = wizard_append_u64(sector_line, sizeof(sector_line), pos,
-                                inventory.device.logical_sector_bytes);
+                                inventory->device.logical_sector_bytes);
         wizard_append_text(sector_line, sizeof(sector_line), pos, " bytes");
         text(cx + 40, cy + 174, sector_line, W_DIM);
 
         text(cx + 40, cy + 198,
-             installer_storage_status_label(inventory.status), W_ACCENT);
+             installer_storage_status_label(inventory->status), W_ACCENT);
 
-        if (inventory.status == INSTALLER_STORAGE_VALID_MBR) {
+        if (inventory->status == INSTALLER_STORAGE_VALID_MBR) {
             char partition_line[72] = {0};
             pos = wizard_append_text(partition_line, sizeof(partition_line),
                                      0, "Primary entries: ");
             pos = wizard_append_u64(partition_line, sizeof(partition_line), pos,
-                                    inventory.partition_table.partition_count);
+                                    inventory->partition_table.partition_count);
             wizard_append_text(partition_line, sizeof(partition_line), pos,
-                               inventory.partition_table.has_extended
+                               inventory->partition_table.has_extended
                                    ? " (extended chain not enumerated)"
                                    : " (MBR)");
             text(cx + 40, cy + 222, partition_line, W_DIM);
-        } else if (inventory.status == INSTALLER_STORAGE_GPT_PROTECTIVE) {
+        } else if (inventory->status == INSTALLER_STORAGE_GPT_PROTECTIVE) {
             text(cx + 40, cy + 222,
                  "GPT header and partition array are not yet validated.",
                  W_DIM);
-        } else if (inventory.status == INSTALLER_STORAGE_VALID_GPT) {
+        } else if (inventory->status == INSTALLER_STORAGE_VALID_GPT) {
             char partition_line[72] = {0};
             pos = wizard_append_text(partition_line, sizeof(partition_line),
                                      0, "GPT partitions: ");
             pos = wizard_append_u64(partition_line, sizeof(partition_line), pos,
-                                    inventory.gpt_table.partition_count);
+                                    inventory->gpt_table.partition_count);
             text(cx + 40, cy + 222, partition_line, W_DIM);
-        } else if (inventory.status == INSTALLER_STORAGE_GPT_METADATA_UNREADABLE) {
+        } else if (inventory->status == INSTALLER_STORAGE_GPT_METADATA_UNREADABLE) {
             text(cx + 40, cy + 222,
                  "GPT metadata could not be safely enumerated.", W_DIM);
-        } else if (inventory.status == INSTALLER_STORAGE_FAT32_AT_LBA0) {
+        } else if (inventory->status == INSTALLER_STORAGE_FAT32_AT_LBA0) {
             text(cx + 40, cy + 222,
                  "Existing whole-volume filesystem; not an install target.",
                  W_DIM);
         }
     } else {
         text(cx + 40, cy + 110,
-             installer_storage_status_label(inventory.status), W_ACCENT);
+             installer_storage_status_label(inventory->status), W_ACCENT);
     }
 
     text(cx + 40, cy + 292,
          "Disk installation and formatting are not implemented.",
          W_HINT);
     text(cx + 40, cy + 314,
-         "Discovery reads sector zero only. No disk sectors are modified.",
+         "Only bounded metadata is read. No disk sectors are modified.",
          W_HINT);
 }
 
