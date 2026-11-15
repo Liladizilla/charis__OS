@@ -354,8 +354,9 @@ static void test_gpt(void) {
     build_gpt(header_sector, entries, GPT_MAX_PARTITIONS, 128u, 2048u, 10000u);
     expect(partition_parse_gpt_header(header_sector, &device, &header),
            "valid GPT primary header passes signature, bounds and CRC");
-    expect(header.entry_array_lba == 2u && header.entry_array_bytes == 512u &&
-           header.entry_array_sectors == 1u,
+    expect(header.entry_array_lba == 2u &&
+           header.entry_array_bytes == GPT_MIN_RESERVED_BYTES &&
+           header.entry_array_sectors == 32u,
            "GPT entry-array read plan is exact");
     expect(partition_parse_gpt_entries(&header, entries, header.entry_array_bytes, &device, &table),
            "valid GPT entry array passes CRC and range checks");
