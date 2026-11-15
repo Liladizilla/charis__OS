@@ -71,7 +71,9 @@ then validates the array CRC32, unique partition GUIDs, usable-LBA bounds,
 disk capacity and overlap. Entry sizes are restricted to the UEFI-defined
 128-byte powers of two supported by this parser (128, 256 and 512 bytes);
 the reserved extension after the 128-byte base entry must be zero in every
-slot, including unused slots.
+slot, including unused slots. An unused entry must be entirely zero, and
+UEFI-reserved attribute bits 3 through 47 are rejected when set; defined
+low-order and type-specific high-order attribute bits are preserved.
 
 The array is capped at 128 entries and 64 KiB. The scanner reads no metadata
 outside the current ATA LBA28 access window, even when IDENTIFY reports a
