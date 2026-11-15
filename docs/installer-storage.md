@@ -9,9 +9,12 @@ ATAPI packet devices or LBA48 sector I/O.
 
 The ATA IDENTIFY record now provides the device model, serial number, firmware,
 logical sector size, total reported capacity and LBA capabilities. Capacity
-larger than the current LBA28 command window is recorded accurately, while
-the separately exposed addressable-sector count is clamped to the range the
-driver can actually reach.
+larger than the current LBA28 command window is recorded accurately. The
+separately exposed addressable-sector count is clamped to the range the driver
+can actually reach, and is zero whenever the current 512-byte PIO path cannot
+safely perform I/O (including unsupported logical-sector sizes). The first-run
+storage screen shows both total reported capacity and current PIO access so
+they cannot be mistaken for the same capability.
 
 A detected but unsupported device remains visible in inventory with
 \`io_supported=false\`. The legacy \`ata_is_present()\` keeps its stricter meaning:
