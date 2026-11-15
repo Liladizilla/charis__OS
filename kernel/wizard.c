@@ -314,7 +314,7 @@ static u32 wizard_append_u64(char* output, u32 capacity,
 
 static void draw_disk(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    u32 cw = 640, ch = 360;
+    u32 cw = 640, ch = 380;
     u32 cx = (sw > cw) ? (sw - cw) / 2 : 0;
     u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
     card(cx, cy, cw, ch);
@@ -330,13 +330,21 @@ static void draw_disk(void) {
              inventory.device.model[0] ? inventory.device.model : "ATA model not reported",
              W_ACCENT);
 
+        char serial_line[72] = {0};
+        u32 pos = wizard_append_text(serial_line, sizeof(serial_line),
+                                     0, "Serial: ");
+        wizard_append_text(serial_line, sizeof(serial_line), pos,
+                           inventory.device.serial[0]
+                               ? inventory.device.serial : "not reported");
+        text(cx + 40, cy + 130, serial_line, W_DIM);
+
         char capacity_line[80] = {0};
-        u32 pos = wizard_append_text(capacity_line, sizeof(capacity_line),
-                                     0, "Capacity: ");
+        pos = wizard_append_text(capacity_line, sizeof(capacity_line),
+                                 0, "Capacity: ");
         pos = wizard_append_u64(capacity_line, sizeof(capacity_line), pos,
                                 inventory.device.capacity_sectors);
         wizard_append_text(capacity_line, sizeof(capacity_line), pos, " sectors");
-        text(cx + 40, cy + 132, capacity_line, W_DIM);
+        text(cx + 40, cy + 152, capacity_line, W_DIM);
 
         char sector_line[64] = {0};
         pos = wizard_append_text(sector_line, sizeof(sector_line),
@@ -344,9 +352,9 @@ static void draw_disk(void) {
         pos = wizard_append_u64(sector_line, sizeof(sector_line), pos,
                                 inventory.device.logical_sector_bytes);
         wizard_append_text(sector_line, sizeof(sector_line), pos, " bytes");
-        text(cx + 40, cy + 154, sector_line, W_DIM);
+        text(cx + 40, cy + 174, sector_line, W_DIM);
 
-        text(cx + 40, cy + 178,
+        text(cx + 40, cy + 198,
              installer_storage_status_label(inventory.status), W_ACCENT);
 
         if (inventory.status == INSTALLER_STORAGE_VALID_MBR) {
@@ -359,13 +367,13 @@ static void draw_disk(void) {
                                inventory.partition_table.has_extended
                                    ? " (extended chain not enumerated)"
                                    : " (MBR)");
-            text(cx + 40, cy + 202, partition_line, W_DIM);
+            text(cx + 40, cy + 222, partition_line, W_DIM);
         } else if (inventory.status == INSTALLER_STORAGE_GPT_PROTECTIVE) {
-            text(cx + 40, cy + 202,
+            text(cx + 40, cy + 222,
                  "GPT header and partition array are not yet validated.",
                  W_DIM);
         } else if (inventory.status == INSTALLER_STORAGE_FAT32_AT_LBA0) {
-            text(cx + 40, cy + 202,
+            text(cx + 40, cy + 222,
                  "Existing whole-volume filesystem; not an install target.",
                  W_DIM);
         }
@@ -374,10 +382,10 @@ static void draw_disk(void) {
              installer_storage_status_label(inventory.status), W_ACCENT);
     }
 
-    text(cx + 40, cy + 276,
+    text(cx + 40, cy + 292,
          "Disk installation and formatting are not implemented.",
          W_HINT);
-    text(cx + 40, cy + 298,
+    text(cx + 40, cy + 314,
          "Discovery reads sector zero only. No disk sectors are modified.",
          W_HINT);
 }
