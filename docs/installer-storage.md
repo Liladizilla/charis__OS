@@ -75,6 +75,13 @@ outside the current ATA LBA28 access window, even when IDENTIFY reports a
 larger LBA48 capacity. A GPT partition beyond that window remains visible as
 present but not accessible through this driver.
 
+The primary GPT parser accepts revision 1.0 headers with a bounded header
+size, a 16 KiB to 64 KiB partition-entry array, and entry sizes of 128, 256
+or 512 bytes (the supported 128 x 2^n sizes). CRC32 covers exactly the declared
+entry-array byte length; unused sector padding is not included in that CRC.
+The fixed upper bounds prevent untrusted metadata from driving unbounded
+allocation or iteration.
+
 The scanner now validates both GPT copies without writing to disk. The
 primary header must identify LBA 1 and point to the device's final LBA; the
 backup header must be at that final LBA and point back to LBA 1. Both headers
@@ -93,5 +100,5 @@ inventory; it never presents primary-only as complete redundancy validation.
 Backup repair, hybrid MBR support, partition formatting and all disk writes
 remain out of scope. EBR and GPT discovery are read-only and do not make any
 partition an installation target. The disk layout rules follow the UEFI
-Specification's GPT definition (see the GPT disk-layout and header fields
-sections in UEFI Specification 2.11).
+Specification's GPT definition (see the [GPT disk-layout and header fields
+sections in UEFI Specification 2.11](https://uefi.org/specs/UEFI/2.11/05_GUID_Partition_Table_Format.html)).
