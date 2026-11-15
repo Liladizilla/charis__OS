@@ -115,6 +115,10 @@ bool ata_read_sector64(u64 lba, void* buffer) {
     /* READ SECTORS EXT takes the high-order task-file bytes first, followed
      * by the low-order bytes. Keep this API single-sector and read-only until
      * write ordering, flush semantics and recovery have separate coverage. */
+    /* Device bit 4 selects the primary master, bit 6 selects LBA mode;
+     * obsolete/reserved Device-register bits remain clear. */
+    outb(ATA_DRIVE, 0x40u);
+    io_delay();
     outb(ATA_SECTOR_COUNT, 0u);
     outb(ATA_LBA_LOW, (u8)(lba >> 24));
     outb(ATA_LBA_MID, (u8)(lba >> 32));
@@ -123,7 +127,6 @@ bool ata_read_sector64(u64 lba, void* buffer) {
     outb(ATA_LBA_LOW, (u8)lba);
     outb(ATA_LBA_MID, (u8)(lba >> 8));
     outb(ATA_LBA_HIGH, (u8)(lba >> 16));
-    outb(ATA_DRIVE, 0xE0u);
     outb(ATA_COMMAND, ATA_CMD_READ_EXT);
     io_delay();
 
