@@ -330,6 +330,12 @@ const char* installer_storage_status_label(installer_storage_status_t status) {
             return "Valid GPT header and partition array passed CRC and range validation.";
         case INSTALLER_STORAGE_GPT_METADATA_UNREADABLE:
             return "GPT metadata is outside the current read window or could not be read.";
+        case INSTALLER_STORAGE_EBR_METADATA_UNREADABLE:
+            return "An extended partition record is outside the readable range or could not be read.";
+        case INSTALLER_STORAGE_INVALID_EBR_CHAIN:
+            return "The extended partition chain is malformed, cyclic or overlapping.";
+        case INSTALLER_STORAGE_EBR_CHAIN_LIMIT:
+            return "The extended partition chain exceeds the safe scan limit.";
         case INSTALLER_STORAGE_INVALID_PARTITION_METADATA:
             return "Partition metadata is malformed or outside disk bounds.";
         default:
