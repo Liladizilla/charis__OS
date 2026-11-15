@@ -158,46 +158,46 @@ static void prepare_mbr(void) {
 }
 
 int main(void) {
-    installer_storage_inventory_t inventory;
+    const installer_storage_inventory_t* inventory;
     read_calls = 0;
     write_calls = 0;
 
     prepare_device();
     fake_device_present = false;
     installer_storage_init();
-    expect(installer_storage_get_inventory(&inventory) &&
-           inventory.status == INSTALLER_STORAGE_NO_DEVICE,
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_NO_DEVICE,
            "no ATA device is reported distinctly");
 
     prepare_device();
     fake_device.io_supported = false;
     installer_storage_init();
-    expect(installer_storage_get_inventory(&inventory) &&
-           inventory.device_detected &&
-           inventory.status == INSTALLER_STORAGE_DEVICE_UNREADABLE,
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->device_detected &&
+           inventory->status == INSTALLER_STORAGE_DEVICE_UNREADABLE,
            "detected but unsupported device is not read");
 
     prepare_device();
     fake_read_success = false;
     installer_storage_init();
-    expect(installer_storage_get_inventory(&inventory) &&
-           inventory.status == INSTALLER_STORAGE_SECTOR_READ_ERROR,
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_SECTOR_READ_ERROR,
            "sector-zero read failures are reported");
 
     prepare_device();
     prepare_fat32_boot_sector();
     installer_storage_init();
-    expect(installer_storage_get_inventory(&inventory) &&
-           inventory.sector_zero_read &&
-           inventory.status == INSTALLER_STORAGE_FAT32_AT_LBA0,
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->sector_zero_read &&
+           inventory->status == INSTALLER_STORAGE_FAT32_AT_LBA0,
            "whole-volume FAT32 boot sector is not misclassified as MBR");
 
     prepare_device();
     prepare_mbr();
     installer_storage_init();
-    expect(installer_storage_get_inventory(&inventory) &&
-           inventory.status == INSTALLER_STORAGE_VALID_MBR &&
-           inventory.partition_table.partition_count == 1u,
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_VALID_MBR &&
+           inventory->partition_table.partition_count == 1u,
            "valid MBR is connected to the startup inventory");
 
     prepare_device();
@@ -207,8 +207,8 @@ int main(void) {
     set_mbr_entry(fake_sector_zero, 0, 0xEEu, 1u, 999999u);
     fake_device.addressable_sectors = 1u;
     installer_storage_init();
-    expect(installer_storage_get_inventory(&inventory) &&
-           inventory.status == INSTALLER_STORAGE_GPT_METADATA_UNREADABLE,
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_GPT_METADATA_UNREADABLE,
            "protective GPT marker is distinguished when LBA1 is inaccessible");
 
 
@@ -219,10 +219,10 @@ int main(void) {
     fake_sector_zero[511] = 0xAAu;
     set_mbr_entry(fake_sector_zero, 0, 0xEEu, 1u, 999999u);
     installer_storage_init();
-    expect(installer_storage_get_inventory(&inventory) &&
-           inventory.status == INSTALLER_STORAGE_VALID_GPT &&
-           inventory.gpt_table.valid &&
-           inventory.gpt_table.partition_count == 1u,
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_VALID_GPT &&
+           inventory->gpt_table.valid &&
+           inventory->gpt_table.partition_count == 1u,
            "protective MBR leads to CRC-validated GPT inventory");
 
     prepare_device();
@@ -233,16 +233,16 @@ int main(void) {
     fake_sector_zero[511] = 0xAAu;
     set_mbr_entry(fake_sector_zero, 0, 0xEEu, 1u, 999999u);
     installer_storage_init();
-    expect(installer_storage_get_inventory(&inventory) &&
-           inventory.status == INSTALLER_STORAGE_INVALID_PARTITION_METADATA,
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_INVALID_PARTITION_METADATA,
            "GPT array CRC corruption is rejected during real inventory scan");
 
     prepare_device();
     prepare_mbr();
     set_mbr_entry(fake_sector_zero, 1, 0x07u, 10000u, 500000u);
     installer_storage_init();
-    expect(installer_storage_get_inventory(&inventory) &&
-           inventory.status == INSTALLER_STORAGE_INVALID_PARTITION_METADATA,
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_INVALID_PARTITION_METADATA,
            "malformed overlapping primary partitions are rejected");
 
     expect(write_calls == 0u,
