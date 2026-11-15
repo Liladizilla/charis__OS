@@ -31,6 +31,7 @@ typedef struct {
 /* Scans the primary-master device once using read-only sector I/O. */
 void installer_storage_init(void);
 bool installer_storage_get_inventory(installer_storage_inventory_t* output);
+const installer_storage_inventory_t* installer_storage_get(void);
 const char* installer_storage_status_label(installer_storage_status_t status);
 
 #endif
