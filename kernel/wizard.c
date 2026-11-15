@@ -372,6 +372,16 @@ static void draw_disk(void) {
             text(cx + 40, cy + 222,
                  "GPT header and partition array are not yet validated.",
                  W_DIM);
+        } else if (inventory.status == INSTALLER_STORAGE_VALID_GPT) {
+            char partition_line[72] = {0};
+            pos = wizard_append_text(partition_line, sizeof(partition_line),
+                                     0, "GPT partitions: ");
+            pos = wizard_append_u64(partition_line, sizeof(partition_line), pos,
+                                    inventory.gpt_table.partition_count);
+            text(cx + 40, cy + 222, partition_line, W_DIM);
+        } else if (inventory.status == INSTALLER_STORAGE_GPT_METADATA_UNREADABLE) {
+            text(cx + 40, cy + 222,
+                 "GPT metadata could not be safely enumerated.", W_DIM);
         } else if (inventory.status == INSTALLER_STORAGE_FAT32_AT_LBA0) {
             text(cx + 40, cy + 222,
                  "Existing whole-volume filesystem; not an install target.",
