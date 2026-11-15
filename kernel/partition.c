@@ -218,8 +218,8 @@ bool partition_parse_ebr_sector(const u8 sector[MBR_SECTOR_BYTES],
 
     u64 logical_first = ebr_lba + (u64)logical_relative;
     u64 logical_end = logical_first + (u64)logical_count;
-    if (logical_first <= ebr_lba || logical_end <= logical_first ||
-        logical_first < extended_base_lba ||
+    if (logical_first <= ebr_lba || logical_first > 0xFFFFFFFFULL ||
+        logical_end <= logical_first || logical_first < extended_base_lba ||
         logical_end > extended_end_lba ||
         logical_end > device->capacity_sectors)
         return false;
@@ -253,7 +253,8 @@ bool partition_parse_ebr_sector(const u8 sector[MBR_SECTOR_BYTES],
     u64 next_ebr = extended_base_lba + (u64)link_relative;
     u64 link_end = next_ebr + (u64)link_count;
     if (next_ebr < extended_base_lba || next_ebr >= extended_end_lba ||
-        next_ebr == ebr_lba || link_end <= next_ebr ||
+        next_ebr > 0xFFFFFFFFULL || next_ebr == ebr_lba ||
+        link_end <= next_ebr ||
         link_end > extended_end_lba || link_end > device->capacity_sectors ||
         (next_ebr >= logical_first && next_ebr < logical_end)) {
         clear_bytes(output, (u32)sizeof(*output));
