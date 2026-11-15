@@ -13,8 +13,10 @@ larger than the current LBA28 command window is recorded accurately. The
 separately exposed addressable-sector count is clamped to the range the driver
 can actually reach, and is zero whenever the current 512-byte PIO path cannot
 safely perform I/O (including unsupported logical-sector sizes). The first-run
-storage screen shows both total reported capacity and current PIO access so
-they cannot be mistaken for the same capability.
+storage inventory page shows both total reported capacity and current PIO
+access so they cannot be mistaken for the same capability. This page is now
+part of the live-session first-run flow even though installation is unavailable;
+the QEMU desktop workflow captures it and checks its serial entry marker.
 
 A detected but unsupported device remains visible in inventory with
 \`io_supported=false\`. The legacy \`ata_is_present()\` keeps its stricter meaning:
