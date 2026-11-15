@@ -91,6 +91,8 @@ static void prepare_device(void) {
     fake_device_present = true;
     fake_read_success = true;
     memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
+    memset(fake_gpt_header, 0, sizeof(fake_gpt_header));
+    memset(fake_gpt_entries, 0, sizeof(fake_gpt_entries));
 }
 
 static u32 test_crc32(const u8* bytes, u32 length) {
@@ -203,10 +205,11 @@ int main(void) {
     fake_sector_zero[510] = 0x55u;
     fake_sector_zero[511] = 0xAAu;
     set_mbr_entry(fake_sector_zero, 0, 0xEEu, 1u, 999999u);
+    fake_device.addressable_sectors = 1u;
     installer_storage_init();
     expect(installer_storage_get_inventory(&inventory) &&
-           inventory.status == INSTALLER_STORAGE_GPT_PROTECTIVE,
-           "protective GPT MBR is reported without claiming GPT enumeration");
+           inventory.status == INSTALLER_STORAGE_GPT_METADATA_UNREADABLE,
+           "protective GPT marker is distinguished when LBA1 is inaccessible");
 
 
     prepare_device();
@@ -223,6 +226,18 @@ int main(void) {
            "protective MBR leads to CRC-validated GPT inventory");
 
     prepare_device();
+    prepare_valid_gpt();
+    fake_gpt_entries[200] ^= 1u;
+    memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
+    fake_sector_zero[510] = 0x55u;
+    fake_sector_zero[511] = 0xAAu;
+    set_mbr_entry(fake_sector_zero, 0, 0xEEu, 1u, 999999u);
+    installer_storage_init();
+    expect(installer_storage_get_inventory(&inventory) &&
+           inventory.status == INSTALLER_STORAGE_INVALID_PARTITION_METADATA,
+           "GPT array CRC corruption is rejected during real inventory scan");
+
+    prepare_device();
     prepare_mbr();
     set_mbr_entry(fake_sector_zero, 1, 0x07u, 10000u, 500000u);
     installer_storage_init();
@@ -232,8 +247,7 @@ int main(void) {
 
     expect(write_calls == 0u,
            "storage discovery never invokes the disk write API");
-    fprintf(stderr, "storage scan read attempts: %u\\n", read_calls);
-    expect(read_calls == 8u,
+    expect(read_calls == 11u,
            "only supported devices reach a single sector-zero read");
     expect(strcmp(installer_storage_status_label(
                INSTALLER_STORAGE_VALID_MBR),
