@@ -3,7 +3,7 @@
 ## Current device boundary
 
 The current kernel storage driver supports one legacy primary-master ATA device
-through 28-bit LBA PIO and 512-byte logical sectors. It does not support AHCI,
+through 28-bit LBA PIO writes and 48-bit LBA PIO reads, using 512-byte logical sectors. It does not support AHCI,
 NVMe, USB mass storage, secondary-channel discovery, primary-slave discovery,
 ATAPI packet devices or LBA48 sector I/O.
 
@@ -77,9 +77,7 @@ slot, including unused slots. An unused entry must be entirely zero, and
 UEFI-reserved attribute bits 3 through 47 are rejected when set; defined
 low-order and type-specific high-order attribute bits are preserved.
 
-The array is capped at 128 entries and 64 KiB. The scanner reads no metadata
-outside the current ATA LBA28 access window, even when IDENTIFY reports a
-larger LBA48 capacity. A GPT partition beyond that window remains visible as
+The array is capped at 128 entries and 64 KiB. Primary metadata and EBR traversal still use the bounded LBA28 path. A separate single-sector, read-only LBA48 command is now available for high-LBA metadata reads; it does not enable writes or make a partition an installation target. A GPT partition beyond that window remains visible as
 present but not accessible through this driver.
 
 The primary GPT parser accepts revision 1.0 headers with a bounded header
@@ -109,7 +107,8 @@ first-run screen distinguishes a fully verified backup from primary-only
 inventory; it never presents primary-only as complete redundancy validation.
 
 Backup repair, hybrid MBR support, partition formatting and all disk writes
-remain out of scope. EBR and GPT discovery are read-only and do not make any
+remain out of scope. LBA48 write commands, multi-sector transfers, cache flush
+semantics and write recovery are deliberately not exposed. EBR and GPT discovery are read-only and do not make any
 partition an installation target. The disk layout rules follow the UEFI
 Specification's GPT definition (see the [GPT disk-layout and header fields
 sections in UEFI Specification 2.11](https://uefi.org/specs/UEFI/2.11/05_GUID_Partition_Table_Format.html)).
