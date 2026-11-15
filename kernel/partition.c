@@ -315,6 +315,12 @@ static bool partition_parse_gpt_header_at(
     if (crc32_gpt_header(sector, header_size) != header_crc)
         return false;
 
+    /* UEFI reserves bytes 92 through the end of the logical block. They
+     * must remain zero even when a larger header-size value is reported. */
+    if (!all_zero(&sector[GPT_HEADER_MIN_SIZE],
+                  MBR_SECTOR_BYTES - GPT_HEADER_MIN_SIZE))
+        return false;
+
     u64 array_bytes_wide = (u64)entry_count * (u64)entry_size;
     if (array_bytes_wide < GPT_MIN_ARRAY_BYTES ||
         array_bytes_wide > GPT_MAX_ARRAY_BYTES)
