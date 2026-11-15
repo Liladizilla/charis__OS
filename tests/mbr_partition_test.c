@@ -203,6 +203,27 @@ static void refresh_gpt_crcs(u8 header[512], u8* entries, u32 array_bytes) {
     put_le32(header + 16u, crc32(header, 92u));
 }
 
+static void build_backup_gpt(u8 header[512],
+                               const u8 primary_header[512],
+                               u64 backup_array_lba,
+                               const u8* entries,
+                               u32 entry_bytes) {
+    memset(header, 0, 512u);
+    memcpy(header, "EFI PART", 8u);
+    put_le32(header + 8u, 0x00010000u);
+    put_le32(header + 12u, 92u);
+    put_le64(header + 24u, 999999u);
+    put_le64(header + 32u, 1u);
+    put_le64(header + 40u, read_le64(primary_header + 40u));
+    put_le64(header + 48u, read_le64(primary_header + 48u));
+    memcpy(header + 56u, primary_header + 56u, 16u);
+    put_le64(header + 72u, backup_array_lba);
+    put_le32(header + 80u, read_le32(primary_header + 80u));
+    put_le32(header + 84u, read_le32(primary_header + 84u));
+    put_le32(header + 88u, crc32(entries, entry_bytes));
+    put_le32(header + 16u, crc32(header, 92u));
+}
+
 static void test_ebr(void) {
     u8 sector[512];
     ata_device_info_t device = make_device();
@@ -325,6 +346,64 @@ static void test_gpt(void) {
            table.partitions[0].first_lba == 2048u &&
            table.partitions[0].last_lba == 10000u,
            "GPT partition geometry is preserved");
+
+    u8 backup_header_sector[512];
+    gpt_header_info_t backup_header;
+    build_backup_gpt(backup_header_sector, header_sector, 999998u,
+                     entries, header.entry_array_bytes);
+    expect(partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                             &header, &backup_header),
+           "reciprocal backup GPT header passes CRC and metadata comparison");
+    expect(backup_header.current_lba == 999999u &&
+           backup_header.backup_lba == 1u &&
+           backup_header.entry_array_lba == 999998u,
+           "backup GPT location and reciprocal LBA fields are preserved");
+
+    backup_header_sector[16] ^= 1u;
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT header CRC corruption is rejected");
+    backup_header_sector[16] ^= 1u;
+
+    put_le64(backup_header_sector + 32u, 2u);
+    put_le32(backup_header_sector + 16u, 0u);
+    put_le32(backup_header_sector + 16u, crc32(backup_header_sector, 92u));
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT must point back to primary LBA 1");
+    build_backup_gpt(backup_header_sector, header_sector, 999998u,
+                     entries, header.entry_array_bytes);
+
+    backup_header_sector[56] ^= 1u;
+    put_le32(backup_header_sector + 16u, 0u);
+    put_le32(backup_header_sector + 16u, crc32(backup_header_sector, 92u));
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT disk GUID must match the primary header");
+    build_backup_gpt(backup_header_sector, header_sector, 999998u,
+                     entries, header.entry_array_bytes);
+
+    build_backup_gpt(backup_header_sector, header_sector, 999965u,
+                     entries, header.entry_array_bytes);
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT entry array cannot overlap the usable region");
+
+    build_backup_gpt(backup_header_sector, header_sector, 999999u,
+                     entries, header.entry_array_bytes);
+    expect(!partition_parse_gpt_backup_header(backup_header_sector, &device,
+                                              &header, &backup_header),
+           "backup GPT entry array cannot overlap its header");
+
+    /* The primary header must identify the final LBA as its backup. */
+    put_le64(header_sector + 32u, 999998u);
+    put_le32(header_sector + 16u, 0u);
+    put_le32(header_sector + 16u, crc32(header_sector, 92u));
+    expect(!partition_parse_gpt_header(header_sector, &device, &header),
+           "primary GPT alternate LBA must identify the disk's final sector");
+    build_gpt(header_sector, entries, 4u, 128u, 2048u, 10000u);
+    expect(partition_parse_gpt_header(header_sector, &device, &header),
+           "valid primary GPT header is restored after alternate-LBA test");
 
     entries[200] ^= 1u;
     expect(!partition_parse_gpt_entries(&header, entries, 512u, &device, &table),
