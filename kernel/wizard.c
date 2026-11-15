@@ -25,6 +25,7 @@
 #include <kernel/net.h>
 #include <kernel/config.h>
 #include <kernel/ata.h>
+#include <kernel/installer_storage.h>
 #include <kernel/wallpaper.h>
 #include <kernel/shell_ui.h>
 #include <kernel/timer.h>
@@ -313,7 +314,7 @@ static u32 wizard_append_u64(char* output, u32 capacity,
 
 static void draw_disk(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    u32 cw = 640, ch = 350;
+    u32 cw = 640, ch = 360;
     u32 cx = (sw > cw) ? (sw - cw) / 2 : 0;
     u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
     card(cx, cy, cw, ch);
@@ -321,61 +322,63 @@ static void draw_disk(void) {
     draw_step_header("Target drive", "Read-only storage inventory. No installation writes are available.",
                      cx, cy);
 
-    ata_device_info_t device;
-    if (!ata_get_device_info(&device)) {
-        text(cx + 40, cy + 110,
-             "No primary-master ATA device detected.",
-             W_ACCENT);
-        text(cx + 40, cy + 142,
-             "AHCI, NVMe, USB storage and secondary ATA devices",
-             W_DIM);
-        text(cx + 40, cy + 162,
-             "are not discovered by the current storage driver.",
-             W_DIM);
-    } else {
+    installer_storage_inventory_t inventory;
+    if (!installer_storage_get_inventory(&inventory)) {
+        text(cx + 40, cy + 110, "Storage inventory has not been scanned.", W_ACCENT);
+    } else if (inventory.device_detected) {
         text(cx + 40, cy + 108,
-             device.model[0] ? device.model : "ATA model not reported",
+             inventory.device.model[0] ? inventory.device.model : "ATA model not reported",
              W_ACCENT);
 
         char capacity_line[80] = {0};
         u32 pos = wizard_append_text(capacity_line, sizeof(capacity_line),
                                      0, "Capacity: ");
         pos = wizard_append_u64(capacity_line, sizeof(capacity_line), pos,
-                                device.capacity_sectors);
-        wizard_append_text(capacity_line, sizeof(capacity_line), pos,
-                           " sectors");
+                                inventory.device.capacity_sectors);
+        wizard_append_text(capacity_line, sizeof(capacity_line), pos, " sectors");
         text(cx + 40, cy + 132, capacity_line, W_DIM);
 
         char sector_line[64] = {0};
         pos = wizard_append_text(sector_line, sizeof(sector_line),
                                  0, "Logical sector: ");
         pos = wizard_append_u64(sector_line, sizeof(sector_line), pos,
-                                device.logical_sector_bytes);
+                                inventory.device.logical_sector_bytes);
         wizard_append_text(sector_line, sizeof(sector_line), pos, " bytes");
         text(cx + 40, cy + 154, sector_line, W_DIM);
 
-        text(cx + 40, cy + 176,
-             device.io_supported
-                ? "Current driver: 512-byte LBA28 PIO read/write."
-                : "Detected, but unsupported by the current PIO path.",
-             device.io_supported ? W_DIM : W_ACCENT);
+        text(cx + 40, cy + 178,
+             installer_storage_status_label(inventory.status), W_ACCENT);
 
-        if (device.lba48_supported) {
-            text(cx + 40, cy + 198,
-                 "LBA48 capacity reported; sector I/O remains LBA28.",
+        if (inventory.status == INSTALLER_STORAGE_VALID_MBR) {
+            char partition_line[72] = {0};
+            pos = wizard_append_text(partition_line, sizeof(partition_line),
+                                     0, "Primary entries: ");
+            pos = wizard_append_u64(partition_line, sizeof(partition_line), pos,
+                                    inventory.partition_table.partition_count);
+            wizard_append_text(partition_line, sizeof(partition_line), pos,
+                               inventory.partition_table.has_extended
+                                   ? " (extended chain not enumerated)"
+                                   : " (MBR)");
+            text(cx + 40, cy + 202, partition_line, W_DIM);
+        } else if (inventory.status == INSTALLER_STORAGE_GPT_PROTECTIVE) {
+            text(cx + 40, cy + 202,
+                 "GPT header and partition array are not yet validated.",
                  W_DIM);
-        } else {
-            text(cx + 40, cy + 198,
-                 "LBA48 sector I/O is not implemented.",
+        } else if (inventory.status == INSTALLER_STORAGE_FAT32_AT_LBA0) {
+            text(cx + 40, cy + 202,
+                 "Existing whole-volume filesystem; not an install target.",
                  W_DIM);
         }
+    } else {
+        text(cx + 40, cy + 110,
+             installer_storage_status_label(inventory.status), W_ACCENT);
     }
 
-    text(cx + 40, cy + 244,
-         "The installer and partition writer are not implemented yet.",
+    text(cx + 40, cy + 276,
+         "Disk installation and formatting are not implemented.",
          W_HINT);
-    text(cx + 40, cy + 266,
-         "This inventory is read-only. No disk sectors are modified.",
+    text(cx + 40, cy + 298,
+         "Discovery reads sector zero only. No disk sectors are modified.",
          W_HINT);
 }
 
