@@ -48,3 +48,21 @@ classified as a GPT protective MBR, not as proof that GPT metadata has been
 validated. Hybrid protective MBRs are rejected. Partitions that fit the disk
 but extend beyond the current LBA28 access window are inventoried as present
 but inaccessible through this driver.
+
+
+## GPT parser delivered
+
+The scanner follows a protective MBR with read-only reads of the primary GPT
+header and partition-entry array. It validates the GPT 1.0 signature, revision,
+header size and CRC32; checks LBA geometry and array size before allocation;
+then validates the array CRC32, unique partition GUIDs, usable-LBA bounds,
+disk capacity and overlap.
+
+The array is capped at 128 entries and 64 KiB. The scanner reads no metadata
+outside the current ATA LBA28 access window, even when IDENTIFY reports a
+larger LBA48 capacity. A GPT partition beyond that window remains visible as
+present but not accessible through this driver.
+
+Only the primary GPT metadata is read in this milestone. Backup GPT validation,
+repair, hybrid MBR support, EBR logical partitions, partition formatting and
+all disk writes remain out of scope.
