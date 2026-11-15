@@ -456,9 +456,12 @@ static void test_gpt(void) {
            "GPT partition-array CRC mismatch is rejected");
     entries[200] ^= 1u;
 
-    header_sector[92] ^= 1u;
+    header_sector[511] ^= 1u;
+    expect(!partition_parse_gpt_header(header_sector, &device, &header),
+           "nonzero bytes in the reserved GPT header tail are rejected");
+    header_sector[511] ^= 1u;
     expect(partition_parse_gpt_header(header_sector, &device, &header),
-           "bytes outside header_size do not affect header CRC");
+           "zeroed GPT reserved tail restores valid header parsing");
     header_sector[16] ^= 1u;
     expect(!partition_parse_gpt_header(header_sector, &device, &header),
            "GPT header CRC mismatch is rejected");
