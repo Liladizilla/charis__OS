@@ -10,6 +10,10 @@ static bool fake_read_success;
 static u8 fake_sector_zero[512];
 static u8 fake_gpt_header[512];
 static u8 fake_gpt_entries[512];
+#define FAKE_EBR_MAX 4u
+static u32 fake_ebr_lbas[FAKE_EBR_MAX];
+static u8 fake_ebr_sectors[FAKE_EBR_MAX][512];
+static u32 fake_ebr_count;
 static u32 read_calls;
 static u32 write_calls;
 
@@ -43,7 +47,17 @@ bool ata_read_sector(u32 lba, void* buffer) {
     if (lba == 0u) memcpy(buffer, fake_sector_zero, 512u);
     else if (lba == 1u) memcpy(buffer, fake_gpt_header, 512u);
     else if (lba == 2u) memcpy(buffer, fake_gpt_entries, 512u);
-    else return false;
+    else {
+        bool found = false;
+        for (u32 i = 0; i < fake_ebr_count; i++) {
+            if (fake_ebr_lbas[i] == lba) {
+                memcpy(buffer, fake_ebr_sectors[i], 512u);
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
     return true;
 }
 
@@ -93,6 +107,9 @@ static void prepare_device(void) {
     memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
     memset(fake_gpt_header, 0, sizeof(fake_gpt_header));
     memset(fake_gpt_entries, 0, sizeof(fake_gpt_entries));
+    memset(fake_ebr_lbas, 0, sizeof(fake_ebr_lbas));
+    memset(fake_ebr_sectors, 0, sizeof(fake_ebr_sectors));
+    fake_ebr_count = 0u;
 }
 
 static u32 test_crc32(const u8* bytes, u32 length) {
@@ -132,6 +149,34 @@ static void prepare_valid_gpt(void) {
     put_le64(fake_gpt_entries + 40u, 10000u);
     put_le32(fake_gpt_header + 88u, test_crc32(fake_gpt_entries, 512u));
     put_le32(fake_gpt_header + 16u, test_crc32(fake_gpt_header, 92u));
+}
+
+static void prepare_ebr_record(u8 sector[512],
+                                u8 logical_type, u32 logical_relative,
+                                u32 logical_count, u8 link_type,
+                                u32 link_relative, u32 link_count) {
+    memset(sector, 0, 512u);
+    sector[510] = 0x55u;
+    sector[511] = 0xAAu;
+    set_mbr_entry(sector, 0, logical_type, logical_relative, logical_count);
+    set_mbr_entry(sector, 1, link_type, link_relative, link_count);
+}
+
+static void prepare_extended_mbr(void) {
+    memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
+    fake_sector_zero[510] = 0x55u;
+    fake_sector_zero[511] = 0xAAu;
+    set_mbr_entry(fake_sector_zero, 0, 0x0Fu, 10000u, 500000u);
+
+    fake_ebr_count = 2u;
+    fake_ebr_lbas[0] = 10000u;
+    fake_ebr_lbas[1] = 110000u;
+    prepare_ebr_record(fake_ebr_sectors[0],
+                       0x83u, 63u, 50000u,
+                       0x0Fu, 100000u, 400000u);
+    prepare_ebr_record(fake_ebr_sectors[1],
+                       0x07u, 63u, 50000u,
+                       0u, 0u, 0u);
 }
 
 static void prepare_fat32_boot_sector(void) {
@@ -201,6 +246,27 @@ int main(void) {
            "valid MBR is connected to the startup inventory");
 
     prepare_device();
+    prepare_extended_mbr();
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_VALID_MBR &&
+           inventory->partition_table.logical_partition_count == 2u &&
+           inventory->partition_table.fully_enumerated &&
+           inventory->partition_table.logical_partitions[0].first_lba == 10063u &&
+           inventory->partition_table.logical_partitions[1].first_lba == 110063u,
+           "read-only scan follows and enumerates a valid two-record EBR chain");
+
+    prepare_device();
+    prepare_extended_mbr();
+    /* The second EBR links to itself. The cycle is rejected before another read. */
+    set_mbr_entry(fake_ebr_sectors[1], 1, 0x0Fu, 100000u, 400000u);
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_INVALID_EBR_CHAIN &&
+           !inventory->partition_table.fully_enumerated,
+           "cyclic EBR link is rejected without claiming complete inventory");
+
+    prepare_device();
     memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
     fake_sector_zero[510] = 0x55u;
     fake_sector_zero[511] = 0xAAu;
@@ -247,8 +313,8 @@ int main(void) {
 
     expect(write_calls == 0u,
            "storage discovery never invokes the disk write API");
-    expect(read_calls == 11u,
-           "only supported devices reach a single sector-zero read");
+    expect(read_calls == 17u,
+           "only bounded MBR, GPT and EBR metadata sectors are read");
     expect(strcmp(installer_storage_status_label(
                INSTALLER_STORAGE_VALID_MBR),
                "Valid legacy MBR partition table found.") == 0,
