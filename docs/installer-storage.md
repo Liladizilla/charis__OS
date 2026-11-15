@@ -33,3 +33,18 @@ The existing FAT32 mount assumes a filesystem volume starts at sector zero. It
 must not be reused as a partition-aware installer formatter. There is no
 installer partition writer in this milestone, and no disk is modified by
 storage discovery.
+
+
+## MBR parser delivered
+
+The kernel now has a host-testable parser for the 512-byte legacy MBR sector.
+It validates the 0xAA55 signature, boot indicators, empty-slot consistency,
+non-zero partition starts and lengths, overflow-safe end positions, disk
+capacity and overlap between primary entries.
+
+Extended partition containers are reported but their EBR chains are not
+followed, so the result is marked incomplete. A single protective 0xEE entry is
+classified as a GPT protective MBR, not as proof that GPT metadata has been
+validated. Hybrid protective MBRs are rejected. Partitions that fit the disk
+but extend beyond the current LBA28 access window are inventoried as present
+but inaccessible through this driver.
