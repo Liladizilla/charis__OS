@@ -10,7 +10,7 @@ static bool fake_read_success;
 static u8 fake_sector_zero[512];
 static u8 fake_gpt_header[512];
 static u8 fake_gpt_entries[512];
-#define FAKE_EBR_MAX 4u
+#define FAKE_EBR_MAX 40u
 static u32 fake_ebr_lbas[FAKE_EBR_MAX];
 static u8 fake_ebr_sectors[FAKE_EBR_MAX][512];
 static u32 fake_ebr_count;
@@ -179,6 +179,22 @@ static void prepare_extended_mbr(void) {
                        0u, 0u, 0u);
 }
 
+static void prepare_maximum_ebr_chain(void) {
+    memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
+    fake_sector_zero[510] = 0x55u;
+    fake_sector_zero[511] = 0xAAu;
+    set_mbr_entry(fake_sector_zero, 0, 0x0Fu, 10000u, 500000u);
+
+    fake_ebr_count = MBR_MAX_LOGICAL_PARTITIONS;
+    for (u32 i = 0; i < fake_ebr_count; i++) {
+        u32 offset = (i + 1u) * 1000u;
+        fake_ebr_lbas[i] = 10000u + i * 1000u;
+        prepare_ebr_record(fake_ebr_sectors[i],
+                           0x83u, 63u, 500u,
+                           0x0Fu, offset, 500000u - offset);
+    }
+}
+
 static void prepare_fat32_boot_sector(void) {
     memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
     fake_sector_zero[0] = 0xEB;
@@ -257,6 +273,16 @@ int main(void) {
            "read-only scan follows and enumerates a valid two-record EBR chain");
 
     prepare_device();
+    prepare_maximum_ebr_chain();
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_EBR_CHAIN_LIMIT &&
+           inventory->partition_table.logical_partition_count ==
+               MBR_MAX_LOGICAL_PARTITIONS &&
+           !inventory->partition_table.fully_enumerated,
+           "EBR traversal stops at the fixed 32-record limit");
+
+    prepare_device();
     prepare_extended_mbr();
     /* The second EBR links to itself. The cycle is rejected before another read. */
     set_mbr_entry(fake_ebr_sectors[1], 1, 0x0Fu, 100000u, 400000u);
@@ -313,7 +339,7 @@ int main(void) {
 
     expect(write_calls == 0u,
            "storage discovery never invokes the disk write API");
-    expect(read_calls == 17u,
+    expect(read_calls == 50u,
            "only bounded MBR, GPT and EBR metadata sectors are read");
     expect(strcmp(installer_storage_status_label(
                INSTALLER_STORAGE_VALID_MBR),
