@@ -45,6 +45,7 @@ typedef struct {
 typedef struct {
     bool has_next_ebr;
     u64 next_ebr_lba;
+    u64 next_ebr_end_lba;
     mbr_partition_t logical_partition;
 } ebr_sector_info_t;
 
