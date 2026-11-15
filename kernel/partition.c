@@ -417,8 +417,9 @@ bool partition_parse_gpt_entries(const gpt_header_info_t* header,
 
     if (!device->detected || !device->capacity_sectors ||
         header->entry_count == 0u || header->entry_count > GPT_MAX_PARTITIONS ||
-        header->entry_size < 128u || header->entry_size > GPT_MAX_ENTRY_SIZE ||
-        (header->entry_size & 7u) != 0u)
+        (header->entry_size != 128u &&
+         header->entry_size != 256u &&
+         header->entry_size != 512u))
         return false;
 
     u64 required_bytes = (u64)header->entry_count * header->entry_size;
