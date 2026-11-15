@@ -200,6 +200,23 @@ static void prepare_cyclic_ebr_chain(void) {
                        0x0Fu, 100000u, 10000u);
 }
 
+static void prepare_ebr_link_overlapping_prior_partition(void) {
+    memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
+    fake_sector_zero[510] = 0x55u;
+    fake_sector_zero[511] = 0xAAu;
+    set_mbr_entry(fake_sector_zero, 0, 0x0Fu, 10000u, 500000u);
+
+    fake_ebr_count = 2u;
+    fake_ebr_lbas[0] = 10000u;
+    fake_ebr_lbas[1] = 110000u;
+    prepare_ebr_record(fake_ebr_sectors[0],
+                       0x83u, 63u, 5000u,
+                       0x0Fu, 100000u, 300000u);
+    prepare_ebr_record(fake_ebr_sectors[1],
+                       0x07u, 140000u, 5000u,
+                       0x0Fu, 1000u, 9000u);
+}
+
 static void prepare_maximum_ebr_chain(void) {
     memset(fake_sector_zero, 0, sizeof(fake_sector_zero));
     fake_sector_zero[510] = 0x55u;
@@ -324,6 +341,15 @@ int main(void) {
            "unreadable later EBR preserves the partial logical inventory");
 
     prepare_device();
+    prepare_ebr_link_overlapping_prior_partition();
+    installer_storage_init();
+    expect((inventory = installer_storage_get()) != NULL &&
+           inventory->status == INSTALLER_STORAGE_INVALID_EBR_CHAIN &&
+           inventory->partition_table.logical_partition_count == 2u &&
+           !inventory->partition_table.fully_enumerated,
+           "next EBR link extent cannot overlap an earlier logical partition");
+
+    prepare_device();
     prepare_cyclic_ebr_chain();
     installer_storage_init();
     expect((inventory = installer_storage_get()) != NULL &&
@@ -399,7 +425,7 @@ int main(void) {
 
     expect(write_calls == 0u,
            "storage discovery never invokes the disk write API");
-    expect(read_calls == 60u,
+    expect(read_calls == 63u,
            "only bounded MBR, GPT and EBR metadata sectors are read");
     expect(strcmp(installer_storage_status_label(
                INSTALLER_STORAGE_VALID_MBR),
