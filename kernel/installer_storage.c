@@ -59,6 +59,112 @@ static bool is_fat32_volume_boot_sector(const u8 sector[512],
     return true;
 }
 
+static bool partition_ranges_overlap(u64 first_a, u64 end_a,
+                                       u64 first_b, u64 end_b) {
+    return first_a < end_b && first_b < end_a;
+}
+
+static bool lba_inside_partition(u64 lba,
+                                 const mbr_partition_t* partition) {
+    if (!partition || !partition->present) return false;
+    u64 start = partition->first_lba;
+    u64 end = start + partition->sector_count;
+    return lba >= start && lba < end;
+}
+
+/* Traverse at most MBR_MAX_LOGICAL_PARTITIONS EBRs. Each link is checked
+ * against the extended container, the addressable I/O range, prior EBRs and
+ * every discovered partition before it is followed. */
+static installer_storage_status_t scan_extended_chain(void) {
+    partition_table_t* table = &inventory.partition_table;
+    if (!table->has_extended) {
+        table->fully_enumerated = true;
+        return INSTALLER_STORAGE_VALID_MBR;
+    }
+
+    u64 visited[MBR_MAX_LOGICAL_PARTITIONS];
+    u32 visited_count = 0;
+    u64 current_ebr = table->extended_base_lba;
+    u64 container_start = table->extended_base_lba;
+    u64 container_end = table->extended_end_lba;
+
+    for (u32 hop = 0; hop < MBR_MAX_LOGICAL_PARTITIONS; hop++) {
+        if (current_ebr < container_start || current_ebr >= container_end ||
+            current_ebr >= inventory.device.addressable_sectors ||
+            current_ebr >= ATA_LBA28_SECTOR_LIMIT ||
+            current_ebr > 0xFFFFFFFFULL)
+            return INSTALLER_STORAGE_EBR_METADATA_UNREADABLE;
+
+        for (u32 i = 0; i < visited_count; i++) {
+            if (visited[i] == current_ebr)
+                return INSTALLER_STORAGE_INVALID_EBR_CHAIN;
+        }
+        for (u32 i = 0; i < table->logical_partition_count; i++) {
+            if (lba_inside_partition(current_ebr,
+                                     &table->logical_partitions[i]))
+                return INSTALLER_STORAGE_INVALID_EBR_CHAIN;
+        }
+
+        visited[visited_count++] = current_ebr;
+
+        u8 sector[MBR_SECTOR_BYTES];
+        if (!ata_read_sector((u32)current_ebr, sector))
+            return INSTALLER_STORAGE_EBR_METADATA_UNREADABLE;
+
+        ebr_sector_info_t decoded;
+        if (!partition_parse_ebr_sector(sector, current_ebr,
+                container_start, container_end, &inventory.device, &decoded))
+            return INSTALLER_STORAGE_INVALID_EBR_CHAIN;
+
+        const mbr_partition_t* logical = &decoded.logical_partition;
+        u64 logical_start = logical->first_lba;
+        u64 logical_end = logical_start + logical->sector_count;
+
+        for (u32 i = 0; i < table->partition_count; i++) {
+            const mbr_partition_t* primary = &table->partitions[i];
+            if (!primary->present || primary->extended) continue;
+            u64 primary_start = primary->first_lba;
+            u64 primary_end = primary_start + primary->sector_count;
+            if (partition_ranges_overlap(logical_start, logical_end,
+                                         primary_start, primary_end))
+                return INSTALLER_STORAGE_INVALID_EBR_CHAIN;
+        }
+
+        for (u32 i = 0; i < table->logical_partition_count; i++) {
+            const mbr_partition_t* prior = &table->logical_partitions[i];
+            u64 prior_start = prior->first_lba;
+            u64 prior_end = prior_start + prior->sector_count;
+            if (partition_ranges_overlap(logical_start, logical_end,
+                                         prior_start, prior_end))
+                return INSTALLER_STORAGE_INVALID_EBR_CHAIN;
+        }
+
+        for (u32 i = 0; i < visited_count; i++) {
+            if (visited[i] >= logical_start && visited[i] < logical_end)
+                return INSTALLER_STORAGE_INVALID_EBR_CHAIN;
+        }
+
+        table->logical_partitions[table->logical_partition_count++] = *logical;
+
+        if (!decoded.has_next_ebr) {
+            table->fully_enumerated = true;
+            return INSTALLER_STORAGE_VALID_MBR;
+        }
+
+        for (u32 i = 0; i < table->logical_partition_count; i++) {
+            if (lba_inside_partition(decoded.next_ebr_lba,
+                                     &table->logical_partitions[i]))
+                return INSTALLER_STORAGE_INVALID_EBR_CHAIN;
+        }
+
+        if (hop + 1u == MBR_MAX_LOGICAL_PARTITIONS)
+            return INSTALLER_STORAGE_EBR_CHAIN_LIMIT;
+        current_ebr = decoded.next_ebr_lba;
+    }
+
+    return INSTALLER_STORAGE_EBR_CHAIN_LIMIT;
+}
+
 void installer_storage_init(void) {
     clear_bytes(&inventory, (u32)sizeof(inventory));
 
@@ -180,11 +286,21 @@ void installer_storage_init(void) {
 
     if (inventory.partition_table.scheme == PARTITION_SCHEME_MBR &&
         inventory.partition_table.valid) {
-        inventory.status = INSTALLER_STORAGE_VALID_MBR;
-        kprintf("[STORAGE] valid MBR: %u primary entries%s\n",
-                inventory.partition_table.partition_count,
-                inventory.partition_table.has_extended
-                    ? "; extended chain not enumerated" : "");
+        inventory.status = scan_extended_chain();
+        if (inventory.status == INSTALLER_STORAGE_VALID_MBR) {
+            kprintf("[STORAGE] valid MBR: %u primary, %u logical partitions%s\n",
+                    inventory.partition_table.partition_count,
+                    inventory.partition_table.logical_partition_count,
+                    inventory.partition_table.has_extended &&
+                    !inventory.partition_table.fully_enumerated
+                        ? "; extended chain incomplete" : "");
+        } else if (inventory.status == INSTALLER_STORAGE_EBR_METADATA_UNREADABLE) {
+            serial_puts("[STORAGE] EBR chain leaves the readable LBA28 window or a sector read failed\n");
+        } else if (inventory.status == INSTALLER_STORAGE_EBR_CHAIN_LIMIT) {
+            serial_puts("[STORAGE] EBR chain exceeds the bounded logical-partition limit\n");
+        } else {
+            serial_puts("[STORAGE] malformed, cyclic or overlapping EBR chain rejected\n");
+        }
         return;
     }
 
