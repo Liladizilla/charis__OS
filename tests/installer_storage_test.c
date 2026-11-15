@@ -399,7 +399,7 @@ int main(void) {
 
     expect(write_calls == 0u,
            "storage discovery never invokes the disk write API");
-    expect(read_calls == 59u,
+    expect(read_calls == 60u,
            "only bounded MBR, GPT and EBR metadata sectors are read");
     expect(strcmp(installer_storage_status_label(
                INSTALLER_STORAGE_VALID_MBR),
