@@ -49,10 +49,12 @@ Extended partition containers are traversed through a bounded EBR
 chain, up to 32 logical partitions. The first EBR entry is interpreted relative
 to its own EBR sector; the second link is interpreted relative to the extended
 partition base. Every logical extent and next-record link must remain inside
-the extended container and device. Cycles, overlaps with primary or logical
-partitions, self-links, non-empty reserved entries and malformed records are
-rejected. An unreadable link or a chain beyond the hard limit is reported as
-incomplete rather than being presented as fully enumerated.
+the extended container and device. Each link's declared extent becomes
+the upper bound for the next record and its logical data. Link extents may not
+overlap any discovered logical partition. Cycles, overlaps with primary or
+logical partitions, self-links, non-empty reserved entries and malformed
+records are rejected. An unreadable link or a chain beyond the hard limit is
+reported as incomplete rather than being presented as fully enumerated.
 
 A single protective 0xEE entry is classified as a GPT protective MBR, not as
 proof that GPT metadata has been validated. Hybrid protective MBRs are
