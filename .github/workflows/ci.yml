@@ -167,7 +167,7 @@ jobs:
           gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/installer_storage_test.c kernel/installer_storage.c kernel/partition.c -o /tmp/installer_storage_test
           /tmp/installer_storage_test
 
-      - name: Test bounded MBR partition discovery
+      - name: Test bounded MBR and GPT partition discovery
         run: |
           gcc -std=gnu11 -Wall -Wextra -Werror -Iinclude tests/mbr_partition_test.c kernel/partition.c -o /tmp/mbr_partition_test
           /tmp/mbr_partition_test
