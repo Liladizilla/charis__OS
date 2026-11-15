@@ -121,3 +121,10 @@ bool ata_identify_decode(const u16 identify[256], ata_device_info_t* output) {
 
     return true;
 }
+
+
+bool ata_device_lba28_is_addressable(const ata_device_info_t* device, u32 lba) {
+    return device && device->detected && device->io_supported &&
+           (u64)lba < device->addressable_sectors &&
+           (u64)lba < ATA_LBA28_SECTOR_LIMIT;
+}
