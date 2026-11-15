@@ -88,7 +88,10 @@ static void test_mbr(void) {
            "extended partition container parses");
     expect(table.has_extended && !table.fully_enumerated &&
            table.partitions[0].extended,
-           "extended chain is never claimed as fully enumerated");
+           "extended chain is not marked complete before EBR traversal");
+    expect(table.extended_base_lba == 2048u &&
+           table.extended_end_lba == 602048u,
+           "extended container bounds are preserved for the EBR scanner");
 
     prepare_mbr(sector);
     set_mbr_entry(sector, 0, 0, 0xEEu, 1u, 999999u);
@@ -200,6 +203,108 @@ static void refresh_gpt_crcs(u8 header[512], u8* entries, u32 array_bytes) {
     put_le32(header + 16u, crc32(header, 92u));
 }
 
+static void test_ebr(void) {
+    u8 sector[512];
+    ata_device_info_t device = make_device();
+    ebr_sector_info_t decoded;
+    const u64 base = 10000u;
+    const u64 end = 510000u;
+
+    prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x83u, 63u, 50000u);
+    set_mbr_entry(sector, 1, 0, 0x0Fu, 100000u, 400000u);
+    expect(partition_parse_ebr_sector(sector, base, base, end,
+                                      &device, &decoded),
+           "valid EBR record parses");
+    expect(decoded.logical_partition.present &&
+           decoded.logical_partition.first_lba == 10063u &&
+           decoded.logical_partition.sector_count == 50000u &&
+           decoded.logical_partition.accessible,
+           "logical partition start is relative to its own EBR");
+    expect(decoded.has_next_ebr && decoded.next_ebr_lba == 110000u,
+           "next EBR pointer is relative to the extended partition base");
+
+    expect(decoded.next_ebr_end_lba == 510000u,
+           "the next EBR link's declared extent is preserved");
+
+    /* The next EBR and its data must fit inside the previous link's range. */
+    prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x83u, 63u, 1000u);
+    set_mbr_entry(sector, 1, 0, 0x0Fu, 100000u, 5000u);
+    expect(partition_parse_ebr_sector(sector, base, base, end,
+                                      &device, &decoded),
+           "bounded parent link decodes");
+    prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x07u, 1000u, 5000u);
+    expect(!partition_parse_ebr_sector(sector, decoded.next_ebr_lba,
+                                       base, decoded.next_ebr_end_lba,
+                                       &device, &decoded),
+           "logical data beyond the parent link extent is rejected");
+
+    prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x07u, 63u, 1000u);
+    expect(partition_parse_ebr_sector(sector, 110000u, base, end,
+                                      &device, &decoded) &&
+           !decoded.has_next_ebr,
+           "terminal EBR has no next link");
+
+    prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x0Fu, 63u, 1000u);
+    expect(!partition_parse_ebr_sector(sector, base, base, end,
+                                       &device, &decoded),
+           "logical entry cannot itself be an extended container");
+
+    prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x83u, 400000u, 200000u);
+    expect(!partition_parse_ebr_sector(sector, base, base, end,
+                                       &device, &decoded),
+           "logical partition extending past the container is rejected");
+
+    prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x83u, 63u, 1000u);
+    set_mbr_entry(sector, 1, 0, 0x0Fu, 500000u, 10000u);
+    expect(!partition_parse_ebr_sector(sector, base, base, end,
+                                       &device, &decoded),
+           "next EBR link beyond the extended container is rejected");
+
+    prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x83u, 63u, 1000u);
+    set_mbr_entry(sector, 1, 0, 0x0Fu, 63u, 1000u);
+    expect(!partition_parse_ebr_sector(sector, base, base, end,
+                                       &device, &decoded),
+           "next EBR cannot point inside the current logical partition");
+
+    prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x83u, 2000u, 1000u);
+    set_mbr_entry(sector, 1, 0, 0x0Fu, 1000u, 3000u);
+    expect(!partition_parse_ebr_sector(sector, base, base, end,
+                                       &device, &decoded),
+           "the full next-EBR link extent cannot overlap logical data");
+
+    prepare_mbr(sector);
+    set_mbr_entry(sector, 0, 0, 0x83u, 63u, 1000u);
+    set_mbr_entry(sector, 2, 0, 0x83u, 2000u, 1000u);
+    expect(!partition_parse_ebr_sector(sector, base, base, end,
+                                       &device, &decoded),
+           "reserved EBR entries three and four must remain empty");
+
+    prepare_mbr(sector);
+    sector[510] = 0u;
+    expect(!partition_parse_ebr_sector(sector, base, base, end,
+                                       &device, &decoded),
+           "EBR signature is mandatory");
+
+    expect(!partition_parse_ebr_sector(NULL, base, base, end,
+                                       &device, &decoded),
+           "null EBR sector is rejected");
+    expect(!partition_parse_ebr_sector(sector, base, base, end,
+                                       NULL, &decoded),
+           "null EBR device is rejected");
+    expect(!partition_parse_ebr_sector(sector, base, base, end,
+                                       &device, NULL),
+           "null EBR output is rejected");
+}
+
 static void test_gpt(void) {
     u8 header_sector[512];
     u8 entries[GPT_MAX_ARRAY_BYTES];
@@ -302,6 +407,7 @@ static void test_gpt(void) {
 
 int main(void) {
     test_mbr();
+    test_ebr();
     test_gpt();
     if (failures) {
         fprintf(stderr, "Partition parser: %d failure(s)\n", failures);

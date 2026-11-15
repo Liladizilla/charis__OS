@@ -128,6 +128,8 @@ bool partition_parse_mbr_sector(const u8 sector[MBR_SECTOR_BYTES],
         if (entry->extended) {
             output->has_extended = true;
             output->fully_enumerated = false;
+            output->extended_base_lba = first_lba;
+            output->extended_end_lba = end_lba;
             extended_count++;
         }
         if (type == 0xEEu) protective_count++;
@@ -169,6 +171,99 @@ bool partition_parse_mbr_sector(const u8 sector[MBR_SECTOR_BYTES],
         }
     }
 
+    return true;
+}
+
+/* Decode one EBR without following links. The caller owns the bounded
+ * traversal, visited-LBA set and disk reads. MBR logical-partition offsets are
+ * relative to this EBR; the next-EBR link is relative to the extended base. */
+bool partition_parse_ebr_sector(const u8 sector[MBR_SECTOR_BYTES],
+                                u64 ebr_lba,
+                                u64 extended_base_lba,
+                                u64 extended_end_lba,
+                                const ata_device_info_t* device,
+                                ebr_sector_info_t* output) {
+    if (!sector || !device || !output) return false;
+    clear_bytes(output, (u32)sizeof(*output));
+
+    if (!device->detected || !device->capacity_sectors ||
+        device->logical_sector_bytes != MBR_SECTOR_BYTES ||
+        extended_base_lba >= extended_end_lba ||
+        extended_end_lba > device->capacity_sectors ||
+        ebr_lba < extended_base_lba || ebr_lba >= extended_end_lba)
+        return false;
+
+    if (sector[510] != 0x55u || sector[511] != 0xAAu)
+        return false;
+
+    const u8* logical_raw = &sector[446u];
+    const u8* link_raw = &sector[462u];
+    const u8* reserved_a = &sector[478u];
+    const u8* reserved_b = &sector[494u];
+
+    /* Only the first two EBR entries are defined. */
+    if (!all_zero(reserved_a, 16u) || !all_zero(reserved_b, 16u))
+        return false;
+
+    u8 logical_type = logical_raw[4];
+    u32 logical_relative = read_le32(&logical_raw[8]);
+    u32 logical_count = read_le32(&logical_raw[12]);
+    u8 logical_boot = logical_raw[0];
+
+    if (!logical_type || is_extended_type(logical_type) ||
+        logical_type == 0xEEu ||
+        (logical_boot != 0u && logical_boot != 0x80u) ||
+        !logical_relative || !logical_count)
+        return false;
+
+    u64 logical_first = ebr_lba + (u64)logical_relative;
+    u64 logical_end = logical_first + (u64)logical_count;
+    if (logical_first <= ebr_lba || logical_first > 0xFFFFFFFFULL ||
+        logical_end <= logical_first || logical_first < extended_base_lba ||
+        logical_end > extended_end_lba ||
+        logical_end > device->capacity_sectors)
+        return false;
+
+    output->logical_partition.present = true;
+    output->logical_partition.bootable = logical_boot == 0x80u;
+    output->logical_partition.type = logical_type;
+    output->logical_partition.first_lba = (u32)logical_first;
+    output->logical_partition.sector_count = logical_count;
+    output->logical_partition.accessible =
+        logical_end <= device->addressable_sectors;
+
+    u8 link_type = link_raw[4];
+    if (!link_type) {
+        if (!all_zero(link_raw, 16u)) {
+            clear_bytes(output, (u32)sizeof(*output));
+            return false;
+        }
+        return true;
+    }
+
+    u8 link_boot = link_raw[0];
+    u32 link_relative = read_le32(&link_raw[8]);
+    u32 link_count = read_le32(&link_raw[12]);
+    if (!is_extended_type(link_type) || link_boot != 0u ||
+        !link_relative || !link_count) {
+        clear_bytes(output, (u32)sizeof(*output));
+        return false;
+    }
+
+    u64 next_ebr = extended_base_lba + (u64)link_relative;
+    u64 link_end = next_ebr + (u64)link_count;
+    if (next_ebr < extended_base_lba || next_ebr >= extended_end_lba ||
+        next_ebr > 0xFFFFFFFFULL || next_ebr == ebr_lba ||
+        link_end <= next_ebr ||
+        link_end > extended_end_lba || link_end > device->capacity_sectors ||
+        ranges_overlap(next_ebr, link_end, logical_first, logical_end)) {
+        clear_bytes(output, (u32)sizeof(*output));
+        return false;
+    }
+
+    output->has_next_ebr = true;
+    output->next_ebr_lba = next_ebr;
+    output->next_ebr_end_lba = link_end;
     return true;
 }
 

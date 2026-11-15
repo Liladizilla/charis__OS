@@ -370,16 +370,25 @@ static void draw_disk(void) {
         text(cx + 40, cy + 220,
              installer_storage_status_label(inventory->status), W_ACCENT);
 
-        if (inventory->status == INSTALLER_STORAGE_VALID_MBR) {
-            char partition_line[72] = {0};
+        if (inventory->partition_table.scheme == PARTITION_SCHEME_MBR &&
+            inventory->partition_table.valid) {
+            char partition_line[112] = {0};
             pos = wizard_append_text(partition_line, sizeof(partition_line),
                                      0, "Primary entries: ");
             pos = wizard_append_u64(partition_line, sizeof(partition_line), pos,
                                     inventory->partition_table.partition_count);
-            wizard_append_text(partition_line, sizeof(partition_line), pos,
-                               inventory->partition_table.has_extended
-                                   ? " (extended chain not enumerated)"
-                                   : " (MBR)");
+            if (inventory->partition_table.has_extended) {
+                pos = wizard_append_text(partition_line, sizeof(partition_line),
+                                         pos, ", logical: ");
+                pos = wizard_append_u64(partition_line, sizeof(partition_line), pos,
+                                        inventory->partition_table.logical_partition_count);
+                wizard_append_text(partition_line, sizeof(partition_line), pos,
+                    inventory->partition_table.fully_enumerated
+                        ? " (EBR complete)" : " (EBR incomplete)");
+            } else {
+                wizard_append_text(partition_line, sizeof(partition_line), pos,
+                                   " (MBR)");
+            }
             text(cx + 40, cy + 244, partition_line, W_DIM);
         } else if (inventory->status == INSTALLER_STORAGE_VALID_GPT) {
             char partition_line[72] = {0};
