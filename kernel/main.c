@@ -16,6 +16,7 @@
 #include <kernel/socket.h>
 #include <kernel/net_stack.h>
 #include <kernel/ata.h>
+#include <kernel/installer_storage.h>
 #include <kernel/fs.h>
 #include <kernel/vfs.h>
 #include <kernel/graphics.h>
@@ -612,6 +613,7 @@ void kernel_main(u32 magic, u64 info_ptr) {
     BOOT_MARK('K');
     ata_init();
     logo_set_stage("DISCOVERING STORAGE");
+    installer_storage_init();
     BOOT_MARK('D');  // Disk
     fs_init();
     BOOT_MARK('F');  // Filesystem

@@ -25,6 +25,7 @@
 #include <kernel/net.h>
 #include <kernel/config.h>
 #include <kernel/ata.h>
+#include <kernel/installer_storage.h>
 #include <kernel/wallpaper.h>
 #include <kernel/shell_ui.h>
 #include <kernel/timer.h>
@@ -287,30 +288,111 @@ static void draw_timezone(void) {
     draw_list(cx + 40, cy + 100, cw - 80, TIMEZONES, TIMEZONE_COUNT, w.sel[STEP_TIMEZONE]);
 }
 
+static u32 wizard_append_text(char* output, u32 capacity,
+                              u32 position, const char* value) {
+    if (!output || !capacity || !value) return position;
+    while (*value && position + 1u < capacity)
+        output[position++] = *value++;
+    output[position] = '\0';
+    return position;
+}
+
+static u32 wizard_append_u64(char* output, u32 capacity,
+                             u32 position, u64 value) {
+    char reversed[20];
+    u32 digits = 0;
+    do {
+        reversed[digits++] = (char)('0' + (value % 10u));
+        value /= 10u;
+    } while (value && digits < sizeof(reversed));
+
+    while (digits && position + 1u < capacity)
+        output[position++] = reversed[--digits];
+    output[position] = '\0';
+    return position;
+}
+
 static void draw_disk(void) {
     u32 sw = g_framebuffer.width, sh = g_framebuffer.height;
-    u32 cw = 640, ch = 320;
+    u32 cw = 640, ch = 380;
     u32 cx = (sw > cw) ? (sw - cw) / 2 : 0;
     u32 cy = (sh > ch) ? (sh - ch) / 2 : 0;
     card(cx, cy, cw, ch);
 
-    draw_step_header("Target drive", "Where the system would be installed.",
+    draw_step_header("Target drive", "Read-only storage inventory. No installation writes are available.",
                      cx, cy);
 
-    text(cx + 40, cy + 110,
-         ata_is_present() ? "Primary ATA device detected." : "No primary ATA device detected.",
-         W_ACCENT);
-    text(cx + 40, cy + 140,
-         "The driver supports legacy ATA PIO on the primary channel only.",
-         W_DIM);
-    text(cx + 40, cy + 160,
-         "It does not provide SATA/AHCI or NVMe support.",
-         W_DIM);
-    text(cx + 40, cy + 190,
-         "Disk installation is not implemented; this step is informational.",
+    const installer_storage_inventory_t* inventory = installer_storage_get();
+    if (!inventory) {
+        text(cx + 40, cy + 110, "Storage inventory has not been scanned.", W_ACCENT);
+    } else if (inventory->device_detected) {
+        text(cx + 40, cy + 108,
+             inventory->device.model[0] ? inventory->device.model : "ATA model not reported",
+             W_ACCENT);
+
+        char serial_line[72] = {0};
+        u32 pos = wizard_append_text(serial_line, sizeof(serial_line),
+                                     0, "Serial: ");
+        wizard_append_text(serial_line, sizeof(serial_line), pos,
+                           inventory->device.serial[0]
+                               ? inventory->device.serial : "not reported");
+        text(cx + 40, cy + 130, serial_line, W_DIM);
+
+        char capacity_line[80] = {0};
+        pos = wizard_append_text(capacity_line, sizeof(capacity_line),
+                                 0, "Capacity: ");
+        pos = wizard_append_u64(capacity_line, sizeof(capacity_line), pos,
+                                inventory->device.capacity_sectors);
+        wizard_append_text(capacity_line, sizeof(capacity_line), pos, " sectors");
+        text(cx + 40, cy + 152, capacity_line, W_DIM);
+
+        char sector_line[64] = {0};
+        pos = wizard_append_text(sector_line, sizeof(sector_line),
+                                 0, "Logical sector: ");
+        pos = wizard_append_u64(sector_line, sizeof(sector_line), pos,
+                                inventory->device.logical_sector_bytes);
+        wizard_append_text(sector_line, sizeof(sector_line), pos, " bytes");
+        text(cx + 40, cy + 174, sector_line, W_DIM);
+
+        text(cx + 40, cy + 198,
+             installer_storage_status_label(inventory->status), W_ACCENT);
+
+        if (inventory->status == INSTALLER_STORAGE_VALID_MBR) {
+            char partition_line[72] = {0};
+            pos = wizard_append_text(partition_line, sizeof(partition_line),
+                                     0, "Primary entries: ");
+            pos = wizard_append_u64(partition_line, sizeof(partition_line), pos,
+                                    inventory->partition_table.partition_count);
+            wizard_append_text(partition_line, sizeof(partition_line), pos,
+                               inventory->partition_table.has_extended
+                                   ? " (extended chain not enumerated)"
+                                   : " (MBR)");
+            text(cx + 40, cy + 222, partition_line, W_DIM);
+        } else if (inventory->status == INSTALLER_STORAGE_VALID_GPT) {
+            char partition_line[72] = {0};
+            pos = wizard_append_text(partition_line, sizeof(partition_line),
+                                     0, "GPT partitions: ");
+            pos = wizard_append_u64(partition_line, sizeof(partition_line), pos,
+                                    inventory->gpt_table.partition_count);
+            text(cx + 40, cy + 222, partition_line, W_DIM);
+        } else if (inventory->status == INSTALLER_STORAGE_GPT_METADATA_UNREADABLE) {
+            text(cx + 40, cy + 222,
+                 "GPT metadata could not be safely enumerated.", W_DIM);
+        } else if (inventory->status == INSTALLER_STORAGE_FAT32_AT_LBA0) {
+            text(cx + 40, cy + 222,
+                 "Existing whole-volume filesystem; not an install target.",
+                 W_DIM);
+        }
+    } else {
+        text(cx + 40, cy + 110,
+             installer_storage_status_label(inventory->status), W_ACCENT);
+    }
+
+    text(cx + 40, cy + 292,
+         "Disk installation and formatting are not implemented.",
          W_HINT);
-    text(cx + 40, cy + 210,
-         "This screen reports detection only and will not modify a disk.",
+    text(cx + 40, cy + 314,
+         "Only bounded metadata is read. No disk sectors are modified.",
          W_HINT);
 }
 

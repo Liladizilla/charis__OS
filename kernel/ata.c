@@ -1,4 +1,5 @@
 #include <kernel/ata.h>
+#include <kernel/printf.h>
 #include <kernel/vga.h>
 #include <kernel/io.h>
 #include <kernel/timer.h>
@@ -31,10 +32,25 @@
 /* Keep polling finite: each port read can exit to the host under KVM. */
 #define ATA_TIMEOUT_MS 30
 
+static ata_device_info_t ata_primary_master;
 static bool ata_present = false;
 
 bool ata_is_present(void) {
     return ata_present;
+}
+
+bool ata_get_device_info(ata_device_info_t* output) {
+    if (!output || !ata_primary_master.detected) return false;
+    const u8* source = (const u8*)&ata_primary_master;
+    u8* destination = (u8*)output;
+    for (u32 i = 0; i < sizeof(ata_primary_master); i++)
+        destination[i] = source[i];
+    return true;
+}
+
+static bool ata_lba_is_addressable(u32 lba) {
+    return ata_present &&
+           ata_device_lba28_is_addressable(&ata_primary_master, lba);
 }
 
 static bool ata_status_is_absent(void) {
@@ -63,7 +79,8 @@ static bool ata_wait_drq(void) {
 }
 
 bool ata_read_sector(u32 lba, void* buffer) {
-    if (!buffer || !ata_wait_bsy()) return false;
+    if (!buffer || !ata_lba_is_addressable(lba) || !ata_wait_bsy())
+        return false;
 
     outb(ATA_SECTOR_COUNT, 1);
     outb(ATA_LBA_LOW, lba & 0xFF);
@@ -90,7 +107,8 @@ bool ata_read_sector(u32 lba, void* buffer) {
 }
 
 bool ata_write_sector(u32 lba, const void* buffer) {
-    if (!buffer || !ata_wait_bsy()) return false;
+    if (!buffer || !ata_lba_is_addressable(lba) || !ata_wait_bsy())
+        return false;
 
     outb(ATA_SECTOR_COUNT, 1);
     outb(ATA_LBA_LOW, lba & 0xFF);
@@ -113,30 +131,54 @@ bool ata_write_sector(u32 lba, const void* buffer) {
 }
 
 void ata_init(void) {
+    for (u32 i = 0; i < sizeof(ata_primary_master); i++)
+        ((u8*)&ata_primary_master)[i] = 0;
     ata_present = false;
-    // Identify drive
-    outb(ATA_DRIVE, 0xA0); // Master drive
+
+    /* IDENTIFY DEVICE is read-only. This pass records identity and capacity;
+     * it never writes to the device or assumes sector zero is a filesystem. */
+    outb(ATA_DRIVE, 0xA0); /* Primary master. */
+    io_delay();
     outb(ATA_SECTOR_COUNT, 0);
     outb(ATA_LBA_LOW, 0);
     outb(ATA_LBA_MID, 0);
     outb(ATA_LBA_HIGH, 0);
     outb(ATA_COMMAND, ATA_CMD_IDENTIFY);
+    io_delay();
 
-    bool ready = ata_wait_bsy();
-    u8 status = inb(ATA_STATUS);
-    if (!ready || status == 0 || status == 0xFF || (status & ATA_STATUS_ERR)) {
-        vga_puts("ATA: No drive detected\n");
-        serial_puts("ATA: no primary-master drive detected");
+    if (!ata_wait_bsy() || ata_status_is_absent() || !ata_wait_drq()) {
+        vga_puts("ATA: No primary-master ATA disk detected\n");
+        serial_puts("ATA: no primary-master ATA disk detected\n");
         return;
     }
 
-    // IDENTIFY leaves a 512-byte data phase pending. Drain it before the
-    // first READ SECTORS command or the following PIO read consumes this data.
-    if (status & ATA_STATUS_DRQ) {
-        for (int i = 0; i < ATA_SECTOR_SIZE / 2; i++) (void)inw(ATA_DATA);
+    u16 identify[256];
+    for (u32 i = 0; i < 256u; i++)
+        identify[i] = inw(ATA_DATA);
+
+    if (!ata_identify_decode(identify, &ata_primary_master)) {
+        vga_puts("ATA: IDENTIFY data invalid or unsupported\n");
+        serial_puts("ATA: IDENTIFY data invalid or unsupported\n");
+        return;
     }
 
-    ata_present = true;
-    vga_puts("ATA initialized\n");
-    serial_puts("ATA: primary-master drive detected");
+    ata_present = ata_primary_master.io_supported;
+
+    kprintf("ATA: %s, %llu sectors, %u-byte logical sectors\n",
+            ata_primary_master.model[0] ? ata_primary_master.model : "Unnamed ATA device",
+            (unsigned long long)ata_primary_master.capacity_sectors,
+            ata_primary_master.logical_sector_bytes);
+
+    if (ata_primary_master.lba48_supported) {
+        serial_puts("ATA: LBA48 capable; current PIO access remains limited to LBA28\n");
+    }
+
+    if (!ata_primary_master.io_supported) {
+        vga_puts("ATA: Device detected but unsupported by current PIO path\n");
+        serial_puts("ATA: device inventoried but not readable by current PIO path\n");
+        return;
+    }
+
+    vga_puts("ATA initialized (primary-master LBA28 PIO)\n");
+    serial_puts("ATA: primary-master device ready for 512-byte LBA28 PIO\n");
 }
