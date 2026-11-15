@@ -94,7 +94,7 @@
 - [x] Decode ATA IDENTIFY model, serial, firmware, logical-sector size, capacity and LBA capabilities; distinguish detected from currently readable devices
 - [x] Clamp existing 512-byte PIO reads/writes to the validated LBA28 addressable capacity; never imply LBA48 I/O is implemented
 - [x] Add bounded, host-tested MBR primary-entry parsing, capacity checks, overlap rejection and explicit extended-container/protective-MBR dispatch states
-- [x] Add primary GPT header/entry-array parsing with CRC32 validation, a 128-entry/64KiB hard limit and partition overlap/range checks
+- [x] Add primary GPT header/entry-array parsing with CRC32 validation, 128-entry and 16–64 KiB array bounds, UEFI 128 × 2^n entry sizes, reserved-tail checks, and partition overlap/range validation
 - [x] Keep detected capacity distinct from the sectors addressable by the current PIO path; report zero addressable sectors for unsupported logical-sector sizes
 - [x] Enumerate up to 32 extended MBR logical partitions through a bounded EBR chain; validate relative-LBA bases, nested link extents, container/disk bounds, reserved entries, overlap and cycle detection
 - [x] Validate reciprocal primary/backup GPT header locations, header CRCs, matching disk/usable-range metadata, and byte-identical backup entry arrays against the primary CRC-validated copy
