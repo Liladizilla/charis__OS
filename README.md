@@ -1,6 +1,6 @@
 # CharisOS
 
-![CharisOS desktop workspace, real 1024×768 QEMU framebuffer capture from 12 November 2026](docs/screenshots/charisos-desktop-2026-11-12.png)
+![CharisOS desktop workspace, 14 November 2026 QEMU framebuffer capture](docs/screenshots/charisos-desktop-2026-11-14.jpg)
 
 **A native x86_64 operating system built from the ground up in freestanding C and NASM.**
 
@@ -46,10 +46,10 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 ## Desktop captures
 
-The checked-in image below is a **real 1024×768 QEMU framebuffer capture**, not a mockup. It documents the 12 November 2026 workspace; the latest 14 November capture set is linked separately below because the CI artifact contains several distinct pointer, Settings and native-app states.
+The checked-in image below is the latest available **14 November 2026 QEMU desktop capture**, embedded directly in this README. It shows the running CharisOS workspace rather than a mockup.
 
 
-The latest [desktop capture artifact from workflow run #1055](https://github.com/Liladizilla/charis__OS/actions/runs/43618402243#artifacts) contains the 14 November workspace, desktop right-click context menu, Display Settings launch, pointer movement/restoration, Browser, Files, multi-window, maximized/resized windows, Settings at 200% and 300% text, the Settings search interaction, post-reboot Settings capture, Calculator, Terminal and serial/QEMU logs. GitHub retains workflow artifacts for a limited period. The checked-in image above remains the earlier 12 November reference.
+The full 14 November capture set, including additional application, pointer, Settings and multi-window states, remains available in [workflow run #1055 artifacts](https://github.com/Liladizilla/charis__OS/actions/runs/43618402243#artifacts).
 
 Run #1055 passed the complete build, host regression, BIOS/ring-3, ELF, VMM, waitpid, IPC, kernel-stack guard and desktop/persistence gates. The Settings rail’s exact 456/912 px maximum is accepted by the runtime and CI. The gate also verifies the right-click menu opens Display Settings and captures the actual framebuffer.
 
