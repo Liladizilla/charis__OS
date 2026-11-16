@@ -1,5 +1,7 @@
 # CharisOS
 
+![CharisOS desktop workspace, real 1024×768 QEMU framebuffer capture from 12 November 2026](docs/screenshots/charisos-desktop-2026-11-12.png)
+
 **A native x86_64 operating system built from the ground up in freestanding C and NASM.**
 
 [![CI](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml/badge.svg)](https://github.com/Liladizilla/charis__OS/actions/workflows/ci.yml)
@@ -46,7 +48,6 @@ For the authoritative subsystem-by-subsystem roadmap, see [TODO.md](./TODO.md). 
 
 The checked-in image below is a **real 1024×768 QEMU framebuffer capture**, not a mockup. It documents the 12 November 2026 workspace; the latest 14 November capture set is linked separately below because the CI artifact contains several distinct pointer, Settings and native-app states.
 
-![CharisOS desktop workspace, QEMU capture from 12 November 2026](docs/screenshots/charisos-desktop-2026-11-12.png)
 
 The latest [desktop capture artifact from workflow run #1055](https://github.com/Liladizilla/charis__OS/actions/runs/43618402243#artifacts) contains the 14 November workspace, desktop right-click context menu, Display Settings launch, pointer movement/restoration, Browser, Files, multi-window, maximized/resized windows, Settings at 200% and 300% text, the Settings search interaction, post-reboot Settings capture, Calculator, Terminal and serial/QEMU logs. GitHub retains workflow artifacts for a limited period. The checked-in image above remains the earlier 12 November reference.
 
