@@ -51,6 +51,33 @@ The checked-in image below is the latest available **14 November 2026 QEMU deskt
 
 The full 14 November capture set, including additional application, pointer, Settings and multi-window states, remains available in [workflow run #1055 artifacts](https://github.com/Liladizilla/charis__OS/actions/runs/43618402243#artifacts).
 
+### Settings and appearance
+
+The Settings capture shows the native settings workspace and its current Display controls. The Appearance capture shows the wallpaper and style controls; it documents the selector, not a claim that every wallpaper has been captured as an applied desktop state.
+
+![CharisOS Settings with Display controls](docs/screenshots/charisos-settings.webp)
+
+![CharisOS Appearance settings and wallpaper choices](docs/screenshots/charisos-appearance.webp)
+
+### Native applications
+
+These are separate QEMU framebuffer captures from the same mainline validation run.
+
+![CharisOS Terminal running native commands](docs/screenshots/charisos-terminal.webp)
+
+![CharisOS Files browser showing the FAT32 root](docs/screenshots/charisos-files.webp)
+
+![CharisOS Calculator application](docs/screenshots/charisos-calculator.webp)
+
+![CharisOS Browser application](docs/screenshots/charisos-browser.webp)
+
+### Window management
+
+The multi-window capture shows Files and Terminal open together, with independent windows composited on the desktop.
+
+![CharisOS multi-window desktop with Files and Terminal](docs/screenshots/charisos-multiwindow.webp)
+
+
 Run #1055 passed the complete build, host regression, BIOS/ring-3, ELF, VMM, waitpid, IPC, kernel-stack guard and desktop/persistence gates. The Settings rail’s exact 456/912 px maximum is accepted by the runtime and CI. The gate also verifies the right-click menu opens Display Settings and captures the actual framebuffer.
 
 ### Latest desktop validation
