@@ -53,30 +53,17 @@ The full 14 November capture set, including additional application, pointer, Set
 
 ### Settings and appearance
 
-The Settings capture shows the native settings workspace and its current Display controls. The Appearance capture shows the wallpaper and style controls; it documents the selector, not a claim that every wallpaper has been captured as an applied desktop state.
+The Settings capture documents the current native Display controls. The Appearance capture shows the wallpaper and style selector. It demonstrates the available controls, not a claim that every wallpaper has been captured after application.
 
 ![CharisOS Settings with Display controls](docs/screenshots/charisos-settings.webp)
 
 ![CharisOS Appearance settings and wallpaper choices](docs/screenshots/charisos-appearance.webp)
 
-### Native applications
+### Native Terminal
 
-These are separate QEMU framebuffer captures from the same mainline validation run.
+The Terminal capture shows the kernel-owned command environment running inside its own desktop window.
 
 ![CharisOS Terminal running native commands](docs/screenshots/charisos-terminal.webp)
-
-![CharisOS Files browser showing the FAT32 root](docs/screenshots/charisos-files.webp)
-
-![CharisOS Calculator application](docs/screenshots/charisos-calculator.webp)
-
-![CharisOS Browser application](docs/screenshots/charisos-browser.webp)
-
-### Window management
-
-The multi-window capture shows Files and Terminal open together, with independent windows composited on the desktop.
-
-![CharisOS multi-window desktop with Files and Terminal](docs/screenshots/charisos-multiwindow.webp)
-
 
 Run #1055 passed the complete build, host regression, BIOS/ring-3, ELF, VMM, waitpid, IPC, kernel-stack guard and desktop/persistence gates. The Settings rail’s exact 456/912 px maximum is accepted by the runtime and CI. The gate also verifies the right-click menu opens Display Settings and captures the actual framebuffer.
 
